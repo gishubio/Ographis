@@ -1,0 +1,30 @@
+name: Bug report
+description: Something does not work as it should
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: From Help → About Ographis, or `og version`.
+      placeholder: Ographis 0.76 · GDAL 3.13.3
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: The log
+      description: The *Copy log* button above the Log tab copies it. If the program said a fault happened, add crash-log.txt from %APPDATA%\Ographis too.
+      render: text
+  - type: textarea
+    id: model
+    attributes:
+      label: The model and the data
+      description: Attach the .ographis file, and a small piece of the data if you can share it. Remove passwords and keys first.

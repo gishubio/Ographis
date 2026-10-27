@@ -1,0 +1,293 @@
+{
+  "format": "ographis/1",
+  "name": "Blocks and a TIN in 3D",
+  "nodes": [
+    {
+      "id": "dem",
+      "type": "Reader",
+      "name": "Terrain model",
+      "x": 20,
+      "y": 20,
+      "comment": "Only the part around the blocks",
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid",
+        "within": "rectangle",
+        "min_x": "418050",
+        "min_y": "6472350",
+        "max_x": "418550",
+        "max_y": "6472750"
+      }
+    },
+    {
+      "id": "blocks",
+      "type": "Reader",
+      "name": "Footprints",
+      "x": 20,
+      "y": 220,
+      "comment": "Made-up buildings with the number of floors",
+      "params": {
+        "path": "blocks.geojson"
+      }
+    },
+    {
+      "id": "lamps",
+      "type": "Reader",
+      "name": "Street lamps",
+      "x": 20,
+      "y": 400,
+      "params": {
+        "path": "lamps.geojson"
+      }
+    },
+    {
+      "id": "tin",
+      "type": "TinGenerator",
+      "name": "TIN, 3D",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "kind": "3d",
+        "tolerance": "1.5",
+        "most": "20000"
+      }
+    },
+    {
+      "id": "tin2d",
+      "type": "TinGenerator",
+      "name": "TIN, 2D with slope",
+      "x": 280,
+      "y": 120,
+      "params": {
+        "kind": "2d",
+        "tolerance": "3"
+      }
+    },
+    {
+      "id": "extrude",
+      "type": "Extruder",
+      "name": "Blocks on the terrain",
+      "x": 280,
+      "y": 220,
+      "params": {
+        "height": "floors * 3.2",
+        "base": "terrain",
+        "name": "id"
+      }
+    },
+    {
+      "id": "scene",
+      "type": "SceneRenderer",
+      "name": "Blocks on the TIN",
+      "x": 540,
+      "y": 120,
+      "params": {
+        "width": "1400",
+        "height": "900",
+        "view_azimuth": "210",
+        "elevation": "28",
+        "zoom": "260",
+        "sun": "date",
+        "date": "2026-05-15",
+        "time": "16:00",
+        "background": "sky",
+        "quality": "4"
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "name": "Picture",
+      "x": 800,
+      "y": 120,
+      "params": {
+        "path": "out/blocks_on_tin.png"
+      }
+    },
+    {
+      "id": "gpkg",
+      "type": "Writer",
+      "name": "Triangles",
+      "x": 540,
+      "y": 20,
+      "params": {
+        "path": "out/tin.gpkg"
+      }
+    },
+    {
+      "id": "glb",
+      "type": "Writer",
+      "name": "Blocks as glTF",
+      "x": 540,
+      "y": 300,
+      "params": {
+        "path": "out/blocks.glb"
+      }
+    },
+    {
+      "id": "dusk",
+      "type": "SceneRenderer",
+      "name": "At dusk",
+      "x": 540,
+      "y": 520,
+      "comment": "The sun just below the horizon: lit windows, street lamps and a shallow depth of field",
+      "params": {
+        "width": "1400",
+        "height": "900",
+        "view_azimuth": "235",
+        "elevation": "14",
+        "zoom": "300",
+        "sun": "date",
+        "date": "2026-10-22",
+        "time": "17:45",
+        "background": "sky",
+        "windows": "true",
+        "lit_windows": "45",
+        "blur": "12",
+        "quality": "16"
+      }
+    },
+    {
+      "id": "duskpng",
+      "type": "Writer",
+      "name": "Dusk picture",
+      "x": 800,
+      "y": 520,
+      "params": {
+        "path": "out/blocks_at_dusk.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "tin",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "tin2d",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "extrude",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "blocks",
+        "Output"
+      ],
+      "to": [
+        "extrude",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "tin",
+        "TIN"
+      ],
+      "to": [
+        "scene",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "extrude",
+        "Output"
+      ],
+      "to": [
+        "scene",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "scene",
+        "Image"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "tin2d",
+        "TIN"
+      ],
+      "to": [
+        "gpkg",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "extrude",
+        "Output"
+      ],
+      "to": [
+        "glb",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "tin",
+        "TIN"
+      ],
+      "to": [
+        "dusk",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "extrude",
+        "Output"
+      ],
+      "to": [
+        "dusk",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "lamps",
+        "Output"
+      ],
+      "to": [
+        "dusk",
+        "Lights"
+      ]
+    },
+    {
+      "from": [
+        "dusk",
+        "Image"
+      ],
+      "to": [
+        "duskpng",
+        "Input"
+      ]
+    }
+  ]
+}

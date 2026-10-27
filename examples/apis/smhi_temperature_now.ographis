@@ -1,0 +1,155 @@
+{
+  "format": "ographis/1",
+  "name": "Air temperature at the stations of SMHI",
+  "nodes": [
+    {
+      "id": "smhi",
+      "type": "HttpCaller",
+      "name": "SMHI: the latest hour",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "url": "https://opendata-download-metobs.smhi.se/api/version/1.0/parameter/1/station-set/all/period/latest-hour/data.json"
+      },
+      "comment": "Parameter 1 is the air temperature, once an hour"
+    },
+    {
+      "id": "st",
+      "type": "JsonExploder",
+      "name": "One per station",
+      "x": 300,
+      "y": 40,
+      "params": {
+        "attribute": "_response",
+        "path": "station"
+      }
+    },
+    {
+      "id": "val",
+      "type": "JsonExtractor",
+      "name": "Value and time",
+      "x": 560,
+      "y": 40,
+      "params": {
+        "attribute": "value",
+        "paths": [
+          [
+            "[0].value",
+            "temperature"
+          ],
+          [
+            "[0].date",
+            "time_ms"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "num",
+      "type": "AttributeCreator",
+      "name": "As a number",
+      "x": 820,
+      "y": 40,
+      "params": {
+        "name": "degrees",
+        "expression": "to_real(temperature)"
+      }
+    },
+    {
+      "id": "when",
+      "type": "AttributeCreator",
+      "name": "Swedish time",
+      "x": 1080,
+      "y": 40,
+      "params": {
+        "name": "observed",
+        "expression": "format_time(time_ms, '%Y-%m-%d %H:%M')"
+      },
+      "comment": "SMHI gives the time in milliseconds since 1970"
+    },
+    {
+      "id": "pts",
+      "type": "PointCreator",
+      "name": "Stations",
+      "x": 1340,
+      "y": 40,
+      "params": {
+        "x": "longitude",
+        "y": "latitude",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Temperature",
+      "x": 1600,
+      "y": 40,
+      "params": {
+        "path": "out/smhi_temperature.gpkg"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "smhi",
+        "Output"
+      ],
+      "to": [
+        "st",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "st",
+        "Exploded"
+      ],
+      "to": [
+        "val",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "val",
+        "Output"
+      ],
+      "to": [
+        "num",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "num",
+        "Output"
+      ],
+      "to": [
+        "when",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "when",
+        "Output"
+      ],
+      "to": [
+        "pts",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "pts",
+        "Points"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}

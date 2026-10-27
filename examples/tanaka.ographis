@@ -1,0 +1,108 @@
+{
+  "format": "ographis/1",
+  "name": "Tanaka contours of the made-up terrain",
+  "nodes": [
+    {
+      "id": "dem",
+      "type": "Reader",
+      "name": "Terrain model",
+      "x": 20,
+      "y": 20,
+      "comment": "A made-up terrain, 12.8 × 9.6 km in cells of 20 m",
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "tanaka",
+      "type": "TanakaContours",
+      "name": "Tanaka contours",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "interval": "10",
+        "sun_azimuth": "315",
+        "line_width": "2.5",
+        "tint": "terrain",
+        "width": "2400",
+        "smooth": "2"
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "name": "Picture",
+      "x": 540,
+      "y": 20,
+      "params": {
+        "path": "out/tanaka.png"
+      }
+    },
+    {
+      "id": "grey",
+      "type": "TanakaContours",
+      "name": "Tanaka contours, grey",
+      "x": 280,
+      "y": 180,
+      "params": {
+        "interval": "10",
+        "line_width": "2",
+        "tint": "grey",
+        "width": "2400"
+      }
+    },
+    {
+      "id": "tif",
+      "type": "Writer",
+      "name": "GeoTIFF",
+      "x": 540,
+      "y": 180,
+      "params": {
+        "path": "out/tanaka_grey.tif"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "tanaka",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "tanaka",
+        "Image"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "grey",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "grey",
+        "Image"
+      ],
+      "to": [
+        "tif",
+        "Input"
+      ]
+    }
+  ]
+}

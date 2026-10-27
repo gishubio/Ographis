@@ -1,0 +1,109 @@
+{
+  "format": "ographis/1",
+  "name": "Contour lines in 3D",
+  "nodes": [
+    {
+      "id": "dem",
+      "type": "Reader",
+      "name": "Terrain model",
+      "x": 20,
+      "y": 20,
+      "comment": "A made-up terrain, 12.8 × 9.6 km in cells of 20 m",
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "lines",
+      "type": "ContourGenerator",
+      "name": "Contour lines",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "interval": "20"
+      }
+    },
+    {
+      "id": "up",
+      "type": "HeightSetter",
+      "name": "At their height",
+      "x": 520,
+      "y": 20,
+      "comment": "Click it, and tick 3D above the map to turn it",
+      "params": {
+        "height": "height"
+      }
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Contours with Z",
+      "x": 760,
+      "y": 20,
+      "params": {
+        "path": "out/contours_3d.gpkg"
+      }
+    },
+    {
+      "id": "look",
+      "type": "Viewer",
+      "name": "Look at both",
+      "x": 520,
+      "y": 200,
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "lines",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "lines",
+        "Contours"
+      ],
+      "to": [
+        "up",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "up",
+        "Output"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "look",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "up",
+        "Output"
+      ],
+      "to": [
+        "look",
+        "Input"
+      ]
+    }
+  ]
+}

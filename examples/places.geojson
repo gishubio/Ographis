@@ -1,0 +1,311 @@
+{
+"type": "FeatureCollection",
+"crs": {
+"type": "name",
+"properties": {
+"name": "urn:ogc:def:crs:EPSG::3006"
+}
+},
+"features": [
+{
+"type": "Feature",
+"properties": {
+"name": "Skaraborgs sjukhus",
+"amenity": "hospital",
+"visitors": 50
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+446306.7,
+6472631.9
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Vårdcentralen Ryd",
+"amenity": "vårdcentral",
+"visitors": 800
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+445602.8,
+6473478.9
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Vårdcentralen Hentorp",
+"amenity": "doctors",
+"visitors": 200
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+447031.8,
+6474301.3
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Apoteket Kronan",
+"amenity": "pharmacy",
+"visitors": 50
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+445505.0,
+6473254.0
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Polisstationen",
+"amenity": "police",
+"visitors": 50
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+446073.9,
+6473512.3
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Brandstationen",
+"amenity": "fire_station",
+"visitors": 200
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+447715.2,
+6472572.4
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Laddplats Resecentrum",
+"amenity": "charging_station",
+"visitors": 50
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+447165.8,
+6473582.6
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Laddplats Arena",
+"amenity": "charging_station",
+"visitors": 200
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+447015.9,
+6473172.7
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Hotell Billingehus",
+"amenity": "hotel",
+"visitors": 800
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+445530.4,
+6474188.6
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Stadshotellet",
+"amenity": "hotel",
+"visitors": 800
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+446573.6,
+6473489.5
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Resecentrum",
+"amenity": "bus_station",
+"visitors": 50
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+446968.7,
+6473800.4
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Stadsbiblioteket",
+"amenity": "library",
+"visitors": 800
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+447028.5,
+6473705.6
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Kulturhuset",
+"amenity": "theatre",
+"visitors": 50
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+445672.8,
+6473866.6
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Folktandvården",
+"amenity": "dentist",
+"visitors": 3000
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+447133.2,
+6473392.1
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Torget",
+"amenity": "marketplace",
+"visitors": 3000
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+447576.2,
+6473324.3
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Simhallen",
+"amenity": "swimming_pool",
+"visitors": 200
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+446412.4,
+6472846.5
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Parkering Norr",
+"amenity": "parking",
+"visitors": 800
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+447357.2,
+6472837.0
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Kyrkan",
+"amenity": "church",
+"visitors": 3000
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+446870.6,
+6474225.3
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Café Lyktan",
+"amenity": "cafe",
+"visitors": 50
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+446206.2,
+6474456.4
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"name": "Skolan",
+"amenity": "school",
+"visitors": 800
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+446833.4,
+6472662.9
+]
+}
+}
+]
+}

@@ -1,0 +1,232 @@
+{
+  "format": "ographis/1",
+  "name": "Travel times between towns with OpenTripPlanner",
+  "variables": [
+    {
+      "name": "otp",
+      "value": "http://localhost:8080"
+    },
+    {
+      "name": "departure",
+      "value": "2026-10-21T08:00:00+02:00"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "towns",
+      "type": "Reader",
+      "name": "Towns",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "towns.csv",
+        "x": "lon",
+        "y": "lat",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "pairs",
+      "type": "PairMaker",
+      "name": "Every town to every other",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "coords": "EPSG:4326"
+      }
+    },
+    {
+      "id": "ask",
+      "type": "HttpCaller",
+      "name": "Ask OpenTripPlanner",
+      "x": 540,
+      "y": 20,
+      "comment": "The GraphQL API of OpenTripPlanner 2 (GTFS schema), on a server of your own: set the variable otp to its address. Eight at a time, and the answers are kept in http-cache beside the model, so a second run does not ask again. Check the query against the version you run",
+      "params": {
+        "url": "'$(otp)/otp/gtfs/v1'",
+        "method": "POST",
+        "body": "'{\"query\": \"query($fromLat: CoordinateValue!, $fromLon: CoordinateValue!, $toLat: CoordinateValue!, $toLon: CoordinateValue!, $when: OffsetDateTime!) { planConnection(origin: {location: {coordinate: {latitude: $fromLat, longitude: $fromLon}}}, destination: {location: {coordinate: {latitude: $toLat, longitude: $toLon}}}, dateTime: {earliestDeparture: $when}, first: 1) { edges { node { start end duration numberOfTransfers legs { mode route { shortName } legGeometry { points } } } } } }\", \"variables\": {\"fromLat\": ' || from_lat || ', \"fromLon\": ' || from_lon || ', \"toLat\": ' || to_lat || ', \"toLon\": ' || to_lon || ', \"when\": \"$(departure)\"}}'",
+        "parallel": "8",
+        "cache": "disk",
+        "timeout": "60"
+      }
+    },
+    {
+      "id": "take",
+      "type": "JsonExtractor",
+      "name": "Duration and route",
+      "x": 800,
+      "y": 20,
+      "params": {
+        "attribute": "_response",
+        "paths": [
+          [
+            "data.planConnection.edges[0].node.duration",
+            "seconds"
+          ],
+          [
+            "data.planConnection.edges[0].node.numberOfTransfers",
+            "transfers"
+          ],
+          [
+            "data.planConnection.edges[0].node.start",
+            "start"
+          ],
+          [
+            "data.planConnection.edges[0].node.end",
+            "end"
+          ],
+          [
+            "data.planConnection.edges[0].node.legs[1].legGeometry.points",
+            "route"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "minutes",
+      "type": "AttributeCreator",
+      "name": "Minutes",
+      "x": 1060,
+      "y": 20,
+      "params": {
+        "name": "minutes",
+        "expression": "round(seconds / 60)"
+      }
+    },
+    {
+      "id": "stats",
+      "type": "StatisticsCalculator",
+      "name": "From each town",
+      "x": 1320,
+      "y": 20,
+      "params": {
+        "attributes": "minutes",
+        "group_by": "town",
+        "percentiles": "10, 90"
+      }
+    },
+    {
+      "id": "routes",
+      "type": "GeometryFromText",
+      "name": "The first ride as a line",
+      "x": 1320,
+      "y": 200,
+      "params": {
+        "attribute": "route",
+        "kind": "polyline",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "view",
+      "type": "Viewer",
+      "name": "Look at it",
+      "x": 1580,
+      "y": 100,
+      "params": {}
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Travel times",
+      "x": 1580,
+      "y": 260,
+      "params": {
+        "path": "out/travel_times.xlsx"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "towns",
+        "Output"
+      ],
+      "to": [
+        "pairs",
+        "From"
+      ]
+    },
+    {
+      "from": [
+        "towns",
+        "Output"
+      ],
+      "to": [
+        "pairs",
+        "To"
+      ]
+    },
+    {
+      "from": [
+        "pairs",
+        "Pairs"
+      ],
+      "to": [
+        "ask",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "ask",
+        "Output"
+      ],
+      "to": [
+        "take",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "take",
+        "Output"
+      ],
+      "to": [
+        "minutes",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "minutes",
+        "Output"
+      ],
+      "to": [
+        "stats",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "minutes",
+        "Output"
+      ],
+      "to": [
+        "routes",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "routes",
+        "Output"
+      ],
+      "to": [
+        "view",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "stats",
+        "Summary"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}

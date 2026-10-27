@@ -1,0 +1,13 @@
+{
+  "format": "ographis/1",
+  "name": "Build test: GeoPackage to Shapefile in SWEREF 99 TM",
+  "nodes": [
+    { "id": "in", "type": "Reader", "name": "Subregions", "x": 40, "y": 40, "params": { "path": "subregions.gpkg" } },
+    { "id": "sweref", "type": "Reprojector", "name": "Reproject", "x": 260, "y": 40, "params": { "crs": "EPSG:3006" } },
+    { "id": "out", "type": "Writer", "name": "Subregions SWEREF", "x": 480, "y": 40, "params": { "path": "out/subregions_sweref.shp" } }
+  ],
+  "edges": [
+    { "from": ["in", "Output"], "to": ["sweref", "Input"] },
+    { "from": ["sweref", "Reprojected"], "to": ["out", "Input"] }
+  ]
+}

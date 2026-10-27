@@ -1,0 +1,32 @@
+[package]
+name = "og-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Ographis – graphical user interface."
+
+[[bin]]
+name = "ographis"
+path = "src/main.rs"
+
+[dependencies]
+og-engine = { path = "../og-engine" }
+og-gdal = { path = "../og-gdal" }
+geo.workspace = true
+serde_json.workspace = true
+eframe = "0.36"
+egui_extras = "0.36"
+egui-snarl = "0.12"
+rfd = "0.17"
+# The clipboard, read from the menus. Ctrl+V comes through eframe.
+arboard = { version = "3.6", default-features = false }
+# The system certificates and proxy are used, so that map tiles can be fetched behind a
+# corporate proxy too.
+ureq = { version = "3", features = ["platform-verifier", "win-system-proxy"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+# The time that kept changes were saved, in the local time.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[dev-dependencies]
+egui_kittest = { version = "0.36", features = ["wgpu"] }

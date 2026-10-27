@@ -1,0 +1,104 @@
+{
+  "format": "ographis/1",
+  "name": "Inhabitants per municipality from Kolada",
+  "nodes": [
+    {
+      "id": "kolada",
+      "type": "HttpCaller",
+      "name": "Kolada: N01951",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "url": "https://api.kolada.se/v3/data/kpi/N01951/year/2025?region_type=municipality",
+        "paging": "next",
+        "next_path": "next_url"
+      },
+      "comment": "Kolada API v3 gives its answer in pages: next_url points to the next one"
+    },
+    {
+      "id": "rows",
+      "type": "JsonExploder",
+      "name": "A value per municipality",
+      "x": 300,
+      "y": 40,
+      "params": {
+        "attribute": "_response",
+        "path": "values"
+      }
+    },
+    {
+      "id": "sex",
+      "type": "JsonExploder",
+      "name": "Per sex",
+      "x": 560,
+      "y": 40,
+      "params": {
+        "attribute": "values",
+        "path": "",
+        "prefix": "v"
+      }
+    },
+    {
+      "id": "total",
+      "type": "Tester",
+      "name": "Total",
+      "x": 820,
+      "y": 40,
+      "params": {
+        "test": "\"v.gender\" = 'T'"
+      }
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Inhabitants",
+      "x": 1080,
+      "y": 40,
+      "params": {
+        "path": "out/kolada.csv"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "kolada",
+        "Output"
+      ],
+      "to": [
+        "rows",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "rows",
+        "Exploded"
+      ],
+      "to": [
+        "sex",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "sex",
+        "Exploded"
+      ],
+      "to": [
+        "total",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "total",
+        "Passed"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}

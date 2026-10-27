@@ -1,0 +1,37 @@
+{
+  "format": "ographis/1",
+  "name": "Read a layer from ArcGIS",
+  "nodes": [
+    {
+      "id": "in",
+      "type": "Reader",
+      "name": "ArcGIS FeatureServer",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "path": "https://sampleserver6.arcgisonline.com/arcgis/rest/services/Wildfire/FeatureServer/0"
+      },
+      "comment": "The address of a layer in a FeatureServer or MapServer. Without a layer number, choose the layer under Layers"
+    },
+    {
+      "id": "view",
+      "type": "Viewer",
+      "name": "View",
+      "x": 300,
+      "y": 40,
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "in",
+        "Output"
+      ],
+      "to": [
+        "view",
+        "Input"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,145 @@
+{
+  "format": "ographis/1",
+  "name": "Islands as a diorama",
+  "nodes": [
+    {
+      "id": "cover",
+      "type": "Reader",
+      "name": "Land cover",
+      "x": 20,
+      "y": 20,
+      "comment": "Made-up islands off the coast, with kinds of land named as in Lantmäteriet's land cover",
+      "params": {
+        "path": "islands.geojson"
+      }
+    },
+    {
+      "id": "heights",
+      "type": "Reader",
+      "name": "Heights",
+      "x": 20,
+      "y": 160,
+      "comment": "A made-up terrain model of the islands",
+      "params": {
+        "path": "islands_heights.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "diorama",
+      "type": "DioramaMaker",
+      "name": "Make diorama",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "class": "kind",
+        "board": "round",
+        "trees": "60",
+        "houses": "60",
+        "animals": "sheep 8, pigs 4, cows 3, horses 3, rabbits 6\ndogs 3, cats 3\nbears 2\nelephant 1, giraffes 2, dinosaur 1",
+        "boats": "5",
+        "clouds": "4",
+        "steps": "4"
+      },
+      "comment": "Terraces from the heights, trees in the forest, houses in the town, sheep on the fields, boats on the water and clouds above"
+    },
+    {
+      "id": "scene",
+      "type": "SceneRenderer",
+      "name": "Toy picture",
+      "x": 540,
+      "y": 20,
+      "comment": "Parallel projection, no floor, warm light and a background colour, with a title",
+      "params": {
+        "width": "1600",
+        "height": "1200",
+        "view_azimuth": "200",
+        "elevation": "38",
+        "projection": "parallel",
+        "zoom": "145",
+        "sun_azimuth": "150",
+        "sun_altitude": "38",
+        "softness": "3",
+        "sky_strength": "120",
+        "background": "colour",
+        "floor": "false",
+        "quality": "16",
+        "background_colour": "#ffd6e0",
+        "mood": "warm",
+        "title": "Ön i havsbandet"
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "name": "Picture",
+      "x": 800,
+      "y": 20,
+      "params": {
+        "path": "out/diorama.png"
+      }
+    },
+    {
+      "id": "glb",
+      "type": "Writer",
+      "name": "For Blender",
+      "x": 540,
+      "y": 200,
+      "params": {
+        "path": "out/diorama.glb"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "cover",
+        "Output"
+      ],
+      "to": [
+        "diorama",
+        "Areas"
+      ]
+    },
+    {
+      "from": [
+        "diorama",
+        "Diorama"
+      ],
+      "to": [
+        "scene",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "scene",
+        "Image"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "diorama",
+        "Diorama"
+      ],
+      "to": [
+        "glb",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "heights",
+        "Output"
+      ],
+      "to": [
+        "diorama",
+        "Heights"
+      ]
+    }
+  ]
+}

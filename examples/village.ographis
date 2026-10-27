@@ -1,0 +1,38 @@
+{
+  "format": "ographis/1",
+  "name": "A village from OpenStreetMap, as a PDF with layers",
+  "nodes": [
+    { "id": "areas", "type": "Reader", "name": "Areas", "x": 20, "y": 20, "comment": "A made-up village in OpenStreetMap's own format", "params": { "path": "village.osm.pbf", "layer": "multipolygons" } },
+    { "id": "roads", "type": "Reader", "name": "Roads", "x": 20, "y": 200, "params": { "path": "village.osm.pbf", "layer": "lines" } },
+    { "id": "places", "type": "Reader", "name": "Places", "x": 20, "y": 360, "params": { "path": "village.osm.pbf", "layer": "points" } },
+    { "id": "kind", "type": "Tester", "name": "Buildings", "x": 260, "y": 20, "params": { "test": "building IS NOT NULL" } },
+    { "id": "check", "type": "AttributeValidator", "name": "Every place has a name", "x": 260, "y": 360, "params": { "checks": [{ "attribute": "name", "required": true }, { "attribute": "amenity", "values": "cafe, school, place_of_worship" }] } },
+    { "id": "xy", "type": "CoordinateExtractor", "name": "Coordinates", "x": 500, "y": 360, "params": { "decimals": "6", "x_name": "lon", "y_name": "lat" } },
+    { "id": "list", "type": "Writer", "name": "Places with coordinates", "x": 740, "y": 440, "params": { "path": "out/places.xlsx" } },
+    { "id": "pdf", "type": "LayeredPdfWriter", "name": "Village as PDF", "x": 740, "y": 160,
+      "params": {
+        "path": "out/village.pdf",
+        "crs": "EPSG:3006",
+        "pdf_title": "The village – from OpenStreetMap",
+        "pdf_title_align": "center",
+        "layers": [
+          { "from": "xy:Output", "fill": "#d7301f", "stroke": "#ffffff", "width": 1.5, "size": 10 },
+          { "from": "check:Failed", "show": false, "fill": "#000000", "stroke": "none", "width": 1, "size": 10 },
+          { "from": "roads:Output", "fill": "none", "stroke": "#636363", "width": 3, "size": 6 },
+          { "from": "kind:Passed", "fill": "#bdbdbd", "stroke": "#636363", "width": 1, "size": 6 },
+          { "from": "kind:Failed", "fill": "#c7e9c0", "stroke": "#41ab5d", "width": 1, "size": 6 }
+        ]
+      } }
+  ],
+  "edges": [
+    { "from": ["areas", "Output"], "to": ["kind", "Input"] },
+    { "from": ["places", "Output"], "to": ["check", "Input"] },
+    { "from": ["check", "Passed"], "to": ["xy", "Input"] },
+    { "from": ["xy", "Output"], "to": ["list", "Input"] },
+    { "from": ["kind", "Failed"], "to": ["pdf", "Layers"] },
+    { "from": ["kind", "Passed"], "to": ["pdf", "Layers"] },
+    { "from": ["roads", "Output"], "to": ["pdf", "Layers"] },
+    { "from": ["check", "Failed"], "to": ["pdf", "Layers"] },
+    { "from": ["xy", "Output"], "to": ["pdf", "Layers"] }
+  ]
+}

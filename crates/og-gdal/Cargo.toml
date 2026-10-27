@@ -1,0 +1,25 @@
+[package]
+name = "og-gdal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Ographis – GDAL backend: GeoPackage, Shapefile, GeoJSON, Excel, LibreOffice, GeoTIFF, files from the web, and coordinate system reprojection."
+
+[dependencies]
+og-engine = { path = "../og-engine" }
+geo.workspace = true
+gdal = "0.19"
+gdal-sys = "0.12"
+# The system certificates and proxy are used, so that files can be fetched behind a
+# corporate proxy too.
+ureq = { version = "3", features = ["platform-verifier", "win-system-proxy"] }
+# Workbooks are written by the program itself, so that they can be styled.
+umya-spreadsheet = "3.1"
+spreadsheet-ods = "1.0"
+icu_locale_core = "2"
+
+[dev-dependencies]
+serde_json.workspace = true
+flate2 = "1"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }

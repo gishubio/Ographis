@@ -1,0 +1,43 @@
+[package]
+name = "og-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Ographis – the engine: data model, expressions, transformers and execution. No GDAL here."
+
+[dependencies]
+geo.workspace = true
+spade = "2.15"
+serde.workspace = true
+serde_json.workspace = true
+encoding_rs = "0.8"
+wkt = "0.14"
+rstar = "0.12"
+# Only for the local date and time that the DateTimeStamper writes.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Draws maps into pictures, with smooth edges.
+tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd"] }
+# Spreads the shading and rendering of terrain over the cores.
+rayon = "1.12"
+# Sets the text in charts, in the Inter font that is built in.
+ab_glyph = "0.2"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+# Tiles of 3D Tiles that a server keeps gzipped.
+flate2 = "1"
+# Unpacks glTF compressed with EXT_meshopt_compression, as many 3D Tiles are. Built from the
+# C++ of meshoptimizer that comes with it.
+meshopt = { version = "0.7", default-features = false }
+# Point clouds: LAS, and LAZ through the pure Rust port of LASzip.
+las = { version = "0.11", features = ["laz"] }
+# regexp_replace, regexp_match and regexp_substr in expressions.
+regex = { version = "1", default-features = false, features = ["std", "unicode"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+# CityGML, read as it streams.
+quick-xml = "0.38"
+# Passwords and keys of connections in the credential store of Windows (Credential Manager).
+keyring = { version = "3.6", default-features = false, features = ["windows-native"] }
+# GeoParquet, without GDAL, which often lacks the Parquet driver.
+parquet = { version = "60", default-features = false, features = ["snap", "zstd", "lz4", "flate2-zlib-rs", "brotli"] }
+# Draws the map icons of Maki, which come as SVG.
+resvg = { version = "0.45", default-features = false }

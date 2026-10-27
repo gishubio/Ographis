@@ -1,0 +1,108 @@
+{
+  "format": "ographis/1",
+  "name": "Temperature forecast for Göteborg",
+  "nodes": [
+    {
+      "id": "om",
+      "type": "HttpCaller",
+      "name": "Open-Meteo",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "url": "https://api.open-meteo.com/v1/forecast?latitude=57.71&longitude=11.97&hourly=temperature_2m,precipitation&timezone=UTC"
+      }
+    },
+    {
+      "id": "series",
+      "type": "JsonExploder",
+      "name": "A row per hour",
+      "x": 300,
+      "y": 40,
+      "params": {
+        "attribute": "_response",
+        "path": "hourly.time, hourly.temperature_2m, hourly.precipitation"
+      },
+      "comment": "The lists are taken side by side"
+    },
+    {
+      "id": "hour",
+      "type": "AttributeCreator",
+      "name": "Swedish time",
+      "x": 560,
+      "y": 40,
+      "params": {
+        "name": "hour",
+        "expression": "format_time(time || 'Z', '%a %H:%M')"
+      }
+    },
+    {
+      "id": "chart",
+      "type": "ChartDrawer",
+      "name": "Chart",
+      "x": 820,
+      "y": 40,
+      "params": {
+        "category": "hour",
+        "value": "temperature_2m",
+        "sort": "none",
+        "limit": "24",
+        "title": "Temperature in Göteborg",
+        "subtitle": "The coming day, hour by hour",
+        "note": "Source: Open-Meteo",
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Chart",
+      "x": 1080,
+      "y": 40,
+      "params": {
+        "path": "out/forecast.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "om",
+        "Output"
+      ],
+      "to": [
+        "series",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "series",
+        "Exploded"
+      ],
+      "to": [
+        "hour",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "hour",
+        "Output"
+      ],
+      "to": [
+        "chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "chart",
+        "Chart"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}

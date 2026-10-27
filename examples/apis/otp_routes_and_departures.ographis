@@ -1,0 +1,737 @@
+{
+  "format": "ographis/1",
+  "name": "OpenTripPlanner 2.4: routes, departures and a count",
+  "variables": [
+    {
+      "name": "otp",
+      "value": "http://localhost:8080/otp/routers/default"
+    },
+    {
+      "name": "from",
+      "value": "57.7069,11.9680"
+    },
+    {
+      "name": "to",
+      "value": "57.6898,11.9734"
+    },
+    {
+      "name": "date",
+      "value": "2026-10-28"
+    },
+    {
+      "name": "time",
+      "value": "08:00"
+    },
+    {
+      "name": "zone",
+      "value": "+01:00"
+    },
+    {
+      "name": "stop_a",
+      "value": "Brunnsparken"
+    },
+    {
+      "name": "stop_b",
+      "value": "Chalmers"
+    },
+    {
+      "name": "from_time",
+      "value": "09:00"
+    },
+    {
+      "name": "to_time",
+      "value": "14:00"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "stops_ask",
+      "type": "HttpCaller",
+      "name": "All stops",
+      "x": 20,
+      "y": 20,
+      "comment": "The REST API of OpenTripPlanner 2.4 (/otp/routers/default/index/…). Set the variable otp to your own server. One request, as nothing comes in",
+      "params": {
+        "url": "'$(otp)/index/stops'",
+        "timeout": "60"
+      }
+    },
+    {
+      "id": "stops",
+      "type": "JsonExploder",
+      "name": "A feature per stop",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "attribute": "_response",
+        "path": ""
+      }
+    },
+    {
+      "id": "stop_points",
+      "type": "PointCreator",
+      "name": "Stops as points",
+      "x": 540,
+      "y": 20,
+      "params": {
+        "x": "lon",
+        "y": "lat",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "stops_out",
+      "type": "Writer",
+      "name": "Stops",
+      "x": 800,
+      "y": 20,
+      "params": {
+        "path": "out/otp_stops.gpkg",
+        "layer": "stops"
+      }
+    },
+    {
+      "id": "plan_ask",
+      "type": "HttpCaller",
+      "name": "Plan a trip",
+      "x": 20,
+      "y": 200,
+      "comment": "From and to are latitude,longitude. Use the coordinates of two stops to plan from stop to stop",
+      "params": {
+        "url": "'$(otp)/plan?fromPlace=$(from)&toPlace=$(to)&date=$(date)&time=$(time)&mode=TRANSIT,WALK&numItineraries=3'",
+        "timeout": "60"
+      }
+    },
+    {
+      "id": "itins",
+      "type": "JsonExploder",
+      "name": "A feature per itinerary",
+      "x": 280,
+      "y": 200,
+      "params": {
+        "attribute": "_response",
+        "path": "plan.itineraries",
+        "prefix": "trip",
+        "index_attr": "itinerary"
+      }
+    },
+    {
+      "id": "legs",
+      "type": "JsonExploder",
+      "name": "A feature per leg",
+      "x": 540,
+      "y": 200,
+      "params": {
+        "attribute": "trip.legs",
+        "path": "",
+        "prefix": "leg",
+        "index_attr": "leg"
+      }
+    },
+    {
+      "id": "leg_geom",
+      "type": "GeometryFromText",
+      "name": "Leg as a line",
+      "x": 1060,
+      "y": 200,
+      "params": {
+        "attribute": "leg.legGeometry.points",
+        "kind": "polyline",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "leg_times",
+      "type": "AttributeManager",
+      "name": "Times and minutes",
+      "x": 1320,
+      "y": 200,
+      "params": {
+        "attributes": [],
+        "create": [
+          {
+            "name": "leaves",
+            "value": "format_time(\"leg.startTime\", '%H:%M')"
+          },
+          {
+            "name": "arrives",
+            "value": "format_time(\"leg.endTime\", '%H:%M')"
+          },
+          {
+            "name": "minutes",
+            "value": "round((\"leg.endTime\" - \"leg.startTime\") / 60000)"
+          },
+          {
+            "name": "trip_minutes",
+            "value": "round(\"trip.duration\" / 60)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "leg_keep",
+      "type": "AttributeKeeper",
+      "name": "The useful attributes",
+      "x": 1580,
+      "y": 200,
+      "params": {
+        "keep": "itinerary, leg, leg.mode, leg.routeShortName, leaves, arrives, minutes, trip_minutes, trip.transfers, leg.distance"
+      }
+    },
+    {
+      "id": "leg_3006",
+      "type": "Reprojector",
+      "name": "To SWEREF 99 TM",
+      "x": 1840,
+      "y": 200,
+      "params": {
+        "crs": "EPSG:3006"
+      }
+    },
+    {
+      "id": "routes_out",
+      "type": "Writer",
+      "name": "Routes",
+      "x": 2100,
+      "y": 200,
+      "params": {
+        "path": "out/otp_stops.gpkg",
+        "layer": "routes"
+      }
+    },
+    {
+      "id": "stop_a",
+      "type": "Tester",
+      "name": "Stop A",
+      "x": 540,
+      "y": 420,
+      "comment": "A stop is a feature with id, name, lat and lon. Several stops can share a name, one per platform: each gets its departures",
+      "params": {
+        "test": "name = '$(stop_a)'"
+      }
+    },
+    {
+      "id": "deps_ask",
+      "type": "HttpCaller",
+      "name": "Departures that day",
+      "x": 800,
+      "y": 420,
+      "comment": "numberOfDepartures is per pattern, 2 if not given",
+      "params": {
+        "url": "'$(otp)/index/stops/' || id || '/stoptimes?startTime=' || epoch('$(date)T00:00:00$(zone)') || '&timeRange=86400&numberOfDepartures=1000&omitNonPickups=true'",
+        "timeout": "60"
+      }
+    },
+    {
+      "id": "patterns",
+      "type": "JsonExploder",
+      "name": "A feature per pattern",
+      "x": 1060,
+      "y": 420,
+      "params": {
+        "attribute": "_response",
+        "path": "",
+        "prefix": "p"
+      }
+    },
+    {
+      "id": "times",
+      "type": "JsonExploder",
+      "name": "A feature per departure",
+      "x": 1320,
+      "y": 420,
+      "params": {
+        "attribute": "p.times",
+        "path": "",
+        "prefix": "t"
+      }
+    },
+    {
+      "id": "dep_time",
+      "type": "AttributeManager",
+      "name": "Departure time",
+      "x": 1580,
+      "y": 420,
+      "params": {
+        "attributes": [],
+        "create": [
+          {
+            "name": "leaves_at",
+            "value": "\"t.serviceDay\" + \"t.scheduledDeparture\""
+          },
+          {
+            "name": "departure",
+            "value": "format_time(\"t.serviceDay\" + \"t.scheduledDeparture\", '%H:%M')"
+          },
+          {
+            "name": "delay_s",
+            "value": "\"t.realtimeDeparture\" - \"t.scheduledDeparture\""
+          }
+        ]
+      }
+    },
+    {
+      "id": "dep_sort",
+      "type": "Sorter",
+      "name": "In time order",
+      "x": 1840,
+      "y": 420,
+      "params": {
+        "sort_keys": [
+          [
+            "leaves_at",
+            "ascending"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "deps_keep",
+      "type": "AttributeKeeper",
+      "name": "The useful attributes",
+      "x": 2100,
+      "y": 420,
+      "params": {
+        "keep": "name, departure, t.headsign, p.pattern.desc, t.tripId, delay_s, leaves_at"
+      }
+    },
+    {
+      "id": "deps_out",
+      "type": "Writer",
+      "name": "Departures",
+      "x": 2360,
+      "y": 420,
+      "params": {
+        "path": "out/otp_departures.csv"
+      }
+    },
+    {
+      "id": "window",
+      "type": "Tester",
+      "name": "Between the two times",
+      "x": 1840,
+      "y": 640,
+      "params": {
+        "test": "leaves_at >= epoch('$(date)T$(from_time):00$(zone)') AND leaves_at < epoch('$(date)T$(to_time):00$(zone)')"
+      }
+    },
+    {
+      "id": "trip_ask",
+      "type": "HttpCaller",
+      "name": "The stops of each trip",
+      "x": 2100,
+      "y": 640,
+      "comment": "One request per departure, eight at a time; the answers are kept in http-cache",
+      "params": {
+        "url": "'$(otp)/index/trips/' || \"t.tripId\" || '/stoptimes'",
+        "parallel": "8",
+        "cache": "disk",
+        "timeout": "60"
+      }
+    },
+    {
+      "id": "trip_stops",
+      "type": "JsonExploder",
+      "name": "A feature per stop of the trip",
+      "x": 2360,
+      "y": 640,
+      "params": {
+        "attribute": "_response",
+        "path": "",
+        "prefix": "s"
+      }
+    },
+    {
+      "id": "named",
+      "type": "FeatureMerger",
+      "name": "With the stop names",
+      "x": 2620,
+      "y": 640,
+      "params": {
+        "requestor_key": "s.stopId",
+        "supplier_key": "id",
+        "prefix": "b_"
+      }
+    },
+    {
+      "id": "reaches_b",
+      "type": "Tester",
+      "name": "Reaches stop B after A",
+      "x": 2880,
+      "y": 640,
+      "params": {
+        "test": "b_name = '$(stop_b)' AND \"s.stopIndex\" > \"t.stopIndex\""
+      }
+    },
+    {
+      "id": "once",
+      "type": "DuplicateFilter",
+      "name": "Each departure once",
+      "x": 3140,
+      "y": 640,
+      "params": {
+        "key": "t.tripId"
+      }
+    },
+    {
+      "id": "ab_arrive",
+      "type": "AttributeManager",
+      "name": "Arrival at B",
+      "x": 3400,
+      "y": 800,
+      "params": {
+        "attributes": [],
+        "create": [
+          {
+            "name": "arrives_b",
+            "value": "format_time(\"t.serviceDay\" + \"s.scheduledArrival\", '%H:%M')"
+          },
+          {
+            "name": "stop_b",
+            "value": "b_name"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ab_keep",
+      "type": "AttributeKeeper",
+      "name": "The useful attributes",
+      "x": 3660,
+      "y": 800,
+      "params": {
+        "keep": "name, departure, t.headsign, t.tripId, arrives_b, stop_b"
+      }
+    },
+    {
+      "id": "count",
+      "type": "StatisticsCalculator",
+      "name": "Count",
+      "x": 3400,
+      "y": 640,
+      "params": {}
+    },
+    {
+      "id": "count_out",
+      "type": "Writer",
+      "name": "Number of departures A to B",
+      "x": 3660,
+      "y": 640,
+      "params": {
+        "path": "out/otp_count_a_to_b.csv"
+      }
+    },
+    {
+      "id": "ab_out",
+      "type": "Writer",
+      "name": "Departures A to B",
+      "x": 3920,
+      "y": 800,
+      "params": {
+        "path": "out/otp_departures_a_to_b.csv"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "stops_ask",
+        "Output"
+      ],
+      "to": [
+        "stops",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "stops",
+        "Exploded"
+      ],
+      "to": [
+        "stop_points",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "stop_points",
+        "Points"
+      ],
+      "to": [
+        "stops_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "plan_ask",
+        "Output"
+      ],
+      "to": [
+        "itins",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "itins",
+        "Exploded"
+      ],
+      "to": [
+        "legs",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "legs",
+        "Exploded"
+      ],
+      "to": [
+        "leg_geom",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "leg_geom",
+        "Output"
+      ],
+      "to": [
+        "leg_times",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "leg_times",
+        "Output"
+      ],
+      "to": [
+        "leg_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "leg_keep",
+        "Output"
+      ],
+      "to": [
+        "leg_3006",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "leg_3006",
+        "Reprojected"
+      ],
+      "to": [
+        "routes_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "stops",
+        "Exploded"
+      ],
+      "to": [
+        "stop_a",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "stop_a",
+        "Passed"
+      ],
+      "to": [
+        "deps_ask",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "deps_ask",
+        "Output"
+      ],
+      "to": [
+        "patterns",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "patterns",
+        "Exploded"
+      ],
+      "to": [
+        "times",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "times",
+        "Exploded"
+      ],
+      "to": [
+        "dep_time",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "dep_time",
+        "Output"
+      ],
+      "to": [
+        "dep_sort",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "dep_sort",
+        "Sorted"
+      ],
+      "to": [
+        "deps_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "deps_keep",
+        "Output"
+      ],
+      "to": [
+        "deps_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "dep_time",
+        "Output"
+      ],
+      "to": [
+        "window",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "window",
+        "Passed"
+      ],
+      "to": [
+        "trip_ask",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "trip_ask",
+        "Output"
+      ],
+      "to": [
+        "trip_stops",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "trip_stops",
+        "Exploded"
+      ],
+      "to": [
+        "named",
+        "Requestor"
+      ]
+    },
+    {
+      "from": [
+        "stops",
+        "Exploded"
+      ],
+      "to": [
+        "named",
+        "Supplier"
+      ]
+    },
+    {
+      "from": [
+        "named",
+        "Merged"
+      ],
+      "to": [
+        "reaches_b",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "reaches_b",
+        "Passed"
+      ],
+      "to": [
+        "once",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "once",
+        "Unique"
+      ],
+      "to": [
+        "count",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "count",
+        "Summary"
+      ],
+      "to": [
+        "count_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "once",
+        "Unique"
+      ],
+      "to": [
+        "ab_arrive",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "ab_arrive",
+        "Output"
+      ],
+      "to": [
+        "ab_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "ab_keep",
+        "Output"
+      ],
+      "to": [
+        "ab_out",
+        "Input"
+      ]
+    }
+  ]
+}

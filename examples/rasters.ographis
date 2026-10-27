@@ -1,0 +1,160 @@
+{
+  "format": "ographis/1",
+  "name": "Counting with rasters",
+  "nodes": [
+    {
+      "id": "dem",
+      "type": "Reader",
+      "name": "Terrain, 20 m",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "coarse",
+      "type": "RasterGeneralizer",
+      "name": "80 m cells",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "factor": "4",
+        "method": "mean"
+      }
+    },
+    {
+      "id": "relief",
+      "type": "RasterCalculator",
+      "name": "Above or below the surroundings",
+      "x": 540,
+      "y": 20,
+      "comment": "A is the terrain, B the mean of each 80 m square: what sticks up is positive",
+      "params": {
+        "expression": "A - B"
+      }
+    },
+    {
+      "id": "classes",
+      "type": "RasterCalculator",
+      "name": "Height classes",
+      "x": 280,
+      "y": 200,
+      "params": {
+        "expression": "CASE WHEN A < 100 THEN 1 WHEN A < 150 THEN 2 WHEN A < 200 THEN 3 ELSE 4 END"
+      }
+    },
+    {
+      "id": "major",
+      "type": "RasterGeneralizer",
+      "name": "Most common class, 320 m",
+      "x": 540,
+      "y": 200,
+      "params": {
+        "factor": "16",
+        "method": "majority"
+      }
+    },
+    {
+      "id": "view",
+      "type": "Viewer",
+      "name": "Look at it",
+      "x": 800,
+      "y": 100,
+      "params": {}
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Relief",
+      "x": 800,
+      "y": 260,
+      "params": {
+        "path": "out/relief.tif"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "coarse",
+        "Raster"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "relief",
+        "Rasters"
+      ]
+    },
+    {
+      "from": [
+        "coarse",
+        "Raster"
+      ],
+      "to": [
+        "relief",
+        "Rasters"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "classes",
+        "Rasters"
+      ]
+    },
+    {
+      "from": [
+        "classes",
+        "Raster"
+      ],
+      "to": [
+        "major",
+        "Raster"
+      ]
+    },
+    {
+      "from": [
+        "relief",
+        "Raster"
+      ],
+      "to": [
+        "view",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "major",
+        "Raster"
+      ],
+      "to": [
+        "view",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "relief",
+        "Raster"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "format": "ographis/1",
+  "name": "The area nearest each town",
+  "nodes": [
+    { "id": "towns", "type": "Reader", "name": "Towns", "x": 20, "y": 20, "params": { "path": "towns.csv", "crs": "EPSG:4326" } },
+    { "id": "areas", "type": "Reader", "name": "Subregions", "x": 20, "y": 200, "params": { "path": "subregions.gpkg" } },
+    { "id": "towns_tm", "type": "Reprojector", "name": "Towns to SWEREF", "x": 240, "y": 20, "params": { "crs": "EPSG:3006" } },
+    { "id": "areas_tm", "type": "Reprojector", "name": "Subregions to SWEREF", "x": 240, "y": 200, "params": { "crs": "EPSG:3006" } },
+    { "id": "number", "type": "Counter", "name": "Number the towns", "x": 470, "y": 20, "params": { "name": "town_no" } },
+    { "id": "cells", "type": "VoronoiDiagrammer", "name": "Nearest town", "x": 700, "y": 80, "comment": "Each town gets the part of the subregions that is nearer to it than to any other town", "params": {} },
+    { "id": "edges", "type": "PolygonToLine", "name": "Borders as lines", "x": 940, "y": 200, "params": {} },
+    { "id": "box", "type": "BoundingBoxAccumulator", "name": "Extent", "x": 470, "y": 320, "params": { "corners": "true" } },
+    { "id": "out_cells", "type": "Writer", "name": "Nearest town areas", "x": 940, "y": 40, "params": { "path": "out/nearest_town.gpkg" } },
+    { "id": "out_lines", "type": "Writer", "name": "Border lines", "x": 1160, "y": 200, "params": { "path": "out/nearest_town_borders.gpkg" } },
+    { "id": "out_box", "type": "Writer", "name": "Extent as GeoJSON", "x": 700, "y": 320, "params": { "path": "out/extent.geojson" } }
+  ],
+  "edges": [
+    { "from": ["towns", "Output"], "to": ["towns_tm", "Input"] },
+    { "from": ["areas", "Output"], "to": ["areas_tm", "Input"] },
+    { "from": ["towns_tm", "Reprojected"], "to": ["number", "Input"] },
+    { "from": ["number", "Output"], "to": ["cells", "Points"] },
+    { "from": ["areas_tm", "Reprojected"], "to": ["cells", "Boundary"] },
+    { "from": ["cells", "Polygons"], "to": ["out_cells", "Input"] },
+    { "from": ["cells", "Polygons"], "to": ["edges", "Input"] },
+    { "from": ["edges", "Lines"], "to": ["out_lines", "Input"] },
+    { "from": ["areas_tm", "Reprojected"], "to": ["box", "Input"] },
+    { "from": ["box", "Output"], "to": ["out_box", "Input"] }
+  ]
+}

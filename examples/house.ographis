@@ -1,0 +1,317 @@
+{
+  "format": "ographis/1",
+  "name": "Two houses in 3D",
+  "nodes": [
+    {
+      "id": "house",
+      "type": "Reader",
+      "name": "House",
+      "x": 20,
+      "y": 20,
+      "comment": "An OBJ file, placed on the map: origin, height and turning are set in the input",
+      "params": {
+        "path": "house/house.obj",
+        "crs": "EPSG:3006",
+        "obj_east": "418200",
+        "obj_north": "6472500",
+        "obj_height": "87.4",
+        "obj_rotation": "20"
+      }
+    },
+    {
+      "id": "neighbour",
+      "type": "Reader",
+      "name": "Neighbour, as glTF",
+      "x": 20,
+      "y": 380,
+      "comment": "The same house as a .glb, with its textures inside: glTF has y up and metres",
+      "params": {
+        "path": "house/house.glb",
+        "crs": "EPSG:3006",
+        "obj_east": "418216",
+        "obj_north": "6472480",
+        "obj_height": "86.6",
+        "obj_rotation": "-15"
+      }
+    },
+    {
+      "id": "dem",
+      "type": "Reader",
+      "name": "Terrain model",
+      "x": 20,
+      "y": 200,
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "studio",
+      "type": "SceneRenderer",
+      "name": "In the studio",
+      "x": 300,
+      "y": 20,
+      "params": {
+        "width": "1600",
+        "height": "1000"
+      }
+    },
+    {
+      "id": "spring",
+      "type": "SceneRenderer",
+      "name": "Spring afternoon",
+      "x": 300,
+      "y": 200,
+      "comment": "The sun as it stands at 15:00 on the spring equinox",
+      "params": {
+        "width": "1600",
+        "height": "1000",
+        "background": "sky",
+        "sun": "date",
+        "date": "2026-03-20",
+        "time": "15:00",
+        "view_azimuth": "160",
+        "elevation": "20",
+        "zoom": "90"
+      }
+    },
+    {
+      "id": "png1",
+      "type": "Writer",
+      "name": "Studio picture",
+      "x": 560,
+      "y": 20,
+      "params": {
+        "path": "out/house_studio.png"
+      }
+    },
+    {
+      "id": "png2",
+      "type": "Writer",
+      "name": "Spring picture",
+      "x": 560,
+      "y": 200,
+      "params": {
+        "path": "out/house_spring.png"
+      }
+    },
+    {
+      "id": "gpkg",
+      "type": "Writer",
+      "name": "Objects with Z",
+      "x": 300,
+      "y": 380,
+      "params": {
+        "path": "out/house_3d.gpkg"
+      }
+    },
+    {
+      "id": "evening",
+      "type": "SceneRenderer",
+      "name": "An evening by the water",
+      "x": 560,
+      "y": 560,
+      "comment": "The sky as it is at half past eight on midsummer's day, a few clouds, and water up to 86.3 m over the low ground. About a minute",
+      "params": {
+        "width": "1600",
+        "height": "1000",
+        "background": "sky",
+        "sun": "date",
+        "date": "2026-06-21",
+        "time": "20:30",
+        "view_azimuth": "130",
+        "elevation": "7",
+        "zoom": "45",
+        "clouds": "30",
+        "water": "level",
+        "water_level": "86.3",
+        "waves": "0.35",
+        "reflections": "true"
+      }
+    },
+    {
+      "id": "study",
+      "type": "SceneRenderer",
+      "name": "Sun study",
+      "x": 560,
+      "y": 740,
+      "comment": "The shadows at 9, 12 and 15 at the equinox, at midsummer and at midwinter, on white models: nine pictures on one sheet",
+      "params": {
+        "width": "640",
+        "height": "400",
+        "view_azimuth": "200",
+        "elevation": "35",
+        "zoom": "110",
+        "quality": "16",
+        "sun": "study",
+        "study_dates": "2026-03-20, 2026-06-21, 2026-12-21",
+        "study_from": "09:00",
+        "study_to": "15:00",
+        "study_every": "3",
+        "look": "white"
+      }
+    },
+    {
+      "id": "png3",
+      "type": "Writer",
+      "name": "Evening",
+      "x": 840,
+      "y": 560,
+      "params": {
+        "path": "out/house_evening.png"
+      }
+    },
+    {
+      "id": "png4",
+      "type": "Writer",
+      "name": "Sun study",
+      "x": 840,
+      "y": 740,
+      "params": {
+        "path": "out/house_sun_study.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "house",
+        "Output"
+      ],
+      "to": [
+        "studio",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "studio",
+        "Image"
+      ],
+      "to": [
+        "png1",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "house",
+        "Output"
+      ],
+      "to": [
+        "spring",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "spring",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "spring",
+        "Image"
+      ],
+      "to": [
+        "png2",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "house",
+        "Output"
+      ],
+      "to": [
+        "gpkg",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "neighbour",
+        "Output"
+      ],
+      "to": [
+        "spring",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "house",
+        "Output"
+      ],
+      "to": [
+        "evening",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "neighbour",
+        "Output"
+      ],
+      "to": [
+        "evening",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "evening",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "house",
+        "Output"
+      ],
+      "to": [
+        "study",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "neighbour",
+        "Output"
+      ],
+      "to": [
+        "study",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "evening",
+        "Image"
+      ],
+      "to": [
+        "png3",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "study",
+        "Image"
+      ],
+      "to": [
+        "png4",
+        "Input"
+      ]
+    }
+  ]
+}

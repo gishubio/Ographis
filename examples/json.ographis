@@ -1,0 +1,17 @@
+{
+  "format": "ographis/1",
+  "name": "Open data from Västra Götalandsregionen as JSON",
+  "nodes": [
+    { "id": "units", "type": "Reader", "name": "Hospitals (open data)", "x": 20, "y": 20, "params": { "path": "https://vgregion.entryscape.net/rowstore/dataset/c5491a87-e5a0-4edb-80fe-2c76a0696902/json" } },
+    { "id": "points", "type": "PointCreator", "name": "Points from xkoord and ykoord", "x": 260, "y": 20, "params": { "x": "ykoord", "y": "xkoord", "crs": "EPSG:3006" } },
+    { "id": "gpkg", "type": "Writer", "name": "Hospitals file", "x": 520, "y": 20, "params": { "path": "out/hospitals.gpkg" } },
+    { "id": "json", "type": "JsonBuilder", "name": "Address as JSON", "x": 520, "y": 160, "params": { "attributes": ["namn", "gatunamn", "gatunummer", "postnummer", "postort"], "result": "json" } },
+    { "id": "csv", "type": "Writer", "name": "Addresses as JSON in CSV", "x": 760, "y": 160, "params": { "path": "out/hospitals_json.csv" } }
+  ],
+  "edges": [
+    { "from": ["units", "Output"], "to": ["points", "Input"] },
+    { "from": ["points", "Points"], "to": ["gpkg", "Input"] },
+    { "from": ["points", "Points"], "to": ["json", "Input"] },
+    { "from": ["json", "Output"], "to": ["csv", "Input"] }
+  ]
+}

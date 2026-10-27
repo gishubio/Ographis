@@ -1,0 +1,39 @@
+{
+  "format": "ographis/1",
+  "name": "Population from Eurostat",
+  "nodes": [
+    {
+      "id": "es",
+      "type": "Reader",
+      "name": "Eurostat",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "path": "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/demo_r_pjanaggr3?geo=SE232&geo=SE231&sex=T&age=TOTAL&lastTimePeriod=5&lang=en"
+      },
+      "comment": "Input reads JSON-stat straight from the address: a row for each value"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Population",
+      "x": 300,
+      "y": 40,
+      "params": {
+        "path": "out/eurostat.csv"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "es",
+        "Output"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}

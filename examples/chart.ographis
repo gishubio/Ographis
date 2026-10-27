@@ -1,0 +1,204 @@
+{
+  "format": "ographis/1",
+  "name": "Charts of towns and subregions",
+  "nodes": [
+    {
+      "id": "towns",
+      "type": "Reader",
+      "name": "Towns",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "towns.csv",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "pop",
+      "type": "ChartDrawer",
+      "name": "Population chart",
+      "x": 260,
+      "y": 20,
+      "params": {
+        "category": "name",
+        "value": "population",
+        "sort": "down",
+        "limit": "15",
+        "title": "The largest towns",
+        "subtitle": "Population of the 15 largest towns in the example data",
+        "note": "Source: towns.csv in the examples",
+        "highlight": [
+          "Skövde",
+          "Borås"
+        ],
+        "labels": "all",
+        "html": "out/largest_towns.html"
+      }
+    },
+    {
+      "id": "pop_png",
+      "type": "Writer",
+      "name": "Population chart file",
+      "x": 520,
+      "y": 20,
+      "params": {
+        "path": "out/population.png"
+      }
+    },
+    {
+      "id": "sub",
+      "type": "Reader",
+      "name": "Subregions",
+      "x": 20,
+      "y": 200,
+      "params": {
+        "path": "subregions.gpkg"
+      }
+    },
+    {
+      "id": "sweref",
+      "type": "Reprojector",
+      "name": "To SWEREF 99 TM",
+      "x": 240,
+      "y": 200,
+      "params": {
+        "crs": "EPSG:3006"
+      }
+    },
+    {
+      "id": "area",
+      "type": "AttributeCreator",
+      "name": "Area in km²",
+      "x": 460,
+      "y": 200,
+      "params": {
+        "name": "area_km2",
+        "expression": "$area / 1000000"
+      }
+    },
+    {
+      "id": "sub_chart",
+      "type": "ChartDrawer",
+      "name": "Area chart",
+      "x": 680,
+      "y": 200,
+      "params": {
+        "category": "subregion",
+        "value": "area_km2",
+        "sort": "name",
+        "unit": "km²",
+        "title": "The subregions by area",
+        "subtitle": "Area of the outlines in the example data, in km²",
+        "mean": "yes",
+        "width": "900",
+        "html": "out/subregions.html"
+      }
+    },
+    {
+      "id": "sub_png",
+      "type": "Writer",
+      "name": "Area chart file",
+      "x": 920,
+      "y": 200,
+      "params": {
+        "path": "out/subregions.png"
+      }
+    },
+    {
+      "id": "slides",
+      "type": "SlideWriter",
+      "name": "Slides",
+      "x": 1180,
+      "y": 20,
+      "comment": "Both charts as slides for PowerPoint, after a first slide with a title",
+      "params": {
+        "path": "out/charts.pptx",
+        "format": "pptx",
+        "cover": "Västra Götaland i siffror",
+        "cover_note": "Exempeldata från Ographis"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "towns",
+        "Output"
+      ],
+      "to": [
+        "pop",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "pop",
+        "Chart"
+      ],
+      "to": [
+        "pop_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "sub",
+        "Output"
+      ],
+      "to": [
+        "sweref",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "area",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "area",
+        "Output"
+      ],
+      "to": [
+        "sub_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "sub_chart",
+        "Chart"
+      ],
+      "to": [
+        "sub_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "pop",
+        "Chart"
+      ],
+      "to": [
+        "slides",
+        "Pictures"
+      ]
+    },
+    {
+      "from": [
+        "sub_chart",
+        "Chart"
+      ],
+      "to": [
+        "slides",
+        "Pictures"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+# Builds and tests on Linux at every push and pull request. The tests of the program (og-gui)
+# need a graphics driver and are left to be run locally; see CONTRIBUTING.md.
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: GDAL
+        run: sudo apt-get update && sudo apt-get install -y libgdal-dev clang pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --workspace --exclude og-gui

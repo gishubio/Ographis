@@ -1,0 +1,117 @@
+{
+  "format": "ographis/1",
+  "name": "Addresses to coordinates with Nominatim",
+  "nodes": [
+    {
+      "id": "in",
+      "type": "Reader",
+      "name": "Addresses",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "path": "addresses.csv"
+      },
+      "comment": "A column address"
+    },
+    {
+      "id": "nom",
+      "type": "HttpCaller",
+      "name": "Nominatim",
+      "x": 300,
+      "y": 40,
+      "params": {
+        "url": "'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=se&q=' || replace(address, ' ', '+')",
+        "per_second": "1"
+      },
+      "comment": "Nominatim allows at most one request a second"
+    },
+    {
+      "id": "first",
+      "type": "JsonExtractor",
+      "name": "First hit",
+      "x": 560,
+      "y": 40,
+      "params": {
+        "attribute": "_response",
+        "paths": [
+          [
+            "[0].lat",
+            "lat"
+          ],
+          [
+            "[0].lon",
+            "lon"
+          ],
+          [
+            "[0].display_name",
+            "found"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "pts",
+      "type": "PointCreator",
+      "name": "Points",
+      "x": 820,
+      "y": 40,
+      "params": {
+        "x": "lon",
+        "y": "lat",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Address points",
+      "x": 1080,
+      "y": 40,
+      "params": {
+        "path": "out/addresses.gpkg"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "in",
+        "Output"
+      ],
+      "to": [
+        "nom",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "nom",
+        "Output"
+      ],
+      "to": [
+        "first",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "first",
+        "Output"
+      ],
+      "to": [
+        "pts",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "pts",
+        "Points"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}

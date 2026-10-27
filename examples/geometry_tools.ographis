@@ -1,0 +1,308 @@
+{
+  "format": "ographis/1",
+  "name": "Lines, areas and hulls",
+  "nodes": [
+    {
+      "id": "routes",
+      "type": "Reader",
+      "name": "Routes",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "routes.shp"
+      }
+    },
+    {
+      "id": "areas",
+      "type": "Reader",
+      "name": "Subregions",
+      "x": 20,
+      "y": 200,
+      "params": {
+        "path": "subregions.gpkg"
+      }
+    },
+    {
+      "id": "towns",
+      "type": "Reader",
+      "name": "Towns",
+      "x": 20,
+      "y": 380,
+      "params": {
+        "path": "towns.csv",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "routes_sweref",
+      "type": "Reprojector",
+      "name": "Routes to SWEREF",
+      "x": 260,
+      "y": 20,
+      "params": {
+        "crs": "EPSG:3006"
+      }
+    },
+    {
+      "id": "towns_sweref",
+      "type": "Reprojector",
+      "name": "Towns to SWEREF",
+      "x": 260,
+      "y": 380,
+      "params": {
+        "crs": "EPSG:3006"
+      }
+    },
+    {
+      "id": "cut",
+      "type": "Intersector",
+      "name": "Routes cut by subregion",
+      "x": 500,
+      "y": 20,
+      "comment": "Each route in pieces, one in each subregion it runs through",
+      "params": {
+        "attributes": "subregion"
+      }
+    },
+    {
+      "id": "length",
+      "type": "LengthCalculator",
+      "name": "Length of each piece",
+      "x": 740,
+      "y": 20,
+      "params": {}
+    },
+    {
+      "id": "km",
+      "type": "StatisticsCalculator",
+      "name": "Route length per subregion",
+      "x": 980,
+      "y": 20,
+      "params": {
+        "attributes": "_length",
+        "group_by": "subregion"
+      }
+    },
+    {
+      "id": "crossing",
+      "type": "SpatialJoiner",
+      "name": "Which routes cross each subregion",
+      "x": 500,
+      "y": 200,
+      "params": {
+        "relation": "intersects",
+        "mode": "summary",
+        "count": "routes",
+        "attributes": "name"
+      }
+    },
+    {
+      "id": "where",
+      "type": "SpatialJoiner",
+      "name": "The subregion of each town",
+      "x": 500,
+      "y": 380,
+      "params": {
+        "relation": "within",
+        "attributes": "subregion"
+      }
+    },
+    {
+      "id": "hull",
+      "type": "ConcaveHuller",
+      "name": "The spread of the towns",
+      "x": 740,
+      "y": 380,
+      "params": {
+        "group_by": "subregion",
+        "concavity": "2"
+      }
+    },
+    {
+      "id": "convex",
+      "type": "ConvexHuller",
+      "name": "All towns",
+      "x": 740,
+      "y": 520,
+      "params": {}
+    },
+    {
+      "id": "segments",
+      "type": "LineExploder",
+      "name": "Segments of the routes",
+      "x": 260,
+      "y": 140,
+      "params": {}
+    },
+    {
+      "id": "view",
+      "type": "Viewer",
+      "name": "Look at it",
+      "x": 1220,
+      "y": 200,
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "routes",
+        "Output"
+      ],
+      "to": [
+        "routes_sweref",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "towns",
+        "Output"
+      ],
+      "to": [
+        "towns_sweref",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "routes_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "cut",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "areas",
+        "Output"
+      ],
+      "to": [
+        "cut",
+        "Overlay"
+      ]
+    },
+    {
+      "from": [
+        "cut",
+        "Intersection"
+      ],
+      "to": [
+        "length",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "length",
+        "Output"
+      ],
+      "to": [
+        "km",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "areas",
+        "Output"
+      ],
+      "to": [
+        "crossing",
+        "Features"
+      ]
+    },
+    {
+      "from": [
+        "routes",
+        "Output"
+      ],
+      "to": [
+        "crossing",
+        "Join"
+      ]
+    },
+    {
+      "from": [
+        "towns_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "where",
+        "Features"
+      ]
+    },
+    {
+      "from": [
+        "areas",
+        "Output"
+      ],
+      "to": [
+        "where",
+        "Join"
+      ]
+    },
+    {
+      "from": [
+        "where",
+        "Joined"
+      ],
+      "to": [
+        "hull",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "towns_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "convex",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "routes",
+        "Output"
+      ],
+      "to": [
+        "segments",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "cut",
+        "Intersection"
+      ],
+      "to": [
+        "view",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "crossing",
+        "Joined"
+      ],
+      "to": [
+        "view",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "hull",
+        "Output"
+      ],
+      "to": [
+        "view",
+        "Input"
+      ]
+    }
+  ]
+}

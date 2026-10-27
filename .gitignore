@@ -1,0 +1,12 @@
+target/
+examples/out/
+# Written by build.ps1
+/Ographis.cmd
+/og.cmd
+
+# What runs leave beside the models: history, logs, locks, kept answers
+*.runs/
+http-cache/
+answers/
+/dist/
+/out/

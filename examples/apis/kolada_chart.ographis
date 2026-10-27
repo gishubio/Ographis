@@ -1,0 +1,210 @@
+{
+  "format": "ographis/1",
+  "name": "A key figure per municipality from Kolada",
+  "variables": [
+    {
+      "name": "kpi",
+      "value": "N01951"
+    },
+    {
+      "name": "year",
+      "value": "2025"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "munis",
+      "type": "HttpCaller",
+      "name": "Municipalities in Kolada",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "url": "https://api.kolada.se/v3/municipality?region_type=municipality",
+        "paging": "next",
+        "next_path": "next_url"
+      }
+    },
+    {
+      "id": "names",
+      "type": "JsonExploder",
+      "name": "One per municipality",
+      "x": 280,
+      "y": 40,
+      "params": {
+        "attribute": "_response",
+        "path": "values",
+        "prefix": "m"
+      }
+    },
+    {
+      "id": "data",
+      "type": "HttpCaller",
+      "name": "Kolada: $(kpi) in $(year)",
+      "x": 20,
+      "y": 240,
+      "params": {
+        "url": "'https://api.kolada.se/v3/data/kpi/$(kpi)/year/$(year)?region_type=municipality'",
+        "paging": "next",
+        "next_path": "next_url"
+      },
+      "comment": "One request for the key figure of all municipalities"
+    },
+    {
+      "id": "rows",
+      "type": "JsonExploder",
+      "name": "A value per municipality",
+      "x": 280,
+      "y": 240,
+      "params": {
+        "attribute": "_response",
+        "path": "values"
+      }
+    },
+    {
+      "id": "v",
+      "type": "JsonExtractor",
+      "name": "Total for both sexes",
+      "x": 540,
+      "y": 240,
+      "params": {
+        "attribute": "values",
+        "paths": [
+          [
+            "[gender=T].value",
+            "value"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "join",
+      "type": "FeatureMerger",
+      "name": "With the names",
+      "x": 800,
+      "y": 140,
+      "params": {
+        "requestor_key": "municipality",
+        "supplier_key": "m.id"
+      }
+    },
+    {
+      "id": "vg",
+      "type": "Tester",
+      "name": "In Västra Götaland",
+      "x": 1060,
+      "y": 140,
+      "params": {
+        "test": "left(municipality, 2) = '14'"
+      },
+      "comment": "The municipality codes of Västra Götaland begin with 14"
+    },
+    {
+      "id": "chart",
+      "type": "ChartDrawer",
+      "name": "Chart",
+      "x": 1320,
+      "y": 140,
+      "params": {
+        "category": "m.title",
+        "value": "value",
+        "sort": "down",
+        "limit": "15",
+        "title": "$(kpi) in $(year)",
+        "subtitle": "The 15 highest in Västra Götaland",
+        "note": "Source: Kolada (RKA)"
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "name": "Chart",
+      "x": 1580,
+      "y": 140,
+      "params": {
+        "path": "out/kolada_$(kpi)_$(year).png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "munis",
+        "Output"
+      ],
+      "to": [
+        "names",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "data",
+        "Output"
+      ],
+      "to": [
+        "rows",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "rows",
+        "Exploded"
+      ],
+      "to": [
+        "v",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "v",
+        "Output"
+      ],
+      "to": [
+        "join",
+        "Requestor"
+      ]
+    },
+    {
+      "from": [
+        "names",
+        "Exploded"
+      ],
+      "to": [
+        "join",
+        "Supplier"
+      ]
+    },
+    {
+      "from": [
+        "join",
+        "Merged"
+      ],
+      "to": [
+        "vg",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "vg",
+        "Passed"
+      ],
+      "to": [
+        "chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "chart",
+        "Chart"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    }
+  ]
+}

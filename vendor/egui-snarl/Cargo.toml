@@ -1,0 +1,33 @@
+# egui-snarl 0.12.0 by Zakarum, vendored into Ographis with a small patch.
+# See OGRAPHIS.md in this folder for what was changed and why.
+
+[package]
+edition = "2024"
+rust-version = "1.92"
+name = "egui-snarl"
+version = "0.12.0"
+description = "Node-graphs for egui"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/zakarumych/egui-snarl"
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+name = "egui_snarl"
+path = "src/lib.rs"
+
+[features]
+serde = ["dep:serde", "egui/serde", "slab/serde"]
+
+[dependencies]
+ahash = { version = "0.8.12", default-features = false }
+egui = "0.36"
+egui-scale = "0.6.1"
+serde = { version = "1", features = ["derive"], optional = true }
+slab = "0.4"
+smallvec = { version = "1.15", features = ["const_new"] }
+
+# The optional egui-probe integration is left out here, but the source still mentions it.
+[lints.rust]
+unexpected_cfgs = { level = "allow" }

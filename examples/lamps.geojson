@@ -1,0 +1,245 @@
+{
+"type": "FeatureCollection",
+"crs": {
+"type": "name",
+"properties": {
+"name": "urn:ogc:def:crs:EPSG::3006"
+}
+},
+"features": [
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418200.44,
+6472525.2
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418215.47,
+6472530.68
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418230.51,
+6472536.15
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418245.54,
+6472541.62
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418260.58,
+6472547.09
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418275.61,
+6472552.56
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418290.65,
+6472558.04
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418305.68,
+6472563.51
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418320.72,
+6472568.98
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418190.18,
+6472553.39
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418205.21,
+6472558.87
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418220.25,
+6472564.34
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418235.28,
+6472569.81
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418250.32,
+6472575.28
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418265.35,
+6472580.76
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418280.39,
+6472586.23
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418295.42,
+6472591.7
+]
+}
+},
+{
+"type": "Feature",
+"properties": {
+"kind": "street lamp"
+},
+"geometry": {
+"type": "Point",
+"coordinates": [
+418310.46,
+6472597.17
+]
+}
+}
+]
+}

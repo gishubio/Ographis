@@ -1,0 +1,68 @@
+{
+  "format": "ographis/1",
+  "name": "Sentinel-2 images over Göteborg",
+  "nodes": [
+    {
+      "id": "stac",
+      "type": "StacSearch",
+      "name": "Search STAC",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "url": "https://earth-search.aws.element84.com/v1",
+        "collections": "sentinel-2-l2a",
+        "bbox": "11.8, 57.6, 12.1, 57.8",
+        "datetime": "2026-06-01/2026-08-31",
+        "query": "eo:cloud_cover < 20",
+        "max_items": "50"
+      }
+    },
+    {
+      "id": "sort",
+      "type": "Sorter",
+      "name": "Least cloud first",
+      "x": 300,
+      "y": 40,
+      "params": {
+        "sort_keys": [
+          [
+            "cloud_cover",
+            "ascending"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Images",
+      "x": 560,
+      "y": 40,
+      "params": {
+        "path": "out/sentinel2.gpkg"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "stac",
+        "Items"
+      ],
+      "to": [
+        "sort",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "sort",
+        "Sorted"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}

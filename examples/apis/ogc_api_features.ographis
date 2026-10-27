@@ -1,0 +1,38 @@
+{
+  "format": "ographis/1",
+  "name": "Read an OGC API Features service",
+  "nodes": [
+    {
+      "id": "in",
+      "type": "Reader",
+      "name": "OGC API Features",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "path": "https://demo.pygeoapi.io/master/collections/lakes/items",
+        "web_as": "ogcapi"
+      },
+      "comment": "A collection is read page by page. With 'Only within a rectangle', only what reaches into it is asked for"
+    },
+    {
+      "id": "view",
+      "type": "Viewer",
+      "name": "View",
+      "x": 300,
+      "y": 40,
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "in",
+        "Output"
+      ],
+      "to": [
+        "view",
+        "Input"
+      ]
+    }
+  ]
+}

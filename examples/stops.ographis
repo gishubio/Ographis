@@ -1,0 +1,37 @@
+{
+  "format": "ographis/1",
+  "name": "Bus stops from a folder of files",
+  "nodes": [
+    { "id": "stops", "type": "Reader", "name": "Stops", "x": 20, "y": 70, "comment": "One file per municipality", "params": { "path": "stops", "pattern": "*.csv", "filename_attr": "file" } },
+    { "id": "municipalities", "type": "Reader", "name": "Municipalities", "x": 20, "y": 270, "params": { "path": "municipalities.csv" } },
+
+    { "id": "code", "type": "SubstringExtractor", "name": "Code from the file name", "x": 290, "y": 70, "params": { "attribute": "file", "part": "first", "count": "4", "name": "muni_code" } },
+    { "id": "join", "type": "FeatureMerger", "name": "Municipality name", "x": 520, "y": 70, "params": { "requestor_key": "muni_code", "supplier_key": "muni_code" } },
+    { "id": "id", "type": "StringConcatenator", "name": "Stop id", "x": 750, "y": 70, "params": { "attributes": ["muni_code", "stop"], "separator": "-", "name": "stop_id" } },
+    { "id": "nospace", "type": "StringReplacer", "name": "No spaces in the id", "x": 290, "y": 290, "params": { "attributes": "stop_id", "find": " ", "replace": "" } },
+    { "id": "stamp", "type": "DateTimeStamper", "name": "Export date", "x": 520, "y": 290, "params": { "value": "date", "name": "exported" } },
+    { "id": "tidy", "type": "AttributeManager", "name": "Drop the file name", "x": 750, "y": 290, "params": { "attributes": [{ "name": "file", "action": "remove" }] } },
+
+    { "id": "out_xlsx", "type": "Writer", "name": "Stops in Excel", "x": 1030, "y": 70, "params": { "path": "out/stops.xlsx", "layer": "Stops", "geometry": "none" } },
+    { "id": "out_gpkg", "type": "Writer", "name": "Stops as points", "x": 1030, "y": 270, "params": { "path": "out/stops.gpkg", "layer": "stops" } }
+  ],
+  "edges": [
+    { "from": ["stops", "Output"], "to": ["code", "Input"] },
+    { "from": ["code", "Output"], "to": ["join", "Requestor"] },
+    { "from": ["municipalities", "Output"], "to": ["join", "Supplier"] },
+    { "from": ["join", "Merged"], "to": ["id", "Input"] },
+    { "from": ["id", "Output"], "to": ["nospace", "Input"] },
+    { "from": ["nospace", "Output"], "to": ["stamp", "Input"] },
+    { "from": ["stamp", "Output"], "to": ["tidy", "Input"] },
+    { "from": ["tidy", "Output"], "to": ["out_xlsx", "Input"] },
+    { "from": ["tidy", "Output"], "to": ["out_gpkg", "Input"] }
+  ],
+  "groups": [
+    { "name": "Input", "x": 0, "y": 20, "w": 250, "h": 430, "color": "yellow" },
+    { "name": "Manage attributes", "x": 270, "y": 20, "w": 720, "h": 430, "color": "blue" },
+    { "name": "Output", "x": 1010, "y": 20, "w": 250, "h": 430, "color": "green" }
+  ],
+  "notes": [
+    { "text": "The stops are made up. Each file is named after its municipality code, and the first four characters of the file name become the attribute muni_code.", "x": 290, "y": 480 }
+  ]
+}

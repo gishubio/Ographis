@@ -1,0 +1,15 @@
+{
+  "format": "ographis/1",
+  "name": "A city block as 3D Tiles from the web",
+  "nodes": [
+    { "id": "city", "type": "Reader", "name": "Sample city (3D Tiles)", "x": 20, "y": 20,
+      "comment": "A sample tileset by Cesium (Apache 2.0) on GitHub: a building and a block of houses with a table of their features. The point cloud in it is not read yet",
+      "params": { "path": "https://raw.githubusercontent.com/CesiumGS/3d-tiles-samples/main/1.0/TilesetWithRequestVolume/tileset.json", "tiles_detail": "finest" } },
+    { "id": "view", "type": "Viewer", "name": "Look at it", "x": 300, "y": 20, "params": {} },
+    { "id": "list", "type": "Writer", "name": "The houses", "x": 300, "y": 160, "params": { "path": "out/sample_city.gpkg" } }
+  ],
+  "edges": [
+    { "from": ["city", "Output"], "to": ["view", "Input"] },
+    { "from": ["city", "Output"], "to": ["list", "Input"] }
+  ]
+}

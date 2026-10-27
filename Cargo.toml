@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = ["crates/og-engine", "crates/og-gdal", "crates/og-cli", "crates/og-gui"]
+
+[workspace.package]
+version = "0.87.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/gishubio/Ographis"
+homepage = "https://github.com/gishubio/Ographis"
+
+[workspace.dependencies]
+geo = "0.33"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[profile.release]
+opt-level = 3
+# File and line in the crash log, at little cost in size.
+debug = "line-tables-only"
+
+# egui-snarl with a small patch: dragging on empty canvas draws a selection box, and the
+# canvas is panned with the middle button or Space. See vendor/egui-snarl/OGRAPHIS.md.
+[patch.crates-io]
+egui-snarl = { path = "vendor/egui-snarl" }

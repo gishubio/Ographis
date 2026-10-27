@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ographis formats</title>
+<style>
+:root { --bg: #f4f7f6; --surface: #ffffff; --ink: #14201d; --muted: #55645f; --line: #c6d1cd; --gdal: #dbe7f6; --gdal-ink: #1c5596; --own: #d9efe1; --own-ink: #1f6a3d; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0f1514; --surface: #1b2423; --ink: #e3ebe8; --muted: #97a6a2; --line: #2d3937; --gdal: #16263c; --gdal-ink: #8db8ec; --own: #163222; --own-ink: #7bcb9a; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 "Segoe UI", system-ui, sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 28px 16px 40px; }
+h1 { margin: 0 0 4px; font-size: 1.8em; }
+p.lead { color: var(--muted); margin: 0 0 18px; max-width: 70ch; }
+.sum { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.sum div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; }
+.sum b { font-size: 1.4em; display: block; }
+.wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; min-width: 720px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+thead th { position: sticky; top: 0; background: var(--surface); font-size: .85em; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+tbody th { font-weight: 600; }
+.files { font-weight: 400; color: var(--muted); font-size: .85em; }
+.tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: .85em; white-space: nowrap; }
+.gdal { background: var(--gdal); color: var(--gdal-ink); }
+.own { background: var(--own); color: var(--own-ink); }
+td.no { color: var(--muted); }
+td.note { color: var(--muted); font-size: .9em; }
+footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
+</style>
+</head>
+<body>
+<main>
+<h1>What Ographis reads and writes</h1>
+<p class="lead">Each format with what handles it: <span class="tag gdal">GDAL</span>, the geodata library installed with the program, or <span class="tag own">Ographis</span>, code of the program's own, with the library it uses in brackets.</p>
+<div class="sum"><div><b>27</b>read</div><div><b>20</b>written</div><div><b>17</b>by Ographis itself</div></div>
+<div class="wrap">
+<table>
+<thead><tr><th scope="col">Format</th><th scope="col">Reads</th><th scope="col">Writes</th><th scope="col">Notes</th></tr></thead>
+<tbody>
+<tr><th scope="row">GeoPackage<div class="files">.gpkg</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Layers in one file; a layer that is written replaces only itself</td></tr>
+<tr><th scope="row">Shapefile<div class="files">.shp</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">A stream with several geometry types is written as several files</td></tr>
+<tr><th scope="row">GeoJSON<div class="files">.geojson</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note"></td></tr>
+<tr><th scope="row">FlatGeobuf<div class="files">.fgb</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note"></td></tr>
+<tr><th scope="row">SpatiaLite<div class="files">.sqlite, .db</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note"></td></tr>
+<tr><th scope="row">PostGIS<div class="files">tables in PostgreSQL</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">With a primary key, schema and geometry type as asked</td></tr>
+<tr><th scope="row">SQL Server<div class="files">tables in Microsoft SQL Server</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Through ODBC, with geometry, a spatial index and a primary key; with a password or the login of Windows</td></tr>
+<tr><th scope="row">OpenStreetMap from Overpass<div class="files">an Overpass server on the web</div></th><td><span class="tag own">Ographis</span></td><td class="no">–</td><td class="note">Within a rectangle, made smaller when it is larger than allowed</td></tr>
+<tr><th scope="row">GML, KML, MapInfo, File geodatabase<div class="files">.gml, .kml, .tab, .gdb</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note">As far as the GDAL that is installed reads them</td></tr>
+<tr><th scope="row">OpenStreetMap<div class="files">.osm.pbf, .osm</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note">Points, lines, areas and relations, with the common tags as attributes</td></tr>
+<tr><th scope="row">OGC API Features, WFS<div class="files">web services</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note">Page by page, only what lies in a rectangle if asked</td></tr>
+<tr><th scope="row">ArcGIS feature services<div class="files">web services</div></th><td><span class="tag gdal">GDAL (ESRIJSON)</span></td><td class="no">–</td><td class="note">Layer by layer</td></tr>
+<tr><th scope="row">CAD drawings<div class="files">.dxf</div></th><td><span class="tag gdal">GDAL and Ographis</span></td><td class="no">–</td><td class="note">Layers, colours, line types, texts and block attributes as attributes; the header by Ographis</td></tr>
+<tr><th scope="row">CSV and text<div class="files">.csv, .txt, .tsv</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">Coordinates or WKT in columns, encodings and separators</td></tr>
+<tr><th scope="row">Excel<div class="files">.xlsx</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag own">Ographis (umya-spreadsheet)</span></td><td class="note">Written with a font, a locked top row, widths and colours</td></tr>
+<tr><th scope="row">LibreOffice Calc<div class="files">.ods</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag own">Ographis (spreadsheet-ods)</span></td><td class="note">As Excel</td></tr>
+<tr><th scope="row">GeoParquet<div class="files">.parquet</div></th><td><span class="tag own">Ographis (Apache Parquet)</span></td><td class="no">–</td><td class="note">Uncompressed, Snappy, Zstandard, LZ4, gzip and Brotli</td></tr>
+<tr><th scope="row">JSON<div class="files">.json, web addresses</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis (Build JSON)</span></td><td class="note">Flattened, exploded and picked by path; JSON-stat from statistics offices</td></tr>
+<tr><th scope="row">GeoTIFF and other rasters<div class="files">.tif, .jp2, .asc and others</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Cloud Optimized GeoTIFF over the web; grids of values and pictures</td></tr>
+<tr><th scope="row">PNG and JPEG pictures<div class="files">.png, .jpg</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Maps, charts and 3D scenes, with a world file when they have coordinates</td></tr>
+<tr><th scope="row">PDF<div class="files">.pdf</div></th><td class="no">–</td><td><span class="tag gdal">GDAL</span></td><td class="note">A map on a page of a size, or a GeoSpatial PDF with layers</td></tr>
+<tr><th scope="row">IFC building models<div class="files">.ifc</div></th><td><span class="tag own">Ographis</span></td><td class="no">–</td><td class="note">IFC2x3 and IFC4: extrusions, breps, advanced breps with curved surfaces, openings and property sets</td></tr>
+<tr><th scope="row">CityGML and CityJSON<div class="files">.gml, .city.json, .jsonl</div></th><td><span class="tag own">Ographis</span></td><td class="no">–</td><td class="note">Buildings and other city objects in their levels of detail</td></tr>
+<tr><th scope="row">OBJ<div class="files">.obj</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">With materials and textures</td></tr>
+<tr><th scope="row">glTF<div class="files">.gltf, .glb</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">Written as .glb around an origin kept in the file</td></tr>
+<tr><th scope="row">3D Tiles<div class="files">tileset.json</div></th><td><span class="tag own">Ographis</span></td><td class="no">–</td><td class="note">Batched and instanced models, from a folder or the web</td></tr>
+<tr><th scope="row">Point clouds<div class="files">.las, .laz, .copc.laz</div></th><td><span class="tag own">Ographis (las, laz-rs)</span></td><td class="no">–</td><td class="note">COPC read from the web part by part</td></tr>
+<tr><th scope="row">Charts as web pages<div class="files">.html</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">From Draw chart: the values under the pointer, sorted as the reader wants</td></tr>
+<tr><th scope="row">PowerPoint<div class="files">.pptx</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">A slide for each picture, from Slides</td></tr>
+<tr><th scope="row">LibreOffice Impress<div class="files">.odp</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">As PowerPoint</td></tr>
+<tr><th scope="row">Zip files<div class="files">.zip</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">Read: the files in them. Written: what the outputs of a model wrote</td></tr>
+<tr><th scope="row">Pictures of models<div class="files">.png, .jpg, .pdf</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">The canvas of a model, from the File menu or og picture</td></tr>
+</tbody>
+</table>
+</div>
+<footer>Ographis 0.87 · GDAL 3.8.4. Which further formats GDAL reads depends on how it was built; <code>og info</code> tells whether a file can be read.</footer>
+</main>
+</body>
+</html>

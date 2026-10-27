@@ -1,0 +1,128 @@
+{
+  "format": "ographis/1",
+  "name": "Events on the roads from Trafikverket",
+  "nodes": [
+    {
+      "id": "trv",
+      "type": "HttpCaller",
+      "name": "Trafikverket: events",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "url": "https://api.trafikinfo.trafikverket.se/v2/data.json",
+        "method": "POST",
+        "content_type": "text/xml",
+        "connection": "Trafikverket",
+        "body": "'<REQUEST><LOGIN authenticationkey=\"{{key}}\" /><QUERY objecttype=\"Situation\" schemaversion=\"1.5\" limit=\"500\"><FILTER><EQ name=\"Deviation.CountyNo\" value=\"14\" /></FILTER><INCLUDE>Deviation.Header</INCLUDE><INCLUDE>Deviation.MessageType</INCLUDE><INCLUDE>Deviation.StartTime</INCLUDE><INCLUDE>Deviation.Geometry.Point.SWEREF99TM</INCLUDE></QUERY></REQUEST>'"
+      },
+      "comment": "The key is under Settings → API connections as Trafikverket, of the kind 'A key only where {{key}} is written'. County 14 is Västra Götaland"
+    },
+    {
+      "id": "sit",
+      "type": "JsonExploder",
+      "name": "One per situation",
+      "x": 300,
+      "y": 40,
+      "params": {
+        "attribute": "_response",
+        "path": "RESPONSE.RESULT[0].Situation"
+      }
+    },
+    {
+      "id": "dev",
+      "type": "JsonExploder",
+      "name": "One per deviation",
+      "x": 560,
+      "y": 40,
+      "params": {
+        "attribute": "Deviation",
+        "path": "",
+        "prefix": "d"
+      }
+    },
+    {
+      "id": "geom",
+      "type": "GeometryFromText",
+      "name": "Geometry from WKT",
+      "x": 820,
+      "y": 40,
+      "params": {
+        "attribute": "d.Geometry.Point.SWEREF99TM",
+        "crs": "EPSG:3006"
+      }
+    },
+    {
+      "id": "time",
+      "type": "AttributeCreator",
+      "name": "Start in Swedish time",
+      "x": 1080,
+      "y": 40,
+      "params": {
+        "name": "start",
+        "expression": "format_time(\"d.StartTime\", '%Y-%m-%d %H:%M')"
+      }
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Events",
+      "x": 1340,
+      "y": 40,
+      "params": {
+        "path": "out/trafikverket.gpkg"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "trv",
+        "Output"
+      ],
+      "to": [
+        "sit",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "sit",
+        "Exploded"
+      ],
+      "to": [
+        "dev",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "dev",
+        "Exploded"
+      ],
+      "to": [
+        "geom",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "geom",
+        "Output"
+      ],
+      "to": [
+        "time",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "time",
+        "Output"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}

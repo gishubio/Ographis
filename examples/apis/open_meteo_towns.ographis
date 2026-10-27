@@ -1,0 +1,116 @@
+{
+  "format": "ographis/1",
+  "name": "Tomorrow's highest temperature in Västra Götaland",
+  "nodes": [
+    {
+      "id": "in",
+      "type": "Reader",
+      "name": "Towns",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "path": "towns.csv"
+      }
+    },
+    {
+      "id": "om",
+      "type": "HttpCaller",
+      "name": "Open-Meteo per town",
+      "x": 280,
+      "y": 40,
+      "params": {
+        "url": "'https://api.open-meteo.com/v1/forecast?latitude=' || lat || '&longitude=' || lon || '&daily=temperature_2m_max&timezone=Europe%2FStockholm&forecast_days=2'",
+        "per_second": "5"
+      },
+      "comment": "A request for each town, at a calm pace"
+    },
+    {
+      "id": "max",
+      "type": "JsonExtractor",
+      "name": "Tomorrow",
+      "x": 540,
+      "y": 40,
+      "params": {
+        "attribute": "_response",
+        "paths": [
+          [
+            "daily.temperature_2m_max[1]",
+            "max_temp"
+          ],
+          [
+            "daily.time[1]",
+            "date"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "chart",
+      "type": "ChartDrawer",
+      "name": "Chart",
+      "x": 800,
+      "y": 40,
+      "params": {
+        "category": "town",
+        "value": "max_temp",
+        "sort": "down",
+        "title": "Highest temperature tomorrow",
+        "subtitle": "Six towns in Västra Götaland",
+        "note": "Source: Open-Meteo",
+        "unit": "°C"
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "name": "Chart",
+      "x": 1060,
+      "y": 40,
+      "params": {
+        "path": "out/highest_temperature.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "in",
+        "Output"
+      ],
+      "to": [
+        "om",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "om",
+        "Output"
+      ],
+      "to": [
+        "max",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "max",
+        "Output"
+      ],
+      "to": [
+        "chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "chart",
+        "Chart"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    }
+  ]
+}

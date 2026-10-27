@@ -1,0 +1,111 @@
+{
+  "format": "ographis/1",
+  "name": "Earthquakes of the last day",
+  "nodes": [
+    {
+      "id": "quakes",
+      "type": "Reader",
+      "name": "Earthquakes M4.5+ (USGS)",
+      "x": 20,
+      "y": 20,
+      "comment": "The latest day of earthquakes of magnitude 4.5 and more, from https://earthquake.usgs.gov/earthquakes/feed/v1.0/csv.php. Fetched again every run.",
+      "params": {
+        "path": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.csv",
+        "x": "longitude",
+        "y": "latitude",
+        "crs": "EPSG:4326",
+        "delimiter": ","
+      }
+    },
+    {
+      "id": "countries",
+      "type": "Reader",
+      "name": "Countries of the world",
+      "x": 20,
+      "y": 220,
+      "params": {
+        "path": "https://raw.githubusercontent.com/johan/world.geo.json/refs/heads/master/countries.geo.json",
+        "crs": "EPSG:4326",
+        "keep_download": "true"
+      }
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "name": "World map",
+      "x": 320,
+      "y": 100,
+      "params": {
+        "width": "2400",
+        "margin": "2",
+        "background": "#f4f1ea",
+        "crs": "EPSG:4326",
+        "layers": [
+          {
+            "from": "quakes:Output",
+            "fill": "#e3494899",
+            "stroke": "#a8201a",
+            "width": 1.2,
+            "size": 13.0,
+            "size_by": "mag",
+            "size_min": 7,
+            "size_max": 36,
+            "order": "large_below"
+          },
+          {
+            "from": "countries:Output",
+            "fill": "#dcd9cf",
+            "stroke": "#a8a59b",
+            "width": 0.6,
+            "size": 4.0
+          }
+        ],
+        "legend": "bottom-left",
+        "legend_title": "Earthquakes of the last day"
+      },
+      "comment": "The size of each point goes with the magnitude, and the largest lie underneath. Set Colour by to depth, or Cluster to 12, in the form to try more."
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "name": "Map as PNG",
+      "x": 560,
+      "y": 100,
+      "params": {
+        "path": "out/earthquakes.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "quakes",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "countries",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"asset": {"version": "1.1"}, "geometricError": 10, "root": {"boundingVolume": {"box": [0, 0, 0, 20, 0, 0, 0, 20, 0, 0, 0, 20]}, "geometricError": 0, "refine": "REPLACE", "content": {"uri": "house_meshopt.glb"}}}

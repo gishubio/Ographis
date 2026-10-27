@@ -1,0 +1,90 @@
+{
+  "format": "ographis/1",
+  "name": "A chain: fetch statistics in turn",
+  "variables": [
+    {
+      "name": "year",
+      "value": "2025"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a",
+      "type": "ModelRunner",
+      "name": "1. SCB",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "path": "scb_population.ographis"
+      },
+      "comment": "Waits until the SCB model has run"
+    },
+    {
+      "id": "b",
+      "type": "ModelRunner",
+      "name": "2. Kolada",
+      "x": 300,
+      "y": 40,
+      "params": {
+        "path": "kolada_chart.ographis",
+        "variables": "kpi=N01951; year=$(year)"
+      },
+      "comment": "Runs after SCB, with the year of this model"
+    },
+    {
+      "id": "c",
+      "type": "ModelRunner",
+      "name": "3. Eurostat",
+      "x": 580,
+      "y": 40,
+      "params": {
+        "path": "eurostat_population.ographis",
+        "on_error": "go"
+      },
+      "comment": "Goes on even if Eurostat does not answer"
+    },
+    {
+      "id": "log",
+      "type": "Writer",
+      "name": "How it went",
+      "x": 860,
+      "y": 40,
+      "params": {
+        "path": "out/chain.csv"
+      },
+      "comment": "A row for each node of the last model"
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "a",
+        "Result"
+      ],
+      "to": [
+        "b",
+        "After"
+      ]
+    },
+    {
+      "from": [
+        "b",
+        "Result"
+      ],
+      "to": [
+        "c",
+        "After"
+      ]
+    },
+    {
+      "from": [
+        "c",
+        "Result"
+      ],
+      "to": [
+        "log",
+        "Input"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,199 @@
+{
+  "format": "ographis/1",
+  "name": "Towns as lollipops in 3D",
+  "nodes": [
+    {
+      "id": "towns",
+      "type": "Reader",
+      "name": "Towns",
+      "x": 20,
+      "y": 20,
+      "comment": "Approximate positions and populations",
+      "params": {
+        "path": "towns.csv",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "subregions",
+      "type": "Reader",
+      "name": "Subregions",
+      "x": 20,
+      "y": 200,
+      "params": {
+        "path": "subregions.gpkg"
+      }
+    },
+    {
+      "id": "sweref",
+      "type": "Reprojector",
+      "name": "To SWEREF 99 TM",
+      "x": 260,
+      "y": 20,
+      "params": {
+        "crs": "EPSG:3006"
+      }
+    },
+    {
+      "id": "raise",
+      "type": "PointRaiser",
+      "name": "Raise by population",
+      "x": 500,
+      "y": 20,
+      "comment": "As high as the square root of the population, 100 m for every root, so that the large towns do not hide the small",
+      "params": {
+        "height": "sqrt(population) * 100",
+        "ball_colour": "#e0533d",
+        "ball_size": "3500"
+      }
+    },
+    {
+      "id": "ground",
+      "type": "Extruder",
+      "name": "Subregions as a floor",
+      "x": 500,
+      "y": 200,
+      "params": {
+        "height": "2000",
+        "base_value": "-2000",
+        "wall_colour": "#b9c4b0",
+        "roof_colour": "#dfe8d6"
+      }
+    },
+    {
+      "id": "scene",
+      "type": "SceneRenderer",
+      "name": "Lollipop map",
+      "x": 760,
+      "y": 60,
+      "params": {
+        "width": "1600",
+        "height": "1000",
+        "view_azimuth": "200",
+        "elevation": "32",
+        "projection": "parallel",
+        "zoom": "135",
+        "sun_azimuth": "150",
+        "sun_altitude": "35",
+        "background": "colour",
+        "background_colour": "#f4f1ea",
+        "floor": "false",
+        "mood": "warm",
+        "title": "Inhabitants of the towns",
+        "quality": "16"
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "name": "Picture",
+      "x": 1020,
+      "y": 60,
+      "params": {
+        "path": "out/lollipops.png"
+      }
+    },
+    {
+      "id": "sticks",
+      "type": "Writer",
+      "name": "Sticks with heights",
+      "x": 760,
+      "y": 240,
+      "params": {
+        "path": "out/lollipops.gpkg"
+      }
+    },
+    {
+      "id": "sub3006",
+      "type": "Reprojector",
+      "name": "Subregions to SWEREF",
+      "x": 260,
+      "y": 200,
+      "params": {
+        "crs": "EPSG:3006"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "towns",
+        "Output"
+      ],
+      "to": [
+        "sweref",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "raise",
+        "Points"
+      ]
+    },
+    {
+      "from": [
+        "raise",
+        "Sticks"
+      ],
+      "to": [
+        "scene",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "ground",
+        "Output"
+      ],
+      "to": [
+        "scene",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "scene",
+        "Image"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "raise",
+        "Sticks"
+      ],
+      "to": [
+        "sticks",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "subregions",
+        "Output"
+      ],
+      "to": [
+        "sub3006",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "sub3006",
+        "Reprojected"
+      ],
+      "to": [
+        "ground",
+        "Input"
+      ]
+    }
+  ]
+}

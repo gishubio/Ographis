@@ -1,0 +1,27 @@
+{
+  "format": "ographis/1",
+  "name": "CAD, GeoParquet and city models",
+  "nodes": [
+    { "id": "dxf", "type": "Reader", "name": "Plan, DXF", "x": 20, "y": 20, "comment": "DXF has no coordinate system: it is set here. The wells are blocks with the attributes ID and DJUP", "params": { "path": "formats/plan.dxf", "crs": "EPSG:3006" } },
+    { "id": "wells", "type": "Tester", "name": "Wells", "x": 280, "y": 20, "params": { "test": "block = 'BRUNN'" } },
+    { "id": "fgb", "type": "Writer", "name": "Wells as FlatGeobuf", "x": 520, "y": 20, "params": { "path": "out/wells.fgb" } },
+    { "id": "towns", "type": "Reader", "name": "Towns, GeoParquet", "x": 20, "y": 200, "params": { "path": "formats/towns.parquet" } },
+    { "id": "towns_xlsx", "type": "Writer", "name": "Towns as a table", "x": 280, "y": 200, "params": { "path": "out/towns_from_parquet.xlsx" } },
+    { "id": "cityjson", "type": "Reader", "name": "Blocks, CityJSON", "x": 20, "y": 340, "params": { "path": "formats/blocks.city.json" } },
+    { "id": "citygml", "type": "Reader", "name": "Blocks, CityGML LoD1", "x": 20, "y": 480, "params": { "path": "formats/blocks.gml", "city_lod": "1" } },
+    { "id": "dem", "type": "Reader", "name": "Terrain model", "x": 20, "y": 620, "params": { "path": "terrain.tif", "raster_as": "grid", "within": "rectangle", "min_x": "418000", "min_y": "6472350", "max_x": "418500", "max_y": "6472750" } },
+    { "id": "scene", "type": "SceneRenderer", "name": "LoD2 on the terrain", "x": 280, "y": 380,
+      "params": { "width": "1400", "height": "900", "view_azimuth": "210", "elevation": "28", "zoom": "100", "sun": "date", "date": "2026-06-10", "time": "17:00", "background": "sky", "quality": "16" } },
+    { "id": "png", "type": "Writer", "name": "Picture", "x": 520, "y": 380, "params": { "path": "out/blocks_lod2.png" } },
+    { "id": "glb", "type": "Writer", "name": "LoD1 as glTF", "x": 280, "y": 560, "params": { "path": "out/blocks_lod1.glb" } }
+  ],
+  "edges": [
+    { "from": ["dxf", "Output"], "to": ["wells", "Input"] },
+    { "from": ["wells", "Passed"], "to": ["fgb", "Input"] },
+    { "from": ["towns", "Output"], "to": ["towns_xlsx", "Input"] },
+    { "from": ["cityjson", "Output"], "to": ["scene", "Models"] },
+    { "from": ["dem", "Output"], "to": ["scene", "Terrain"] },
+    { "from": ["scene", "Image"], "to": ["png", "Input"] },
+    { "from": ["citygml", "Output"], "to": ["glb", "Input"] }
+  ]
+}
