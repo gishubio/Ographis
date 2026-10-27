@@ -827,7 +827,7 @@ pub(crate) fn parse(bytes: &[u8], fetch: &dyn Fn(&str) -> Result<Vec<u8>>, notes
             let triangles: Vec<[u32; 3]> = match mode {
                 5 => (2..idx.len()).map(|i| if i % 2 == 0 { [idx[i - 2], idx[i - 1], idx[i]] } else { [idx[i - 1], idx[i - 2], idx[i]] }).collect(),
                 6 => (2..idx.len()).map(|i| [idx[0], idx[i - 1], idx[i]]).collect(),
-                _ => idx.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
+                _ => idx.as_chunks::<3>().0.iter().map(|c| [c[0], c[1], c[2]]).collect(),
             };
             for t in triangles {
                 if t.iter().any(|i| *i as usize >= count) {

@@ -27,6 +27,10 @@ cargo run -p og-cli --bin og -- run examples/buildtest.ographis
 
 ## Testing
 
+The check on GitHub uses Rust 1.97.0, so that a newer Rust with new lints of clippy does
+not turn it red by itself. A newer Rust builds Ographis too; the version of the check is
+raised by hand, with the code made clean for its clippy at the same time.
+
 ```
 cargo test -p og-engine                 # no GDAL needed
 cargo test --workspace --exclude og-gui # with GDAL

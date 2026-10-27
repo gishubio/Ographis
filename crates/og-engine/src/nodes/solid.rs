@@ -119,7 +119,7 @@ pub(crate) fn add_block(mesh: &mut Mesh, polys: &[&geo::Polygon<f64>], z0: f64, 
         mesh.positions.extend(raw.vertices.iter().map(|c| [c[0], c[1], z1]));
         let bottom = mesh.positions.len() as u32;
         mesh.positions.extend(raw.vertices.iter().map(|c| [c[0], c[1], z0]));
-        for t in raw.triangle_indices.chunks_exact(3) {
+        for t in raw.triangle_indices.as_chunks::<3>().0.iter() {
             let (a, b, c) = (t[0] as u32, t[1] as u32, t[2] as u32);
             // Counter-clockwise seen from above for the top, the other way for the bottom.
             let (pa, pb, pc) = (raw.vertices[t[0]], raw.vertices[t[1]], raw.vertices[t[2]]);

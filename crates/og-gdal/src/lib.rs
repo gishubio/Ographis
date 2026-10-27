@@ -1355,7 +1355,9 @@ pub(crate) fn write_image(
     for b in 0..bands {
         let data: Vec<u8> = image
             .rgba
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|px| {
                 if jpeg {
                     // Laid on white by its opacity.

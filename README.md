@@ -9,12 +9,23 @@ ographis examples/skaraborg.ographis          the graphical program
 og run examples/skaraborg.ographis            the same model from the command line
 ```
 
+![Ographis with a model that downloads the buildings of Södermalm from OpenStreetMap, gives them heights, extrudes them and renders a 3D picture, shown under the canvas](docs/images/ographis.png)
+
 > **A preview.** Ographis is young and changes between versions. Models are kept working
 > as the program changes, but check the results before you rely on them, and tell us what
 > breaks in an [issue](https://github.com/gishubio/Ographis/issues).
 >
 > Ographis is a hobby project, kept up in spare time by one person. Issues and pull requests
 > are welcome and read, but an answer may take a while.
+>
+> Ographis is written by Claude, guided by human GIS expertise. It is not:
+>
+> - feature complete
+> - polished
+> - well tested
+> - well documented
+>
+> Ographis is provided "as is". Run and use Ographis at your own risk.
 
 ## What it does
 
@@ -85,13 +96,3 @@ Ographis is licensed under either of the MIT licence (`LICENSE-MIT`) or the Apac
 (`LICENSE-APACHE`), at your option, as most of the Rust libraries it is built with. Unless
 you say otherwise, a contribution you send in is licensed in the same way. The libraries,
 the Inter font and GDAL keep their own licences: see `THIRD-PARTY-LICENSES.md`.
-
-## Next
-
-1. An e-mail or a web hook when a run ends, or ends with errors.
-2. Heights (Z) kept through the tools.
-3. Builds for Linux and macOS.
-4. A scale bar and a north arrow in Draw map, and values in the GeoSpatial PDF. More kinds of charts.
-5. More of STAC: reading the files of the items found, also from catalogues that page with POST.
-6. Tiles of 3D Tiles compressed with Draco, and instanced models.
-7. Point clouds: a raster of the ground from the points of class 2, and buildings from class 6.

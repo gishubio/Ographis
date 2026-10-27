@@ -430,7 +430,7 @@ fn add_slab(mesh: &mut Mesh, areas: &MultiPolygon<f64>, z0: f64, z1: f64, top: u
         if bottom.is_some() {
             mesh.positions.extend(raw.vertices.iter().map(|c| [c[0], c[1], z0]));
         }
-        for t in raw.triangle_indices.chunks_exact(3) {
+        for t in raw.triangle_indices.as_chunks::<3>().0.iter() {
             let (a, b, c) = (t[0] as u32, t[1] as u32, t[2] as u32);
             let (pa, pb, pc) = (raw.vertices[t[0]], raw.vertices[t[1]], raw.vertices[t[2]]);
             let ccw = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0]) > 0.0;

@@ -503,7 +503,7 @@ pub(super) fn run_scene(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
         .ok_or_else(|| GbError(crate::model::STOPPED.into()))?;
         let mut image = image;
         if let Some(bg) = backdrop {
-            for px in image.rgba.chunks_exact_mut(4) {
+            for px in image.rgba.as_chunks_mut::<4>().0.iter_mut() {
                 let a = px[3] as u32;
                 for k in 0..3 {
                     px[k] = ((px[k] as u32 * a + bg[k] as u32 * (255 - a) + 127) / 255) as u8;
@@ -556,7 +556,7 @@ fn write_title(img: &mut crate::model::RasterImage, title: &str) -> Result<()> {
     let (w, h) = (img.width, img.height);
     let mut pm = tiny_skia::Pixmap::new(w as u32, h as u32).ok_or_else(|| GbError("The picture is too large for a title.".into()))?;
     // The pixmap holds colours times their opacity.
-    for (d, q) in pm.data_mut().chunks_exact_mut(4).zip(img.rgba.chunks_exact(4)) {
+    for (d, q) in pm.data_mut().as_chunks_mut::<4>().0.iter_mut().zip(img.rgba.as_chunks::<4>().0.iter()) {
         let a = q[3] as u32;
         for k in 0..3 {
             d[k] = ((q[k] as u32 * a + 127) / 255) as u8;
@@ -571,7 +571,9 @@ fn write_title(img: &mut crate::model::RasterImage, title: &str) -> Result<()> {
     // How light the picture is where the title goes.
     let band = &img.rgba[..(w * (size * 2.0) as usize).min(w * h) * 4];
     let lum = band
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|p| (p[0] as f32 * 0.3 + p[1] as f32 * 0.59 + p[2] as f32 * 0.11) * p[3] as f32 / 255.0 + 255.0 * (1.0 - p[3] as f32 / 255.0))
         .sum::<f32>()
         / (band.len() / 4).max(1) as f32;
@@ -579,7 +581,7 @@ fn write_title(img: &mut crate::model::RasterImage, title: &str) -> Result<()> {
     let off = (size / 18.0).max(1.0);
     text.draw(&mut pm, title, x + off, y + off, size, true, shade, 0.0);
     text.draw(&mut pm, title, x, y, size, true, ink, 0.0);
-    for (q, d) in img.rgba.chunks_exact_mut(4).zip(pm.data().chunks_exact(4)) {
+    for (q, d) in img.rgba.as_chunks_mut::<4>().0.iter_mut().zip(pm.data().as_chunks::<4>().0.iter()) {
         let a = d[3] as u32;
         for k in 0..3 {
             q[k] = (d[k] as u32 * 255 + a / 2).checked_div(a).map_or(0, |v| v.min(255) as u8);

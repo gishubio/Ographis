@@ -797,7 +797,9 @@ pub(crate) fn triangulate_face(outer: &[[f64; 3]], holes: &[Vec<[f64; 3]>]) -> V
     let find = |c: [f64; 2]| all.iter().copied().find(|p| (p[i0] - c[0]).abs() < 1e-9 && (p[i1] - c[1]).abs() < 1e-9).unwrap_or([c[0], c[1], 0.0]);
     // Earcut does not keep the turn of the face: each triangle is turned as the outer ring.
     raw.triangle_indices
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|t| {
             let tri = [find(raw.vertices[t[0]]), find(raw.vertices[t[1]]), find(raw.vertices[t[2]])];
             if dot(cross(sub(tri[1], tri[0]), sub(tri[2], tri[0])), n) < 0.0 {

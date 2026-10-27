@@ -11,11 +11,14 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: GDAL
         run: sudo apt-get update && sudo apt-get install -y libgdal-dev clang pkg-config
-      - uses: dtolnay/rust-toolchain@stable
+      # The version the code is checked with. A newer Rust brings new lints of clippy,
+      # which would turn the check red with no change to the code; it is raised by hand.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.97.0"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Format

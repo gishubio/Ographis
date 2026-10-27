@@ -278,7 +278,7 @@ pub fn draw(ws: &Workspace, scale: f32) -> Result<RasterImage> {
 pub fn write_pdf(img: &RasterImage, dpi: f64, path: &std::path::Path) -> Result<()> {
     use std::io::Write;
     let mut rgb = Vec::with_capacity(img.width * img.height * 3);
-    for p in img.rgba.chunks_exact(4) {
+    for p in img.rgba.as_chunks::<4>().0.iter() {
         let a = p[3] as u32;
         for c in &p[..3] {
             rgb.push(((*c as u32 * a + 255 * (255 - a) + 127) / 255) as u8);
@@ -336,7 +336,7 @@ pub fn export(ws: &Workspace, path: &std::path::Path) -> Result<()> {
     match ext.as_str() {
         "pdf" => write_pdf(&img, 144.0, path),
         "jpg" | "jpeg" => {
-            let rgb: Vec<u8> = img.rgba.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect();
+            let rgb: Vec<u8> = img.rgba.as_chunks::<4>().0.iter().flat_map(|p| [p[0], p[1], p[2]]).collect();
             image::save_buffer(path, &rgb, img.width as u32, img.height as u32, image::ColorType::Rgb8)
                 .map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))
         }

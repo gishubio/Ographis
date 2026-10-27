@@ -249,7 +249,7 @@ fn a_model_is_drawn_as_a_picture_and_a_pdf() {
     let img = crate::modelpic::draw(&ws, 1.0).unwrap();
     assert!(img.width > 900 && img.height > 500, "{} × {}", img.width, img.height);
     // Ink where the title is, the canvas colour in an empty corner.
-    let dark = img.rgba.chunks_exact(4).take(img.width * 80).filter(|p| p[0] < 100).count();
+    let dark = img.rgba.as_chunks::<4>().0.iter().take(img.width * 80).filter(|p| p[0] < 100).count();
     assert!(dark > 50, "{}", dark);
     let dir = std::env::temp_dir().join(format!("og-modelpic-{}", std::process::id()));
     for ext in ["png", "pdf", "jpg"] {
