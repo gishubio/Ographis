@@ -1136,12 +1136,188 @@ fn several_rows_are_picked_with_ctrl_and_shift() {
     // Shift picks from the one picked first to the one clicked.
     click_text(&mut h, "0002", 0, false);
     settle(&mut h);
-    click_with(&mut h, "0005", egui::Modifiers::SHIFT);
+    click_with(&mut h, "0004", egui::Modifiers::SHIFT);
     let mut all: Vec<usize> = h.state().view.more.iter().copied().chain(h.state().view.feature).collect();
     all.sort();
-    assert_eq!(all, [2, 3, 4, 5]);
+    assert_eq!(all, [2, 3, 4]);
     // A plain click picks one again.
     click_text(&mut h, "0000", 0, false);
     h.run_steps(2);
     assert_eq!((h.state().view.feature, h.state().view.more.len()), (Some(0), 0));
+}
+
+/// The requests a server has had: the path and the Authorization header.
+type Asked = Arc<std::sync::Mutex<Vec<(String, String)>>>;
+
+/// A WMS on this computer that wants a login: it answers GetMap with a picture when the
+/// user and password are right, and with an error in XML otherwise. Keeps what it was asked.
+fn wms_server() -> (String, Asked) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let asked = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let kept = asked.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let kept = kept.clone();
+            std::thread::spawn(move || {
+                let (mut buf, mut n) = ([0u8; 8192], 0);
+                while n < buf.len() && !buf[..n].windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buf[n..]) {
+                        Ok(0) | Err(_) => break,
+                        Ok(k) => n += k,
+                    }
+                }
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
+                let auth = req.lines().find_map(|l| l.to_lowercase().starts_with("authorization:").then(|| l[14..].trim().to_string())).unwrap_or_default();
+                kept.lock().unwrap().push((path, auth.clone()));
+                if auth != format!("Basic {}", og_engine::web::base64("karta:hemligt")) {
+                    let body = "<ServiceExceptionReport><ServiceException>Login needed</ServiceException></ServiceExceptionReport>";
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 401 Unauthorized\r\nContent-Type: text/xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    return;
+                }
+                let img =
+                    image::RgbImage::from_fn(
+                        256,
+                        256,
+                        |px, py| if (px / 32 + py / 32) % 2 == 0 { image::Rgb([200, 230, 205]) } else { image::Rgb([170, 205, 230]) },
+                    );
+                let mut png = Vec::new();
+                img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+                let head = format!("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", png.len());
+                let _ = stream.write_all(head.as_bytes()).and_then(|_| stream.write_all(&png));
+            });
+        }
+    });
+    (format!("http://127.0.0.1:{}/wms?map=ortofoto", port), asked)
+}
+
+/// A background map of one's own, from a WMS with a login, is added in the settings and
+/// chosen under the map instead of OpenStreetMap.
+#[test]
+fn a_wms_with_a_login_is_a_background_map() {
+    let (url, asked) = wms_server();
+    let mut h = harness(egui::Theme::Light, NO_TILES);
+    h.state_mut().settings.maps.push(og_engine::settings::BackgroundMap {
+        name: "Ortofoto".into(),
+        kind: "wms".into(),
+        url,
+        layers: "foto".into(),
+        auth: "basic".into(),
+        user: "karta".into(),
+        secret: "hemligt".into(),
+        attribution: "© Kartverket på riktigt".into(),
+        ..Default::default()
+    });
+    h.state_mut().run_blocking();
+    h.state_mut().focus_node("areas_sweref");
+    settle(&mut h);
+    // The background is chosen in the list under the map.
+    let combo = h.get_by_value("OpenStreetMap").rect().center();
+    click_at(&mut h, combo);
+    h.run_steps(2);
+    click_text(&mut h, "Ortofoto", 0, false);
+    settle(&mut h);
+    settle(&mut h);
+    assert_eq!(h.state().map.background.as_deref(), Some("Ortofoto"));
+    assert!(h.state().map.shows_tiles(), "the WMS answers, so the map is drawn over it");
+    let asked = asked.lock().unwrap().clone();
+    let (path, auth) = asked.first().expect("the WMS was asked").clone();
+    assert!(path.starts_with("/wms?map=ortofoto&SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=foto") && path.contains("CRS=EPSG:3857&BBOX="), "{}", path);
+    assert_eq!(auth, format!("Basic {}", og_engine::web::base64("karta:hemligt")));
+    shot(&mut h, "088-wms-background");
+    // The tab where background maps are kept.
+    h.state_mut().open_settings();
+    h.run_steps(3);
+    click_text(&mut h, "Background maps", 0, false);
+    h.run_steps(3);
+    assert!(h.query_by_label_contains("Tiles, WMS or WMTS").is_some() || h.query_by_label_contains("tiles, WMS or WMTS").is_some());
+    shot(&mut h, "088-settings-background-maps");
+}
+
+/// The secondary button on the map copies the coordinates of the point and starts measuring;
+/// clicks then make the corners of an area, and Escape ends. Labels come from an attribute.
+#[test]
+fn coordinates_are_copied_areas_measured_and_features_labelled() {
+    let mut h = harness(egui::Theme::Light, NO_TILES);
+    h.state_mut().map.osm = false;
+    h.state_mut().run_blocking();
+    h.state_mut().focus_node("areas_sweref");
+    settle(&mut h);
+    let corner = place_of(&h, "3D", 0, false);
+    let mid = egui::pos2(corner.x - 220.0, corner.y + 140.0);
+    right_click_at(&mut h, mid);
+    h.run_steps(2);
+    let copy =
+        h.query_all_by_label_contains("Copy").find(|n| format!("{:?}", n).contains("EPSG:3006")).expect("the coordinates in SWEREF 99 TM").rect().center();
+    assert!(h.query_all_by_label_contains("(latitude, longitude)").next().is_some());
+    click_at(&mut h, copy);
+    h.run_steps(2);
+    let copied = h.state().map.copied.clone().expect("copied");
+    let (e, n) = copied.split_once(", ").unwrap();
+    assert!(e.parse::<f64>().unwrap() > 200_000.0 && n.parse::<f64>().unwrap() > 6_300_000.0, "{}", copied);
+    // An area, by four corners.
+    right_click_at(&mut h, mid);
+    h.run_steps(2);
+    click_text(&mut h, "Measure an area", 0, false);
+    h.run_steps(2);
+    for d in [(-40.0, -30.0), (40.0, -30.0), (40.0, 30.0), (-40.0, 30.0)] {
+        click_at(&mut h, mid + egui::vec2(d.0, d.1));
+        h.run_steps(1);
+    }
+    let m = h.state().map.measuring.clone().expect("measuring");
+    assert_eq!(m.points.len(), 4);
+    let text = og_gui::maptools::result(&m, Some(3006), &GdalBackend::new());
+    assert!(text.starts_with("Area ") && text.contains("km²") && text.contains("perimeter"), "{}", text);
+    // Labels by the name of the subregion.
+    let labels = h.get_by_value("No labels").rect().center();
+    click_at(&mut h, labels);
+    h.run_steps(2);
+    let item = h.get_all_by_label("subregion").last().unwrap().rect().center();
+    click_at(&mut h, item);
+    h.run_steps(3);
+    assert_eq!(h.state().map.label_by.as_deref(), Some("subregion"));
+    shot(&mut h, "088-measure-and-labels");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    assert!(h.state().map.measuring.is_none());
+}
+
+/// The filter above the table: text found in a value, or an expression, narrows the rows
+/// of the table, the count by the port, the map and the statistics, without changing the
+/// model. A row picked among them is the right one of the stream.
+#[test]
+fn the_rows_of_the_data_view_are_filtered() {
+    let mut h = app_with_result(points(0, 12));
+    settle(&mut h);
+    let key = ("in".to_string(), "Output".to_string());
+    h.state_mut().row_filter.insert(key.clone(), "000".into());
+    h.run_steps(3);
+    assert!(h.query_by_label("Output 10 of 12").is_some(), "the count says how many of all");
+    assert!(h.query_by_label("0010").is_none() && h.query_by_label("0001").is_some());
+    // An expression; a click on its first row picks feature 9 of the stream.
+    h.state_mut().row_filter.insert(key.clone(), "id > 8".into());
+    h.run_steps(3);
+    assert!(h.query_by_label("Output 3 of 12").is_some());
+    click_text(&mut h, "0010", 0, false);
+    h.run_steps(2);
+    assert_eq!(h.state().view.feature, Some(10));
+    shot(&mut h, "088-filtered-rows");
+    // A mistake is said, and the table shows all.
+    h.state_mut().row_filter.insert(key.clone(), "id >".into());
+    h.run_steps(3);
+    assert!(h.query_by_label("Output 12").is_some());
+    assert!(h.query_all_by_label_contains("cannot be read").next().is_some() || h.query_all_by_label_contains("expression").next().is_some());
+    // The statistics count what is let through.
+    h.state_mut().row_filter.insert(key, "=code LIKE '001%'".into());
+    h.state_mut().show_stats = true;
+    h.run_steps(3);
+    assert!(h.query_by_label("Output 2 of 12").is_some());
+    assert!(h.state().workspace().to_json().find("001%").is_none(), "the filter is not in the model");
 }

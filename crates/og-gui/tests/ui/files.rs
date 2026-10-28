@@ -1034,3 +1034,40 @@ fn changes_left_behind_are_offered_and_restored() {
     assert!(h.state().snarl.nodes().any(|n| n.id == "neighbour"));
     assert!(!kept.exists());
 }
+
+// ---------- Version 0.88 ----------
+
+/// A model says what it does: the description is written under Model → Description…,
+/// saved with the model, and shown on the canvas when the model is opened. The model is
+/// copied as a picture with Ctrl+Shift+C.
+#[test]
+fn a_model_has_a_description_and_is_copied_as_a_picture() {
+    let (mut h, dir) = two_nodes();
+    h.state_mut().description_open = true;
+    h.run_steps(3);
+    let field = h.get_by_role(egui::accesskit::Role::MultilineTextInput).rect().center();
+    click_at(&mut h, field);
+    h.event(egui::Event::Text("Writes the towns to a CSV file.".into()));
+    h.run_steps(3);
+    assert_eq!(h.state().description, "Writes the towns to a CSV file.");
+    shot(&mut h, "088-description-window");
+    h.state_mut().description_open = false;
+    h.run_steps(2);
+    let file = dir.join("described.ographis");
+    h.state_mut().save_to(&file);
+    assert!(std::fs::read_to_string(&file).unwrap().contains("\"description\": \"Writes the towns to a CSV file.\""));
+    // Opened again: the description is on the canvas.
+    let mut app = App::new();
+    app.load(&file).unwrap();
+    app.map.set_tile_source(NO_TILES);
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(6);
+    assert!(h.query_by_label("Writes the towns to a CSV file.").is_some());
+    shot(&mut h, "088-description-on-canvas");
+    // Copied as a picture.
+    h.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::C);
+    let copied = h.output().platform_output.commands.iter().any(|c| matches!(c, egui::OutputCommand::CopyImage(_)));
+    h.run_steps(2);
+    assert!(copied || h.state().message().is_some_and(|m| m.contains("copied as a picture")), "{:?}", h.state().message());
+    assert!(h.state().message().is_some_and(|m| m.contains("copied as a picture")), "{:?}", h.state().message());
+}

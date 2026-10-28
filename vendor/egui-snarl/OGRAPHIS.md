@@ -24,8 +24,9 @@ out. The source is unchanged except for the places marked `Ographis:` in `src/ui
 | Dragging from a connected input picks its connection up, to drop it on another input | Needs Ctrl |
 | A click with the secondary button on a connection goes to `wire_secondary_clicked`, which by default removes it | Removes it |
 | `wire.rs` no longer imports the module `core::f32` | The import made `f32::NAN` mean a constant that newer Rust compilers warn about |
-| A node dragged near the edge of the canvas pans it that way, and the dragged nodes go along | The node stops at the edge of what is seen |
+| A node dragged near the edge of the canvas pans it that way, and the dragged nodes go along; the edge is that of the canvas as seen on the screen | The node stops at the edge of what is seen |
 | The room for an output pin is taken through the layout, from right to left | Only the first output got the room, and the names of the others ran in under their pins |
+| `wire_flow` of the viewer: dots that move along a connection, such as those into a node at work | No such hook |
 
 The patch is wired in through `[patch.crates-io]` in the workspace `Cargo.toml`. To move to
 a newer egui-snarl, replace `src/` and apply the changes again.

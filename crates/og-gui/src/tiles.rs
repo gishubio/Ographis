@@ -1,5 +1,6 @@
-//! Background map from OpenStreetMap. Tiles are fetched in the background and cached on
-//! disk. If the server cannot be reached this is noticed, and the map falls back to a grid.
+//! Background maps: OpenStreetMap, or a map of one's own from the settings, as tiles, WMS or
+//! WMTS. Tiles are fetched in the background and cached on disk. If the server cannot be
+//! reached this is noticed, and the map falls back to a grid.
 
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use std::collections::HashMap;
@@ -29,6 +30,24 @@ enum Slot {
     Loading,
     Ready(TextureHandle, u64),
     Failed(Instant),
+}
+
+/// Where the tiles come from.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Source {
+    /// An address with {z}, {x} and {y}: OpenStreetMap, or a server given for tests.
+    Url(String),
+    /// A background map of the settings.
+    Map(Box<og_engine::settings::BackgroundMap>),
+}
+
+impl Source {
+    fn request(&self, key: Key) -> (String, Vec<(String, String)>) {
+        match self {
+            Source::Url(u) => (u.replace("{z}", &key.0.to_string()).replace("{x}", &key.1.to_string()).replace("{y}", &key.2.to_string()), Vec::new()),
+            Source::Map(m) => m.tile_request(key.0, key.1, key.2),
+        }
+    }
 }
 
 pub struct Tiles {
@@ -78,14 +97,20 @@ fn cache_dir() -> Option<PathBuf> {
     Some(base.join("Ographis").join("tiles"))
 }
 
-fn fetch(agent: &ureq::Agent, url: &str, dir: Option<&PathBuf>, key: Key) -> Option<ColorImage> {
+fn fetch(agent: &ureq::Agent, source: &Source, dir: Option<&PathBuf>, key: Key) -> Option<ColorImage> {
     let file = dir.map(|d| d.join(key.0.to_string()).join(key.1.to_string()).join(format!("{}.png", key.2)));
     let cached = file.as_ref().and_then(|f| std::fs::read(f).ok());
     let bytes = match cached {
         Some(b) => b,
         None => {
-            let u = url.replace("{z}", &key.0.to_string()).replace("{x}", &key.1.to_string()).replace("{y}", &key.2.to_string());
-            let b = agent.get(&u).call().ok()?.body_mut().with_config().limit(4_000_000).read_to_vec().ok()?;
+            let (u, headers) = source.request(key);
+            let mut req = agent.get(&u);
+            for (k, v) in &headers {
+                req = req.header(k.as_str(), v.as_str());
+            }
+            let b = req.call().ok()?.body_mut().with_config().limit(8_000_000).read_to_vec().ok()?;
+            // A service that answers with an error, as WMS does in XML, is no picture.
+            image::load_from_memory(&b).ok()?;
             if let Some(f) = &file {
                 if let Some(parent) = f.parent() {
                     let _ = std::fs::create_dir_all(parent);
@@ -103,14 +128,34 @@ impl Tiles {
     /// `source` is your own tile server in the form http://…/{z}/{x}/{y}.png. Without it
     /// the environment variable OGRAPHIS_TILE_URL is used if set, otherwise OpenStreetMap.
     pub fn new(ctx: &egui::Context, source: Option<String>) -> Tiles {
+        Tiles::from_source(ctx, source, None)
+    }
+
+    /// As `new`, or with a background map of the settings, which is cached on disk under
+    /// its name.
+    pub fn from_source(ctx: &egui::Context, source: Option<String>, map: Option<og_engine::settings::BackgroundMap>) -> Tiles {
         let custom = source.or_else(|| std::env::var("OGRAPHIS_TILE_URL").or_else(|_| std::env::var("GEOBOBBO_TILE_URL")).ok()).filter(|s| !s.is_empty());
-        let dir = if custom.is_some() { None } else { cache_dir() };
-        let url = custom.unwrap_or_else(|| DEFAULT_URL.to_string());
+        let (url, dir, source) = match map {
+            Some(m) => {
+                // Each map has a folder of its own, by its name and how it is asked for.
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                (m.kind.as_str(), m.url.as_str(), m.layers.as_str(), m.style.as_str(), m.format.as_str(), m.matrix_set.as_str(), m.matrix.as_str())
+                    .hash(&mut h);
+                let dir = cache_dir().map(|d| d.join(format!("map-{:016x}", h.finish())));
+                (m.url.clone(), dir, Source::Map(Box::new(m)))
+            }
+            None => {
+                let dir = if custom.is_some() { None } else { cache_dir() };
+                let url = custom.unwrap_or_else(|| DEFAULT_URL.to_string());
+                (url.clone(), dir, Source::Url(url))
+            }
+        };
         let (jobs, job_rx) = channel::<Key>();
         let (done_tx, done) = channel();
         let job_rx = Arc::new(Mutex::new(job_rx));
         for _ in 0..WORKERS {
-            let (job_rx, done_tx, url, dir, ctx) = (job_rx.clone(), done_tx.clone(), url.clone(), dir.clone(), ctx.clone());
+            let (job_rx, done_tx, source, dir, ctx) = (job_rx.clone(), done_tx.clone(), source.clone(), dir.clone(), ctx.clone());
             std::thread::spawn(move || {
                 // The OpenStreetMap tile usage policy requires the program to say what it is.
                 let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -124,7 +169,7 @@ impl Tiles {
                         Ok(Ok(k)) => k,
                         _ => return,
                     };
-                    let img = fetch(&agent, &url, dir.as_ref(), key);
+                    let img = fetch(&agent, &source, dir.as_ref(), key);
                     if done_tx.send((key, img)).is_err() {
                         return;
                     }

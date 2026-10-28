@@ -582,17 +582,42 @@ fn file_server(dir: PathBuf) -> (String, Arc<Mutex<Vec<String>>>) {
                 if reader.read_line(&mut first).unwrap_or(0) == 0 {
                     return;
                 }
+                let mut range: Option<(usize, Option<usize>)> = None;
                 loop {
                     let mut line = String::new();
                     if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
                         break;
+                    }
+                    // Parts of a file, as GDAL asks for them: Range: bytes=0-16383.
+                    if let Some(r) = line.to_lowercase().strip_prefix("range: bytes=").map(|r| r.trim().to_string()) {
+                        if let Some((a, b)) = r.split_once('-') {
+                            range = a.parse().ok().map(|a| (a, b.parse().ok()));
+                        }
                     }
                 }
                 let path = first.split_whitespace().nth(1).unwrap_or("/").to_string();
                 kept.lock().unwrap().push(path.clone());
                 let file = path.split('?').next().unwrap().trim_start_matches("/tiles/");
                 let mut s = stream;
+                let head = first.starts_with("HEAD");
                 match std::fs::read(dir.join(file)) {
+                    Ok(body) if range.is_some() => {
+                        let (a, b) = range.unwrap();
+                        let end = b.map_or(body.len() - 1, |b| b.min(body.len() - 1));
+                        let part = &body[a.min(body.len())..=end];
+                        let _ = write!(
+                            s,
+                            "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
+                            part.len(),
+                            a,
+                            end,
+                            body.len()
+                        );
+                        let _ = s.write_all(part);
+                    }
+                    Ok(body) if head => {
+                        let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n", body.len());
+                    }
                     Ok(body) => {
                         let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
                         let _ = s.write_all(&body);
@@ -792,4 +817,91 @@ fn the_opentripplanner_example_plans_lists_departures_and_counts() {
         assert!(dir.join("out").join(f).exists(), "{}", f);
     }
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Vector tiles from the web: those of a rectangle from an address with {z}/{x}/{y}, and a
+/// PMTiles file read where it is, a part at a time. The pieces of each subregion that the
+/// tiles cut apart are put together again.
+#[test]
+fn vector_tiles_are_read_from_the_web_by_their_address_and_as_pmtiles() {
+    let formats = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/formats");
+    let (base, asked) = file_server(formats);
+    let dir = tmp("vector-tiles");
+    let ws = model(
+        &format!(
+            r#"{{"id": "xyz", "type": "Reader", "params": {{"path": "{base}/tiles/subregions_tiles/{{z}}/{{x}}/{{y}}.pbf", "vt_zoom": "6",
+                 "within": "rectangle", "min_x": "11.0", "min_y": "57.2", "max_x": "14.7", "max_y": "59.3"}}}},
+               {{"id": "pieces", "type": "Reader", "params": {{"path": "{base}/tiles/subregions_tiles/{{z}}/{{x}}/{{y}}.pbf", "vt_zoom": "6", "vt_pieces": "keep",
+                 "within": "rectangle", "min_x": "11.0", "min_y": "57.2", "max_x": "14.7", "max_y": "59.3"}}}},
+               {{"id": "far", "type": "Reader", "params": {{"path": "{base}/tiles/subregions_tiles/{{z}}/{{x}}/{{y}}.pbf", "vt_zoom": "18",
+                 "within": "rectangle", "min_x": "11.0", "min_y": "57.2", "max_x": "14.7", "max_y": "59.3"}}}},
+               {{"id": "pm", "type": "Reader", "params": {{"path": "{base}/tiles/subregions.pmtiles", "vt_zoom": "7"}}}}"#
+        ),
+        "",
+    );
+    let r = run(&ws, Some(&GdalBackend::new()), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    let t = r.output("xyz", "Output").unwrap();
+    assert_eq!(t.crs, Some(3857));
+    assert_eq!(t.len(), 4, "four subregions, each whole");
+    assert!(col(t, "layer").iter().all(|v| *v == Value::Text("subregions".into())));
+    assert!(r.output("pieces", "Output").unwrap().len() > 4, "kept as pieces");
+    assert!(r.nodes["far"].error.as_deref().unwrap_or("").contains("more than 500"), "{:?}", r.nodes["far"].error);
+    assert_eq!(r.output("pm", "Output").unwrap().len(), 4);
+    let asked = asked.lock().unwrap().clone();
+    assert!(asked.iter().any(|a| a == "/tiles/subregions_tiles/6/33/18.pbf"), "{:?}", asked);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A zip file on the web is fetched and read as one on the computer. With several data files
+/// in it, the input says which it read, and File in the zip chooses another, by name, path
+/// or pattern.
+#[test]
+fn a_zip_file_on_the_web_is_read_and_a_file_in_it_chosen() {
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+    let serve = tmp("zip-serve");
+    {
+        let f = std::fs::File::create(serve.join("data.zip")).unwrap();
+        let mut z = zip::ZipWriter::new(f);
+        for (inside, from) in [
+            ("data/subregions.gpkg", "subregions.gpkg"),
+            ("towns.csv", "apis/towns.csv"),
+            ("routes.shp", "routes.shp"),
+            ("routes.shx", "routes.shx"),
+            ("routes.dbf", "routes.dbf"),
+            ("routes.prj", "routes.prj"),
+        ] {
+            z.start_file(inside, zip::write::SimpleFileOptions::default()).unwrap();
+            z.write_all(&std::fs::read(examples.join(from)).unwrap()).unwrap();
+        }
+        z.finish().unwrap();
+    }
+    let (base, _) = file_server(serve.clone());
+    let dir = tmp("zip-web");
+    let ws = model(
+        &format!(
+            r#"{{"id": "first", "type": "Reader", "params": {{"path": "{base}/tiles/data.zip"}}}},
+               {{"id": "gpkg", "type": "Reader", "params": {{"path": "{base}/tiles/data.zip", "zip_file": "*.gpkg"}}}},
+               {{"id": "path", "type": "Reader", "params": {{"path": "{base}/tiles/data.zip", "zip_file": "data/subregions.gpkg"}}}},
+               {{"id": "none", "type": "Reader", "params": {{"path": "{base}/tiles/data.zip", "zip_file": "roads.gpkg"}}}}"#
+        ),
+        "",
+    );
+    let r = run(&ws, Some(&GdalBackend::new()), &dir);
+    let routes = r.output("first", "Output").unwrap();
+    assert_eq!(routes.len(), 5, "the Shapefiles first, as before");
+    assert!(r.nodes["first"].warnings.is_empty());
+    assert!(
+        r.log.iter().any(|l| l.msg.contains("data.zip holds 3 data files") && l.msg.contains("Read the Shapefiles")),
+        "{:?}",
+        r.log.iter().map(|l| &l.msg).collect::<Vec<_>>()
+    );
+    assert_eq!(r.output("gpkg", "Output").unwrap().len(), 4);
+    assert_eq!(r.output("path", "Output").unwrap().len(), 4);
+    let e = r.nodes["none"].error.clone().unwrap_or_default();
+    assert!(e.contains("holds no file roads.gpkg") && e.contains("data/subregions.gpkg"), "{}", e);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&serve);
 }

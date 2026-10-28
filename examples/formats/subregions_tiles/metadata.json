@@ -1,0 +1,12 @@
+{
+  "name":"subregions_tiles",
+  "description":"",
+  "version":2,
+  "minzoom":5,
+  "maxzoom":7,
+  "center":"12.8750000,58.2500000,5",
+  "bounds":"11.0000000,57.2000000,14.7500000,59.3000000",
+  "type":"overlay",
+  "format":"pbf",
+  "json":"{\n  \"vector_layers\":[\n    {\n      \"id\":\"subregions\",\n      \"description\":\"\",\n      \"minzoom\":5,\n      \"maxzoom\":7,\n      \"fields\":{\n        \"subregion\":\"String\"\n      }\n    }\n  ],\n  \"tilestats\":{\n    \"layerCount\":1,\n    \"layers\":[\n      {\n        \"layer\":\"subregions\",\n        \"count\":4,\n        \"geometry\":\"Polygon\",\n        \"attributeCount\":1,\n        \"attributes\":[\n          {\n            \"attribute\":\"subregion\",\n            \"count\":4,\n            \"type\":\"string\",\n            \"values\":[\n              \"Fyrbodal\",\n              \"Göteborgsregionen\",\n              \"Sjuhärad\",\n              \"Skaraborg\"\n            ]\n          }\n        ]\n      }\n    ]\n  }\n}"
+}

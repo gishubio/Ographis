@@ -12,14 +12,17 @@ five models.
 | To | Do this |
 | --- | --- |
 | Add a node | Fold out a list on the left by its arrow and click in it. The lists are folded in from the start, and the search box searches all of them, also by the names the tools had before. The × at the end of a search box empties it. Or right-click the canvas: *Add input*, *Add output*, or *Add tool* with a search box of its own |
+| Add a tool by typing | Double-click empty canvas, or press `/` with the pointer over it. Write a few letters of the name, such as `buff`, choose with the arrow keys and press Enter. With nothing written, the tools used last come first |
 | Add an input for a file | Drop the file on the window from Explorer. Several files give several inputs |
 | Read some of the layers in a file | Drop a GeoPackage or a workbook with several layers. A window asks which ones to read, and whether each gets an input of its own or all go into one stream. The ticks are also in the form of the input |
 | Read a folder of files as one stream | Drop the folder on the window, or click *Folder…* in an input. The node shows how many files it stands for |
 | Read a file from the web | Write its address, `https://…`, as the path of an input |
 | Read JSON that is not GeoJSON | Give an input the file or the web address, such as an open data service. The list of records is found by itself, such as the list in `results`, or set *Records at (JSON)*. Objects inside a record become attributes such as `adress.ort` |
-| Try a model on part of large data | Set *Largest number of features* in the input |
+| Try a model on part of large data | Set *Largest number of features* in the input, or Model → *Trial run* (Ctrl+Shift+F5): every input reads only the first features, 1000 unless Settings → *General* says otherwise, and the log says it was a trial |
+| Read vector tiles | Give an input an .mbtiles or .pmtiles file, a folder of tiles (`z/x/y.pbf`), or a web address with `{z}/{x}/{y}` in it. Choose the zoom level; the pieces of a feature that the tiles cut apart are put together again, unless *Pieces* says keep them. From the web a rectangle to read within is needed |
+| Read a zip file | Give the path or the web address of the .zip. When it holds several data files the first is read and the log lists the others; choose another with *File in the zip* |
 | Open a model | File → Open, or drop the `.json` file on the window |
-| Connect | Drag from an output port to an input port. Drop on empty canvas to choose a new node that is connected at once |
+| Connect | Drag from an output port to an input port. Drop on empty canvas to type the new node, which is connected at once |
 | Put a tool into a connection | Drag the tool onto the connection, which is drawn heavier when the tool is over it, and let go |
 | Remove a connection | Click it and press Delete, or right-click it and choose *Delete connection*. Right-click the ring of a port to remove all its connections |
 | Move a connection | Drag it from the input it goes to, and drop it on another input. A port is hit a few points outside its ring |
@@ -37,7 +40,7 @@ five models.
 | Take back a change | Ctrl+Z, and Ctrl+Y to do it again. Everything that changes the model can be taken back: moving, adding, deleting, connecting and settings |
 | Copy group boxes | Select all that a box holds, or everything, and copy. The box goes along, also to another window |
 | Shape a connection | The secondary button on a connection: *Add bend point*. Drag the point where you want the connection to go; it is drawn as a smooth curve through its points. The secondary button on a point removes it. The points are saved with the model |
-| Look at data in 3D | Tick *3D* above the map under the canvas. Features with heights, and a terrain model read as a grid, are drawn from an angle, coloured by the height. Drag to turn, drag with the secondary button to move, scroll to zoom; *heights ×* draws them taller for flat land  A click on a feature, such as a wall of a building, picks it, and its row is chosen in the table; a click beside them lets go. *Zoom to data*, or a double click, shows all of it again. The surfaces are drawn with a depth buffer, so what is nearer always covers what is behind |
+| Look at data in 3D | Tick *3D* above the map under the canvas. Features with heights, and a terrain model read as a grid, are drawn from an angle, coloured by the height. Drag to turn, drag with the secondary button to move, scroll to zoom; *heights ×* draws them taller for flat land  A click on a feature, such as a wall of a building, picks it, and its row is chosen in the table; a click beside them lets go. *Zoom to data*, or a double click, shows all of it again. The surfaces are drawn with a depth buffer, so what is nearer always covers what is behind. Ctrl and a click picks several |
 | Copy values from the table | The secondary button on a value under the canvas: *Copy value*, *Copy row* (with the names, for a spreadsheet) or *Copy column* |
 | Read only a part | *Read* on Input: *Only within a rectangle*, with its sides and its coordinate system. Each side is a number or a variable, such as `$(xmin)`; models that read within the variables before 0.75 get them written in the sides. A GeoPackage is then read through its spatial index, which is quick also for all of NVDB |
 | Read a 3D model | Point Input to an .obj, .gltf or .glb file. The materials and textures of an OBJ (.mtl and pictures) are read from beside it; a .glb holds its own, and a .gltf has them beside it or inside it. glTF is read through the nodes of its scene, each placed by its transform, with its materials: the base colour and its texture, how metallic and rough it is, and see-through parts. Neither format says where it stands, so the input has the units (glTF is in metres; an OBJ more than 200 across is taken as centimetres), which axis is up (y for glTF, z for OBJ, unless you say otherwise), the origin as east, north and height, and how far it is turned. Each object of the file becomes a feature with its faces as a MultiPolygon Z, its main material and its height; the model itself goes along for the 3D view and Render 3D scene. A model without a coordinate system is drawn in the map in its own units, without a background map |
@@ -45,9 +48,12 @@ five models.
 | Set up a group | Click its name. Name, colour and the lock are in the panel on the right. Unlocked, the box moves without the nodes |
 | Duplicate or delete | Ctrl+D and Delete act on the selection. So does a right-click on a node |
 | Copy nodes to another model | Ctrl+C copies the selected nodes with the connections between them, Ctrl+X cuts them, and Ctrl+V pastes them where the pointer is, in this window or another window of Ographis. Paths are made whole when copied, so they still point to the same files. Also in the Edit menu, and Paste in the menu of the canvas |
-| Move the canvas | Hold Space and drag, or drag with the middle mouse button |
+| Move the canvas | Hold Space and drag, drag with the middle mouse button, or drag the scrollbars at the right and the bottom edge |
+| Line nodes up | Select several and choose Edit → *Align*, or *Align* on the menu of a node: left, centre, right, top, middle, bottom, or spread them out evenly across or down |
+| Describe the model | Model → *Description…*. The text is shown in a plate on the canvas, which can be hidden, and under the title in a picture of the model |
+| Copy the model as a picture | Edit → *Copy the model as a picture*, or Ctrl+Shift+C, and paste it into a document or an e-mail |
 | Zoom | Scroll. *Zoom to fit*, or Home, shows all nodes |
-| Run | The Run button or F5. The run has a thread of its own, and the counts on the ports fill in node by node while it goes on. With *Reuse what has not changed* (Model menu, on for new models) only what has changed since the last run is run again, and outputs are always written |
+| Run | The Run button or F5. The run has a thread of its own, and the counts on the ports fill in node by node while it goes on. Dots move along the connections of the node at work. With *Reuse what has not changed* (Model menu, on for new models) only what has changed since the last run is run again, and outputs are always written |
 | Run everything again | Model → *Run everything again*, or Ctrl+F5: reads every file and asks every service again, whatever is kept from the last run |
 | Stop a run | The Stop button, Model → Stop, or Shift+F5. What has finished keeps its results, the node at work is broken off where it can be, and the rest is marked as stopped in the log. A tool at a step that cannot be broken off is left to finish on its own after three seconds: the run ends at once, and what the tool gives later is not used |
 | Pause a run | The Pause button, Model → Pause, or F6. The run waits before the next node, and within reading, web requests and drawing a map. The same button, now *Resume*, or F6 again, lets it go on |
@@ -59,6 +65,8 @@ five models.
 | See data | Click a node or an output port. Table and map appear at the bottom |
 | Shade terrain or see it in 3D | Read the terrain model with *Cells as* set to *Heights or other values on a grid*, and connect it to *Heights* of Shade terrain or Quick terrain view, or to *Terrain* of Render 3D scene. A map from Draw map in the same coordinate system goes to *Map*. A grid is shown on the map under the canvas as grey relief |
 | Drop files where you want them | An input for a dropped file is put where it was dropped on the canvas. Several files go one below the other |
+| Find rows | Write in *Filter* above the table: a word finds the rows that have it in any value, and an expression such as `population > 10000` or `= name LIKE 'S%'` the rows where it is true. The header says how many of all are shown; the map and the statistics follow |
+| Write an expression | Begin a word: attributes of the stream and functions that begin with it are suggested under the field. Tab or Enter takes one, Escape closes the list. Settings → *General* can turn the suggestions off |
 | Sort the table | Click the name of a column. A second click sorts the other way, a third gives the order of the stream back |
 | See the attributes after a step | Click *▸ n attributes* under the node. View → *Show the attributes on all nodes* folds out all of them |
 | Find an input or an output | *Data sets* at the top left lists what is read and written. Click a name to select the node |
@@ -89,7 +97,14 @@ Attribute lists and the checking of expressions rely on the latest run. So run t
 model once before you set up nodes further down the chain.
 
 The map shows OpenStreetMap as a background when the server can be reached, and otherwise a
-grid with coordinates in the model's own system. Every feature is drawn, without labels.
+grid with coordinates in the model's own system. Other background maps are added in
+Settings → *Background maps*: XYZ tiles, WMS or WMTS, with a user and password or a key
+when the service needs one (kept in Windows' Credential Manager, as database passwords
+are), and chosen above the map. *Labels* above the map writes the values of an attribute
+by the features. Right-click the map to copy the coordinates of the point, in the system of
+the data or as latitude and longitude, or to measure a distance or an area: click the
+points, and Escape ends. Measures are on the ellipsoid when the data has a coordinate system.
+Every feature is drawn.
 When up to 40,000 features are in view they are drawn as shapes: click one to find its row
 in the table. When more are in view they are drawn into an image in the background, which
 takes a moment for millions, and the map says so. Zoom in to see them one by one. The tiles are cached on disk. The
@@ -105,13 +120,15 @@ result of an earlier run is freed beside the window when a new run starts.
 ## Commands
 
 ```
-og run <model.json | folder> [--var name=value] [--log file] [--inspect node[:port]] [--rows N]
+og run <model.json | folder> [--var name=value] [--log file] [--inspect node[:port]] [--rows N] [--sample N]
        [--keep-logs N] [--no-history] [--no-lock] [--lock-hours H]
                                        runs a model, or every model in a folder, with the log as it goes
 og history <model> [--last N] [--unlock]
                                        the latest runs of a model, and its lock
 og info <file>                         layers, counts, coordinate system, attributes
-og nodes                               node types, parameters and expression functions
+og nodes [--json]                      node types, parameters and expression functions; --json for programs
+og check <model | folder>              checks a model without running it: types, ports, settings, expressions
+og schema                              a JSON Schema of the model format
 og connections                         the database connections of the settings, without passwords
 og picture <model> <file.png|.jpg|.pdf>
                                        the model drawn as on the canvas, for documentation
@@ -132,6 +149,7 @@ puts the command for the open model on the clipboard, with its variables:
 ```
 
 - `--var name=value` gives a variable of the model another value for this run.
+- `--sample N` is a trial run: every input reads only its first N features.
 - `--log file` adds every line of the log, with the date and time, to the end of the file.
   The folder is made if it is not there.
 - A folder runs every model (`.json`) in it, in the order of their names, and ends with a
@@ -187,3 +205,11 @@ with a button for the log of each run and one to open the folder.
   updates, it offers them the next time it starts: *Restore* opens them as a model with
   changes not saved, in the file they came from, and *Throw away* lets go of them. Several
   Ographis windows at once each keep their own.
+
+## AI assistants
+
+An AI assistant can write a model from a description of the task. [`AGENTS.md`](../AGENTS.md)
+tells it how: the node types are looked up in [`nodes.json`](nodes.json) (or `og nodes
+--json`), and the model is checked with `og check`, which names what is wrong and what would
+be right, until it says OK. [`model.schema.json`](model.schema.json) lets an editor check a
+model as it is written.

@@ -296,6 +296,11 @@ pub fn initcap(s: &str) -> String {
 }
 
 /// The functions with one line of help each, for the user interface and the documentation.
+/// The functions of expressions: name, fewest and most arguments, and help.
+pub fn functions() -> Vec<(&'static str, usize, usize, &'static str)> {
+    FUNCS.iter().map(|f| (f.0, f.2, f.3, f.4)).collect()
+}
+
 pub fn function_help() -> Vec<&'static str> {
     FUNCS.iter().map(|f| f.4).collect()
 }
@@ -352,6 +357,9 @@ struct Parser<'a> {
     pos: usize,
     fields: &'a [String],
     src_len: usize,
+    /// Any name is taken as an attribute, to check how an expression is written before the
+    /// attributes of the stream are known.
+    any_field: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -387,6 +395,7 @@ impl<'a> Parser<'a> {
     fn field(&self, name: &str) -> Result<Expr> {
         match self.fields.iter().position(|f| f == name) {
             Some(i) => Ok(Expr::Field(i)),
+            None if self.any_field => Ok(Expr::Lit(Value::Null)),
             None => err(format!(
                 "There is no attribute \"{}\". Available: {}.",
                 name,
@@ -650,12 +659,28 @@ pub fn compile(src: &str, fields: &[String]) -> Result<Compiled> {
         return err("The expression is empty.");
     }
     let toks = lex(src)?;
-    let mut p = Parser { toks, pos: 0, fields, src_len: src.chars().count() };
+    let mut p = Parser { toks, pos: 0, fields, src_len: src.chars().count(), any_field: false };
     let expr = p.or()?;
     if p.pos < p.toks.len() {
         return err(format!("The expression cannot be read from character {} on.", p.at()));
     }
     Ok(Compiled { expr })
+}
+
+/// Checks how an expression is written, without the attributes of a stream: parentheses,
+/// operators, quotes and the functions with their number of arguments. Any name is taken
+/// as an attribute.
+pub fn check_syntax(src: &str) -> Result<()> {
+    if src.trim().is_empty() {
+        return err("The expression is empty.");
+    }
+    let toks = lex(src)?;
+    let mut p = Parser { toks, pos: 0, fields: &[], src_len: src.chars().count(), any_field: true };
+    p.or()?;
+    if p.pos < p.toks.len() {
+        return err(format!("The expression cannot be read from character {} on.", p.at()));
+    }
+    Ok(())
 }
 
 /// What an expression gets to know about the feature it is evaluated on.

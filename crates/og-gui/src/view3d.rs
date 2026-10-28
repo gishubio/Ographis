@@ -58,6 +58,8 @@ struct Prepared {
 const MOST_MODEL: usize = 1_500_000;
 
 pub struct View3d {
+    /// Features picked besides the selected one, drawn as picked too.
+    pub also: Vec<usize>,
     /// Where the view is from, in degrees clockwise from north, and how high above the
     /// horizon, from 5 to 90.
     pub azimuth: f32,
@@ -157,7 +159,7 @@ fn rasterize(w: usize, h: usize, faces: &[PixelFace], dots: &[PixelDot]) -> (Vec
 
 impl Default for View3d {
     fn default() -> Self {
-        View3d { azimuth: 200.0, elevation: 35.0, exaggeration: 1.0, zoom: 1.0, pan: Vec2::ZERO, prepared: None, drawn: None }
+        View3d { also: Vec::new(), azimuth: 200.0, elevation: 35.0, exaggeration: 1.0, zoom: 1.0, pan: Vec2::ZERO, prepared: None, drawn: None }
     }
 }
 
@@ -504,12 +506,15 @@ impl View3d {
             pw as u32,
             ph as u32,
             selected.map_or(NONE, |s| s as u32),
+            self.also.len() as u32,
+            self.also.iter().fold(0u32, |h, a| h.wrapping_mul(31).wrapping_add(*a as u32)),
             ppp.to_bits(),
             mid.x.to_bits(),
             mid.y.to_bits(),
         ]
         .to_vec();
         let need = self.drawn.as_ref().is_none_or(|d| d.key != key);
+        let also: std::collections::HashSet<usize> = self.also.iter().copied().collect();
         // What is drawn, only when it is to be drawn again: on a large point cloud it is many.
         let (faces, dots) = if need {
             // The surfaces: triangles of areas and cells of the grid, drawn from far to near.
@@ -544,13 +549,13 @@ impl View3d {
                 if n[0] * toward[0] + n[1] * toward[1] + n[2] * toward[2] < 0.0 {
                     n = n.map(|x| -x);
                 }
-                let chosen = selected == Some(*object as usize);
+                let chosen = selected == Some(*object as usize) || also.contains(&(*object as usize));
                 let rgb = if chosen { [pal.accent.r() as f32, pal.accent.g() as f32, pal.accent.b() as f32] } else { *rgb };
                 let p: Vec<(Pos2, f32)> = q.iter().map(|x| project(*x)).collect();
                 faces.push(([p[0], p[1], p[2]], colour(rgb, shade(n), 255), *object));
             }
             for it in prep.items.iter().filter(|i| i.kind == Kind::Area) {
-                let chosen = selected == Some(it.feature);
+                let chosen = selected == Some(it.feature) || also.contains(&it.feature);
                 for t in it.tris.chunks(3) {
                     let q = [it.pts[t[0] as usize], it.pts[t[1] as usize], it.pts[t[2] as usize]];
                     // The normal of the triangle, for the light.
@@ -569,7 +574,7 @@ impl View3d {
             // The points, as dots.
             let mut dots: Vec<PixelDot> = Vec::new();
             for it in prep.items.iter().filter(|i| i.kind == Kind::Point) {
-                let chosen = selected == Some(it.feature);
+                let chosen = selected == Some(it.feature) || also.contains(&it.feature);
                 for p in &it.pts {
                     let (sp, z) = project(*p);
                     let col = if chosen {
@@ -623,7 +628,7 @@ impl View3d {
         // Lines and outlines, coloured by their height, and points on top.
         let outline = Color32::from_rgba_unmultiplied(pal.ink.r(), pal.ink.g(), pal.ink.b(), 110);
         for it in &prep.items {
-            let chosen = selected == Some(it.feature);
+            let chosen = selected == Some(it.feature) || also.contains(&it.feature);
             match it.kind {
                 // Points are dots in the picture, drawn with the surfaces.
                 Kind::Point => {}

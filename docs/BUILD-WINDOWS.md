@@ -204,8 +204,8 @@ For the one who gets it:
   folders run (AppLocker), ask IT where it may lie.
 - Settings are kept in `%APPDATA%\Ographis`, as for a built program.
 
-This has been written but not yet tried on Windows. The reading of the import tables has
-been checked against pefile on Windows DLLs.
+This has been used on Windows 11 with OSGeo4W's GDAL 3.13.3 since version 0.86. The reading
+of the import tables has also been checked against pefile on Windows DLLs.
 
 ## If something goes wrong
 
@@ -214,6 +214,7 @@ been checked against pefile on Windows DLLs.
 | `.\build.cmd is not recognized` | The window is not in the project folder | `cd` to the folder that holds `build.cmd`. The zip file contains a folder of its own, so it may be one level down |
 | `No GDAL was found` | OSGeo4W is not installed, or is in another folder | Do step 2, or point out the folder with `-Gdal` |
 | `build.ps1 cannot be loaded because running scripts is disabled` | A group policy stops scripts | Follow [Building by hand](#building-by-hand) |
+| `failed to remove file …\target\release\ographis.exe`, *Access is denied* (`os error 5`) | Ographis is running, and Windows keeps the file it runs from | Close Ographis (and `og` if it runs) and build again. `build.cmd` now says so before it builds |
 | `cargo` is not found | The window was opened before the installation | Open a new PowerShell window |
 | `link.exe` is not found, or `LNK1181` | The C++ tools are missing | Install *Desktop development with C++* |
 | The download of dependencies stops at `CRYPT_E_NO_REVOCATION_CHECK` or a certificate error | A proxy that inspects the traffic | `$env:CARGO_HTTP_CHECK_REVOKE = "false"` and run again. Set `HTTPS_PROXY` if a proxy has to be given |
@@ -249,6 +250,11 @@ On Windows 11, by the first user:
 
 Not yet checked on Windows:
 
+- Version 0.88: background maps against real services, such as WMS and WMTS from
+  Lantmäteriet with a user and password, through the proxy; vector tiles (.mbtiles,
+  .pmtiles) with the GDAL 3.13 of OSGeo4W; Ctrl+Shift+C putting the picture of the model on
+  the clipboard of Windows; the double click and `/` of quick add with a real mouse; Copy
+  coordinates pasted into another program.
 - Version 0.87.1: the OpenTripPlanner example against the OpenTripPlanner 2.4 of the
   workplace, and the log in `otp_routes_and_departures.runs\logs` while it runs.
 - Version 0.87: passwords and keys in the Windows Credential Manager (Control Panel →

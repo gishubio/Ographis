@@ -363,7 +363,9 @@ fn variables_are_set_in_the_model_and_used_in_settings() {
     h.get_by_label("Add variable").click();
     h.run_steps(3);
     // The new row has two empty fields: the name to the left and the value to the right.
-    let empty: Vec<egui::Pos2> = h.get_all_by_value("").map(|n| n.rect().center()).collect();
+    // Those above the button: the filter of the table is empty too.
+    let button = h.get_by_label("Add variable").rect().center();
+    let empty: Vec<egui::Pos2> = h.get_all_by_value("").map(|n| n.rect().center()).filter(|p| p.y < button.y && (p.x - button.x).abs() < 500.0).collect();
     let lowest = empty.iter().map(|p| p.y).fold(f32::MIN, f32::max);
     let name = *empty.iter().filter(|p| (p.y - lowest).abs() < 2.0).min_by(|a, b| a.x.total_cmp(&b.x)).expect("an empty name field");
     click_at(&mut h, name);
@@ -821,4 +823,25 @@ fn a_run_in_the_program_writes_its_log_as_it_goes() {
     let text = std::fs::read_to_string(dir.join("pair.runs").join("logs").join(&last.log)).unwrap();
     assert!(text.lines().next().unwrap().contains("INFO  Running pair.json in Ographis"), "{}", text);
     assert!(text.contains("Towns:") && text.contains("Result"), "{}", text);
+}
+
+// ---------- Version 0.88 ----------
+
+/// A trial run, Ctrl+Shift+F5, reads at most the number of features of the settings from
+/// every input, and says so in the log.
+#[test]
+fn a_trial_run_reads_the_first_features() {
+    let mut h = harness(egui::Theme::Light, NO_TILES);
+    h.run_steps(4);
+    h.state_mut().settings.other.insert("trial_features".into(), serde_json::json!(2));
+    h.key_press_modifiers(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::F5);
+    wait_for_run(&mut h);
+    let result = h.state().result.clone().expect("a result");
+    let towns = result.output("towns", "Output").expect("towns");
+    assert_eq!(towns.len(), 2);
+    assert!(result.log.iter().any(|l| l.msg.contains("trial run") && l.msg.contains("first 2 features")));
+    // A normal run afterwards reads them all.
+    h.key_press(egui::Key::F5);
+    wait_for_run(&mut h);
+    assert!(h.state().result.clone().unwrap().output("towns", "Output").unwrap().len() > 2);
 }

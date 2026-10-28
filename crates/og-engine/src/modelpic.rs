@@ -148,7 +148,14 @@ pub fn draw(ws: &Workspace, scale: f32) -> Result<RasterImage> {
     }
     let title = if ws.name.trim().is_empty() { None } else { Some(ws.name.trim().to_string()) };
     let margin = 40.0;
-    let top = if title.is_some() { 60.0 } else { 0.0 };
+    // The description of the model under the title, as wide as the model, or at least 600.
+    let described: Vec<String> = if ws.description.trim().is_empty() {
+        Vec::new()
+    } else {
+        ws.description.trim().lines().flat_map(|l| if l.trim().is_empty() { vec![String::new()] } else { wrap(&text, l, 14.0, (x1 - x0).max(600.0)) }).collect()
+    };
+    let headed = if title.is_some() { 60.0 } else { 0.0 };
+    let top = headed + if described.is_empty() { 0.0 } else { described.len() as f32 * 20.0 + 16.0 };
     let (w, h) = (x1 - x0 + 2.0 * margin, y1 - y0 + 2.0 * margin + top);
     let (pw, ph) = ((w * scale).ceil() as u32, (h * scale).ceil() as u32);
     if (pw as u64) * (ph as u64) > 120_000_000 {
@@ -178,7 +185,10 @@ pub fn draw(ws: &Workspace, scale: f32) -> Result<RasterImage> {
         text.draw(pm, s, px, py, size * scale, bold, c, align);
     };
     if let Some(tt) = &title {
-        say(&mut pm, tt, x0, y0 - 24.0, 24.0, true, INK, 0.0);
+        say(&mut pm, tt, x0, y0 - top + 36.0, 24.0, true, INK, 0.0);
+    }
+    for (i, l) in described.iter().enumerate() {
+        say(&mut pm, l, x0, y0 - top + headed + 14.0 + i as f32 * 20.0, 14.0, false, MUTED, 0.0);
     }
     // Group boxes, beneath everything.
     for g in &ws.groups {

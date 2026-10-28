@@ -44,6 +44,8 @@ pub struct ParamCtx<'a> {
     /// The attributes of what an output port gave in the latest run, by "node:port", each
     /// with whether it is a number.
     pub stream_fields: &'a dyn Fn(&str) -> Vec<(String, bool)>,
+    /// Whether expressions get suggestions while they are written.
+    pub suggest: bool,
 }
 
 /// What a form changed.
@@ -173,6 +175,15 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             _ => false,
         };
     }
+    // Vector tiles from the web, by an address with {z}/{x}/{y}.
+    if reader && !path.is_empty() && og_engine::nodes::vector_tiles::is_template(path, web_as) {
+        return match spec.key {
+            "path" | "vt_zoom" | "vt_pieces" | "tiles_most" | "layer" | "layer_attr" | "web_as" | "connection" => true,
+            "within" => true,
+            "min_x" | "min_y" | "max_x" | "max_y" | "within_crs" => node.params.get("within").and_then(|v| v.as_str()) == Some("rectangle"),
+            _ => false,
+        };
+    }
     if spec.key.starts_with("tiles_") {
         return false;
     }
@@ -183,7 +194,11 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
     let filled = |key: &str| node.params.get(key).and_then(|v| v.as_str()).is_some_and(|v| !v.trim().is_empty());
     // A picture has neither attributes nor anything to add to.
     let image = writer && og_engine::nodes::is_image_format(&ext);
+    let full = base.join(path);
+    let tiles_file = matches!(ext.as_str(), "mbtiles" | "pmtiles") || (reader && og_engine::nodes::vector_tiles::is_tile_folder(&full));
     match spec.key {
+        "vt_zoom" | "vt_pieces" => reader && tiles_file,
+        "zip_file" => reader && (path.to_lowercase().ends_with(".zip") || og_engine::nodes::source_ext(path) == "zip"),
         "mode" | "fields" => !image && !matches!(ext.as_str(), "obj" | "glb"),
         "pdf_size" | "pdf_orientation" | "pdf_margin" | "pdf_title" | "pdf_compress" => writer && ext == "pdf",
         "pdf_width" | "pdf_height" => writer && ext == "pdf" && node.params.get("pdf_size").and_then(|v| v.as_str()) == Some("custom"),
@@ -738,8 +753,9 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                 }
             }
             ParamKind::Expression(port) => {
-                ui.add(TextEdit::multiline(&mut value).desired_width(f32::INFINITY).desired_rows(2).font(theme::mono(12.5)));
                 let fields = (cx.fields)(port);
+                let id = ui.make_persistent_id(("expression", node.id.as_str(), spec.key));
+                crate::suggest::expression_field(ui, &cx.pal, &mut value, &fields, cx.suggest, id, &quoted_field);
                 if let Some(name) = chips(ui, &cx.pal, &fields, |_| false) {
                     if !value.is_empty() && !value.ends_with(' ') && !value.ends_with('(') {
                         value.push(' ');
@@ -2180,6 +2196,14 @@ mod tests {
         assert!(shown(&n, "x") && shown(&n, "encoding") && shown(&n, "crs") && !shown(&n, "layer"));
         n.params.insert("path".into(), Json::String("areas.gpkg".into()));
         assert!(!shown(&n, "x") && shown(&n, "layer") && shown(&n, "layer_attr") && !shown(&n, "encoding"));
+        assert!(!shown(&n, "zip_file") && !shown(&n, "vt_zoom"));
+        // A zip file, also on the web, says which file in it; vector tiles their zoom level.
+        n.params.insert("path".into(), Json::String("https://example.org/data.zip?x=1".into()));
+        assert!(shown(&n, "zip_file") && !shown(&n, "vt_zoom"));
+        n.params.insert("path".into(), Json::String("roads.pmtiles".into()));
+        assert!(shown(&n, "vt_zoom") && shown(&n, "vt_pieces") && !shown(&n, "zip_file"));
+        n.params.insert("path".into(), Json::String("https://tiles.example.org/{z}/{x}/{y}.pbf".into()));
+        assert!(shown(&n, "vt_zoom") && shown(&n, "tiles_most") && shown(&n, "within") && !shown(&n, "crs") && !shown(&n, "x"));
         // A workbook has sheets and a first row, and no coordinate system.
         n.params.insert("path".into(), Json::String("book.XLSX".into()));
         assert!(shown(&n, "layer") && shown(&n, "header") && !shown(&n, "crs") && !shown(&n, "x"));

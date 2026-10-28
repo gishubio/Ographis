@@ -3,6 +3,56 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.88
+
+For AI assistants
+
+- `og nodes --json` gives every node type with its ports and settings, their keys, kinds,
+  choices and defaults, and the expression functions, as JSON; it is also in
+  `docs/nodes.json`. `og schema` gives a JSON Schema of the model format
+  (`docs/model.schema.json`).
+- **`og check`** checks a model, or a folder of models, without running it: unknown node
+  types (with the nearest names), ports and settings, choices, expressions, variables that
+  are not defined and inputs left open. It says what would be right, and exits with 1 on
+  errors.
+- `AGENTS.md` tells an assistant how to write a model, with examples to start from.
+
+On the canvas
+
+- **Quick add**: a double click on empty canvas, or `/`, opens a box where a tool is added by
+  writing a few letters of its name. A connection let go on empty canvas opens the same box,
+  with only the tools that fit.
+- **Align and spread out** selected nodes (Edit → Align, or the menu of a node).
+- **Scrollbars** at the right and bottom edges of the canvas.
+- Dots move along the connections of the node at work while a model runs.
+- **A description of the model** (Model → Description…), shown on the canvas and in the
+  picture of the model.
+- **Copy the model as a picture** (Ctrl+Shift+C).
+- **Trial run** (Ctrl+Shift+F5, and `og run --sample N`): every input reads only its first
+  features, 1000 unless Settings → General says otherwise.
+- **Suggestions in expressions**: attributes and functions that begin with the word being
+  written, taken with Tab or Enter. They can be turned off in Settings → General.
+
+Data and map
+
+- **Filter** above the table, by a word or an expression; the map and the statistics follow.
+- **Background maps of your own**: XYZ tiles, WMS and WMTS, also with a user and password or
+  a key, set up in Settings → Background maps and chosen above the map.
+- **Labels** on the map from an attribute.
+- Right-click the map to **copy the coordinates** of a point, or to **measure** a distance or
+  an area, on the ellipsoid.
+- Ctrl and a click picks several features in the 3D view.
+
+New tool and formats
+
+- **Create duplicate** (`Duplicator`) makes copies of each feature, a number of them or as
+  many as an expression says, numbered.
+- **Vector tiles**: .mbtiles, .pmtiles (also on the web), a folder of tiles and
+  `{z}/{x}/{y}.pbf` addresses on the web, at a zoom level, with features cut by the tiles put
+  together again. Not yet the MapLibre Tile format (MLT).
+- A .zip with several data files, also on the web, reads the first and lists the others in
+  the log; *File in the zip* chooses another.
+
 ## 0.87.1
 
 - **Explode JSON list** no longer copies the whole answer it explodes into every element.

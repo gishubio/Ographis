@@ -51,6 +51,13 @@ pub const FORMATS: &[Format] = &[
         write: "",
         note: "Points, lines, areas and relations, with the common tags as attributes",
     },
+    Format {
+        name: "Vector tiles (Mapbox Vector Tiles)",
+        files: ".mbtiles, .pmtiles, a folder of tiles, {z}/{x}/{y}.pbf on the web",
+        read: "GDAL and Ographis",
+        write: "",
+        note: "As MapLibre draws maps from, at a zoom level; the pieces of a feature that the tiles cut apart are put together again. PMTiles on the web are read where they are. Not yet the newer MapLibre Tile (MLT)",
+    },
     Format { name: "OGC API Features, WFS", files: "web services", read: GDAL, write: "", note: "Page by page, only what lies in a rectangle if asked" },
     Format { name: "ArcGIS feature services", files: "web services", read: "GDAL (ESRIJSON)", write: "", note: "Layer by layer" },
     Format {

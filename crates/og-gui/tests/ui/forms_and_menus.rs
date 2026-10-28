@@ -633,3 +633,39 @@ fn an_expression_shows_its_value_and_the_functions() {
     }
     shot(&mut h, "301-join-by-location");
 }
+
+// ---------- Version 0.88 ----------
+
+/// While an expression is written, the attributes and functions that begin with the word at
+/// the cursor are suggested; Tab takes one. Settings → General turns it off.
+#[test]
+fn expressions_get_suggestions_while_they_are_written() {
+    let mut h = harness(egui::Theme::Light, NO_TILES);
+    h.run_steps(4);
+    h.state_mut().run_blocking();
+    h.state_mut().focus_node("skaraborg");
+    h.run_steps(4);
+    let field = h.get_all_by_value("subregion = 'Skaraborg'").last().unwrap().rect();
+    click_at(&mut h, field.right_bottom() - egui::vec2(6.0, 6.0));
+    h.key_press(egui::Key::End);
+    h.run_steps(1);
+    h.event(egui::Event::Text(" OR subr".into()));
+    h.run_steps(3);
+
+    assert!(h.query_all_by_label_contains("Tab or Enter takes it").next().is_some(), "the list is shown");
+    shot(&mut h, "088-expression-suggestions");
+    h.key_press(egui::Key::Tab);
+    h.run_steps(3);
+    assert_eq!(param(&h, "skaraborg", "test"), "subregion = 'Skaraborg' OR subregion");
+    // A function, with its parenthesis.
+    h.event(egui::Event::Text(" = low".into()));
+    h.run_steps(3);
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert_eq!(param(&h, "skaraborg", "test"), "subregion = 'Skaraborg' OR subregion = lower(");
+    // Turned off, nothing is suggested.
+    h.state_mut().settings.other.insert("suggestions".into(), serde_json::json!(false));
+    h.event(egui::Event::Text("'X') OR subr".into()));
+    h.run_steps(3);
+    assert!(h.query_all_by_label_contains("Tab or Enter takes it").next().is_none());
+}

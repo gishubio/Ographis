@@ -102,6 +102,35 @@ impl App {
         Some(order)
     }
 
+    /// The rows a filter lets through, kept until the table or the filter changes. None when
+    /// there is no filter, or when it cannot be read: then the error is kept to show.
+    fn filter_rows(&mut self, t: &Arc<Table>, text: &str) -> Option<FilteredView> {
+        if text.trim().is_empty() {
+            self.filter_error = None;
+            return None;
+        }
+        let key = (Arc::as_ptr(t) as usize, text.to_string());
+        if let Some(f) = self.filtered.as_ref().filter(|f| f.key == key) {
+            return Some(FilteredView { rows: f.rows.clone(), table: f.table.clone(), error: f.error.clone() });
+        }
+        match filter_table(t, text) {
+            Ok(rows) => {
+                let sub = Table { features: rows.iter().map(|i| t.features[*i].clone()).collect(), ..t.like() };
+                let mut sub = sub;
+                sub.fields = t.fields.clone();
+                let f = Filtered { key, rows: Arc::new(rows), table: Arc::new(sub), error: None };
+                let view = FilteredView { rows: f.rows.clone(), table: f.table.clone(), error: None };
+                self.filtered = Some(f);
+                self.filter_error = None;
+                Some(view)
+            }
+            Err(e) => {
+                self.filter_error = Some(e);
+                None
+            }
+        }
+    }
+
     pub(super) fn data_tab(&mut self, ui: &mut Ui, pal: &Palette) {
         let viewed = self.viewed();
         // Another node or port is another table, which starts in the order of its stream.
@@ -147,6 +176,10 @@ impl App {
             _ => None,
         };
         let all_hidden = is_view && viewed.as_ref().is_some_and(|(p, _)| p.len() > 1 && p.iter().all(|x| hidden.contains(&x.0)));
+        // The rows the filter above the table lets through, for this node and port.
+        let filter_key = (self.view.node.clone().unwrap_or_default(), viewed.as_ref().map(|(p, c)| p[*c].0.clone()).unwrap_or_default());
+        let filter_text = self.row_filter.get(&filter_key).cloned().unwrap_or_default();
+        let filtered = table.as_ref().and_then(|t| self.filter_rows(t, &filter_text));
 
         egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 6)).show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -162,11 +195,11 @@ impl App {
                                 }
                             }
                             // Ports named after values are quoted, so that "1" 6 is not read as 16.
-                            let label = if dynamic && i + 1 < ports.len() {
-                                format!("\"{}\" {}", port, fmt_count(t.len() as u64))
-                            } else {
-                                format!("{} {}", port, fmt_count(t.len() as u64))
+                            let count = match (&filtered, i == *chosen) {
+                                (Some(f), true) => format!("{} of {}", fmt_count(f.rows.len() as u64), fmt_count(t.len() as u64)),
+                                _ => fmt_count(t.len() as u64),
                             };
+                            let label = if dynamic && i + 1 < ports.len() { format!("\"{}\" {}", port, count) } else { format!("{} {}", port, count) };
                             let text = RichText::new(label).font(theme::mono(11.5));
                             if ui.selectable_label(i == *chosen, text).clicked() {
                                 self.view.port = Some(port.clone());
@@ -216,6 +249,9 @@ impl App {
                         ui.label(RichText::new(msg).color(pal.muted));
                     }
                 }
+                if self.map.maps != self.settings.maps {
+                    self.map.maps = self.settings.maps.clone();
+                }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| self.map.controls(ui));
             });
         });
@@ -241,7 +277,15 @@ impl App {
                 }
             }
         }
-        let map_table = if all_hidden { None } else { together.as_ref().map(|t| t.table.clone()).or_else(|| table.clone()) };
+        // The map shows the rows the filter lets through, and picks among them.
+        let shown_rows: Option<Arc<Vec<usize>>> = filtered.as_ref().filter(|_| together.is_none()).map(|f| f.rows.clone());
+        let map_table = if all_hidden {
+            None
+        } else {
+            together.as_ref().map(|t| t.table.clone()).or_else(|| filtered.as_ref().map(|f| f.table.clone())).or_else(|| table.clone())
+        };
+        let to_map = |i: usize| -> Option<usize> { shown_rows.as_ref().map_or(Some(i), |r| r.binary_search(&i).ok()) };
+        let from_map = |i: usize| -> Option<usize> { shown_rows.as_ref().map_or(Some(i), |r| r.get(i).copied()) };
         let skip = together.as_ref().map(|t| t.models);
         egui::Panel::right("map").resizable(true).default_size(460.0).min_size(200.0).frame(egui::Frame::NONE).show(ui, |ui| {
             let backend: Arc<dyn Backend + Send + Sync> = backend.clone();
@@ -249,12 +293,22 @@ impl App {
             let picture = map_table.as_ref().is_some_and(|t| t.image.is_some() && t.grid.is_none() && t.mesh.is_none());
             // In a View's streams together, the chosen one's features are a run among the others.
             let (offset, len) = together.as_ref().map_or((0, usize::MAX), |t| (t.offset, t.len));
-            let mut picked = selected.filter(|i| *i < len).map(|i| i + offset);
-            self.map.also = more.iter().filter(|i| **i < len).map(|i| i + offset).collect();
+            let mut picked = selected.and_then(to_map).filter(|i| *i < len).map(|i| i + offset);
+            self.map.also = more.iter().filter_map(|i| to_map(*i)).filter(|i| *i < len).map(|i| i + offset).collect();
             if self.map.three_d && !picture {
                 // A click on a feature in 3D picks it, as on the map.
+                self.map.view3d.also = self.map.also.clone();
                 if let Some(p) = self.map.view3d.show_skipping(ui, map_table.as_ref(), picked, skip) {
-                    selected = p.and_then(|i| i.checked_sub(offset)).filter(|i| *i < len);
+                    let hit = p.and_then(|i| i.checked_sub(offset)).filter(|i| *i < len).and_then(from_map);
+                    // Ctrl or Shift and a click adds to those picked, as on the map.
+                    let keys = ui.input(|i| i.modifiers);
+                    match hit {
+                        Some(i) if keys.command || keys.shift => pick_row(&mut selected, &mut more, i, egui::Modifiers::COMMAND, None),
+                        _ => {
+                            selected = hit;
+                            more.clear();
+                        }
+                    }
                 }
             } else {
                 let was = picked;
@@ -263,19 +317,42 @@ impl App {
                 if let Some((hit, _)) = self.map.multi_click.take() {
                     // Ctrl or Shift and a click on a feature adds it to those picked, or
                     // takes it away.
-                    if let Some(i) = hit.and_then(|i| i.checked_sub(offset)).filter(|i| *i < len) {
+                    if let Some(i) = hit.and_then(|i| i.checked_sub(offset)).filter(|i| *i < len).and_then(from_map) {
                         pick_row(&mut selected, &mut more, i, egui::Modifiers::COMMAND, None);
                     }
                 } else if picked != was {
-                    selected = picked.and_then(|i| i.checked_sub(offset)).filter(|i| *i < len);
+                    selected = picked.and_then(|i| i.checked_sub(offset)).filter(|i| *i < len).and_then(from_map);
                     more.clear();
                 }
             }
         });
         egui::CentralPanel::default().frame(egui::Frame::new().inner_margin(egui::Margin { left: 12, right: 0, top: 0, bottom: 0 })).show(
             ui,
-            |ui| match &table {
-                Some(t) if self.show_stats && (!t.is_empty() || !t.fields.is_empty()) => {
+            |ui| {
+            // The filter: plain text found in any value, or an expression.
+            if table.as_ref().is_some_and(|t| !t.fields.is_empty()) {
+                ui.horizontal(|ui| {
+                    let mut text = filter_text.clone();
+                    let field = crate::app::search_field(ui, &mut text, "Filter: text, or an expression such as population > 10000", 340.0);
+                    field.on_hover_text("Text finds the rows where a value holds it. An expression, as in Test, keeps the rows where it is true; start with = to make sure it is read as one. Not saved in the model");
+                    if text != filter_text {
+                        if text.is_empty() {
+                            self.row_filter.remove(&filter_key);
+                        } else {
+                            self.row_filter.insert(filter_key.clone(), text);
+                        }
+                    }
+                    if let Some(e) = filtered.as_ref().and_then(|f| f.error.clone()).or_else(|| self.filter_error.clone().filter(|_| !filter_text.trim().is_empty())) {
+                        ui.label(RichText::new(e).small().color(pal.err));
+                    }
+                });
+                ui.add_space(2.0);
+            }
+            // The statistics are of the rows the filter lets through.
+            let counted = filtered.as_ref().map(|f| f.table.clone()).or_else(|| table.clone());
+            match &table {
+                Some(_) if self.show_stats && counted.as_ref().is_some_and(|t| !t.is_empty() || !t.fields.is_empty()) => {
+                    let t = counted.as_ref().expect("checked above");
                     let key = Arc::as_ptr(t) as usize;
                     if self.stats_cache.as_ref().is_none_or(|c| c.0 != key) {
                         self.stats_cache = Some((key, crate::stats::column_stats(t)));
@@ -288,10 +365,17 @@ impl App {
                     // A feature that was just picked on the map is scrolled into view in the table.
                     let mut scroll_to = if selected != before_map { selected } else { None };
                     let order = self.row_order(t);
+                    // The rows the filter lets through, in the order of the table.
+                    let order: Option<Arc<Vec<usize>>> = match (order, &filtered) {
+                        (Some(o), Some(f)) => Some(Arc::new(o.iter().copied().filter(|i| f.rows.binary_search(i).is_ok()).collect())),
+                        (None, Some(f)) => Some(f.rows.clone()),
+                        (o, None) => o,
+                    };
+                    let rows = order.as_ref().map_or(t.len(), |o| o.len());
                     // Page Up and Page Down move a page of rows at a time, when the pointer is over
                     // the table or a row is selected, and no text is being written.
                     let over = ui.rect_contains_pointer(ui.max_rect());
-                    if (over || selected.is_some()) && !ui.ctx().egui_wants_keyboard_input() && !t.is_empty() {
+                    if (over || selected.is_some()) && !ui.ctx().egui_wants_keyboard_input() && rows > 0 {
                         let (down, up) = ui.input_mut(|i| {
                             (i.consume_key(egui::Modifiers::NONE, egui::Key::PageDown), i.consume_key(egui::Modifiers::NONE, egui::Key::PageUp))
                         });
@@ -299,7 +383,7 @@ impl App {
                             let page = ((ui.available_height() - 30.0) / 22.0).floor().max(1.0) as usize;
                             let place = |i: usize| order.as_ref().map_or(Some(i), |o| o.iter().position(|x| *x == i));
                             let row_at = |p: usize| order.as_ref().map_or(p, |o| o[p]);
-                            let last = t.len() - 1;
+                            let last = rows - 1;
                             let next = match selected.and_then(place) {
                                 Some(p) if down => (p + page).min(last),
                                 Some(p) => p.saturating_sub(page),
@@ -326,6 +410,7 @@ impl App {
                     ui.label(RichText::new("No features came out here.").color(pal.muted));
                 }
                 None => {}
+            }
             },
         );
         if selected.is_none() {
@@ -363,6 +448,55 @@ pub(crate) fn pick_row(selected: &mut Option<usize>, more: &mut Vec<usize>, i: u
             more.clear();
             *selected = Some(i);
         }
+    }
+}
+
+/// The rows of a table that the filter of the data view lets through, and those rows as a
+/// table of their own, for the map and the statistics.
+/// What the data view uses of a filter.
+pub(super) struct FilteredView {
+    pub rows: Arc<Vec<usize>>,
+    pub table: Arc<Table>,
+    pub error: Option<String>,
+}
+
+pub(super) struct Filtered {
+    key: (usize, String),
+    pub rows: Arc<Vec<usize>>,
+    pub table: Arc<Table>,
+    pub error: Option<String>,
+}
+
+/// Whether a filter is meant as an expression rather than text to find: it begins with =,
+/// or compares, or has the words of one.
+fn looks_like_expression(text: &str) -> bool {
+    let t = text.trim();
+    t.starts_with('=') || ["<", ">", "=", "<>", " like ", " ilike ", " and ", " or ", " is null", " in ("].iter().any(|op| t.to_lowercase().contains(op))
+}
+
+/// The rows a filter lets through: an expression that is true, or text found in a value,
+/// without regard to case.
+pub fn filter_table(t: &Table, text: &str) -> Result<Vec<usize>, String> {
+    let text = text.trim();
+    if looks_like_expression(text) {
+        let src = text.strip_prefix('=').unwrap_or(text);
+        let e = og_engine::expr::compile(src, &t.field_names()).map_err(|e| e.0)?;
+        let geographic = t.crs.map(|c| c == 4326);
+        let mut out = Vec::new();
+        for (i, f) in t.features.iter().enumerate() {
+            if e.test(&og_engine::expr::Row { feature: f, index: i, geographic }).map_err(|e| e.0)? {
+                out.push(i);
+            }
+        }
+        Ok(out)
+    } else {
+        let needle = text.to_lowercase();
+        Ok(t.features
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| f.attrs.iter().any(|v| !v.is_null() && v.to_text().to_lowercase().contains(&needle)))
+            .map(|(i, _)| i)
+            .collect())
     }
 }
 
@@ -531,7 +665,7 @@ pub(super) fn table_ui(
                 }
             })
             .body(|body| {
-                body.rows(22.0, t.len(), |mut row| {
+                body.rows(22.0, order.map_or(t.len(), |o| o.len()), |mut row| {
                     let i = order.map_or(row.index(), |o| o[row.index()]);
                     let f = &t.features[i];
                     row.set_selected(*selected == Some(i) || marked.contains(&i));
@@ -576,7 +710,10 @@ pub(super) fn table_ui(
                                     let names: Vec<&str> = t.fields.iter().map(|f| f.name.as_str()).collect();
                                     let first = *selected;
                                     let mut lines = vec![names.join("\t")];
-                                    for k in (0..t.len()).map(|k| order.map_or(k, |o| o[k])).filter(|k| marked.contains(k) || first == Some(*k)) {
+                                    for k in (0..order.map_or(t.len(), |o| o.len()))
+                                        .map(|k| order.map_or(k, |o| o[k]))
+                                        .filter(|k| marked.contains(k) || first == Some(*k))
+                                    {
                                         lines.push(t.features[k].attrs.iter().map(plain).collect::<Vec<_>>().join("\t"));
                                     }
                                     ui.ctx().copy_text(lines.join("\n"));
@@ -587,7 +724,10 @@ pub(super) fn table_ui(
                                     .on_hover_text("Every value of the attribute, one per line, in the order shown")
                                     .clicked()
                                 {
-                                    let rows: Vec<String> = (0..t.len()).map(|k| order.map_or(k, |o| o[k])).map(|k| plain(&t.features[k].attrs[c])).collect();
+                                    let rows: Vec<String> = (0..order.map_or(t.len(), |o| o.len()))
+                                        .map(|k| order.map_or(k, |o| o[k]))
+                                        .map(|k| plain(&t.features[k].attrs[c]))
+                                        .collect();
                                     ui.ctx().copy_text(format!("{}\n{}", t.fields[c].name, rows.join("\n")));
                                     ui.close();
                                 }

@@ -160,6 +160,13 @@ Why Ographis works as it does, and what it does not do yet.
 - DXF: drawings in DXF only, not DWG. Solids from ACIS (3DSOLID, REGION, BODY) are not read,
   nor the header of a binary DXF; dimensions become their lines and texts. Colours are those
   GDAL gives. Hatches become areas.
+- Vector tiles: Mapbox Vector Tiles are read, not yet the newer MapLibre Tile format (MLT).
+  The Rust library for it needs a newer compiler than Ographis is built with, and changes
+  from week to week; it will come when it has settled. Tiles are not written. Features are
+  only as exact as the tiles at the zoom level read, and a feature cut by the tiles is put
+  together by its id and attributes, so two features alike in both become one.
+- Background maps: WMS is asked for in Web Mercator (EPSG:3857), and WMTS only with a tile
+  matrix set in Web Mercator, as the tiles of the map are.
 - City models: textures and other appearances of CityGML and CityJSON are not read; the
   surfaces are coloured by what they are. Geometry that an object only points to with an
   XLink elsewhere in the file is not followed. A TIN relief has no level of detail of its

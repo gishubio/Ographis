@@ -84,6 +84,7 @@ impl App {
         self.history_dialog(&ctx, &pal);
         self.tips_dialog(&ctx, &pal);
         self.variables_dialog(&ctx, &pal);
+        self.description_dialog(&ctx, &pal);
         self.postgis_dialog(&ctx, &pal);
         self.settings_dialog(&ctx, &pal);
         // Last in the frame, so that everything a mouse button did when it was let go of
@@ -98,6 +99,18 @@ impl App {
 
     pub(super) fn shortcuts(&mut self, ctx: &egui::Context) {
         let typing = ctx.egui_wants_keyboard_input();
+        if !typing && ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::C)) {
+            self.copy_picture(ctx);
+            // The system may also have sent it as Copy, which is not for the nodes.
+            ctx.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Copy)));
+            return;
+        }
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::F5)) {
+            if !self.is_running() {
+                self.trial_run(ctx);
+            }
+            return;
+        }
         let stop = ctx.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, Key::F5));
         if stop {
             self.stop_run();

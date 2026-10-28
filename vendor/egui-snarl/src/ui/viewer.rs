@@ -413,6 +413,14 @@ pub trait SnarlViewer<T> {
         let _ = (from, to, index, pos, snarl);
     }
 
+    /// Ographis: whether data flows along a connection now, such as into a node at work, and
+    /// how far the dots that show it have come, from 0 to 1.
+    #[inline]
+    fn wire_flow(&mut self, from: OutPinId, to: InPinId, snarl: &Snarl<T>) -> Option<f32> {
+        let _ = (from, to, snarl);
+        None
+    }
+
     /// Ographis: whether a connection is drawn dashed, such as one that is turned off.
     #[inline]
     fn wire_dashed(&mut self, from: OutPinId, to: InPinId, snarl: &Snarl<T>) -> bool {

@@ -217,7 +217,23 @@ pub(crate) fn unfold(h: &mut Harness<'_, App>, heading: &str) {
 pub(crate) fn add_from_palette(h: &mut Harness<'_, App>, heading: &str, tool: &str) {
     unfold(h, heading);
     // The palette is drawn before the canvas, so the first match is the one in the list.
-    let at = place_of(h, tool, 0, false);
+    // A tool far down a long list is scrolled up into view first.
+    let mut at = place_of(h, tool, 0, false);
+    for _ in 0..10 {
+        if at.y < 860.0 {
+            break;
+        }
+        h.event(egui::Event::PointerMoved(egui::pos2(at.x, 700.0)));
+        h.run_steps(1);
+        h.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -120.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Default::default(),
+        });
+        h.run_steps(4);
+        at = place_of(h, tool, 0, false);
+    }
     click_at(h, at);
     h.run_steps(3);
 }

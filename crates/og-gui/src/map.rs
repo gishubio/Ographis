@@ -141,7 +141,23 @@ struct Drawing {
 }
 
 pub struct MapView {
+    /// Whether a background map is shown.
     pub osm: bool,
+    /// The background maps of the settings, and the one chosen by its name; None is
+    /// OpenStreetMap.
+    pub maps: Vec<og_engine::settings::BackgroundMap>,
+    pub background: Option<String>,
+    /// The map the tiles are fetched for now.
+    tiles_map: Option<og_engine::settings::BackgroundMap>,
+    /// A distance or an area being measured, by clicks on the map.
+    pub measuring: Option<crate::maptools::Measuring>,
+    /// Where the menu of the secondary button was opened, in the system of the map.
+    menu_at: Option<[f64; 2]>,
+    /// The latest coordinates copied from the menu.
+    pub copied: Option<String>,
+    /// The attribute the features are labelled with, and the attributes there are to choose.
+    pub label_by: Option<String>,
+    label_fields: Vec<String>,
     /// Rows picked besides the selected one, with Ctrl or Shift: drawn as picked too.
     pub also: Vec<usize>,
     /// A click with Ctrl or Shift, on a feature or beside: the table decides what it picks.
@@ -188,6 +204,14 @@ pub struct MapView {
 impl Default for MapView {
     fn default() -> Self {
         MapView {
+            maps: Vec::new(),
+            background: None,
+            tiles_map: None,
+            measuring: None,
+            menu_at: None,
+            copied: None,
+            label_by: None,
+            label_fields: Vec::new(),
             also: Vec::new(),
             multi_click: None,
             osm: true,
@@ -478,7 +502,13 @@ impl MapView {
 
         // The background map is only used if the server answers.
         let source = self.tile_source.clone();
-        let tiles = self.tiles.get_or_insert_with(|| Tiles::new(ui.ctx(), source));
+        // A background map of one's own, when one is chosen and still in the settings.
+        let wanted = self.background.as_ref().and_then(|n| self.maps.iter().find(|m| &m.name == n)).cloned();
+        if wanted != self.tiles_map {
+            self.tiles = None;
+            self.tiles_map = wanted.clone();
+        }
+        let tiles = self.tiles.get_or_insert_with(|| Tiles::from_source(ui.ctx(), source, wanted));
         tiles.poll(ui.ctx());
         if self.osm && tiles.should_retry() {
             tiles.probe();
@@ -551,6 +581,15 @@ impl MapView {
             return;
         }
         let mercator = prep.mercator;
+        // The system the map is drawn in, for the coordinates and the measuring.
+        let shown_crs = if mercator { Some(WEB_MERCATOR) } else { table.crs };
+        let names = table.field_names();
+        if names != self.label_fields {
+            if self.label_by.as_ref().is_some_and(|l| !names.contains(l)) {
+                self.label_by = None;
+            }
+            self.label_fields = names;
+        }
 
         // Pan, zoom, pick.
         if resp.dragged() {
@@ -653,6 +692,7 @@ impl MapView {
                 self.generation.fetch_add(1, Ordering::Relaxed);
                 self.drawing = None;
                 self.draw_shapes(&painter, rect, &pal, &store, list, *selected);
+                self.draw_labels(&painter, rect, &pal, &store, list, table);
             }
             InView::Many(n) => {
                 self.in_view = Some((*n, true));
@@ -685,13 +725,94 @@ impl MapView {
         painter.line(vec![Pos2::new(bx, by - 4.0), Pos2::new(bx, by), Pos2::new(bx + w, by), Pos2::new(bx + w, by - 4.0)], Stroke::new(1.5, pal.ink));
         painter.text(Pos2::new(bx + w, by - 6.0), Align2::RIGHT_BOTTOM, label, theme::mono(11.0), pal.ink);
 
+        // What is being measured: the points clicked, the line between them, and the result.
+        if let Some(m) = &self.measuring {
+            let pts: Vec<Pos2> = m.points.iter().map(|p| self.to_screen(rect, *p)).collect();
+            let ink = Color32::from_rgb(214, 40, 110);
+            if pts.len() >= 2 {
+                let mut line = pts.clone();
+                if m.what == crate::maptools::Measure::Area && pts.len() >= 3 {
+                    line.push(pts[0]);
+                    let fill = Color32::from_rgba_unmultiplied(214, 40, 110, 40);
+                    painter.add(Shape::convex_polygon(pts.clone(), fill, Stroke::NONE));
+                }
+                painter.add(Shape::line(line, Stroke::new(2.0, ink)));
+            }
+            for p in &pts {
+                painter.circle(*p, 4.0, pal.surface, Stroke::new(2.0, ink));
+            }
+            let text = format!("{}   ·   Escape ends", crate::maptools::result(m, shown_crs, &**backend));
+            let galley = painter.layout_no_wrap(text, egui::FontId::proportional(12.5), pal.ink);
+            let r = Rect::from_min_size(rect.left_top() + Vec2::new(8.0, 8.0), galley.size() + Vec2::new(14.0, 8.0));
+            painter.rect(r, 3.0, pal.surface, Stroke::new(1.0, ink), egui::StrokeKind::Inside);
+            painter.galley(r.min + Vec2::new(7.0, 4.0), galley, pal.ink);
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.measuring = None;
+            }
+        }
+
+        // The menu of the secondary button: the coordinates of the point, and measuring.
+        if resp.secondary_clicked() {
+            self.menu_at = resp.interact_pointer_pos().map(|p| self.to_world(rect, p));
+        }
+        let (menu_at, data_crs) = (self.menu_at, table.crs);
+        let mut copied = None;
+        let mut start: Option<crate::maptools::Measure> = None;
+        let mut stop_measuring = false;
+        let measuring = self.measuring.is_some();
+        resp.context_menu(|ui| {
+            if let Some(at) = menu_at {
+                for (label, text) in crate::maptools::coordinates(at, shown_crs, data_crs, &**backend) {
+                    if ui.button(format!("Copy {}", label)).clicked() {
+                        ui.ctx().copy_text(text.clone());
+                        copied = Some(text);
+                        ui.close();
+                    }
+                }
+                ui.separator();
+            }
+            if ui.button("Measure a distance").on_hover_text("Click the points on the map; Escape ends").clicked() {
+                start = Some(crate::maptools::Measure::Distance);
+                ui.close();
+            }
+            if ui.button("Measure an area").on_hover_text("Click the corners on the map; Escape ends").clicked() {
+                start = Some(crate::maptools::Measure::Area);
+                ui.close();
+            }
+            if measuring && ui.button("Stop measuring").clicked() {
+                stop_measuring = true;
+                ui.close();
+            }
+        });
+        if copied.is_some() {
+            self.copied = copied;
+        }
+        if let Some(what) = start {
+            self.measuring = Some(crate::maptools::Measuring { what, points: Vec::new() });
+        }
+        if stop_measuring {
+            self.measuring = None;
+        }
+
         // Source, how the features are drawn, and errors, at the bottom left.
         let mut notes: Vec<String> = Vec::new();
-        if mercator && self.tiles.as_ref().is_some_and(|t| t.is_default_source()) {
-            notes.push("© OpenStreetMap contributors".into());
-        }
-        if self.osm && net == Net::Offline {
-            notes.push("OpenStreetMap cannot be reached. The map shows a grid.".into());
+        match &self.tiles_map {
+            Some(m) => {
+                if mercator && !m.attribution.trim().is_empty() {
+                    notes.push(m.attribution.trim().to_string());
+                }
+                if self.osm && net == Net::Offline {
+                    notes.push(format!("{} cannot be reached, or does not answer with pictures. The map shows a grid.", m.name));
+                }
+            }
+            None => {
+                if mercator && self.tiles.as_ref().is_some_and(|t| t.is_default_source()) {
+                    notes.push("© OpenStreetMap contributors".into());
+                }
+                if self.osm && net == Net::Offline {
+                    notes.push("OpenStreetMap cannot be reached. The map shows a grid.".into());
+                }
+            }
         }
         if let Some(f) = &prep.fallback {
             notes.push(f.clone());
@@ -733,7 +854,19 @@ impl MapView {
             }
         }
 
-        if resp.clicked() {
+        // While measuring, a click is a point of what is measured.
+        let measured = match (&mut self.measuring, resp.clicked(), resp.interact_pointer_pos()) {
+            (Some(m), true, Some(pos)) => {
+                let at = [
+                    self.center[0] + (pos.x - rect.center().x) as f64 / (self.kx * self.scale),
+                    self.center[1] - (pos.y - rect.center().y) as f64 / self.scale,
+                ];
+                m.points.push(at);
+                true
+            }
+            _ => false,
+        };
+        if resp.clicked() && !measured {
             if let Some(pos) = resp.interact_pointer_pos() {
                 let hit = self.pick(rect, pos, &store);
                 let keys = ui.input(|i| i.modifiers);
@@ -756,6 +889,37 @@ impl MapView {
                     }
                 }
             }
+        }
+    }
+
+    /// Labels of the features in view by the chosen attribute, at the middle of each, left
+    /// out where they would lie on one already placed.
+    fn draw_labels(&self, painter: &egui::Painter, rect: Rect, pal: &Palette, store: &Store, list: &[u32], table: &Table) {
+        let Some(at) = self.label_by.as_ref().and_then(|l| table.field_index(l)) else { return };
+        let o = store.origin;
+        let mut placed: Vec<Rect> = Vec::new();
+        for &i in list.iter().take(3000) {
+            let f = &store.feats[i as usize];
+            let Some(feature) = table.features.get(f.row as usize) else { continue };
+            let text = feature.attrs.get(at).map(|v| if v.is_null() { String::new() } else { v.to_text() }).unwrap_or_default();
+            let text: String = text.chars().take(40).collect();
+            if text.trim().is_empty() {
+                continue;
+            }
+            let b = f.bbox;
+            let mid = [o[0] + ((b[0] + b[2]) / 2.0) as f64, o[1] + ((b[1] + b[3]) / 2.0) as f64];
+            let p = self.to_screen(rect, mid);
+            if !rect.contains(p) {
+                continue;
+            }
+            let galley = painter.layout_no_wrap(text, egui::FontId::proportional(11.5), pal.ink);
+            let r = Rect::from_center_size(p + Vec2::new(0.0, if f.kind == Kind::Point { -12.0 } else { 0.0 }), galley.size() + Vec2::new(6.0, 2.0));
+            if placed.iter().any(|q| q.intersects(r)) {
+                continue;
+            }
+            painter.rect_filled(r, 3.0, Color32::from_rgba_unmultiplied(pal.surface.r(), pal.surface.g(), pal.surface.b(), 190));
+            painter.galley(r.min + Vec2::new(3.0, 1.0), galley, pal.ink);
+            placed.push(r);
         }
     }
 
@@ -949,7 +1113,47 @@ impl MapView {
             return;
         }
         ui.checkbox(&mut self.three_d, "3D").on_hover_text("Seen from an angle, with the heights of the features or of a grid. Drag to turn it");
-        ui.checkbox(&mut self.osm, "OpenStreetMap").on_hover_text("Background map when the network can be reached. Otherwise a coordinate grid is shown.");
+        // The background map: none, OpenStreetMap, or one of one's own from the settings.
+        let shown = if !self.osm { "No background".to_string() } else { self.background.clone().unwrap_or_else(|| "OpenStreetMap".into()) };
+        egui::ComboBox::from_id_salt("map-background")
+            .selected_text(shown)
+            .show_ui(ui, |ui| {
+                if ui.selectable_label(!self.osm, "No background").clicked() {
+                    self.osm = false;
+                }
+                if ui.selectable_label(self.osm && self.background.is_none(), "OpenStreetMap").clicked() {
+                    self.osm = true;
+                    self.background = None;
+                }
+                for m in &self.maps {
+                    if ui.selectable_label(self.osm && self.background.as_deref() == Some(m.name.as_str()), &m.name).clicked() {
+                        self.osm = true;
+                        self.background = Some(m.name.clone());
+                    }
+                }
+                if self.maps.is_empty() {
+                    ui.label(egui::RichText::new("Maps of your own, from WMS, WMTS or tiles, are added under Settings → Background maps").small());
+                }
+            })
+            .response
+            .on_hover_text("Background map when the network can be reached. Otherwise a coordinate grid is shown.");
+        // Labels from an attribute.
+        let shown = self.label_by.clone().unwrap_or_else(|| "No labels".into());
+        egui::ComboBox::from_id_salt("map-labels")
+            .selected_text(shown)
+            .width(110.0)
+            .show_ui(ui, |ui| {
+                if ui.selectable_label(self.label_by.is_none(), "No labels").clicked() {
+                    self.label_by = None;
+                }
+                for name in self.label_fields.clone() {
+                    if ui.selectable_label(self.label_by.as_deref() == Some(name.as_str()), &name).clicked() {
+                        self.label_by = Some(name);
+                    }
+                }
+            })
+            .response
+            .on_hover_text("The features labelled with the values of an attribute, where there is room");
         if ui.button("Zoom to data").on_hover_text("Show all features").clicked() {
             self.fit();
         }

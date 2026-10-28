@@ -263,5 +263,10 @@ fn a_model_is_drawn_as_a_picture_and_a_pdf() {
         }
     }
     assert!(crate::modelpic::export(&ws, &dir.join("x.gif")).is_err());
+    // A description goes under the title, and the picture grows by its lines.
+    let mut described = ws.clone();
+    described.description = "Reads the stops of a folder of files.\nWrites them as one GeoPackage.".into();
+    let taller = crate::modelpic::draw(&described, 1.0).unwrap();
+    assert_eq!(taller.height, img.height + 56, "{} → {}", img.height, taller.height);
     let _ = std::fs::remove_dir_all(&dir);
 }

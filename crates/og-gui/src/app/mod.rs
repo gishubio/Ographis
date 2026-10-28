@@ -117,6 +117,12 @@ const SIDECARS: &[&str] = &["shx", "prj", "cpg", "qpj", "qmd", "qix", "fix", "sb
 pub struct App {
     pub snarl: Snarl<GNode>,
     pub name: String,
+    /// What the model does, kept in the model, shown when it is opened.
+    pub description: String,
+    /// The description is shown on the canvas, until it is closed.
+    pub show_description: bool,
+    /// The window where the description is written is open.
+    pub description_open: bool,
     pub path: Option<PathBuf>,
     /// Changes that are not saved.
     pub dirty: bool,
@@ -231,6 +237,18 @@ pub struct App {
     pub history_open: bool,
     /// The lock of the model while it runs, and when the run started.
     run_lock: Option<og_engine::history::Lock>,
+    /// The number of features of a trial run that is about to start.
+    pub trial: Option<usize>,
+    /// The filter of the data view for each node and port, while the program runs; the rows
+    /// it let through the last time, and what was wrong with it.
+    pub row_filter: HashMap<(String, String), String>,
+    filtered: Option<data::Filtered>,
+    filter_error: Option<String>,
+    /// The quick-add box that is open: where on the screen, where on the canvas, and the
+    /// node to connect the new one after, when it was opened from the keyboard.
+    pub quick_add: Option<(egui::Pos2, egui::Pos2, Option<NodeId>)>,
+    /// When and where the canvas was last clicked, to tell a double click.
+    canvas_click: Option<(f64, egui::Pos2)>,
     /// The log of the run going on, written line by line beside the model, so that it is
     /// there to read also if the program stops before the run ends; with its file name.
     run_log: Option<(std::fs::File, String)>,
@@ -332,6 +350,9 @@ impl App {
         App {
             snarl: Snarl::new(),
             name: UNTITLED.into(),
+            description: String::new(),
+            show_description: false,
+            description_open: false,
             path: None,
             dirty: false,
             stale: false,
@@ -391,6 +412,12 @@ impl App {
             about: false,
             history_open: false,
             run_lock: None,
+            trial: None,
+            quick_add: None,
+            row_filter: HashMap::new(),
+            filtered: None,
+            filter_error: None,
+            canvas_click: None,
             run_log: None,
             run_started: None,
             tips: false,
@@ -417,6 +444,11 @@ impl App {
     }
 
     /// A point on the canvas converted to window coordinates.
+    /// Moves and zooms the canvas, as from the graph to the screen.
+    pub fn set_canvas_transform(&mut self, t: egui::emath::TSTransform) {
+        self.fit = Some(t);
+    }
+
     pub fn graph_to_screen(&self, pos: egui::Pos2) -> egui::Pos2 {
         self.transform * pos
     }
@@ -444,6 +476,7 @@ impl App {
         let mut ws = graph::workspace_from(&self.snarl, &self.name, &self.groups, &self.navigator);
         ws.variables = self.variables.clone();
         ws.cache = self.use_cache;
+        ws.description = self.description.clone();
         ws
     }
 
@@ -500,6 +533,8 @@ impl App {
         self.navigator = ws.navigator.clone();
         self.variables = ws.variables.clone();
         self.use_cache = ws.cache;
+        self.description = ws.description.clone();
+        self.show_description = !ws.description.trim().is_empty();
         self.name = if ws.name.is_empty() { path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default() } else { ws.name };
         self.path = Some(path.to_path_buf());
         self.reset_session();
@@ -539,6 +574,8 @@ impl App {
         self.groups.clear();
         self.navigator.clear();
         self.name = UNTITLED.into();
+        self.description.clear();
+        self.show_description = false;
         self.path = None;
         self.use_cache = true;
         self.reset_session();
@@ -568,6 +605,23 @@ impl App {
                 !self.dirty
             }
             None => false,
+        }
+    }
+
+    /// Draws the model as a picture to the clipboard, to paste in a mail, a chat or a
+    /// presentation. Gives the size of the picture.
+    pub fn copy_picture(&mut self, ctx: &egui::Context) -> Option<[usize; 2]> {
+        match og_engine::modelpic::draw(&self.workspace(), 2.0) {
+            Ok(img) => {
+                let size = [img.width, img.height];
+                ctx.copy_image(egui::ColorImage::from_rgba_unmultiplied(size, &img.rgba));
+                self.say(format!("The model was copied as a picture, {} × {} pixels. Paste it where you want it.", img.width, img.height));
+                Some(size)
+            }
+            Err(e) => {
+                self.say(e.0);
+                None
+            }
         }
     }
 

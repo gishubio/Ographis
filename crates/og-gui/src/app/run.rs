@@ -28,6 +28,13 @@ impl App {
         self.start_run(ctx, None);
     }
 
+    /// A trial run: every node, with every input reading at most the first features, as
+    /// many as the settings say.
+    pub fn trial_run(&mut self, ctx: &egui::Context) {
+        self.trial = Some(crate::settings::trial_features(&self.settings));
+        self.start_run(ctx, None);
+    }
+
     /// Runs every node again, whatever the cache holds.
     pub fn run_all_again(&mut self, ctx: &egui::Context) {
         self.start_run(ctx, None);
@@ -71,6 +78,7 @@ impl App {
             return;
         }
         let scope_only = must.is_some();
+        let sample = self.trial.take();
         let (ws, base, backend, ctx) = (self.workspace(), self.base_dir(), self.backend.clone(), ctx.clone());
         let (tx, rx) = channel();
         // A part of the model is run against what the latest run left.
@@ -90,7 +98,14 @@ impl App {
         self.paused = false;
         let (stop, pause) = (self.stop.clone(), self.pause.clone());
         std::thread::spawn(move || {
-            let opts = og_engine::RunOptions { stop: Some(&stop), pause: Some(&pause), fresh, cache: cache.as_ref().map(|c| &c.nodes), everything: scope_only };
+            let opts = og_engine::RunOptions {
+                stop: Some(&stop),
+                pause: Some(&pause),
+                fresh,
+                cache: cache.as_ref().map(|c| &c.nodes),
+                everything: scope_only,
+                sample,
+            };
             let result = og_engine::run_opts(
                 &ws,
                 Some(&*backend),

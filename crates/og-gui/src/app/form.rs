@@ -257,6 +257,7 @@ impl App {
             let cx = ParamCtx {
                 preview: &preview,
                 stream_fields: &stream_fields,
+                suggest: crate::settings::suggestions(&self.settings),
                 db_connections: &db_connections,
                 api_connections: &api_connections,
                 crs_list: &crs_list,

@@ -21,6 +21,10 @@ impl App {
         // A moved port is marked for two seconds.
         let now = ui.input(|i| i.time);
         let moved = self.moved_port.as_ref().filter(|m| now - m.3 < 2.0).map(|m| (m.0, m.1, m.2.clone()));
+        // The dots along the connections into a node at work keep moving.
+        if self.running_node.is_some() && !self.paused {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+        }
         if moved.is_some() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
         }
@@ -43,6 +47,7 @@ impl App {
                 transform: &mut self.transform,
                 fit: &mut self.fit,
                 running: running.as_deref(),
+                flow_phase: (now * 1.4).fract() as f32,
                 files: &files,
                 expanded: &self.expanded,
                 groups: &self.groups,
@@ -57,7 +62,36 @@ impl App {
             };
             let canvas = SnarlWidget::new().id(graph::canvas_id()).style(graph::snarl_style(*pal)).show(&mut self.snarl, &mut viewer, ui);
             background_clicked = canvas.clicked();
+            // A double click on empty canvas opens the quick-add box there. Counted here, with
+            // the half second Windows gives a double click.
+            if canvas.clicked() {
+                // In the coordinates of the screen: those of the canvas response are its own.
+                let (now, p) = (ui.input(|i| i.time), ui.ctx().input(|i| i.pointer.interact_pos()));
+                if let Some(p) = p {
+                    let double = canvas.double_clicked() || self.canvas_click.is_some_and(|(t, q)| now - t <= 0.55 && q.distance(p) < 6.0);
+                    if double {
+                        self.quick_add = Some((p, self.transform.inverse() * p, None));
+                        self.canvas_click = None;
+                    } else {
+                        self.canvas_click = Some((now, p));
+                    }
+                }
+            }
         }
+        // So does / with the pointer over the canvas; with one node selected, the new tool
+        // comes after it, connected.
+        if self.quick_add.is_none()
+            && !ui.ctx().egui_wants_keyboard_input()
+            && self.pointer_on_canvas.is_some()
+            && ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "/")))
+        {
+            let p = self.pointer_on_canvas.unwrap_or(self.canvas_rect.center());
+            let after = (self.selected.len() == 1)
+                .then(|| self.selected[0])
+                .filter(|n| self.snarl.get_node(*n).is_some_and(|g| g.ty().is_some_and(|t| !t.outputs.is_empty())));
+            self.quick_add = Some((p, self.transform.inverse() * p, after));
+        }
+        self.quick_add_box(ui.ctx(), pal);
         self.node_rects = std::mem::take(&mut events.rects);
         if background_clicked {
             self.selected_group = None;
@@ -182,6 +216,9 @@ impl App {
                 self.tab = Tab::Data;
             }
         }
+        if let Some(how) = events.align {
+            self.align_selected(how);
+        }
         if let Some(n) = events.duplicate {
             self.duplicate_nodes(&self.targets(n));
         }
@@ -222,6 +259,9 @@ impl App {
             }
         });
 
+        self.scrollbars(ui.ctx(), pal);
+        self.description_plate(ui.ctx(), pal);
+
         if self.snarl.nodes().next().is_none() {
             // On a plate of its own above the canvas, so that the grid does not run through it.
             let at = self.canvas_rect.center();
@@ -257,6 +297,158 @@ impl App {
                 theme::strong(16.0),
                 pal.ink,
             );
+        }
+    }
+
+    /// Scroll bars along the bottom and the right of the canvas when the model reaches
+    /// beyond what is seen: how much of it is in view, and where. Dragging one moves the
+    /// canvas, and a click beside the bar jumps a view's width that way.
+    fn scrollbars(&mut self, ctx: &egui::Context, pal: &Palette) {
+        let Some(content) = self.bounds() else { return };
+        let t = self.transform;
+        if t.scaling <= 0.0 {
+            return;
+        }
+        let canvas = self.canvas_rect;
+        let seen = egui::Rect::from_min_max(t.inverse() * canvas.min, t.inverse() * canvas.max);
+        let content = content.expand(40.0);
+        if seen.contains_rect(content) {
+            return;
+        }
+        let total = seen.union(content);
+        const THICK: f32 = 9.0;
+        for horizontal in [true, false] {
+            let (lo, hi, a, b) =
+                if horizontal { (total.min.x, total.max.x, seen.min.x, seen.max.x) } else { (total.min.y, total.max.y, seen.min.y, seen.max.y) };
+            // Only a direction in which there is more to see gets a bar.
+            let more =
+                if horizontal { content.min.x < seen.min.x || content.max.x > seen.max.x } else { content.min.y < seen.min.y || content.max.y > seen.max.y };
+            if !more {
+                continue;
+            }
+            let track = if horizontal {
+                egui::Rect::from_min_max(
+                    egui::pos2(canvas.left() + 6.0, canvas.bottom() - THICK - 4.0),
+                    egui::pos2(canvas.right() - THICK - 12.0, canvas.bottom() - 4.0),
+                )
+            } else {
+                egui::Rect::from_min_max(
+                    egui::pos2(canvas.right() - THICK - 4.0, canvas.top() + 44.0),
+                    egui::pos2(canvas.right() - 4.0, canvas.bottom() - THICK - 12.0),
+                )
+            };
+            let span = (hi - lo).max(1.0);
+            let length = if horizontal { track.width() } else { track.height() };
+            let start = (a - lo) / span * length;
+            let size = ((b - a) / span * length).max(24.0).min(length);
+            let thumb = if horizontal {
+                egui::Rect::from_min_size(egui::pos2(track.left() + start.min(length - size), track.top()), egui::vec2(size, THICK))
+            } else {
+                egui::Rect::from_min_size(egui::pos2(track.left(), track.top() + start.min(length - size)), egui::vec2(THICK, size))
+            };
+            let id = egui::Id::new(("canvas_scrollbar", horizontal));
+            let mut shift = 0.0f32;
+            egui::Area::new(id).order(egui::Order::Middle).fixed_pos(track.min).constrain(false).show(ctx, |ui| {
+                let (_, track_resp) = ui.allocate_exact_size(track.size(), egui::Sense::click());
+                let thumb_resp = ui.interact(thumb, id.with("thumb"), egui::Sense::drag());
+                let painter = ui.painter();
+                painter.rect_filled(track, THICK / 2.0, pal.line.gamma_multiply(0.25));
+                let active = thumb_resp.hovered() || thumb_resp.dragged();
+                painter.rect_filled(thumb, THICK / 2.0, if active { pal.muted } else { pal.line });
+                if thumb_resp.dragged() {
+                    let d = thumb_resp.drag_delta();
+                    shift = (if horizontal { d.x } else { d.y }) / length * span;
+                } else if track_resp.clicked() {
+                    if let Some(p) = track_resp.interact_pointer_pos() {
+                        let at = if horizontal { p.x - thumb.center().x } else { p.y - thumb.center().y };
+                        shift = at.signum() * (b - a) * 0.9;
+                    }
+                }
+                thumb_resp.on_hover_text("Drag to move the canvas");
+            });
+            if shift != 0.0 {
+                let mut moved = t;
+                if horizontal {
+                    moved.translation.x -= shift * t.scaling;
+                } else {
+                    moved.translation.y -= shift * t.scaling;
+                }
+                self.fit = Some(moved);
+                ctx.request_repaint();
+            }
+        }
+    }
+
+    /// The quick-add box, while it is open: the tool chosen is put where the box was opened,
+    /// or after the selected node and connected to it.
+    fn quick_add_box(&mut self, ctx: &egui::Context, pal: &Palette) {
+        let Some((screen, at, after)) = self.quick_add else { return };
+        let want = if after.is_some() { crate::quickadd::Want::WithInput } else { crate::quickadd::Want::Any };
+        let mut outcome = crate::quickadd::Outcome::Open;
+        let area = egui::Area::new(egui::Id::new("quick_add")).order(egui::Order::Foreground).fixed_pos(screen).show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                outcome = crate::quickadd::show(ui, pal, egui::Id::new("quick_add_box"), want);
+            });
+        });
+        // A click beside the box closes it.
+        if outcome == crate::quickadd::Outcome::Open
+            && ctx.input(|i| i.pointer.any_pressed())
+            && ctx.pointer_interact_pos().is_some_and(|p| !area.response.rect.contains(p))
+        {
+            outcome = crate::quickadd::Outcome::Cancelled;
+            ctx.data_mut(|d| d.remove::<(String, usize)>(egui::Id::new("quick_add_box")));
+        }
+        match outcome {
+            crate::quickadd::Outcome::Open => {}
+            crate::quickadd::Outcome::Cancelled => self.quick_add = None,
+            crate::quickadd::Outcome::Picked(kind) => {
+                self.quick_add = None;
+                let pos = match after.and_then(|n| self.node_rects.iter().find(|r| r.0 == n).map(|r| r.1)) {
+                    Some(r) => egui::pos2(r.right() + 60.0, r.top()),
+                    None => at,
+                };
+                let node = graph::new_node(&self.snarl, kind);
+                let id = node.id.clone();
+                let new = self.snarl.insert_node(pos, node);
+                if let Some(from) = after {
+                    if self.snarl.get_node(new).is_some_and(|g| g.ty().is_some_and(|t| !t.inputs.is_empty())) {
+                        self.snarl.connect(egui_snarl::OutPinId { node: from, output: 0 }, egui_snarl::InPinId { node: new, input: 0 });
+                    }
+                }
+                self.set_selection(vec![new]);
+                self.focus_node(&id);
+                self.changed(kind != NOTE);
+            }
+        }
+    }
+
+    /// The description of a model that has just been opened, on a plate at the top of the
+    /// canvas, until it is closed.
+    fn description_plate(&mut self, ctx: &egui::Context, pal: &Palette) {
+        if !self.show_description || self.description.trim().is_empty() {
+            return;
+        }
+        let at = self.canvas_rect.left_top() + egui::vec2(14.0, 12.0);
+        let mut close = false;
+        egui::Area::new(egui::Id::new("model_description")).order(egui::Order::Middle).fixed_pos(at).constrain(false).show(ctx, |ui| {
+            egui::Frame::new().fill(pal.panel).stroke(egui::Stroke::new(1.0, pal.line)).corner_radius(8).inner_margin(egui::Margin::symmetric(14, 10)).show(
+                ui,
+                |ui| {
+                    ui.set_max_width((self.canvas_rect.width() - 160.0).clamp(240.0, 560.0));
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(&self.name).font(theme::strong(14.5)).color(pal.ink));
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if ui.small_button("×").on_hover_text("Close. Model → Description… shows it again").clicked() {
+                                close = true;
+                            }
+                        });
+                    });
+                    ui.label(RichText::new(self.description.trim()).color(pal.ink));
+                },
+            );
+        });
+        if close {
+            self.show_description = false;
         }
     }
 }

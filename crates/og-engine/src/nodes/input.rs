@@ -65,6 +65,13 @@ pub(super) const READER_PARAMS: &[ParamSpec] = &[
     },
     ParamSpec { key: "recursive", label: "Include subfolders", kind: ParamKind::Choice(YES_NO), default: "false", hint: "" },
     ParamSpec {
+        key: "zip_file",
+        label: "File in the zip",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Such as roads.gpkg, data/roads.gpkg or *.gpkg. Empty: the Shapefiles in it, or else the first data file",
+    },
+    ParamSpec {
         key: "layer",
         label: "Layers",
         kind: ParamKind::Layers,
@@ -107,6 +114,20 @@ pub(super) const READER_PARAMS: &[ParamSpec] = &[
         hint: "Tiles are read down to where the tileset says they are this close to the finest. A smaller number is more detail and more tiles",
     },
     ParamSpec { key: "tiles_most", label: "At most this many tiles", kind: ParamKind::Text, default: "500", hint: "More is an error that says so, rather than a long wait" },
+    ParamSpec {
+        key: "vt_zoom",
+        label: "Zoom level of the vector tiles",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Such as 14. A higher level has more detail and more tiles. Empty: the most detailed in a file, 14 on the web",
+    },
+    ParamSpec {
+        key: "vt_pieces",
+        label: "Features the tiles cut apart",
+        kind: ParamKind::Choice(VT_PIECES),
+        default: "join",
+        hint: "Tiles cut a lake or a road at their edges. Put together, each is one feature again: the pieces with the same mvt_id and values",
+    },
     ParamSpec {
         key: "tiles_crs",
         label: "Coordinate system to place them in",
@@ -247,7 +268,7 @@ pub(super) fn has_wildcard(s: &str) -> bool {
 
 /// A folder that is one dataset in itself, not a collection of files.
 pub(super) fn is_dataset_folder(path: &Path) -> bool {
-    ext_of(path) == "gdb"
+    ext_of(path) == "gdb" || super::vector_tiles::is_tile_folder(path)
 }
 
 /// What a reader's path stands for: one file, or the files of a folder that match a filter.
@@ -268,9 +289,13 @@ pub const WEB_SERVICES: &[(&str, &str)] = &[
     ("wfs", "WFS"),
     ("arcgis", "ArcGIS feature service (FeatureServer, MapServer)"),
     ("3dtiles", "3D Tiles (a tileset.json)"),
+    ("vectortiles", "Vector tiles ({z}/{x}/{y}.pbf)"),
     ("cog", "Cloud Optimized GeoTIFF: read where it is"),
     ("copc", "COPC point cloud: read where it is"),
 ];
+
+/// What becomes of the pieces of a feature that vector tiles cut apart.
+pub(super) const VT_PIECES: &[(&str, &str)] = &[("join", "Put together"), ("keep", "Kept as pieces, one per tile")];
 
 /// Which tiles of a 3D Tiles tileset are read.
 pub(super) const TILES_DETAIL: &[(&str, &str)] =
@@ -417,11 +442,17 @@ pub(super) fn run_reader(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
         if is_tileset(&url, p.get("web_as").as_deref()) {
             return run_tiles(p, ctx, &url, &web_headers);
         }
+        if super::vector_tiles::is_template(&url, p.get("web_as").as_deref()) {
+            return super::vector_tiles::run_web(p, ctx, &url, &web_headers);
+        }
         let ext = source_ext(&url);
         let as_file = p.get("web_as").as_deref() == Some("file");
         if !as_file && (url.to_lowercase().split(['?', '#']).next().unwrap_or("").ends_with(".copc.laz") || p.get("web_as").as_deref() == Some("copc")) {
             // A COPC point cloud is read in parts, where it is, and not fetched whole.
             sources.files = vec![PathBuf::from(url.clone())];
+        } else if !as_file && ext == "pmtiles" {
+            // PMTiles on the web are read where they are, a tile at a time, as maps do.
+            sources.files = vec![PathBuf::from(format!("/vsicurl/{}", url))];
         } else if !as_file && (matches!(ext.as_str(), "tif" | "tiff") || p.get("web_as").as_deref() == Some("cog")) {
             // A GeoTIFF on the web is read where it is through GDAL, which fetches only the
             // parts it needs of a Cloud Optimized GeoTIFF: the rectangle, from its overviews.
@@ -714,6 +745,8 @@ pub(super) fn run_reader(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
                     headers: Vec::new(),
                     dxf_blocks_as_points: p.get("dxf_blocks").as_deref() != Some("drawn"),
                     dxf_areas: p.get("dxf_closed").as_deref() != Some("lines"),
+                    open_options: if super::vector_tiles::is_vector_tiles(file) { super::vector_tiles::zoom_options(p)? } else { Vec::new() },
+                    zip_member: p.get("zip_file").filter(|z| !z.trim().is_empty()).map(|z| z.trim().to_string()),
                 };
                 let (progress, gate) = (ctx.progress, ctx.gate);
                 let going = |done, total| {
@@ -732,6 +765,13 @@ pub(super) fn run_reader(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
         }
         layer_count += read.len();
         for (mut t, layer) in read {
+            // Vector tiles cut features at their edges; the pieces are put together again.
+            if super::vector_tiles::is_vector_tiles(file) && p.get("vt_pieces").as_deref() != Some("keep") {
+                let pieces = super::vector_tiles::join_pieces(&mut t);
+                if pieces > t.len() {
+                    notes.info(format!("{} pieces of the tiles put together into {} features", fmt_count(pieces as u64), fmt_count(t.len() as u64)));
+                }
+            }
             // What lies outside the rectangle goes, also from formats GDAL does not filter,
             // such as CSV.
             if let (Some((rect, rect_crs)), Some(data_crs)) = (within, t.crs) {
@@ -948,6 +988,7 @@ pub const READ_FORMATS: &[&str] = &[
     "Point clouds (.las, .laz, .copc.laz)",
     "PostGIS tables",
     "Shapefile (.shp)",
+    "Vector tiles (.mbtiles, .pmtiles, {z}/{x}/{y}.pbf)",
     "SpatiaLite (.sqlite, .db)",
     "zip files of these",
     "files on the web, and folders",

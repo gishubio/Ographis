@@ -634,6 +634,8 @@ mod solid;
 mod tests086;
 #[cfg(test)]
 mod tests087;
+mod tools088;
+pub mod vector_tiles;
 #[cfg(test)]
 pub(crate) use solid::add_block;
 mod terrain;
@@ -680,6 +682,7 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         solid::TYPES,
         diorama::TYPES,
         more_tools::TYPES,
+        tools088::TYPES,
         osm::TYPES,
         terrain::TYPES,
         raster::TYPES,

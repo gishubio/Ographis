@@ -3269,3 +3269,26 @@ fn a_filter_keeps_the_3d_model_of_what_passes() {
     let sorted = r.output("sorted", "Sorted").unwrap();
     assert_eq!(tris(sorted), tris(all));
 }
+
+/// A trial run reads at most the first so many features of every input, keeps an input set
+/// to fewer as it is, and says so in the log. The model itself is not changed.
+#[test]
+fn a_trial_run_reads_the_first_features_of_every_input() {
+    let dir = tmp("sample");
+    std::fs::write(dir.join("towns.csv"), TOWNS).unwrap();
+    let ws = Workspace::from_json(
+        r#"{"format": "ographis/1", "nodes": [
+        {"id": "a", "type": "Reader", "params": {"path": "towns.csv"}},
+        {"id": "b", "type": "Reader", "params": {"path": "towns.csv", "limit": "1"}}]}"#,
+    )
+    .unwrap();
+    let r = og_engine::run_opts(&ws, None, &dir, &mut |_| {}, og_engine::RunOptions { sample: Some(3), ..Default::default() });
+    assert_eq!(r.output("a", "Output").unwrap().len(), 3);
+    assert_eq!(r.output("b", "Output").unwrap().len(), 1, "an input set to fewer keeps its number");
+    assert!(r.log.iter().any(|l| l.level == Level::Warn && l.msg.contains("trial run") && l.msg.contains("first 3 features")));
+    assert!(ws.nodes[0].params.get("limit").is_none(), "the model is not changed");
+    // A normal run afterwards reads everything.
+    let r = run(&ws, None, &dir);
+    assert_eq!(r.output("a", "Output").unwrap().len(), 5);
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -62,6 +62,10 @@ impl App {
                     self.save_picture();
                     ui.close();
                 }
+                if ui.add(egui::Button::new("Copy the model as a picture").shortcut_text("Ctrl+Shift+C")).on_hover_text("To paste in a mail, a chat or a presentation").clicked() {
+                    self.copy_picture(ui.ctx());
+                    ui.close();
+                }
                 ui.separator();
                 // Closing asks to save first, if something has changed.
                 if ui.add(egui::Button::new("Exit").shortcut_text("Alt+F4")).clicked() {
@@ -107,6 +111,19 @@ impl App {
                     self.paste_from_menu(None);
                     ui.close();
                 }
+                ui.add_enabled_ui(n > 1, |ui| {
+                    ui.menu_button("Align", |ui| {
+                        for (how, label) in graph::ALIGNS {
+                            let spreading = matches!(how, graph::Align::SpreadAcross | graph::Align::SpreadDown);
+                            if ui.add_enabled(!spreading || n >= 3, egui::Button::new(*label)).clicked() {
+                                self.align_selected(*how);
+                                ui.close();
+                            }
+                        }
+                    })
+                    .response
+                    .on_disabled_hover_text("Select two or more nodes to line them up");
+                });
                 if ui.add_enabled(n > 0, egui::Button::new("Duplicate").shortcut_text("Ctrl+D")).clicked() {
                     self.duplicate_nodes(&self.selected.clone());
                     ui.close();
@@ -158,6 +175,15 @@ impl App {
                     self.run_all_again(ui.ctx());
                     ui.close();
                 }
+                let n = crate::settings::trial_features(&self.settings);
+                if ui
+                    .add_enabled(!running, egui::Button::new(format!("Trial run, {} of each", og_engine::model::fmt_count(n as u64))).shortcut_text("Ctrl+Shift+F5"))
+                    .on_hover_text("Every input reads at most the first features, to try the model out quickly. The number is set under Settings → General")
+                    .clicked()
+                {
+                    self.trial_run(ui.ctx());
+                    ui.close();
+                }
                 if ui.add_enabled(running && !self.stopping, egui::Button::new("Stop").shortcut_text("Shift+F5")).clicked() {
                     self.stop_run();
                     ui.close();
@@ -178,6 +204,10 @@ impl App {
                     self.touch();
                 }
                 ui.separator();
+                if ui.button("Description…").on_hover_text("What the model does, in a few lines: shown when it is opened, and in the picture of the model").clicked() {
+                    self.description_open = true;
+                    ui.close();
+                }
                 let label = if self.variables.is_empty() { "Variables…".to_string() } else { format!("Variables ({})…", self.variables.len()) };
                 if ui.button(label).clicked() {
                     self.variables_open = true;

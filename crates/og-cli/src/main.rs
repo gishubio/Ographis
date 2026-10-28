@@ -4,7 +4,7 @@ use og_engine::csv_io::{self, CsvReadOpts};
 use og_engine::io::{Backend, Notes};
 use og_engine::model::{crs_label, Table, Value};
 use og_engine::nodes::{Group, ParamKind, NODE_TYPES};
-use og_engine::{geom, run_with, Level, Progress, Workspace};
+use og_engine::{geom, Level, Progress, Workspace};
 use og_gdal::GdalBackend;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -12,7 +12,7 @@ use std::process::ExitCode;
 const HELP: &str = "Ographis – spatial ETL from the command line
 
 Usage:
-  og run <model.ographis | folder> [--var name=value] [--log file] [--inspect node[:port]] [--rows N]
+  og run <model.ographis | folder> [--var name=value] [--log file] [--inspect node[:port]] [--rows N] [--sample N]
       Runs a model, or every model in a folder by name, with a summary at the end.
       Paths in a model start from the folder the model is in.
       --var sets a variable of the model, used in its settings as $(name).
@@ -22,6 +22,7 @@ Usage:
       a line in history.csv, and its log in the folder logs, where logs older than 30 days
       are removed. While a model runs it is locked, so that it does not start twice.
       --keep-logs N keeps the logs N days (0 keeps them all).
+      --sample N is a trial run: every input reads at most the first N features.
       --no-history keeps neither history nor logs.
       --no-lock runs even when the model is running already.
       --lock-hours H counts a lock older than H hours as left by a crash (24).
@@ -33,9 +34,16 @@ Usage:
       --unlock removes a lock left by a run that crashed.
   og info <file>
       Shows the layers, feature counts, coordinate system and attributes of a file.
-  og nodes
+  og nodes [--json]
       Lists the inputs, tools and outputs with their ports and parameters,
-      and the functions available in expressions.
+      and the functions available in expressions. --json writes them as JSON,
+      for a program or an AI assistant to read.
+  og check <model.ographis | folder>
+      Checks a model without running it: node types, ports, connections, settings
+      and their values, variables and how expressions are written. Says what is
+      wrong and what would be right. Exit code 0 when it is fine, 1 otherwise.
+  og schema
+      Writes a JSON Schema of the model file, for editors that check JSON.
   og connections
       Lists the database and API connections of the settings, which models name,
       and where the settings are kept. Passwords are not shown.
@@ -58,7 +66,12 @@ fn main() -> ExitCode {
         "run" => cmd_run(&args[1..]),
         "info" => cmd_info(&args[1..]),
         "history" => cmd_history(&args[1..]),
+        "nodes" if args.get(1).map(|a| a.as_str()) == Some("--json") => {
+            print_out(&serde_json::to_string_pretty(&og_engine::reference::nodes_json()).expect("JSON"))
+        }
         "nodes" => cmd_nodes(),
+        "check" => cmd_check(&args[1..]),
+        "schema" => print_out(&serde_json::to_string_pretty(&og_engine::reference::model_schema()).expect("JSON")),
         "doctor" => cmd_doctor(),
         "picture" => cmd_picture(&args[1..]),
         "formats" => cmd_formats(&args[1..]),
@@ -168,6 +181,8 @@ struct RunArgs {
     keep_logs: u32,
     lock: bool,
     lock_hours: f64,
+    /// A trial run: every input reads at most this many features.
+    sample: Option<usize>,
 }
 
 impl RunArgs {
@@ -192,6 +207,7 @@ fn cmd_run(args: &[String]) -> ExitCode {
     let mut vars: Vec<(String, String)> = Vec::new();
     let mut log_path: Option<PathBuf> = None;
     let (mut history, mut keep_logs, mut lock, mut lock_hours) = (true, 30u32, true, 24.0f64);
+    let mut sample: Option<usize> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -224,6 +240,13 @@ fn cmd_run(args: &[String]) -> ExitCode {
                 }
             }
             "--no-history" => history = false,
+            "--sample" => {
+                i += 1;
+                match args.get(i).and_then(|v| v.replace([' ', '_'], "").parse().ok()).filter(|v: &usize| *v > 0) {
+                    Some(v) => sample = Some(v),
+                    None => return usage("--sample needs a number of features, as in --sample 1000."),
+                }
+            }
             "--no-lock" => lock = false,
             "--keep-logs" => {
                 i += 1;
@@ -264,7 +287,7 @@ fn cmd_run(args: &[String]) -> ExitCode {
         }
         None => None,
     };
-    let mut opts = RunArgs { inspect, rows, vars, log, run_log: None, history, keep_logs, lock, lock_hours };
+    let mut opts = RunArgs { inspect, rows, vars, log, run_log: None, history, keep_logs, lock, lock_hours, sample };
     if file.is_dir() {
         // Every model in the folder, in the order of their names.
         let mut models: Vec<PathBuf> = std::fs::read_dir(&file)
@@ -369,7 +392,8 @@ fn run_model_inner(file: &Path, opts: &mut RunArgs, started: chrono::NaiveDateTi
     opts.say("INFO ", &head);
     let backend = GdalBackend::new();
     // The log is printed as it is written, so that a long run shows how far it has come.
-    let result = run_with(&ws, Some(&backend), &base, &mut |p| {
+    let sample = opts.sample;
+    let report = &mut |p: Progress| {
         if let Progress::Log { entry } = p {
             let tag = match entry.level {
                 Level::Info => "INFO ",
@@ -378,7 +402,8 @@ fn run_model_inner(file: &Path, opts: &mut RunArgs, started: chrono::NaiveDateTi
             };
             opts.say(tag, &entry.msg);
         }
-    });
+    };
+    let result = og_engine::run_opts(&ws, Some(&backend), &base, report, og_engine::RunOptions { sample, ..Default::default() });
     let rows = opts.rows;
     for spec in &opts.inspect {
         let (id, port) = match spec.split_once(':') {
@@ -683,6 +708,55 @@ fn cmd_nodes() -> ExitCode {
         println!("  {}", h);
     }
     ExitCode::SUCCESS
+}
+
+/// Writes a text to standard output. A reader that stops early, such as head, is no fault.
+fn print_out(text: &str) -> ExitCode {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    let _ = writeln!(out, "{}", text);
+    ExitCode::SUCCESS
+}
+
+fn cmd_check(args: &[String]) -> ExitCode {
+    let Some(path) = args.first().map(PathBuf::from) else {
+        eprintln!("Write the model to check: og check model.ographis");
+        return ExitCode::from(2);
+    };
+    let files: Vec<PathBuf> = if path.is_dir() {
+        let mut v: Vec<PathBuf> = std::fs::read_dir(&path)
+            .map(|d| d.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("ographis"))).collect())
+            .unwrap_or_default();
+        v.sort();
+        v
+    } else {
+        vec![path]
+    };
+    let mut fine = true;
+    for file in &files {
+        let text = match std::fs::read_to_string(file) {
+            Ok(t) => t,
+            Err(e) => {
+                println!("ERROR {}: cannot be read: {}", file.display(), e);
+                fine = false;
+                continue;
+            }
+        };
+        let found = og_engine::reference::check(&text);
+        let errors = found.iter().filter(|f| f.error).count();
+        for f in &found {
+            println!("{} {}: {}", if f.error { "ERROR" } else { "WARN " }, file.display(), f.message);
+        }
+        if found.is_empty() {
+            println!("OK    {}", file.display());
+        }
+        fine &= errors == 0;
+    }
+    if fine {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 fn cmd_doctor() -> ExitCode {

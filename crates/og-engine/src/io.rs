@@ -59,6 +59,11 @@ pub struct ReadOpts {
     pub dxf_blocks_as_points: bool,
     /// DXF: closed polylines as areas.
     pub dxf_areas: bool,
+    /// Open options of GDAL, such as ZOOM_LEVEL=10 for vector tiles.
+    pub open_options: Vec<String>,
+    /// The file to read inside a zip file: a name, a path in it, or a pattern such as
+    /// *.gpkg. None takes the Shapefiles, or else the first data file.
+    pub zip_member: Option<String>,
 }
 
 /// How a raster, such as a GeoTIFF, is read into features.

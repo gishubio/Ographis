@@ -1311,6 +1311,32 @@ where
                 pick_wire_style(from_r.wire_style, to_r.wire_style),
             ),
         }
+        // Ographis: dots that move along a connection data flows along now.
+        if let Some(phase) = viewer.wire_flow(wire.out_pin, wire.in_pin, snarl) {
+            let lines: Vec<Vec<Pos2>> = wire_shapes[first_shape..]
+                .iter()
+                .filter_map(|s| match s {
+                    Shape::Path(p) if p.points.len() >= 2 => Some(p.points.clone()),
+                    Shape::LineSegment { points, .. } => Some(points.to_vec()),
+                    _ => None,
+                })
+                .collect();
+            const STEP: f32 = 22.0;
+            let r = (stroke.width * 1.6).max(2.5);
+            for line in lines {
+                let mut to_next = (1.0 - phase.clamp(0.0, 1.0)) * STEP;
+                for seg in line.windows(2) {
+                    let (a, b) = (seg[0], seg[1]);
+                    let len = (b - a).length();
+                    let mut at = to_next;
+                    while at <= len {
+                        wire_shapes.push(Shape::circle_filled(a + (b - a) * (at / len.max(1e-6)), r, stroke.color));
+                        at += STEP;
+                    }
+                    to_next = at - len;
+                }
+            }
+        }
         // Ographis: a dashed connection is the same line drawn in dashes.
         if dashed {
             let drawn: Vec<Shape> = wire_shapes.drain(first_shape..).collect();

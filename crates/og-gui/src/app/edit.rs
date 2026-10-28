@@ -89,6 +89,28 @@ impl App {
         }
     }
 
+    /// Lines up the selected nodes, as one step that can be undone. The boxes around them stay.
+    pub fn align_selected(&mut self, how: graph::Align) {
+        let nodes: Vec<(NodeId, egui::Rect)> = self.selected.iter().filter_map(|n| self.node_rects.iter().find(|r| r.0 == *n).copied()).collect();
+        if nodes.len() < 2 {
+            return;
+        }
+        let rects: Vec<egui::Rect> = nodes.iter().map(|n| n.1).collect();
+        let moves = graph::alignment(&rects, how);
+        let mut any = false;
+        for ((n, _), by) in nodes.iter().zip(moves) {
+            if by != egui::Vec2::ZERO {
+                if let Some(info) = self.snarl.get_node_info_mut(*n) {
+                    info.pos += by;
+                    any = true;
+                }
+            }
+        }
+        if any {
+            self.touch();
+        }
+    }
+
     pub fn add_node(&mut self, kind: &str) {
         let pos = self.free_spot();
         let node = graph::new_node(&self.snarl, kind);
@@ -160,6 +182,7 @@ impl App {
         self.variables = ws.variables.clone();
         self.use_cache = ws.cache;
         self.name = ws.name.clone();
+        self.description = ws.description.clone();
         self.node_rects.clear();
         self.selected_group = None;
         self.selected_wire = None;

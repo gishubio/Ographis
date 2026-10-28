@@ -420,6 +420,57 @@ pub(crate) fn gdal_path(path: &Path) -> PathBuf {
     }
 }
 
+/// The file in a zip file to read: the one asked for by name, path or pattern. Without one,
+/// as gdal_path chooses, with a note when the zip holds more data files to choose from.
+pub(crate) fn zip_member(path: &Path, asked: Option<&str>, notes: &mut Notes) -> Result<Option<PathBuf>> {
+    if ext_of(path) != "zip" || !path.is_file() {
+        return Ok(None);
+    }
+    let root = format!("/vsizip/{}", path.to_string_lossy().replace('\\', "/"));
+    let entries: Vec<String> = gdal::vsi::read_dir(&root, true).unwrap_or_default().iter().map(|e| e.to_string_lossy().replace('\\', "/")).collect();
+    const DATA: [&str; 15] = ["shp", "gpkg", "geojson", "json", "gml", "kml", "tab", "xlsx", "ods", "csv", "fgb", "sqlite", "tif", "parquet", "dxf"];
+    let data: Vec<&String> = entries.iter().filter(|e| DATA.contains(&ext_of(Path::new(e)).as_str())).collect();
+    let name_of = |e: &str| e.rsplit('/').next().unwrap_or(e).to_string();
+    match asked {
+        Some(want) => {
+            let want = want.replace('\\', "/");
+            let found = entries
+                .iter()
+                .find(|e| **e == want)
+                .or_else(|| entries.iter().find(|e| og_engine::nodes::wildcard_match(&want, e) || og_engine::nodes::wildcard_match(&want, &name_of(e))));
+            match found {
+                Some(e) if ext_of(Path::new(e)) == "shp" && want.contains('*') => {
+                    // All the Shapefiles of that folder, as layers.
+                    let dir = e.rsplit_once('/').map(|d| d.0).unwrap_or("");
+                    Ok(Some(PathBuf::from(if dir.is_empty() { root } else { format!("{}/{}", root, dir) })))
+                }
+                Some(e) => Ok(Some(PathBuf::from(format!("{}/{}", root, e)))),
+                None => Err(GbError(format!(
+                    "{} holds no file {}. It holds: {}.",
+                    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                    want,
+                    if data.is_empty() { entries.join(", ") } else { data.iter().map(|d| d.as_str()).collect::<Vec<_>>().join(", ") }
+                ))),
+            }
+        }
+        None => {
+            let shps = data.iter().filter(|d| d.ends_with(".shp")).count();
+            if data.len() > shps.max(1) {
+                let read = gdal_path(path).to_string_lossy().trim_start_matches(&root).trim_start_matches('/').to_string();
+                let read = if read.is_empty() || !data.iter().any(|d| **d == read) { "the Shapefiles".to_string() } else { read };
+                notes.info(format!(
+                    "{} holds {} data files: {}. Read {}; choose another with File in the zip",
+                    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                    data.len(),
+                    data.iter().map(|d| d.as_str()).collect::<Vec<_>>().join(", "),
+                    read
+                ));
+            }
+            Ok(None)
+        }
+    }
+}
+
 pub(crate) fn open(path: &Path, update: bool, open_options: &[String]) -> Result<Dataset> {
     let shown = path;
     let path = &gdal_path(path);
@@ -596,6 +647,8 @@ impl Backend for GdalBackend {
             return services::read(path, opts, notes, progress);
         }
         clear_messages();
+        let member = zip_member(path, opts.zip_member.as_deref(), notes)?;
+        let path = member.as_deref().unwrap_or(path);
         let ext = ext_of(path);
         if is_raster(&ext) {
             let t = raster::read(path, opts, notes);
@@ -607,7 +660,37 @@ impl Backend for GdalBackend {
             drain_messages(notes);
             return t;
         }
-        let mut open_opts = Vec::new();
+        let mut open_opts = opts.open_options.clone();
+        // A folder of vector tiles is opened by the driver of the tiles.
+        let tile_folder;
+        let path = if path.is_dir() && path.join("metadata.json").is_file() {
+            // GDAL opens one zoom level of a folder of tiles: the one asked for, or the
+            // most detailed there is.
+            let asked = open_opts.iter().find_map(|o| o.strip_prefix("ZOOM_LEVEL=").map(|z| z.to_string()));
+            open_opts.retain(|o| !o.starts_with("ZOOM_LEVEL="));
+            let levels: Vec<u32> =
+                std::fs::read_dir(path).map(|d| d.flatten().filter_map(|e| e.file_name().to_string_lossy().parse().ok()).collect()).unwrap_or_default();
+            let level = match asked {
+                Some(z) => {
+                    let z: u32 = z.parse().unwrap_or(0);
+                    if !levels.contains(&z) {
+                        let mut have = levels.clone();
+                        have.sort();
+                        return Err(GbError(format!(
+                            "The folder of tiles has no zoom level {}. It has {}.",
+                            z,
+                            have.iter().map(|z| z.to_string()).collect::<Vec<_>>().join(", ")
+                        )));
+                    }
+                    z
+                }
+                None => levels.iter().copied().max().unwrap_or(0),
+            };
+            tile_folder = path.join(level.to_string());
+            tile_folder.as_path()
+        } else {
+            path
+        };
         if let Some(enc) = opts.encoding.as_deref().filter(|e| !e.trim().is_empty()) {
             if ext == "shp" || ext == "dbf" {
                 open_opts.push(format!("ENCODING={}", gdal_encoding(enc)));
@@ -909,6 +992,16 @@ impl Backend for GdalBackend {
         }
         // The same reading of the first row as the reader's own default.
         let _headers = if is_spreadsheet(&ext_of(path)) { Some(Headers::set(true)) } else { None };
+        // A folder of vector tiles: the layers of its most detailed zoom level.
+        let deepest;
+        let path = if path.is_dir() && path.join("metadata.json").is_file() {
+            let levels: Vec<u32> =
+                std::fs::read_dir(path).map(|d| d.flatten().filter_map(|e| e.file_name().to_string_lossy().parse().ok()).collect()).unwrap_or_default();
+            deepest = path.join(levels.iter().max().copied().unwrap_or(0).to_string());
+            deepest.as_path()
+        } else {
+            path
+        };
         let ds = open(path, false, &[])?;
         let mut out = Vec::new();
         for layer in ds.layers() {

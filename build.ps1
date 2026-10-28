@@ -142,6 +142,13 @@ if ($pluginDir) { $env:GDAL_DRIVER_PATH = $pluginDir } else { Remove-Item Env:GD
 
 # ---------------------------------------------------------------- 3. Build
 Step "3. Building (the first time takes a while)"
+# A program that is running from target\release cannot be built over: Windows keeps the file.
+$built = Sub (Sub $root "target") "release"
+$open = Get-Process -Name ographis, og -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -and $_.Path.StartsWith($built, [System.StringComparison]::OrdinalIgnoreCase) }
+if ($open) {
+    Fail "Ographis is running from this folder ($(($open | ForEach-Object { $_.ProcessName + '.exe' }) -join ', ')). Close it, and run build.cmd again."
+}
 Push-Location $root
 try {
     & cargo build --release

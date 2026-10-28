@@ -438,6 +438,46 @@ impl App {
         self.stale = true;
     }
 
+    /// The description of the model: what it does, in a few lines. Changes are made at once
+    /// and can be undone.
+    pub(super) fn description_dialog(&mut self, ctx: &egui::Context, pal: &Palette) {
+        if !self.description_open {
+            return;
+        }
+        let mut text = self.description.clone();
+        let modal = egui::Modal::new(egui::Id::new("description")).show(ctx, |ui| {
+            ui.set_width(620.0);
+            ui.label(RichText::new("Description").font(theme::strong(17.0)).color(pal.ink));
+            ui.label(
+                RichText::new(
+                    "What the model does, where its data comes from and what it writes. Shown when the model is opened, and in the picture of the model.",
+                )
+                .color(pal.muted),
+            );
+            ui.add_space(6.0);
+            ui.add(
+                egui::TextEdit::multiline(&mut text)
+                    .id_salt("description-text")
+                    .desired_width(f32::INFINITY)
+                    .desired_rows(8)
+                    .hint_text("Such as: Reads the stops of Västtrafik every night and writes those in Göteborg to PostGIS."),
+            );
+            ui.add_space(6.0);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.button("Close").clicked() {
+                    self.description_open = false;
+                }
+            });
+        });
+        if modal.should_close() {
+            self.description_open = false;
+        }
+        if text != self.description {
+            self.description = text;
+            self.touch();
+        }
+    }
+
     /// The variables of the model: a name and a value on each row. Changes are made at once,
     /// and can be undone like other changes.
     pub(super) fn variables_dialog(&mut self, ctx: &egui::Context, pal: &Palette) {

@@ -23,6 +23,9 @@ pub struct Workspace {
     pub format: String,
     #[serde(default)]
     pub name: String,
+    /// What the model does, in a few lines, shown when it is opened.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     pub nodes: Vec<Node>,
     #[serde(default)]
     pub edges: Vec<Edge>,
@@ -467,6 +470,28 @@ pub struct RunOptions<'a> {
     /// Every node is in the run, not only those `fresh` needs: `fresh` then only says which
     /// must run, and the rest come from the cache when they have not changed.
     pub everything: bool,
+    /// A trial run: every input reads at most this many features, or fewer if it is set to.
+    pub sample: Option<usize>,
+}
+
+/// The model with every input set to read at most `n` features: a trial run. An input set
+/// to fewer keeps its own number.
+pub fn sampled(ws: &Workspace, n: usize) -> Workspace {
+    let mut ws = ws.clone();
+    for node in &mut ws.nodes {
+        let Some(t) = node_type(&node.kind) else { continue };
+        if t.group != nodes::Group::Reader || !t.params.iter().any(|p| p.key == "limit") {
+            continue;
+        }
+        let own = node
+            .params
+            .get("limit")
+            .and_then(|v| v.as_str().map(|s| s.trim().replace([' ', '\u{a0}'], "")).or_else(|| v.as_u64().map(|n| n.to_string())))
+            .and_then(|s| s.parse::<usize>().ok());
+        let limit = own.map_or(n, |o| o.min(n));
+        node.params.insert("limit".into(), serde_json::json!(limit.to_string()));
+    }
+    ws
 }
 
 /// The nodes that the given ones get their data from, directly or further up, not
@@ -554,6 +579,14 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
     let stop = opts.stop.unwrap_or(&never);
     let gate = nodes::Gate { stop, pause: opts.pause.unwrap_or(&still) };
     let stopped = || !gate.going();
+    let owned;
+    let ws = match opts.sample {
+        Some(n) => {
+            owned = sampled(ws, n);
+            &owned
+        }
+        None => ws,
+    };
     let keys = node_keys(ws, base_dir);
     let scope: Option<HashSet<String>> = opts.fresh.as_ref().filter(|_| !opts.everything).map(|f| {
         let mut all = upstream_of(ws, f);
@@ -573,6 +606,14 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
     let mut results: HashMap<String, NodeResult> = HashMap::new();
     let (mut errors, mut warnings) = (0usize, 0usize);
     let ids: HashMap<&str, usize> = ws.nodes.iter().enumerate().map(|(i, n)| (n.id.as_str(), i)).collect();
+    if let Some(n) = opts.sample {
+        log.push(LogEntry {
+            level: Level::Warn,
+            node: None,
+            msg: format!("A trial run: every input reads at most the first {} features.", fmt_count(n as u64)),
+        });
+        warnings += 1;
+    }
 
     // Connections that point to nodes or ports that do not exist give an error on the target node.
     let mut bad_edges: HashMap<&str, String> = HashMap::new();

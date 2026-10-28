@@ -29,6 +29,7 @@ pub mod nodes;
 pub mod obj_io;
 pub mod parquet_io;
 pub mod pointcloud;
+pub mod reference;
 pub mod render3d;
 pub mod run;
 pub mod settings;

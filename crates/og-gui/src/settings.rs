@@ -1,5 +1,6 @@
 //! The settings window: tabs on the left, and what each tab sets up on the right: the
-//! connections to databases and to web APIs that models use by name.
+//! connections to databases and to web APIs that models use by name, background maps of
+//! one's own, and how the program behaves.
 
 use crate::sources::{self, Layers};
 use crate::theme::{self, Palette};
@@ -13,9 +14,26 @@ use std::sync::Arc;
 pub enum Tab {
     Connections,
     Apis,
+    Maps,
+    General,
 }
 
-const TABS: &[(Tab, &str)] = &[(Tab::Connections, "Database connections"), (Tab::Apis, "API connections")];
+const TABS: &[(Tab, &str)] =
+    &[(Tab::Connections, "Database connections"), (Tab::Apis, "API connections"), (Tab::Maps, "Background maps"), (Tab::General, "General")];
+
+/// How many features each input reads in a trial run, from the settings.
+pub fn trial_features(s: &Settings) -> usize {
+    s.other.get("trial_features").and_then(|v| v.as_u64()).filter(|n| *n > 0).map_or(1000, |n| n as usize)
+}
+
+/// Whether expressions get suggestions while they are written.
+pub fn suggestions(s: &Settings) -> bool {
+    s.other.get("suggestions").and_then(|v| v.as_bool()).unwrap_or(true)
+}
+
+const MAP_KINDS: &[(&str, &str)] = &[("xyz", "Tiles: an address with {z}/{x}/{y}"), ("wms", "WMS"), ("wmts", "WMTS")];
+const MAP_LOGINS: &[(&str, &str)] =
+    &[("", "None"), ("basic", "A user and a password"), ("key_query", "A key in the address"), ("key_header", "A key in a header")];
 
 pub struct SettingsWindow {
     pub tab: Tab,
@@ -28,6 +46,8 @@ pub struct SettingsWindow {
     pub save_error: Option<String>,
     /// The API connection that is shown.
     pub api: Option<usize>,
+    /// The background map that is shown.
+    pub map: Option<usize>,
 }
 
 impl SettingsWindow {
@@ -39,6 +59,7 @@ impl SettingsWindow {
             testing: None,
             save_error: None,
             api: if settings.apis.is_empty() { None } else { Some(0) },
+            map: if settings.maps.is_empty() { None } else { Some(0) },
         }
     }
 
@@ -105,6 +126,8 @@ impl SettingsWindow {
                 ui.vertical(|ui| match self.tab {
                     Tab::Connections => changed |= self.connections(ui, pal, settings, backend),
                     Tab::Apis => changed |= self.apis(ui, pal, settings),
+                    Tab::Maps => changed |= self.maps(ui, pal, settings),
+                    Tab::General => changed |= self.general(ui, pal, settings),
                 });
             });
             ui.add_space(8.0);
@@ -124,6 +147,156 @@ impl SettingsWindow {
             close = true;
         }
         (close, changed)
+    }
+
+    fn general(&mut self, ui: &mut egui::Ui, pal: &Palette, settings: &mut Settings) -> bool {
+        let mut changed = false;
+        ui.label(RichText::new("General").font(theme::strong(14.0)).color(pal.ink));
+        ui.add_space(6.0);
+        let mut on = suggestions(settings);
+        if ui
+            .checkbox(&mut on, "Suggest attributes and functions while an expression is written")
+            .on_hover_text("Tab or Enter takes the suggestion, Escape closes the list")
+            .changed()
+        {
+            settings.other.insert("suggestions".into(), serde_json::json!(on));
+            changed = true;
+        }
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("A trial run reads at most").color(pal.muted));
+            let mut n = trial_features(settings);
+            if ui.add(egui::DragValue::new(&mut n).range(1..=10_000_000).speed(10.0)).changed() {
+                settings.other.insert("trial_features".into(), serde_json::json!(n));
+                changed = true;
+            }
+            ui.label(RichText::new("features of every input").color(pal.muted));
+        });
+        ui.label(RichText::new("Model → Trial run, or Ctrl+Shift+F5, to try a model out quickly on large data.").small().color(pal.muted));
+        changed
+    }
+
+    fn maps(&mut self, ui: &mut egui::Ui, pal: &Palette, settings: &mut Settings) -> bool {
+        use og_engine::settings::BackgroundMap;
+        let mut changed = false;
+        ui.label(RichText::new("Background maps").font(theme::strong(14.0)).color(pal.ink));
+        ui.label(
+            RichText::new("Maps of your own to choose under the map, besides OpenStreetMap: tiles, WMS or WMTS in Web Mercator (EPSG:3857). A password or a key is kept in the Credential Manager.")
+                .color(pal.muted),
+        );
+        ui.add_space(6.0);
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.set_width(200.0);
+                egui::ScrollArea::vertical().id_salt("maps").max_height(260.0).auto_shrink([false, true]).show(ui, |ui| {
+                    for (i, m) in settings.maps.iter().enumerate() {
+                        let name = if m.name.trim().is_empty() { "(no name)".to_string() } else { m.name.clone() };
+                        if ui.selectable_label(self.map == Some(i), name).clicked() {
+                            self.map = Some(i);
+                        }
+                    }
+                    if settings.maps.is_empty() {
+                        ui.label(RichText::new("No background maps yet.").color(pal.muted));
+                    }
+                });
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    if ui.button("New background map").clicked() {
+                        let mut n = settings.maps.len() + 1;
+                        while settings.maps.iter().any(|m| m.name == format!("Map {}", n)) {
+                            n += 1;
+                        }
+                        settings.maps.push(BackgroundMap { name: format!("Map {}", n), kind: "wms".into(), format: "image/png".into(), ..Default::default() });
+                        self.map = Some(settings.maps.len() - 1);
+                        changed = true;
+                    }
+                    let sel = self.map.filter(|i| *i < settings.maps.len());
+                    if ui.add_enabled(sel.is_some(), egui::Button::new("Remove")).clicked() {
+                        if let Some(i) = sel {
+                            settings.maps.remove(i);
+                            self.map = if settings.maps.is_empty() { None } else { Some(i.min(settings.maps.len() - 1)) };
+                            changed = true;
+                        }
+                    }
+                });
+            });
+            ui.separator();
+            let Some(i) = self.map.filter(|i| *i < settings.maps.len()) else {
+                ui.label(RichText::new("Click New background map to add one.").color(pal.muted));
+                return;
+            };
+            ui.vertical(|ui| {
+                let m = &mut settings.maps[i];
+                let mut picked = false;
+                egui::Grid::new("map-form").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+                    let mut row = |ui: &mut egui::Ui, label: &str, v: &mut String, secret: bool, hint: &str, id: &str| {
+                        ui.label(RichText::new(label).color(pal.muted));
+                        changed |= ui.add(TextEdit::singleline(v).id_salt((id, i)).password(secret).desired_width(300.0).hint_text(hint)).changed();
+                        ui.end_row();
+                    };
+                    row(ui, "Name", &mut m.name, false, "such as Ortofoto", "map-name");
+                    ui.label(RichText::new("Kind").color(pal.muted));
+                    let shown = MAP_KINDS.iter().find(|k| k.0 == m.kind).map_or("Choose", |k| k.1);
+                    let before = m.kind.clone();
+                    egui::ComboBox::from_id_salt(("map-kind", i)).selected_text(shown).width(300.0).show_ui(ui, |ui| {
+                        for (k, label) in MAP_KINDS {
+                            ui.selectable_value(&mut m.kind, k.to_string(), *label);
+                        }
+                    });
+                    picked |= before != m.kind;
+                    ui.end_row();
+                    match m.kind.as_str() {
+                        "wms" => {
+                            row(ui, "Address", &mut m.url, false, "https://…/wms", "map-url");
+                            row(ui, "Layers", &mut m.layers, false, "separated by commas", "map-layers");
+                            row(ui, "Style", &mut m.style, false, "empty: the default", "map-style");
+                            row(ui, "Format", &mut m.format, false, "image/png", "map-format");
+                        }
+                        "wmts" => {
+                            row(ui, "Address", &mut m.url, false, "https://…/wmts, or a REST address with {TileMatrix}/{TileRow}/{TileCol}", "map-url");
+                            row(ui, "Layer", &mut m.layers, false, "", "map-layers");
+                            row(ui, "Style", &mut m.style, false, "default", "map-style");
+                            row(ui, "Tile matrix set", &mut m.matrix_set, false, "in Web Mercator, such as GoogleMapsCompatible or 3857", "map-set");
+                            row(ui, "Tile matrix", &mut m.matrix, false, "{z}, or such as EPSG:3857:{z}", "map-matrix");
+                            row(ui, "Format", &mut m.format, false, "image/png", "map-format");
+                        }
+                        _ => row(ui, "Address", &mut m.url, false, "https://…/{z}/{x}/{y}.png", "map-url"),
+                    }
+                    ui.label(RichText::new("Login").color(pal.muted));
+                    let shown = MAP_LOGINS.iter().find(|k| k.0 == m.auth).map_or("None", |k| k.1);
+                    let before = m.auth.clone();
+                    egui::ComboBox::from_id_salt(("map-auth", i)).selected_text(shown).width(300.0).show_ui(ui, |ui| {
+                        for (k, label) in MAP_LOGINS {
+                            ui.selectable_value(&mut m.auth, k.to_string(), *label);
+                        }
+                    });
+                    picked |= before != m.auth;
+                    ui.end_row();
+                    match m.auth.as_str() {
+                        "basic" => {
+                            row(ui, "User", &mut m.user, false, "", "map-user");
+                            row(ui, "Password", &mut m.secret, true, "", "map-secret");
+                        }
+                        "key_query" => {
+                            row(ui, "Parameter", &mut m.param, false, "key", "map-param");
+                            row(ui, "Key", &mut m.secret, true, "", "map-secret");
+                        }
+                        "key_header" => {
+                            row(ui, "Header", &mut m.param, false, "X-Api-Key", "map-param");
+                            row(ui, "Key", &mut m.secret, true, "", "map-secret");
+                        }
+                        _ => {}
+                    }
+                    row(ui, "Attribution", &mut m.attribution, false, "such as © Lantmäteriet", "map-attribution");
+                });
+                changed |= picked;
+                ui.label(RichText::new("Choose it under the map, where OpenStreetMap is chosen.").small().color(pal.muted));
+                if m.name.trim().is_empty() || m.url.trim().is_empty() {
+                    ui.label(RichText::new("Give the map a name and an address.").small().color(pal.warn));
+                }
+            });
+        });
+        changed
     }
 
     fn apis(&mut self, ui: &mut egui::Ui, pal: &Palette, settings: &mut Settings) -> bool {

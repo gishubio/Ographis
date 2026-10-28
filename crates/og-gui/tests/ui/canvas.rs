@@ -1613,3 +1613,129 @@ fn a_node_dragged_to_the_edge_pans_the_canvas() {
     let on_screen = h.state().graph_to_screen(rect.center());
     assert!((on_screen.x - edge.x).abs() < rect.width() * h.state().transform.scaling + 10.0, "{:?} {:?}", on_screen, edge);
 }
+
+/// When the model reaches beyond the canvas, scroll bars show how much of it is in view;
+/// dragging one moves the canvas.
+#[test]
+fn scroll_bars_show_and_move_a_large_model() {
+    let mut h = harness(egui::Theme::Light, NO_TILES);
+    h.run_steps(4);
+    // Zoomed in on the left part of the model.
+    let t = egui::emath::TSTransform { scaling: 1.5, translation: egui::vec2(300.0, 200.0) };
+    h.state_mut().set_canvas_transform(t);
+    h.run_steps(4);
+    let canvas = h.state().canvas_rect();
+    let before = h.state().transform;
+    // The bar along the bottom, dragged to the right.
+    let from = egui::pos2(canvas.left() + 30.0, canvas.bottom() - 8.5);
+    drag(&mut h, from, from + egui::vec2(120.0, 0.0), egui::PointerButton::Primary);
+    h.run_steps(3);
+    let after = h.state().transform;
+    assert!(after.translation.x < before.translation.x - 100.0, "{:?} → {:?}", before, after);
+    assert_eq!(after.translation.y, before.translation.y);
+    shot(&mut h, "088-scroll-bars");
+}
+
+/// Two clicks in the same moment, as a double click.
+fn double_click(h: &mut Harness<'_, App>, pos: egui::Pos2) {
+    pointer(h, pos, None);
+    // A frame each, a quarter of a second apart in the harness.
+    for pressed in [true, false, true, false] {
+        h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+    }
+    h.run_steps(2);
+}
+
+/// Quick add: a double click on empty canvas opens a box where a few letters find the tool,
+/// / puts the tool after the selected node, connected, and a connection let go on empty
+/// canvas asks for the tool to connect.
+#[test]
+fn tools_are_added_by_typing() {
+    let (mut h, _dir) = two_nodes();
+    let empty = on_canvas(&h, 350.0, 220.0);
+    assert!(h.state().canvas_rect().contains(empty), "{:?} {:?}", empty, h.state().canvas_rect());
+    double_click(&mut h, empty);
+    h.run_steps(3);
+    assert!(h.state().quick_add.is_some(), "a double click opens the box");
+    h.event(egui::Event::Text("buff".into()));
+    h.run_steps(2);
+    shot(&mut h, "088-quick-add");
+    assert!(h.query_all_by_label_contains("Buffer").next().is_some());
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert!(h.state().quick_add.is_none());
+    let buffer = h.state().snarl.nodes().find(|n| n.kind == "Bufferer").expect("a buffer was added").id.clone();
+    let rect = h.state().node_rect(&buffer).unwrap();
+    assert!((rect.left() - h.state().screen_to_graph(empty).x).abs() < 30.0, "where the box was opened");
+    // With the buffer selected, / adds the next tool after it, connected.
+    pointer(&mut h, empty + egui::vec2(220.0, 0.0), None);
+    h.event(egui::Event::Text("/".into()));
+    h.run_steps(2);
+    h.event(egui::Event::Text("sort".into()));
+    h.run_steps(2);
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    let sorter = h.state().snarl.nodes().find(|n| n.kind == "Sorter").expect("a sorter was added").id.clone();
+    assert!(
+        wires(&h).contains(&format!("{}.Buffered > {}.Input", buffer, sorter))
+            || wires(&h).iter().any(|w| w.starts_with(&format!("{}.", buffer)) && w.ends_with(&format!("{}.Input", sorter))),
+        "{:?}",
+        wires(&h)
+    );
+    // Escape closes the box with nothing added.
+    double_click(&mut h, empty);
+    h.run_steps(2);
+    let count = h.state().snarl.nodes().count();
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    assert!(h.state().quick_add.is_none());
+    assert_eq!(h.state().snarl.nodes().count(), count);
+    // A connection from the output of Towns let go on empty canvas.
+    let from = pin_at(&h, "in", "Output", false);
+    let to = on_canvas(&h, 300.0, -200.0);
+    drag(&mut h, from, to, egui::PointerButton::Primary);
+    h.run_steps(3);
+    h.event(egui::Event::Text("count".into()));
+    h.run_steps(2);
+    shot(&mut h, "088-dropped-connection");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    let added: Vec<String> = h
+        .state()
+        .snarl
+        .nodes()
+        .filter(|n| !["in", "out"].contains(&n.id.as_str()) && n.kind != "Bufferer" && n.kind != "Sorter")
+        .map(|n| n.kind.clone())
+        .collect();
+    assert_eq!(added.len(), 1, "{:?}", added);
+    assert!(wires(&h).iter().any(|w| w.starts_with("in.Output > ") && !w.ends_with("out.Input")), "{:?}", wires(&h));
+}
+
+/// Selected nodes are lined up from the Edit menu, and Ctrl+Z puts them back.
+#[test]
+fn selected_nodes_are_lined_up() {
+    let (mut h, _dir) = two_nodes();
+    // The output a bit lower than the input.
+    let grab = place_of(&h, "Result", 0, true);
+    drag(&mut h, grab, grab + egui::vec2(0.0, 70.0), egui::PointerButton::Primary);
+    h.run_steps(4);
+    let top = |h: &Harness<'_, App>, id: &str| h.state().node_rect(id).unwrap().top();
+    assert!((top(&h, "out") - top(&h, "in")).abs() > 30.0);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.run_steps(3);
+    click_text(&mut h, "Edit", 0, false);
+    h.run_steps(2);
+    let align = h.query_all_by_label_contains("Align").next().expect("Align in the Edit menu").rect().center();
+    click_at(&mut h, align);
+    h.run_steps(2);
+    click_text(&mut h, "Top edges", 0, false);
+    h.run_steps(4);
+    assert!((top(&h, "out") - top(&h, "in")).abs() < 0.5, "{} {}", top(&h, "out"), top(&h, "in"));
+    // One step back.
+    for _ in 0..5 {
+        h.run_steps(2);
+    }
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    h.run_steps(4);
+    assert!((top(&h, "out") - top(&h, "in")).abs() > 30.0, "undone");
+}

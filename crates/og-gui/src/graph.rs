@@ -261,6 +261,7 @@ pub fn workspace_from(snarl: &Snarl<GNode>, name: &str, groups: &[GroupBox], nav
     Workspace {
         format: og_engine::run::FORMAT.to_string(),
         name: name.to_string(),
+        description: String::new(),
         nodes,
         edges,
         groups,
@@ -555,11 +556,82 @@ pub fn default_comment_box(ctx: &egui::Context, text: &str, size: egui::Vec2) ->
     [0.0, -h - 18.0, w, h]
 }
 
+/// How selected nodes are lined up.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Align {
+    Left,
+    Right,
+    Top,
+    Bottom,
+    /// The middles on one line across.
+    MiddleRow,
+    /// The middles on one line down.
+    MiddleColumn,
+    /// The same room between each, from left to right.
+    SpreadAcross,
+    /// The same room between each, from top to bottom.
+    SpreadDown,
+}
+
+pub const ALIGNS: &[(Align, &str)] = &[
+    (Align::Left, "Left edges"),
+    (Align::Right, "Right edges"),
+    (Align::Top, "Top edges"),
+    (Align::Bottom, "Bottom edges"),
+    (Align::MiddleRow, "Middles in a row"),
+    (Align::MiddleColumn, "Middles in a column"),
+    (Align::SpreadAcross, "Spread evenly across"),
+    (Align::SpreadDown, "Spread evenly down"),
+];
+
+/// Where each box goes when they are lined up: how far each is moved. Spreading needs
+/// three or more; it keeps the first and the last where they are and gives the same room
+/// between all of them.
+pub fn alignment(rects: &[Rect], how: Align) -> Vec<egui::Vec2> {
+    if rects.len() < 2 {
+        return vec![egui::Vec2::ZERO; rects.len()];
+    }
+    let min_x = rects.iter().map(|r| r.left()).fold(f32::INFINITY, f32::min);
+    let max_x = rects.iter().map(|r| r.right()).fold(f32::NEG_INFINITY, f32::max);
+    let min_y = rects.iter().map(|r| r.top()).fold(f32::INFINITY, f32::min);
+    let max_y = rects.iter().map(|r| r.bottom()).fold(f32::NEG_INFINITY, f32::max);
+    let mid_y = rects.iter().map(|r| r.center().y).sum::<f32>() / rects.len() as f32;
+    let mid_x = rects.iter().map(|r| r.center().x).sum::<f32>() / rects.len() as f32;
+    let spread = |across: bool| -> Vec<egui::Vec2> {
+        let mut order: Vec<usize> = (0..rects.len()).collect();
+        order.sort_by(|a, b| if across { rects[*a].left().total_cmp(&rects[*b].left()) } else { rects[*a].top().total_cmp(&rects[*b].top()) });
+        let size: f32 = rects.iter().map(|r| if across { r.width() } else { r.height() }).sum();
+        let room = if across { max_x - min_x } else { max_y - min_y };
+        let gap = ((room - size) / (rects.len() - 1) as f32).max(20.0);
+        let mut out = vec![egui::Vec2::ZERO; rects.len()];
+        let mut at = if across { min_x } else { min_y };
+        for i in order {
+            let r = rects[i];
+            out[i] = if across { egui::vec2(at - r.left(), 0.0) } else { egui::vec2(0.0, at - r.top()) };
+            at += (if across { r.width() } else { r.height() }) + gap;
+        }
+        out
+    };
+    match how {
+        Align::Left => rects.iter().map(|r| egui::vec2(min_x - r.left(), 0.0)).collect(),
+        Align::Right => rects.iter().map(|r| egui::vec2(max_x - r.right(), 0.0)).collect(),
+        Align::Top => rects.iter().map(|r| egui::vec2(0.0, min_y - r.top())).collect(),
+        Align::Bottom => rects.iter().map(|r| egui::vec2(0.0, max_y - r.bottom())).collect(),
+        Align::MiddleRow => rects.iter().map(|r| egui::vec2(0.0, mid_y - r.center().y)).collect(),
+        Align::MiddleColumn => rects.iter().map(|r| egui::vec2(mid_x - r.center().x, 0.0)).collect(),
+        Align::SpreadAcross if rects.len() >= 3 => spread(true),
+        Align::SpreadDown if rects.len() >= 3 => spread(false),
+        _ => vec![egui::Vec2::ZERO; rects.len()],
+    }
+}
+
 /// What the user did on the canvas during this frame.
 #[derive(Default)]
 pub struct CanvasEvents {
     /// Nodes, connections or positions changed.
     pub changed: bool,
+    /// The selected nodes are to be lined up.
+    pub align: Option<Align>,
     /// Connections changed, so the latest run no longer matches.
     pub rewired: bool,
     /// A node was added from a menu on the canvas, and should become the selection.
@@ -652,6 +724,8 @@ pub struct Viewer<'a> {
     pub fit: &'a mut Option<TSTransform>,
     /// The id of the node that is running right now.
     pub running: Option<&'a str>,
+    /// How far the dots along the connections into it have come, from 0 to 1.
+    pub flow_phase: f32,
     /// How many files each reader of a folder stands for, by node id.
     pub files: &'a HashMap<String, usize>,
     /// The ids of the nodes whose attribute list is folded out.
@@ -1231,41 +1305,38 @@ impl SnarlViewer<GNode> for Viewer<'_> {
     }
 
     fn show_dropped_wire_menu(&mut self, pos: Pos2, ui: &mut Ui, src: AnyPins, snarl: &mut Snarl<GNode>) {
-        // A connection dropped on empty canvas gives a new node, already connected.
-        ui.label(RichText::new("Connect to a new node").small().color(self.pal.muted));
-        let mut add = None;
-        let (end, label) = match src {
-            AnyPins::Out(_) => ("Writer", "Add output"),
-            AnyPins::In(_) => ("Reader", "Add input"),
+        // A connection let go on empty canvas: type the tool to put there, connected.
+        let want = match src {
+            AnyPins::Out(_) => crate::quickadd::Want::WithInput,
+            AnyPins::In(_) => crate::quickadd::Want::WithOutput,
         };
-        if ui.button(label).clicked() {
-            add = Some(end);
-        }
-        tool_submenu(ui, |ui| {
-            if let Some(kind) = tool_menu(ui, &self.pal) {
-                add = Some(kind);
+        let outcome = crate::quickadd::show(ui, &self.pal, ui.make_persistent_id("dropped-wire-quick-add"), want);
+        let kind = match outcome {
+            crate::quickadd::Outcome::Picked(kind) => kind,
+            crate::quickadd::Outcome::Cancelled => {
+                ui.close();
+                return;
             }
-        });
-        if let Some(kind) = add {
-            let node = new_node(snarl, kind);
-            let id = snarl.insert_node(pos, node);
-            match src {
-                AnyPins::Out(pins) => {
-                    for p in pins {
-                        snarl.connect(*p, InPinId { node: id, input: 0 });
-                    }
-                }
-                AnyPins::In(pins) => {
-                    for p in pins {
-                        snarl.connect(OutPinId { node: id, output: 0 }, *p);
-                    }
+            crate::quickadd::Outcome::Open => return,
+        };
+        let node = new_node(snarl, kind);
+        let id = snarl.insert_node(pos, node);
+        match src {
+            AnyPins::Out(pins) => {
+                for p in pins {
+                    snarl.connect(*p, InPinId { node: id, input: 0 });
                 }
             }
-            self.events.added = Some(id);
-            self.events.changed = true;
-            self.events.rewired = true;
-            ui.close();
+            AnyPins::In(pins) => {
+                for p in pins {
+                    snarl.connect(OutPinId { node: id, output: 0 }, *p);
+                }
+            }
         }
+        self.events.added = Some(id);
+        self.events.changed = true;
+        self.events.rewired = true;
+        ui.close();
     }
 
     fn has_node_menu(&mut self, _node: &GNode) -> bool {
@@ -1318,6 +1389,17 @@ impl SnarlViewer<GNode> for Viewer<'_> {
                 }
                 ui.separator();
             }
+        }
+        if many {
+            ui.menu_button("Align", |ui| {
+                for (how, label) in ALIGNS {
+                    let spreading = matches!(how, Align::SpreadAcross | Align::SpreadDown);
+                    if ui.add_enabled(!spreading || self.selected.len() >= 3, egui::Button::new(*label)).clicked() {
+                        self.events.align = Some(*how);
+                        ui.close();
+                    }
+                }
+            });
         }
         if ui.add(egui::Button::new(if many { "Group selected" } else { "Put in a group" }).shortcut_text("Ctrl+G")).clicked() {
             self.events.group_nodes = Some(node);
@@ -1395,6 +1477,12 @@ impl SnarlViewer<GNode> for Viewer<'_> {
 
     fn wire_point_secondary_clicked(&mut self, from: OutPinId, to: InPinId, index: usize, pos: Pos2, _snarl: &mut Snarl<GNode>) {
         self.events.bend_menu = Some(((from, to), index, pos));
+    }
+
+    fn wire_flow(&mut self, _from: OutPinId, to: InPinId, snarl: &Snarl<GNode>) -> Option<f32> {
+        // Into the node at work, while it works and is not paused.
+        let running = self.running?;
+        (!self.paused && snarl.get_node(to.node).is_some_and(|n| n.id == running)).then_some(self.flow_phase)
     }
 
     fn wire_dashed(&mut self, from: OutPinId, to: InPinId, snarl: &Snarl<GNode>) -> bool {
@@ -1597,6 +1685,7 @@ mod tests {
             transform: &mut transform,
             fit: &mut fit,
             running: None,
+            flow_phase: 0.0,
             files: &HashMap::new(),
             expanded: &HashSet::new(),
             groups: &[],
@@ -1664,6 +1753,7 @@ mod tests {
             transform: &mut transform,
             fit: &mut fit,
             running: None,
+            flow_phase: 0.0,
             files: &files,
             expanded: &expanded,
             groups: &[],
@@ -1693,6 +1783,15 @@ mod tests {
         }
         // Now that it is connected it does not go into another connection.
         assert!(!v.can_drop_node_on_wire(n[1], second.0, second.1, &snarl));
+        // Dots move along the connections into the node at work, and only those.
+        assert_eq!(v.wire_flow(second.0, second.1, &snarl), None);
+        let at_work = snarl[n[3]].id.clone();
+        v.running = Some(&at_work);
+        v.flow_phase = 0.25;
+        assert_eq!(v.wire_flow(second.0, second.1, &snarl), Some(0.25));
+        assert_eq!(v.wire_flow(first.0, InPinId { node: n[1], input: 0 }, &snarl), None);
+        v.paused = true;
+        assert_eq!(v.wire_flow(second.0, second.1, &snarl), None);
         assert!(events.rewired && events.message.unwrap().starts_with("Put Test between Input and Test 2"));
     }
 
@@ -1739,5 +1838,24 @@ mod tests {
         // The second copy takes the first free default name, which is "Tester" now that the
         // first tester has a name of its own.
         assert_eq!((b.id.as_str(), b.name.as_str()), ("tester_4", "Test"));
+    }
+}
+
+#[cfg(test)]
+mod align_tests {
+    use super::*;
+
+    #[test]
+    fn boxes_are_lined_up_and_spread() {
+        let r = |x: f32, y: f32, w: f32| Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, 40.0));
+        let boxes = [r(0.0, 10.0, 100.0), r(150.0, 0.0, 60.0), r(400.0, 30.0, 100.0)];
+        let moved = alignment(&boxes, Align::Top);
+        assert_eq!(moved, [egui::vec2(0.0, -10.0), egui::Vec2::ZERO, egui::vec2(0.0, -30.0)]);
+        let moved = alignment(&boxes, Align::Right);
+        assert_eq!(moved[1], egui::vec2(290.0, 0.0));
+        // 500 across, 260 of boxes: 120 between each.
+        let moved = alignment(&boxes, Align::SpreadAcross);
+        assert_eq!(moved, [egui::Vec2::ZERO, egui::vec2(70.0, 0.0), egui::Vec2::ZERO]);
+        assert_eq!(alignment(&boxes[..2], Align::SpreadAcross), [egui::Vec2::ZERO; 2]);
     }
 }
