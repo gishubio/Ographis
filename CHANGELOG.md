@@ -3,6 +3,38 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.89
+
+Rasters
+
+- **Values from raster** gives each feature the value where it lies: the height at each
+  address, the land cover under each tree.
+- **Zonal statistics** counts the cells within each area: mean, min, max, sum, median,
+  spread, the most common value, and the share or area of each class.
+- **Slope and aspect**: slope in degrees or percent, aspect, position against the
+  surroundings (TPI) and roughness.
+- **Clip raster** keeps the cells inside or outside areas. (Reproject already warps rasters.)
+- **Raster to areas** and **Features to raster** go between rasters and vectors.
+- **Reclassify raster** by ranges.
+- **Distance raster**: the exact distance to the nearest feature.
+- **Visible area** (viewshed) from one or many places, with the eye and what is seen at
+  heights above the ground and the curve of the Earth.
+
+Point clouds
+
+- **Point cloud to raster**: surface and terrain models, mean, count and density, with holes
+  filled if asked.
+- **Height above ground**, from a terrain model or the ground points of the cloud.
+- **Filter point cloud** by class, return, height and area.
+- **LAS and LAZ are written**, as LAS 1.4 with classes, intensity, returns, colours and the
+  coordinate system.
+
+Also
+
+- The dots on a connection into the node at work now move with the data, from the output to
+  the input.
+- A new example, `raster_tools.ographis`.
+
 ## 0.88
 
 For AI assistants

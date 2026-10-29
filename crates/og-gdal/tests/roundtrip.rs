@@ -2604,3 +2604,77 @@ fn flatgeobuf_and_spatialite() {
     assert_eq!(col(&t, "name"), [text("Brunnsparken")]);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The raster and point cloud tools of 0.89 on the example terrain model: slope, zonal
+/// statistics, visibility, classes made into areas, and points laid on the terrain written as
+/// a point cloud with its coordinate system and read again.
+#[test]
+fn rasters_are_measured_and_point_clouds_written() {
+    let b = GdalBackend::new();
+    let dir = tmp("raster089");
+    std::fs::copy(root().join("examples/terrain.tif"), dir.join("terrain.tif")).unwrap();
+    std::fs::write(dir.join("places.csv"), "name,x,y\ntower,418400,6474800\nhill,414000,6472000\nfar,1,1\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "dem", "type": "Reader", "params": {"path": "terrain.tif", "raster_as": "grid"}},
+        {"id": "outline", "type": "Reader", "params": {"path": "terrain.tif", "raster_as": "extent"}},
+        {"id": "places", "type": "Reader", "params": {"path": "places.csv", "x": "x", "y": "y", "crs": "EPSG:3006"}},
+        {"id": "slope", "type": "TerrainAnalyzer", "params": {"measure": "slope"}},
+        {"id": "zones", "type": "ZonalStatistics", "params": {"stats": "count, mean, max"}},
+        {"id": "sample", "type": "RasterSampler", "params": {"name": "height", "method": "bilinear"}},
+        {"id": "view", "type": "Viewshed", "params": {"radius": "3000", "eye": "20"}},
+        {"id": "bands", "type": "RasterReclassifier", "params": {"ranges": [["", "100", "1"], ["100", "", "2"]]}},
+        {"id": "areas", "type": "RasterPolygonizer", "params": {"merge": "yes", "name": "band"}},
+        {"id": "on_ground", "type": "HeightSetter", "params": {"mode": "terrain", "height": "0"}},
+        {"id": "laz", "type": "Writer", "params": {"path": "out/places.laz"}},
+        {"id": "distance", "type": "DistanceRaster", "params": {"cell": "1000", "reach": "500"}}],
+      "edges": [
+        {"from": ["dem", "Output"], "to": ["slope", "Heights"]},
+        {"from": ["outline", "Output"], "to": ["zones", "Zones"]},
+        {"from": ["dem", "Output"], "to": ["zones", "Raster"]},
+        {"from": ["places", "Output"], "to": ["sample", "Features"]},
+        {"from": ["dem", "Output"], "to": ["sample", "Raster"]},
+        {"from": ["dem", "Output"], "to": ["view", "Heights"]},
+        {"from": ["places", "Output"], "to": ["view", "Places"]},
+        {"from": ["dem", "Output"], "to": ["bands", "Raster"]},
+        {"from": ["bands", "Raster"], "to": ["areas", "Raster"]},
+        {"from": ["places", "Output"], "to": ["on_ground", "Input"]},
+        {"from": ["dem", "Output"], "to": ["on_ground", "Terrain"]},
+        {"from": ["on_ground", "Output"], "to": ["laz", "Input"]},
+        {"from": ["places", "Output"], "to": ["distance", "Features"]}]}"#,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    let slope = r.output("slope", "Raster").unwrap().grid.clone().unwrap();
+    let (lo, hi) = slope.range().unwrap();
+    assert!(lo >= 0.0 && hi < 90.0 && hi > 1.0, "{} {}", lo, hi);
+    let zones = r.output("zones", "Output").unwrap();
+    assert_eq!(col(zones, "count"), [Value::Int(640 * 480)]);
+    let dem = r.output("dem", "Output").unwrap().grid.clone().unwrap();
+    assert_eq!(col(zones, "max")[0], Value::Real(dem.range().unwrap().1 as f64));
+    let sample = r.output("sample", "Output").unwrap();
+    let h = col(sample, "height");
+    assert!(h[0].as_f64().is_some() && h[2] == Value::Null, "{:?}", h);
+    let view = r.output("view", "Raster").unwrap().grid.clone().unwrap();
+    assert!(view.values.contains(&2.0), "some cells are seen from both places");
+    assert!(view.values.contains(&0.0), "and some from neither");
+    let areas = r.output("areas", "Areas").unwrap();
+    assert_eq!(areas.len(), 2, "one feature for each band");
+    assert_eq!(areas.crs, Some(3006));
+    // The points on the ground, as a point cloud, with their heights and system.
+    let r2 = run(
+        &Workspace::from_json(r#"{"nodes": [{"id": "back", "type": "Reader", "params": {"path": "out/places.laz"}}], "edges": []}"#).unwrap(),
+        Some(&b),
+        &dir,
+    );
+    let back = r2.output("back", "Output").unwrap();
+    assert_eq!((back.len(), back.crs), (3, Some(3006)), "{:?}", r2.log);
+    let z = back.features[0].heights().unwrap()[0];
+    assert!((z - h[0].as_f64().unwrap()).abs() < 0.5, "{} {:?}", z, h[0]);
+    let d = r.output("distance", "Raster").unwrap().grid.clone().unwrap();
+    assert_eq!(d.cell_size().0, 1000.0);
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -32,7 +32,7 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 <main>
 <h1>What Ographis reads and writes</h1>
 <p class="lead">Each format with what handles it: <span class="tag gdal">GDAL</span>, the geodata library installed with the program, or <span class="tag own">Ographis</span>, code of the program's own, with the library it uses in brackets.</p>
-<div class="sum"><div><b>28</b>read</div><div><b>20</b>written</div><div><b>17</b>by Ographis itself</div></div>
+<div class="sum"><div><b>28</b>read</div><div><b>21</b>written</div><div><b>17</b>by Ographis itself</div></div>
 <div class="wrap">
 <table>
 <thead><tr><th scope="col">Format</th><th scope="col">Reads</th><th scope="col">Writes</th><th scope="col">Notes</th></tr></thead>
@@ -64,7 +64,7 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 <tr><th scope="row">OBJ<div class="files">.obj</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">With materials and textures</td></tr>
 <tr><th scope="row">glTF<div class="files">.gltf, .glb</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">Written as .glb around an origin kept in the file</td></tr>
 <tr><th scope="row">3D Tiles<div class="files">tileset.json</div></th><td><span class="tag own">Ographis</span></td><td class="no">–</td><td class="note">Batched and instanced models, from a folder or the web</td></tr>
-<tr><th scope="row">Point clouds<div class="files">.las, .laz, .copc.laz</div></th><td><span class="tag own">Ographis (las, laz-rs)</span></td><td class="no">–</td><td class="note">COPC read from the web part by part</td></tr>
+<tr><th scope="row">Point clouds<div class="files">.las, .laz, .copc.laz</div></th><td><span class="tag own">Ographis (las, laz-rs)</span></td><td><span class="tag own">Ographis (las, laz-rs)</span></td><td class="note">COPC read from the web part by part. Written as LAS 1.4 with classes, intensity, returns and colours</td></tr>
 <tr><th scope="row">Charts as web pages<div class="files">.html</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">From Draw chart: the values under the pointer, sorted as the reader wants</td></tr>
 <tr><th scope="row">PowerPoint<div class="files">.pptx</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">A slide for each picture, from Slides</td></tr>
 <tr><th scope="row">LibreOffice Impress<div class="files">.odp</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">As PowerPoint</td></tr>
@@ -73,7 +73,7 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 </tbody>
 </table>
 </div>
-<footer>Ographis 0.88 · GDAL 3.8.4. Which further formats GDAL reads depends on how it was built; <code>og info</code> tells whether a file can be read.</footer>
+<footer>Ographis 0.89 · GDAL 3.8.4. Which further formats GDAL reads depends on how it was built; <code>og info</code> tells whether a file can be read.</footer>
 </main>
 </body>
 </html>

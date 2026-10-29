@@ -1324,7 +1324,8 @@ where
             const STEP: f32 = 22.0;
             let r = (stroke.width * 1.6).max(2.5);
             for line in lines {
-                let mut to_next = (1.0 - phase.clamp(0.0, 1.0)) * STEP;
+                // The phase grows with time, so the dots go from the output to the input.
+                let mut to_next = phase.clamp(0.0, 1.0) * STEP;
                 for seg in line.windows(2) {
                     let (a, b) = (seg[0], seg[1]);
                     let len = (b - a).length();

@@ -118,6 +118,8 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         return match (node.kind.as_str(), spec.key) {
             ("SubstringExtractor", "start") => param("part").as_deref() == Some("middle"),
             ("ValueMapper", "default") => param("otherwise").as_deref() == Some("text"),
+            ("TerrainAnalyzer", "radius") => param("measure").as_deref() == Some("tpi"),
+            ("PointCloudFilter", "height_of") => param("zmin").is_some_and(|v| !v.is_empty()) || param("zmax").is_some_and(|v| !v.is_empty()),
             // The settings of the connection that models before 0.63 kept in the node are shown
             // only while such a model has them and names no connection.
             ("PostgisReader" | "PostgisWriter", "host" | "port" | "database" | "user" | "password") => {

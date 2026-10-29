@@ -403,6 +403,17 @@ pub trait Backend: Sync {
         let _ = (grid, interval, base, areas, name);
         Err(crate::model::GbError("Contour lines need the GDAL support.".into()))
     }
+    /// Areas of the cells of a grid with the same value that touch, by their sides or, with
+    /// `eight`, also by their corners, with the value in the attribute `name`.
+    fn polygonize(&self, grid: &crate::model::Grid, name: &str, eight: bool) -> Result<crate::model::Table> {
+        let _ = (grid, name, eight);
+        Err(crate::model::GbError("Raster to areas needs the GDAL support.".into()))
+    }
+    /// A coordinate system as WKT, for formats that keep it so, such as LAS.
+    fn crs_wkt(&self, epsg: u32) -> Option<String> {
+        let _ = epsg;
+        None
+    }
     /// A grid of values in another coordinate system.
     fn warp_grid(&self, grid: &crate::model::Grid, to: u32) -> Result<crate::model::Grid> {
         let _ = (grid, to);

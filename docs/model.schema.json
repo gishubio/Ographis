@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.88.0. Written by og schema.",
+  "description": "A model of Ographis 0.89.0. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -178,6 +178,18 @@
             "LineEndsExtractor",
             "RandomNumber",
             "Duplicator",
+            "RasterSampler",
+            "ZonalStatistics",
+            "TerrainAnalyzer",
+            "RasterClipper",
+            "RasterPolygonizer",
+            "Rasterizer",
+            "RasterReclassifier",
+            "DistanceRaster",
+            "Viewshed",
+            "PointCloudRasterizer",
+            "HeightAboveGround",
+            "PointCloudFilter",
             "OsmDownloader",
             "TanakaContours",
             "TerrainShader",
@@ -890,6 +902,8 @@
                           "tif",
                           "glb",
                           "jpg",
+                          "las",
+                          "laz",
                           "ods",
                           "obj",
                           "pdf",
@@ -1239,6 +1253,8 @@
                           "tif",
                           "glb",
                           "jpg",
+                          "las",
+                          "laz",
                           "ods",
                           "obj",
                           "pdf",
@@ -1341,6 +1357,8 @@
                           "tif",
                           "glb",
                           "jpg",
+                          "las",
+                          "laz",
                           "ods",
                           "obj",
                           "pdf",
@@ -1620,6 +1638,8 @@
                           "tif",
                           "glb",
                           "jpg",
+                          "las",
+                          "laz",
                           "ods",
                           "obj",
                           "pdf",
@@ -6228,6 +6248,589 @@
                     "title": "At most",
                     "description": "a string. The most features that may come out in all. A stop, so that a wrong attribute does not fill the memory of the computer",
                     "default": "1000000"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "RasterSampler"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "title": "Attribute",
+                    "description": "a string. Gets the value. A raster with several bands gives name_2, name_3 and so on too",
+                    "default": "value"
+                  },
+                  "method": {
+                    "title": "Value",
+                    "description": "one of the values in choices, as a string. The cell it lies in suits classes, such as land cover",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "cell",
+                          "bilinear"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "cell"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ZonalStatistics"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "stats": {
+                    "title": "Statistics",
+                    "description": "a string. Any of count, mean, min, max, sum, median, std, range, majority and area, separated by commas",
+                    "default": "count, mean, min, max"
+                  },
+                  "classes": {
+                    "title": "Each value apart",
+                    "description": "one of the values in choices, as a string. For classes, such as land cover: an attribute for each value, such as share_3 for the share of the cells with 3",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "",
+                          "share",
+                          "area"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ]
+                  },
+                  "prefix": {
+                    "title": "Before the names",
+                    "description": "a string. Such as dem_, to give dem_mean and dem_max"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "TerrainAnalyzer"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "measure": {
+                    "title": "Measure",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "slope",
+                          "percent",
+                          "aspect",
+                          "tpi",
+                          "roughness"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "slope"
+                  },
+                  "radius": {
+                    "title": "Surroundings",
+                    "description": "a string. For the position: how many cells out the surroundings reach. Ridges and valleys show at about their width",
+                    "default": "5"
+                  },
+                  "zfactor": {
+                    "title": "Heights times",
+                    "description": "a string. When the heights are in other units than the coordinates, such as feet on metres: 0.3048",
+                    "default": "1"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "RasterClipper"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "keep": {
+                    "title": "Keep the cells",
+                    "description": "one of the values in choices, as a string. A cell is inside when its middle is",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "inside",
+                          "outside"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "inside"
+                  },
+                  "crop": {
+                    "title": "The raster",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "yes",
+                          "no"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "yes"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "RasterPolygonizer"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "title": "Attribute",
+                    "description": "a string. The value of the cells of each area",
+                    "default": "value"
+                  },
+                  "connect": {
+                    "title": "Cells belong together",
+                    "description": "one of the values in choices, as a string. Cells with the same value that touch become one area",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "4",
+                          "8"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "4"
+                  },
+                  "merge": {
+                    "title": "Areas",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "no",
+                          "yes"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "no"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Rasterizer"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "title": "Value",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". The value of the cells of each feature: a number, an attribute or an expression",
+                    "default": "1"
+                  },
+                  "cell": {
+                    "title": "Cell size",
+                    "description": "a string. In the units of the coordinate system, such as metres. A raster connected to Like gives its cells instead",
+                    "default": "10"
+                  },
+                  "many": {
+                    "title": "Where several features are",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "last",
+                          "first",
+                          "max",
+                          "min",
+                          "sum",
+                          "count"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "last"
+                  },
+                  "background": {
+                    "title": "Other cells",
+                    "description": "a string. The value of cells no feature reaches. Empty leaves them empty"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "RasterReclassifier"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "ranges": {
+                    "title": "From, to and new value",
+                    "description": "a list of [from, to, value]; an empty from or to has no end. From and to are both in the range, and the first range that fits is used: 0 to 5 gives 1, 5 to 15 gives 2. An empty from or to has no end"
+                  },
+                  "otherwise": {
+                    "title": "Values in no range",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "empty",
+                          "keep"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "empty"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "DistanceRaster"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "cell": {
+                    "title": "Cell size",
+                    "description": "a string. In the units of the coordinate system, such as metres. A raster connected to Like gives its cells instead",
+                    "default": "10"
+                  },
+                  "reach": {
+                    "title": "As far as",
+                    "description": "a string. How far from the features the raster reaches; cells farther away are empty",
+                    "default": "1000"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Viewshed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "eye": {
+                    "title": "Eye above the ground",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". How high the eye is at each place, in metres: a number, or an attribute such as the height of a mast",
+                    "default": "1.7"
+                  },
+                  "target": {
+                    "title": "Seen above the ground",
+                    "description": "a string. How high what is to be seen is, such as 0 for the ground or 150 for the top of a wind turbine",
+                    "default": "0"
+                  },
+                  "radius": {
+                    "title": "As far as",
+                    "description": "a string. How far the eye reaches, in metres",
+                    "default": "5000"
+                  },
+                  "result": {
+                    "title": "Each cell",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "count",
+                          "visible"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "count"
+                  },
+                  "curvature": {
+                    "title": "The curve of the Earth",
+                    "description": "one of the values in choices, as a string. Matters over kilometres: 5 km away the ground is 1.7 m lower",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "yes",
+                          "no"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "yes"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "PointCloudRasterizer"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "cell": {
+                    "title": "Cell size",
+                    "description": "a string. In metres, or the units of the coordinate system",
+                    "default": "1"
+                  },
+                  "stat": {
+                    "title": "Each cell gets",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "max",
+                          "min",
+                          "mean",
+                          "count",
+                          "density"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "max"
+                  },
+                  "value": {
+                    "title": "Of",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". Empty takes the height of the points. Or an attribute, such as intensity"
+                  },
+                  "fill": {
+                    "title": "Fill holes up to",
+                    "description": "a string. Cells without points are filled from those around them, as many cells in: holes under buildings in a ground model. 0 fills none",
+                    "default": "0"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "HeightAboveGround"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "title": "Attribute",
+                    "description": "a string. The height of each point above the ground",
+                    "default": "above_ground"
+                  },
+                  "ground_classes": {
+                    "title": "Ground points",
+                    "description": "a string. Without a terrain model on Ground, the ground is made of the points of these classes: 2 is ground",
+                    "default": "2"
+                  },
+                  "cell": {
+                    "title": "Ground cells",
+                    "description": "a string. The cell size of the ground made of the points",
+                    "default": "1"
+                  },
+                  "replace": {
+                    "title": "The height above ground",
+                    "description": "one of the values in choices, as a string. As the heights, trees and roofs stand on flat ground",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "attribute",
+                          "heights"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "attribute"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "PointCloudFilter"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "classes": {
+                    "title": "Classes",
+                    "description": "a string. The class numbers to keep, such as 2 for ground or 3, 4, 5 for vegetation and 6 for buildings. Empty keeps all"
+                  },
+                  "returns": {
+                    "title": "Returns",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "all",
+                          "first",
+                          "last",
+                          "single"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "all"
+                  },
+                  "zmin": {
+                    "title": "Lowest height",
+                    "description": "a string. Of the points, or of the attribute below. Empty has no limit"
+                  },
+                  "zmax": {
+                    "title": "Highest height",
+                    "description": "a string."
+                  },
+                  "height_of": {
+                    "title": "Height from",
+                    "description": "a string. Empty uses the heights of the points. An attribute, such as above_ground from Height above ground, uses that"
                   }
                 }
               }

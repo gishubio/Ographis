@@ -917,6 +917,17 @@ impl Backend for GdalBackend {
         Ok(t)
     }
 
+    fn polygonize(&self, grid: &og_engine::model::Grid, name: &str, eight: bool) -> Result<Table> {
+        clear_messages();
+        let t = raster::polygonize(grid, name, eight);
+        clear_messages();
+        t
+    }
+
+    fn crs_wkt(&self, epsg: u32) -> Option<String> {
+        SpatialRef::from_epsg(epsg).ok()?.to_wkt().ok()
+    }
+
     fn warp_grid(&self, grid: &og_engine::model::Grid, to: u32) -> Result<og_engine::model::Grid> {
         raster::warp_grid(grid, to)
     }

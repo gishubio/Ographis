@@ -1,6 +1,6 @@
 # What is tested
 
-`cargo test` runs 402 tests: expressions, CSV, geometry, whole models, reading and
+`cargo test` runs 409 tests: expressions, CSV, geometry, whole models, reading and
 writing real files, fetching from a web server on the same computer, and the user
 interface. The interface tests run the program without a window, with simulated clicks,
 drags and keys: load, run, pick a row, sort the table, drag a connection between two

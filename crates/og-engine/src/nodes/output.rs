@@ -52,6 +52,8 @@ pub const WRITER_FORMATS: &[(&str, &str)] = &[
     ("tif", "GeoTIFF image (.tif)"),
     ("glb", "glTF 3D model (.glb)"),
     ("jpg", "JPEG image (.jpg)"),
+    ("las", "LAS point cloud (.las)"),
+    ("laz", "LAZ point cloud (.laz)"),
     ("ods", "LibreOffice Calc (.ods)"),
     ("obj", "OBJ 3D model (.obj)"),
     ("pdf", "PDF (.pdf)"),
@@ -74,6 +76,8 @@ pub const OUTPUT_FORMATS: &[(&str, &str)] = &[
     ("tif", "GeoTIFF image (.tif)"),
     ("glb", "glTF 3D model (.glb)"),
     ("jpg", "JPEG image (.jpg)"),
+    ("las", "LAS point cloud (.las)"),
+    ("laz", "LAZ point cloud (.laz)"),
     ("ods", "LibreOffice Calc (.ods)"),
     ("obj", "OBJ 3D model (.obj)"),
     ("pdf", "PDF (.pdf)"),
@@ -380,9 +384,24 @@ pub(super) fn run_writer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
     }
     if ext.is_empty() {
         return err(format!(
-            "The file name {} has no extension. Choose a format, or use .gpkg, .shp, .geojson, .xlsx, .ods, .csv, .txt, .png, .jpg, .tif, .pdf, .obj or .glb.",
+            "The file name {} has no extension. Choose a format, or use .gpkg, .shp, .geojson, .xlsx, .ods, .csv, .txt, .png, .jpg, .tif, .pdf, .obj, .glb or .laz.",
             path.display()
         ));
+    }
+    if matches!(ext.as_str(), "las" | "laz") {
+        // A point cloud: points with heights, with the attributes of LAS that they have.
+        let table = input(inp, "Input");
+        let wkt = table.crs.and_then(|c| ctx.backend.and_then(|b| b.crs_wkt(c)));
+        if table.crs.is_some() && wkt.is_none() {
+            ctx.notes.warn("The coordinate system could not be written into the point cloud without the GDAL support.");
+        }
+        let (n, flat) = crate::pointcloud::write_las(table, &path, wkt.as_deref())?;
+        ctx.notes.info(format!("{} points written", fmt_count(n)));
+        if flat > 0 {
+            ctx.notes.warn(format!("{} points had no height and were written at 0.", fmt_count(flat)));
+        }
+        ctx.files.push(path);
+        return Ok(Vec::new());
     }
     if matches!(ext.as_str(), "obj" | "glb") {
         // A 3D model: the one the stream carries, from a 3D file, Extrude or Generate TIN.

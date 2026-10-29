@@ -250,6 +250,10 @@ On Windows 11, by the first user:
 
 Not yet checked on Windows:
 
+- Version 0.89: Raster to areas with the GDAL of OSGeo4W; a LAZ written by Ographis opened in
+  QGIS or CloudCompare, with its coordinate system; Point cloud to raster and Height above
+  ground with Lantmäteriet's Laserdata NH over a whole sheet, and how long Visible area takes
+  with a 1 m terrain model.
 - Version 0.88: background maps against real services, such as WMS and WMTS from
   Lantmäteriet with a user and password, through the proxy; vector tiles (.mbtiles,
   .pmtiles) with the GDAL 3.13 of OSGeo4W; Ctrl+Shift+C putting the picture of the model on

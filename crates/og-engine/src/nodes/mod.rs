@@ -626,8 +626,10 @@ mod more_tools;
 mod network;
 mod osm;
 mod output;
+mod pointcloud089;
 mod props;
 mod raster;
+mod raster089;
 mod scene;
 mod solid;
 #[cfg(test)]
@@ -683,6 +685,8 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         diorama::TYPES,
         more_tools::TYPES,
         tools088::TYPES,
+        raster089::TYPES,
+        pointcloud089::TYPES,
         osm::TYPES,
         terrain::TYPES,
         raster::TYPES,
@@ -699,8 +703,14 @@ pub fn node_type(name: &str) -> Option<&'static NodeType> {
 /// Runs one tool on tables in memory, for the tests of the tools: its outputs and notes.
 #[cfg(test)]
 pub(crate) fn run_for_test(kind: &str, params: &[(&str, &str)], given: Vec<(&'static str, Table)>) -> Result<(Outputs, Notes)> {
-    let t = node_type(kind).expect("a tool of that name");
     let values: Params = params.iter().map(|(k, v)| (k.to_string(), serde_json::Value::String(v.to_string()))).collect();
+    run_for_test_with(kind, values, given)
+}
+
+/// As run_for_test, with the parameters as JSON, for those that are lists.
+#[cfg(test)]
+pub(crate) fn run_for_test_with(kind: &str, values: Params, given: Vec<(&'static str, Table)>) -> Result<(Outputs, Notes)> {
+    let t = node_type(kind).expect("a tool of that name");
     let p = P::new(&values, t.params);
     let mut inp: Inputs = HashMap::new();
     for port in t.inputs {

@@ -744,6 +744,8 @@ fn a_spreadsheet_is_given_a_look() {
     h.run_steps(3);
     h.get_by_value("Excel (.xlsx)").click();
     h.run_steps(3);
+    h.get_by_label("LibreOffice Calc (.ods)").scroll_to_me();
+    h.run_steps(3);
     h.get_by_label("LibreOffice Calc (.ods)").click();
     h.run_steps(3);
     assert_eq!(param(&h, "out", "path"), "out/pair.ods");
@@ -753,6 +755,8 @@ fn a_spreadsheet_is_given_a_look() {
     assert_eq!(h.state().result.as_ref().unwrap().errors, 0);
     assert_eq!(GdalBackend::new().read(&dir.join("out/pair.ods"), &Default::default(), &mut Notes::default()).unwrap().len(), 39);
     h.get_by_value("LibreOffice Calc (.ods)").click();
+    h.run_steps(3);
+    h.get_by_label("GeoPackage (.gpkg)").scroll_to_me();
     h.run_steps(3);
     h.get_by_label("GeoPackage (.gpkg)").click();
     h.run_steps(3);

@@ -122,7 +122,7 @@ pub const FORMATS: &[Format] = &[
     Format { name: "OBJ", files: ".obj", read: OWN, write: OWN, note: "With materials and textures" },
     Format { name: "glTF", files: ".gltf, .glb", read: OWN, write: OWN, note: "Written as .glb around an origin kept in the file" },
     Format { name: "3D Tiles", files: "tileset.json", read: OWN, write: "", note: "Batched and instanced models, from a folder or the web" },
-    Format { name: "Point clouds", files: ".las, .laz, .copc.laz", read: "Ographis (las, laz-rs)", write: "", note: "COPC read from the web part by part" },
+    Format { name: "Point clouds", files: ".las, .laz, .copc.laz", read: "Ographis (las, laz-rs)", write: "Ographis (las, laz-rs)", note: "COPC read from the web part by part. Written as LAS 1.4 with classes, intensity, returns and colours" },
     Format {
         name: "Charts as web pages",
         files: ".html",

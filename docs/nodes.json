@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.88.0",
+  "version": "0.89.0",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a name that is shown, x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -1384,6 +1384,14 @@
               "label": "JPEG image (.jpg)"
             },
             {
+              "value": "las",
+              "label": "LAS point cloud (.las)"
+            },
+            {
+              "value": "laz",
+              "label": "LAZ point cloud (.laz)"
+            },
+            {
               "value": "ods",
               "label": "LibreOffice Calc (.ods)"
             },
@@ -1905,6 +1913,14 @@
               "label": "JPEG image (.jpg)"
             },
             {
+              "value": "las",
+              "label": "LAS point cloud (.las)"
+            },
+            {
+              "value": "laz",
+              "label": "LAZ point cloud (.laz)"
+            },
+            {
               "value": "ods",
               "label": "LibreOffice Calc (.ods)"
             },
@@ -2070,6 +2086,14 @@
             {
               "value": "jpg",
               "label": "JPEG image (.jpg)"
+            },
+            {
+              "value": "las",
+              "label": "LAS point cloud (.las)"
+            },
+            {
+              "value": "laz",
+              "label": "LAZ point cloud (.laz)"
             },
             {
               "value": "ods",
@@ -2518,6 +2542,14 @@
             {
               "value": "jpg",
               "label": "JPEG image (.jpg)"
+            },
+            {
+              "value": "las",
+              "label": "LAS point cloud (.las)"
+            },
+            {
+              "value": "laz",
+              "label": "LAZ point cloud (.laz)"
             },
             {
               "value": "ods",
@@ -8462,6 +8494,718 @@
           "shape": "a string",
           "default": "1000000",
           "hint": "The most features that may come out in all. A stop, so that a wrong attribute does not fill the memory of the computer"
+        }
+      ]
+    },
+    {
+      "type": "RasterSampler",
+      "title": "Values from raster",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Gives each feature the value of the raster where it lies: the height of the terrain at each address, the land cover under each tree, the noise at each school. The value of the cell, or between the four nearest cells for heights. A line or an area gets the value at a point on it; Zonal statistics gives the mean and more over each area.",
+      "inputs": [
+        "Features",
+        "Raster"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "name",
+          "label": "Attribute",
+          "kind": "text",
+          "shape": "a string",
+          "default": "value",
+          "hint": "Gets the value. A raster with several bands gives name_2, name_3 and so on too"
+        },
+        {
+          "key": "method",
+          "label": "Value",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "cell",
+              "label": "The cell it lies in"
+            },
+            {
+              "value": "bilinear",
+              "label": "Between the four nearest cells (bilinear), for heights and other smooth values"
+            }
+          ],
+          "default": "cell",
+          "hint": "The cell it lies in suits classes, such as land cover"
+        }
+      ]
+    },
+    {
+      "type": "ZonalStatistics",
+      "title": "Zonal statistics",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Counts the cells of the raster within each area: how many, the mean, the smallest and largest, sum, median, spread and the most common value, and for classes, such as land cover, the share or area of each. A cell counts when its middle lies in the area. The share of forest in each municipality, the mean height of each property, the people in each district from a population grid.",
+      "inputs": [
+        "Zones",
+        "Raster"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "stats",
+          "label": "Statistics",
+          "kind": "text",
+          "shape": "a string",
+          "default": "count, mean, min, max",
+          "hint": "Any of count, mean, min, max, sum, median, std, range, majority and area, separated by commas"
+        },
+        {
+          "key": "classes",
+          "label": "Each value apart",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "",
+              "label": "No"
+            },
+            {
+              "value": "share",
+              "label": "The share of each value, in percent"
+            },
+            {
+              "value": "area",
+              "label": "The area of each value"
+            }
+          ],
+          "default": "",
+          "hint": "For classes, such as land cover: an attribute for each value, such as share_3 for the share of the cells with 3"
+        },
+        {
+          "key": "prefix",
+          "label": "Before the names",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Such as dem_, to give dem_mean and dem_max"
+        }
+      ]
+    },
+    {
+      "type": "TerrainAnalyzer",
+      "title": "Slope and aspect",
+      "group": "tool",
+      "category": "Terrain",
+      "description": "Measures the terrain from a grid of heights, cell by cell: the slope in degrees or percent, the aspect (which way it faces), the position against the surroundings, which picks out ridges and valleys (TPI), or the roughness.",
+      "inputs": [
+        "Heights"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "measure",
+          "label": "Measure",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "slope",
+              "label": "Slope in degrees"
+            },
+            {
+              "value": "percent",
+              "label": "Slope in percent"
+            },
+            {
+              "value": "aspect",
+              "label": "Aspect: the way the slope faces, degrees from north"
+            },
+            {
+              "value": "tpi",
+              "label": "Position: above or below the surroundings (TPI)"
+            },
+            {
+              "value": "roughness",
+              "label": "Roughness: the largest difference to a neighbour"
+            }
+          ],
+          "default": "slope"
+        },
+        {
+          "key": "radius",
+          "label": "Surroundings",
+          "kind": "text",
+          "shape": "a string",
+          "default": "5",
+          "hint": "For the position: how many cells out the surroundings reach. Ridges and valleys show at about their width"
+        },
+        {
+          "key": "zfactor",
+          "label": "Heights times",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "When the heights are in other units than the coordinates, such as feet on metres: 0.3048"
+        }
+      ]
+    },
+    {
+      "type": "RasterClipper",
+      "title": "Clip raster",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Keeps the cells of a raster inside the areas on Areas, or outside them, and cuts the raster to them. A grid of values or a picture. To reproject a raster, use Reproject.",
+      "inputs": [
+        "Raster",
+        "Areas"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "keep",
+          "label": "Keep the cells",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "inside",
+              "label": "Inside the areas"
+            },
+            {
+              "value": "outside",
+              "label": "Outside the areas"
+            }
+          ],
+          "default": "inside",
+          "hint": "A cell is inside when its middle is"
+        },
+        {
+          "key": "crop",
+          "label": "The raster",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "yes",
+              "label": "Cut it to the areas"
+            },
+            {
+              "value": "no",
+              "label": "Keep the size of the raster"
+            }
+          ],
+          "default": "yes"
+        }
+      ]
+    },
+    {
+      "type": "RasterPolygonizer",
+      "title": "Raster to areas",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Makes areas of the cells with the same value that touch, with the value as an attribute: land cover, zones of noise or of a viewshed as polygons. For a raster of measures, such as heights, make classes first with Reclassify raster.",
+      "inputs": [
+        "Raster"
+      ],
+      "outputs": [
+        "Areas"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "name",
+          "label": "Attribute",
+          "kind": "text",
+          "shape": "a string",
+          "default": "value",
+          "hint": "The value of the cells of each area"
+        },
+        {
+          "key": "connect",
+          "label": "Cells belong together",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "4",
+              "label": "By their sides"
+            },
+            {
+              "value": "8",
+              "label": "By their sides and corners"
+            }
+          ],
+          "default": "4",
+          "hint": "Cells with the same value that touch become one area"
+        },
+        {
+          "key": "merge",
+          "label": "Areas",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "no",
+              "label": "An area for each patch"
+            },
+            {
+              "value": "yes",
+              "label": "One feature for each value"
+            }
+          ],
+          "default": "no"
+        }
+      ]
+    },
+    {
+      "type": "Rasterizer",
+      "title": "Features to raster",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Makes a raster of features: each cell gets the value of the area its middle lies in, the line that passes through it or the point in it. A value from an attribute or expression, or how many features. The cells are of a size, or those of a raster connected to Like, so that it can be counted with that one.",
+      "inputs": [
+        "Features",
+        "Like"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "value",
+          "label": "Value",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Features",
+          "default": "1",
+          "hint": "The value of the cells of each feature: a number, an attribute or an expression"
+        },
+        {
+          "key": "cell",
+          "label": "Cell size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "10",
+          "hint": "In the units of the coordinate system, such as metres. A raster connected to Like gives its cells instead"
+        },
+        {
+          "key": "many",
+          "label": "Where several features are",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "last",
+              "label": "The last feature"
+            },
+            {
+              "value": "first",
+              "label": "The first feature"
+            },
+            {
+              "value": "max",
+              "label": "The largest value"
+            },
+            {
+              "value": "min",
+              "label": "The smallest value"
+            },
+            {
+              "value": "sum",
+              "label": "The sum"
+            },
+            {
+              "value": "count",
+              "label": "How many features"
+            }
+          ],
+          "default": "last"
+        },
+        {
+          "key": "background",
+          "label": "Other cells",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The value of cells no feature reaches. Empty leaves them empty"
+        }
+      ]
+    },
+    {
+      "type": "RasterReclassifier",
+      "title": "Reclassify raster",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Gives the cells new values by ranges: heights into bands, slopes into classes, land cover codes into groups. From, to and the new value, the first range that fits.",
+      "inputs": [
+        "Raster"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "ranges",
+          "label": "From, to and new value",
+          "kind": "list",
+          "shape": "a list of [from, to, value]; an empty from or to has no end",
+          "port": "Raster",
+          "default": "",
+          "hint": "From and to are both in the range, and the first range that fits is used: 0 to 5 gives 1, 5 to 15 gives 2. An empty from or to has no end"
+        },
+        {
+          "key": "otherwise",
+          "label": "Values in no range",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "empty",
+              "label": "Make them empty"
+            },
+            {
+              "value": "keep",
+              "label": "Keep their value"
+            }
+          ],
+          "default": "empty"
+        }
+      ]
+    },
+    {
+      "type": "DistanceRaster",
+      "title": "Distance raster",
+      "group": "tool",
+      "category": "Raster",
+      "description": "A raster of the distance from each cell to the nearest feature, as far as a distance: to the nearest road, school, shore or stop. Exact from the middle of the cells, in the units of the coordinate system.",
+      "inputs": [
+        "Features",
+        "Like"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "cell",
+          "label": "Cell size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "10",
+          "hint": "In the units of the coordinate system, such as metres. A raster connected to Like gives its cells instead"
+        },
+        {
+          "key": "reach",
+          "label": "As far as",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1000",
+          "hint": "How far from the features the raster reaches; cells farther away are empty"
+        }
+      ]
+    },
+    {
+      "type": "Viewshed",
+      "title": "Visible area",
+      "group": "tool",
+      "category": "Terrain",
+      "description": "What can be seen from places on the terrain (a viewshed): for each cell, how many of the places on Places see it, with the eye a height above the ground and what is seen a height above it, as far as a distance, with the curve of the Earth. From where a wind turbine can be seen, what a lookout tower shows.",
+      "inputs": [
+        "Heights",
+        "Places"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "eye",
+          "label": "Eye above the ground",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Places",
+          "default": "1.7",
+          "hint": "How high the eye is at each place, in metres: a number, or an attribute such as the height of a mast"
+        },
+        {
+          "key": "target",
+          "label": "Seen above the ground",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "How high what is to be seen is, such as 0 for the ground or 150 for the top of a wind turbine"
+        },
+        {
+          "key": "radius",
+          "label": "As far as",
+          "kind": "text",
+          "shape": "a string",
+          "default": "5000",
+          "hint": "How far the eye reaches, in metres"
+        },
+        {
+          "key": "result",
+          "label": "Each cell",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "count",
+              "label": "How many of the places see each cell"
+            },
+            {
+              "value": "visible",
+              "label": "1 where any of them sees, 0 elsewhere"
+            }
+          ],
+          "default": "count"
+        },
+        {
+          "key": "curvature",
+          "label": "The curve of the Earth",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "yes",
+              "label": "Counted, with the bending of light"
+            },
+            {
+              "value": "no",
+              "label": "Not counted"
+            }
+          ],
+          "default": "yes",
+          "hint": "Matters over kilometres: 5 km away the ground is 1.7 m lower"
+        }
+      ]
+    },
+    {
+      "type": "PointCloudRasterizer",
+      "title": "Point cloud to raster",
+      "group": "tool",
+      "category": "Point clouds",
+      "description": "Makes a raster of a point cloud: a terrain model of the ground points (the lowest), a surface model with trees and roofs (the highest), the mean, how many points or how many per square metre, or of an attribute such as intensity. Holes without points can be filled from the cells around them.",
+      "inputs": [
+        "Points"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "cell",
+          "label": "Cell size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "In metres, or the units of the coordinate system"
+        },
+        {
+          "key": "stat",
+          "label": "Each cell gets",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "max",
+              "label": "The highest: a surface model, with trees and roofs"
+            },
+            {
+              "value": "min",
+              "label": "The lowest: the ground, from ground points"
+            },
+            {
+              "value": "mean",
+              "label": "The mean"
+            },
+            {
+              "value": "count",
+              "label": "How many points"
+            },
+            {
+              "value": "density",
+              "label": "Points per square metre"
+            }
+          ],
+          "default": "max"
+        },
+        {
+          "key": "value",
+          "label": "Of",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Points",
+          "default": "",
+          "hint": "Empty takes the height of the points. Or an attribute, such as intensity"
+        },
+        {
+          "key": "fill",
+          "label": "Fill holes up to",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Cells without points are filled from those around them, as many cells in: holes under buildings in a ground model. 0 fills none"
+        }
+      ]
+    },
+    {
+      "type": "HeightAboveGround",
+      "title": "Height above ground",
+      "group": "tool",
+      "category": "Point clouds",
+      "description": "Gives each point its height above the ground: from a terrain model on Ground, or from the ground points of the cloud itself. The height of trees and buildings, as with a canopy height model. Can make it the height of the points too.",
+      "inputs": [
+        "Points",
+        "Ground"
+      ],
+      "outputs": [
+        "Points"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "name",
+          "label": "Attribute",
+          "kind": "text",
+          "shape": "a string",
+          "default": "above_ground",
+          "hint": "The height of each point above the ground"
+        },
+        {
+          "key": "ground_classes",
+          "label": "Ground points",
+          "kind": "text",
+          "shape": "a string",
+          "default": "2",
+          "hint": "Without a terrain model on Ground, the ground is made of the points of these classes: 2 is ground"
+        },
+        {
+          "key": "cell",
+          "label": "Ground cells",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "The cell size of the ground made of the points"
+        },
+        {
+          "key": "replace",
+          "label": "The height above ground",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "attribute",
+              "label": "In an attribute"
+            },
+            {
+              "value": "heights",
+              "label": "In an attribute, and as the heights of the points"
+            }
+          ],
+          "default": "attribute",
+          "hint": "As the heights, trees and roofs stand on flat ground"
+        }
+      ]
+    },
+    {
+      "type": "PointCloudFilter",
+      "title": "Filter point cloud",
+      "group": "tool",
+      "category": "Point clouds",
+      "description": "Keeps the points of some classes, of some returns (first, last or single), between two heights, and inside the areas on Areas when they are connected. The rest go to Other.",
+      "inputs": [
+        "Points",
+        "Areas"
+      ],
+      "outputs": [
+        "Points",
+        "Other"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "classes",
+          "label": "Classes",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The class numbers to keep, such as 2 for ground or 3, 4, 5 for vegetation and 6 for buildings. Empty keeps all"
+        },
+        {
+          "key": "returns",
+          "label": "Returns",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "all",
+              "label": "All"
+            },
+            {
+              "value": "first",
+              "label": "First returns: the tops of trees and roofs"
+            },
+            {
+              "value": "last",
+              "label": "Last returns: closest to the ground"
+            },
+            {
+              "value": "single",
+              "label": "Single returns: hard surfaces"
+            }
+          ],
+          "default": "all"
+        },
+        {
+          "key": "zmin",
+          "label": "Lowest height",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Of the points, or of the attribute below. Empty has no limit"
+        },
+        {
+          "key": "zmax",
+          "label": "Highest height",
+          "kind": "text",
+          "shape": "a string",
+          "default": ""
+        },
+        {
+          "key": "height_of",
+          "label": "Height from",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Empty uses the heights of the points. An attribute, such as above_ground from Height above ground, uses that"
         }
       ]
     },

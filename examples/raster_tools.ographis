@@ -1,0 +1,40 @@
+{
+  "format": "ographis/1",
+  "name": "Slopes, views and distances",
+  "description": "The raster tools of 0.89 on the example terrain: slope classes as areas, what can be seen from two lookouts, the distance to water, and the mean slope around each lake.",
+  "nodes": [
+    {"id": "dem", "type": "Reader", "name": "Terrain, 20 m", "x": 20, "y": 20, "params": {"path": "terrain.tif", "raster_as": "grid"}},
+    {"id": "water", "type": "Reader", "name": "Water", "x": 20, "y": 240, "params": {"path": "water.geojson"}},
+    {"id": "lookouts", "type": "Reader", "name": "Lookouts", "x": 20, "y": 420, "params": {"path": "lookouts.csv", "x": "x", "y": "y", "crs": "EPSG:3006"}},
+    {"id": "slope", "type": "TerrainAnalyzer", "name": "Slope", "x": 280, "y": 20, "params": {"measure": "slope"}},
+    {"id": "classes", "type": "RasterReclassifier", "name": "Flat, sloping, steep", "x": 540, "y": 20, "params": {"ranges": [["", "5", "1"], ["5", "15", "2"], ["15", "", "3"]]}},
+    {"id": "areas", "type": "RasterPolygonizer", "name": "Slope classes as areas", "x": 800, "y": 20, "params": {"name": "class", "merge": "yes"}},
+    {"id": "out_areas", "type": "Writer", "name": "Slope classes", "x": 1060, "y": 20, "params": {"path": "out/slope_classes.gpkg"}},
+    {"id": "lake_slopes", "type": "ZonalStatistics", "name": "Mean slope of each lake", "x": 540, "y": 200, "params": {"stats": "mean, max", "prefix": "slope_"}},
+    {"id": "out_lakes", "type": "Writer", "name": "Lakes", "x": 800, "y": 200, "params": {"path": "out/lake_slopes.gpkg"}},
+    {"id": "distance", "type": "DistanceRaster", "name": "Distance to water", "x": 280, "y": 300, "params": {"reach": "2000"}},
+    {"id": "out_distance", "type": "Writer", "name": "Distance raster", "x": 540, "y": 340, "params": {"path": "out/distance_to_water.tif"}},
+    {"id": "view", "type": "Viewshed", "name": "Seen from the lookouts", "x": 280, "y": 480, "params": {"eye": "eye", "radius": "4000"}},
+    {"id": "out_view", "type": "Writer", "name": "Visible area", "x": 540, "y": 480, "params": {"path": "out/visible.tif"}},
+    {"id": "heights", "type": "RasterSampler", "name": "Height of each lookout", "x": 280, "y": 640, "params": {"name": "height", "method": "bilinear"}},
+    {"id": "out_heights", "type": "Writer", "name": "Lookouts with heights", "x": 540, "y": 640, "params": {"path": "out/lookouts.csv"}}
+  ],
+  "edges": [
+    {"from": ["dem", "Output"], "to": ["slope", "Heights"]},
+    {"from": ["slope", "Raster"], "to": ["classes", "Raster"]},
+    {"from": ["classes", "Raster"], "to": ["areas", "Raster"]},
+    {"from": ["areas", "Areas"], "to": ["out_areas", "Input"]},
+    {"from": ["water", "Output"], "to": ["lake_slopes", "Zones"]},
+    {"from": ["slope", "Raster"], "to": ["lake_slopes", "Raster"]},
+    {"from": ["lake_slopes", "Output"], "to": ["out_lakes", "Input"]},
+    {"from": ["water", "Output"], "to": ["distance", "Features"]},
+    {"from": ["dem", "Output"], "to": ["distance", "Like"]},
+    {"from": ["distance", "Raster"], "to": ["out_distance", "Input"]},
+    {"from": ["dem", "Output"], "to": ["view", "Heights"]},
+    {"from": ["lookouts", "Output"], "to": ["view", "Places"]},
+    {"from": ["view", "Raster"], "to": ["out_view", "Input"]},
+    {"from": ["lookouts", "Output"], "to": ["heights", "Features"]},
+    {"from": ["dem", "Output"], "to": ["heights", "Raster"]},
+    {"from": ["heights", "Output"], "to": ["out_heights", "Input"]}
+  ]
+}

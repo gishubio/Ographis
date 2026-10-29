@@ -30,6 +30,7 @@ fn palette_search_and_all_node_types() {
         "JSON",
         "Maps",
         "Network",
+        "Point clouds",
         "Raster",
         "Terrain",
         "Web",
@@ -57,10 +58,39 @@ fn palette_search_and_all_node_types() {
     shot(&mut h, "21-palette");
     // Every tool is in the list by the name that says what it does, and the names it has in
     // files are not shown.
-    for t in &offered {
-        assert!(h.query_all_by_label(t.title).count() >= 1, "{} is missing from the palette", t.title);
-        assert!(t.title == t.name || h.query_by_label(t.name).is_none(), "{} is shown by its old name", t.name);
+    // The list is longer than the window: it is scrolled down while the names are looked for.
+    let mut found: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let over = h.get_by_label("Geometry").rect().center();
+    for _ in 0..40 {
+        for t in &offered {
+            if h.query_all_by_label(t.title).count() >= 1 {
+                found.insert(t.title);
+            }
+            assert!(t.title == t.name || h.query_by_label(t.name).is_none(), "{} is shown by its old name", t.name);
+        }
+        h.event(egui::Event::PointerMoved(over));
+        h.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -200.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Default::default(),
+        });
+        h.run_steps(3);
     }
+    for t in &offered {
+        assert!(found.contains(t.title), "{} is missing from the palette", t.title);
+    }
+    // Back to the top.
+    for _ in 0..40 {
+        h.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, 200.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Default::default(),
+        });
+        h.run_steps(1);
+    }
+    h.run_steps(3);
     for (old, new) in [("AttributeManager", "Manage attributes"), ("Sorter", "Sort"), ("Bufferer", "Buffer"), ("Tester", "Test")] {
         assert_eq!(og_engine::node_type(old).unwrap().title, new);
     }
@@ -90,7 +120,7 @@ fn palette_search_and_all_node_types() {
     h.get_by_label("Attributes").click();
     h.run_steps(3);
     assert!(h.query_by_label("Sort").is_none() && h.query_by_label("Buffer").is_some());
-    assert!(!h.state().open_sections.contains("Attributes") && h.state().open_sections.len() == 13);
+    assert!(!h.state().open_sections.contains("Attributes") && h.state().open_sections.len() == 14);
     shot(&mut h, "21-palette-one-folded-in");
 
     // A search narrows the list, whatever is folded in. A word from a description finds

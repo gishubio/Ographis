@@ -291,6 +291,44 @@ impl Grid {
         self.get(col as usize, row as usize)
     }
 
+    /// A grid with no values yet, every cell empty.
+    pub fn blank(width: usize, height: usize, geotransform: [f64; 6], crs: Option<u32>) -> Grid {
+        Grid { width, height, values: vec![f32::NAN; width * height], geotransform, crs, bands: Vec::new() }
+    }
+
+    /// Whether the grid is turned, so that its rows do not run east and west.
+    pub fn is_turned(&self) -> bool {
+        self.geotransform[2] != 0.0 || self.geotransform[4] != 0.0
+    }
+
+    /// The middle of a cell, in the coordinates of the grid.
+    pub fn center(&self, col: usize, row: usize) -> (f64, f64) {
+        let g = &self.geotransform;
+        let (c, r) = (col as f64 + 0.5, row as f64 + 0.5);
+        (g[0] + c * g[1] + r * g[2], g[3] + c * g[4] + r * g[5])
+    }
+
+    /// The value at a place, between the middles of the four nearest cells. Where one of them
+    /// is empty, or at the edge, the value of the cell the place lies in.
+    pub fn bilinear(&self, x: f64, y: f64) -> Option<f32> {
+        let g = &self.geotransform;
+        if g[1] == 0.0 || g[5] == 0.0 {
+            return None;
+        }
+        let (fc, fr) = ((x - g[0]) / g[1] - 0.5, (y - g[3]) / g[5] - 0.5);
+        let own = self.at(x, y)?;
+        let (c0, r0) = (fc.floor(), fr.floor());
+        if c0 < 0.0 || r0 < 0.0 || c0 as usize + 1 >= self.width || r0 as usize + 1 >= self.height {
+            return Some(own);
+        }
+        let (c, r) = (c0 as usize, r0 as usize);
+        let (Some(a), Some(b), Some(cc), Some(d)) = (self.get(c, r), self.get(c + 1, r), self.get(c, r + 1), self.get(c + 1, r + 1)) else {
+            return Some(own);
+        };
+        let (tx, ty) = ((fc - c0) as f32, (fr - r0) as f32);
+        Some((a * (1.0 - tx) + b * tx) * (1.0 - ty) + (cc * (1.0 - tx) + d * tx) * ty)
+    }
+
     /// Several grids put together into one, such as the tiles of a terrain model. The cells
     /// are the size of the coarsest grid, lined up with the first. Where grids overlap, the
     /// first with a value wins. At most `max_cells` cells: a larger result gets coarser cells.

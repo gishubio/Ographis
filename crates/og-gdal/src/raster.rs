@@ -566,3 +566,53 @@ pub fn contours(g: &og_engine::model::Grid, interval: f64, base: f64, areas: boo
     }
     t
 }
+
+/// A raster in memory, with or without a coordinate system.
+fn mem_any<T: gdal::raster::GdalType + Copy>(width: usize, height: usize, data: &[T], gt: [f64; 6], epsg: Option<u32>) -> Result<Dataset> {
+    if let Some(e) = epsg.filter(|e| *e > 0) {
+        return mem_dataset::<T>(width, height, &[data.to_vec()], gt, e);
+    }
+    let mem = gdal::DriverManager::get_driver_by_name("MEM").map_err(|e| GbError(e.to_string()))?;
+    let mut ds = mem.create_with_band_type::<T, _>("", width, height, 1).map_err(|e| GbError(e.to_string()))?;
+    ds.set_geo_transform(&gt).map_err(|e| GbError(e.to_string()))?;
+    let mut band = ds.rasterband(1).map_err(|e| GbError(e.to_string()))?;
+    let mut buf = gdal::raster::Buffer::new((width, height), data.to_vec());
+    band.write((0, 0), (width, height), &mut buf).map_err(|e| GbError(e.to_string()))?;
+    Ok(ds)
+}
+
+/// Areas of the cells with the same value that touch, through GDALFPolygonize, with the
+/// value in the attribute `name`. Empty cells are left out.
+pub fn polygonize(g: &og_engine::model::Grid, name: &str, eight: bool) -> Result<Table> {
+    use gdal::vector::LayerAccess;
+    let values = mem_any::<f32>(g.width, g.height, &g.values, g.geotransform, g.crs)?;
+    let mask: Vec<u8> = g.values.iter().map(|v| (!v.is_nan()) as u8).collect();
+    let mask = mem_any::<u8>(g.width, g.height, &mask, g.geotransform, g.crs)?;
+    let band = values.rasterband(1).map_err(|e| GbError(e.to_string()))?;
+    let mask_band = mask.rasterband(1).map_err(|e| GbError(e.to_string()))?;
+    let path = format!("/vsimem/ographis-areas-{}-{:p}.gpkg", std::process::id(), g as *const _);
+    let gpkg = gdal::DriverManager::get_driver_by_name("GPKG").map_err(|e| GbError(format!("GDAL has no GeoPackage support: {}", e)))?;
+    let mut ds = gpkg.create_vector_only(&path).map_err(|e| GbError(format!("Cannot make the areas: {}", e)))?;
+    let srs = g.crs.and_then(|e| gdal::spatial_ref::SpatialRef::from_epsg(e).ok());
+    let mut layer = ds
+        .create_layer(gdal::vector::LayerOptions { name: "areas", srs: srs.as_ref(), ty: gdal::vector::OGRwkbGeometryType::wkbPolygon, options: None })
+        .map_err(|e| GbError(format!("Cannot make the areas: {}", e)))?;
+    layer.create_defn_fields(&[(name, gdal::vector::OGRFieldType::OFTReal)]).map_err(|e| GbError(e.to_string()))?;
+    let opts: Vec<CString> = if eight { vec![CString::new("8CONNECTED=8").unwrap()] } else { Vec::new() };
+    let mut ptrs: Vec<*mut std::ffi::c_char> = opts.iter().map(|c| c.as_ptr() as *mut std::ffi::c_char).collect();
+    ptrs.push(std::ptr::null_mut());
+    // SAFETY: the bands and the layer are open and live through the call, and the options
+    // are a list ended by null.
+    let rv =
+        unsafe { gdal_sys::GDALFPolygonize(band.c_rasterband(), mask_band.c_rasterband(), layer.c_layer(), 0, ptrs.as_mut_ptr(), None, std::ptr::null_mut()) };
+    if rv != gdal_sys::CPLErr::CE_None {
+        return Err(GbError("GDAL could not make areas of the raster.".into()));
+    }
+    let mut notes = og_engine::io::Notes::default();
+    let t = crate::read_layer(&mut layer, &og_engine::io::ReadOpts::default(), &mut notes, &|_, _| true);
+    drop(ds);
+    let _ = gdal::vsi::unlink_mem_file(&path);
+    let mut t = t?;
+    t.crs = g.crs;
+    Ok(t)
+}

@@ -334,6 +334,99 @@ pub fn read_copc_url(backend: &dyn crate::io::Backend, url: &str, headers: &[(St
     Ok(t)
 }
 
+/// Writes points with heights as a point cloud, LAS 1.4, packed as LAZ when the file ends in
+/// .laz. The attributes classification, intensity, return_number, returns and red, green and
+/// blue are kept when the stream has them; colours of 8 bits are made 16. `wkt` is the
+/// coordinate system. Gives how many points were written and how many had no height.
+pub fn write_las(table: &Table, path: &Path, wkt: Option<&str>) -> Result<(u64, u64)> {
+    use geo::BoundingRect;
+    let at = |n: &str| table.field_index(n);
+    let (class_at, intensity_at, ret_at, rets_at) =
+        (at("classification"), at("intensity"), at("return_number"), at("returns").or_else(|| at("number_of_returns")));
+    let colour_at = match (at("red"), at("green"), at("blue")) {
+        (Some(r), Some(g), Some(b)) => Some([r, g, b]),
+        _ => None,
+    };
+    let int = |f: &Feature, i: Option<usize>| i.and_then(|i| f.attrs[i].as_f64()).unwrap_or(0.0);
+    // Colours of 8 bits are made 16 bits, as the format has them.
+    let wide = colour_at.is_some_and(|c| table.features.iter().any(|f| c.iter().any(|i| int(f, Some(*i)) > 255.0)));
+    let mut points: Vec<(f64, f64, f64, &Feature)> = Vec::with_capacity(table.len());
+    let mut flat = 0u64;
+    for f in &table.features {
+        let Some(g) = &f.geom else { continue };
+        let z = f.heights().map(|z| z.to_vec());
+        let coords = crate::geom::coords(g);
+        if z.is_none() {
+            flat += coords.len() as u64;
+        }
+        for (k, c) in coords.iter().enumerate() {
+            let h = z.as_ref().and_then(|z| z.get(k).copied()).filter(|h| h.is_finite()).unwrap_or(0.0);
+            if c.x.is_finite() && c.y.is_finite() {
+                points.push((c.x, c.y, h, f));
+            }
+        }
+    }
+    if points.is_empty() {
+        return err("There are no points to write as a point cloud.");
+    }
+    let mp = geo::MultiPoint::from(points.iter().map(|p| (p.0, p.1)).collect::<Vec<_>>());
+    let r = mp.bounding_rect().expect("points");
+    // Millimetres, unless the points spread so far that the whole numbers of the format do
+    // not reach: then centimetres, decimetres and so on.
+    let reach = (r.max().x - r.min().x).max(r.max().y - r.min().y).max(points.iter().map(|p| p.2.abs()).fold(0.0, f64::max));
+    let mut scale = 0.001;
+    while reach / scale > 2.0e9 {
+        scale *= 10.0;
+    }
+    let mut b = las::Builder::from((1, 4));
+    b.point_format = las::point::Format::new(if colour_at.is_some() { 7 } else { 6 }).map_err(|e| GbError(e.to_string()))?;
+    b.transforms = las::Vector {
+        x: las::Transform { scale, offset: r.min().x.floor() },
+        y: las::Transform { scale, offset: r.min().y.floor() },
+        z: las::Transform { scale, offset: 0.0 },
+    };
+    b.generating_software = format!("Ographis {}", env!("CARGO_PKG_VERSION"));
+    let mut header = b.into_header().map_err(|e| GbError(format!("Cannot make the header of the point cloud: {}", e)))?;
+    if let Some(w) = wkt {
+        header.set_wkt_crs(w.as_bytes().to_vec()).map_err(|e| GbError(format!("Cannot write the coordinate system: {}", e)))?;
+    }
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
+    }
+    let named = |e: las::Error| GbError(format!("Cannot write {}: {}", path.display(), e));
+    let mut w = las::Writer::from_path(path, header).map_err(named)?;
+    for (x, y, z, f) in &points {
+        let class = int(f, class_at).clamp(0.0, 255.0) as u8;
+        let color = colour_at.map(|c| {
+            let v = |i: usize| {
+                let x = int(f, Some(c[i])).clamp(0.0, 65535.0) as u16;
+                if wide {
+                    x
+                } else {
+                    x.saturating_mul(257)
+                }
+            };
+            las::Color { red: v(0), green: v(1), blue: v(2) }
+        });
+        let returns = (int(f, rets_at) as u8).clamp(1, 15);
+        w.write_point(las::Point {
+            x: *x,
+            y: *y,
+            z: *z,
+            intensity: int(f, intensity_at).clamp(0.0, 65535.0) as u16,
+            return_number: (int(f, ret_at) as u8).clamp(1, returns),
+            number_of_returns: returns,
+            classification: las::point::Classification::new(class).unwrap_or(las::point::Classification::Unclassified),
+            color,
+            gps_time: Some(0.0),
+            ..Default::default()
+        })
+        .map_err(named)?;
+    }
+    w.close().map_err(named)?;
+    Ok((points.len() as u64, flat))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

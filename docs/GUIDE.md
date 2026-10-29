@@ -64,6 +64,8 @@ five models.
 | Make points from coordinates in a table | *Create points from x and y*: choose the two attributes and the coordinate system |
 | See data | Click a node or an output port. Table and map appear at the bottom |
 | Shade terrain or see it in 3D | Read the terrain model with *Cells as* set to *Heights or other values on a grid*, and connect it to *Heights* of Shade terrain or Quick terrain view, or to *Terrain* of Render 3D scene. A map from Draw map in the same coordinate system goes to *Map*. A grid is shown on the map under the canvas as grey relief |
+| Measure the terrain | Read the terrain model as a grid and connect it to *Slope and aspect*, *Visible area*, *Values from raster* or *Zonal statistics*. *Reclassify raster* and *Raster to areas* make classes and areas of the result. See `examples/raster_tools.ographis` |
+| Work with a point cloud | Read the LAS or LAZ file. *Filter point cloud* keeps classes, returns and areas, *Height above ground* measures trees and roofs, and *Point cloud to raster* makes terrain and surface models. An output writes points with heights as .las or .laz again |
 | Drop files where you want them | An input for a dropped file is put where it was dropped on the canvas. Several files go one below the other |
 | Find rows | Write in *Filter* above the table: a word finds the rows that have it in any value, and an expression such as `population > 10000` or `= name LIKE 'S%'` the rows where it is true. The header says how many of all are shown; the map and the statistics follow |
 | Write an expression | Begin a word: attributes of the stream and functions that begin with it are suggested under the field. Tab or Enter takes one, Escape closes the list. Settings → *General* can turn the suggestions off |

@@ -165,6 +165,13 @@ Why Ographis works as it does, and what it does not do yet.
   from week to week; it will come when it has settled. Tiles are not written. Features are
   only as exact as the tiles at the zoom level read, and a feature cut by the tiles is put
   together by its id and attributes, so two features alike in both become one.
+- Rasters: the tools that measure from cells take a cell as inside an area when its middle
+  is, and work on rasters whose rows run east and west, not turned ones. Visible area follows
+  rays to the edge of a square around each place, with the height of the cell each ray passes
+  through: quick, and a little rougher than tracing every cell on its own.
+- Point clouds: Height above ground makes its ground of the lowest ground point in each cell,
+  with holes filled from around; a real terrain model on *Ground* is better where it exists.
+  There is no classification of the ground for clouds without classes yet.
 - Background maps: WMS is asked for in Web Mercator (EPSG:3857), and WMTS only with a tile
   matrix set in Web Mercator, as the tiles of the map are.
 - City models: textures and other appearances of CityGML and CityJSON are not read; the
