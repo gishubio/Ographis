@@ -234,6 +234,19 @@ impl App {
                 let table = result.as_ref().and_then(|r| r.nodes.get(node)).and_then(|r| r.outputs.get(port));
                 table.map(|t| t.fields.iter().map(|f| (f.name.clone(), f.ty != og_engine::model::FieldType::Text)).collect()).unwrap_or_default()
             };
+            // What the raster of a stream holds, worked out once for each grid.
+            let ctx_ref = ui.ctx().clone();
+            let stream_raster = |from: &str| -> Option<og_engine::rasterlook::RasterInfo> {
+                let (node, port) = from.rsplit_once(':')?;
+                let table = result.as_ref().and_then(|r| r.nodes.get(node)).and_then(|r| r.outputs.get(port))?;
+                let key = egui::Id::new(("raster-info", table.grid.as_ref().map_or(0, |g| Arc::as_ptr(g) as usize), table.image.is_some()));
+                if let Some(i) = ctx_ref.data(|d| d.get_temp::<Option<og_engine::rasterlook::RasterInfo>>(key)) {
+                    return i;
+                }
+                let i = og_engine::rasterlook::info(table);
+                ctx_ref.data_mut(|d| d.insert_temp(key, i.clone()));
+                i
+            };
             let backend_ref = &*self.backend;
             let variables_ref = &self.variables;
             let preview = |port: &str, src: &str| -> Option<String> {
@@ -257,6 +270,7 @@ impl App {
             let cx = ParamCtx {
                 preview: &preview,
                 stream_fields: &stream_fields,
+                stream_raster: &stream_raster,
                 suggest: crate::settings::suggestions(&self.settings),
                 db_connections: &db_connections,
                 api_connections: &api_connections,

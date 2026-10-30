@@ -973,7 +973,7 @@ pub const READ_FORMATS: &[&str] = &[
     "3D models (.obj, .gltf, .glb)",
     "3D Tiles (tileset.json)",
     "IFC building models (.ifc)",
-    "CAD drawings (.dxf)",
+    "CAD drawings (.dxf, .dwg)",
     "CityGML and CityJSON (.gml, .city.json)",
     "CSV and text (.csv, .txt)",
     "Excel (.xlsx)",

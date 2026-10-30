@@ -52,6 +52,8 @@ pub struct MapLayer {
     pub labels: crate::mapdraw::LabelSpec,
     /// Icons for its points.
     pub icon: crate::mapdraw::IconSpec,
+    /// How a raster in it is drawn.
+    pub raster: crate::rasterlook::RasterSpec,
 }
 
 /// The rows of the layer list, top first, as they are stored. A row that cannot be read is
@@ -117,7 +119,28 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
                 halo_width: num("label_halo_width", d.halo_width as f64).clamp(0.0, 20.0) as f32,
             };
             let icon = crate::mapdraw::IconSpec { name: text("icon"), by: text("icon_by"), style: text("icon_style") };
-            Some(MapLayer { from, name, show, style, theme, labels, icon })
+            let given = |k: &str| r.get(k).and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(crate::model::parse_number)));
+            let raster = crate::rasterlook::RasterSpec {
+                mode: text("raster"),
+                ramp: text("raster_ramp"),
+                min: given("raster_min"),
+                max: given("raster_max"),
+                colors: r
+                    .get("raster_colors")
+                    .and_then(|v| v.as_array())
+                    .map(|rows| {
+                        rows.iter()
+                            .filter_map(|row| {
+                                let a = row.as_array()?;
+                                let s = |v: &serde_json::Value| v.as_str().map(str::to_string).or_else(|| v.as_f64().map(crate::rasterlook::value_text));
+                                Some((s(a.first()?)?, s(a.get(1)?)?, a.get(2).and_then(s).unwrap_or_default()))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                opacity: (num("opacity", 100.0) / 100.0).clamp(0.0, 1.0) as f32,
+            };
+            Some(MapLayer { from, name, show, style, theme, labels, icon, raster })
         })
         .collect()
 }
@@ -211,6 +234,25 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                         o[k] = serde_json::json!(v);
                     }
                 }
+                // A raster only when it is set otherwise than chosen by its values.
+                let ra = &r.raster;
+                for (k, v) in [("raster", &ra.mode), ("raster_ramp", &ra.ramp)] {
+                    if !v.is_empty() {
+                        o[k] = serde_json::json!(v);
+                    }
+                }
+                for (k, v) in [("raster_min", ra.min), ("raster_max", ra.max)] {
+                    if let Some(v) = v {
+                        o[k] = serde_json::json!(v);
+                    }
+                }
+                if !ra.colors.is_empty() {
+                    o["raster_colors"] =
+                        serde_json::json!(ra.colors.iter().map(|(v, c, l)| if l.is_empty() { vec![v, c] } else { vec![v, c, l] }).collect::<Vec<_>>());
+                }
+                if ra.opacity < 1.0 {
+                    o["opacity"] = serde_json::json!((ra.opacity * 100.0).round());
+                }
                 o
             })
             .collect(),
@@ -228,6 +270,7 @@ pub fn arrange_layers(stored: &[MapLayer], connected: &[String]) -> Vec<MapLayer
             theme: Default::default(),
             labels: Default::default(),
             icon: Default::default(),
+            raster: Default::default(),
             show: true,
             style: crate::mapdraw::LayerStyle::default_for(stored.len() + k),
         });
@@ -298,6 +341,11 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
         let th = crate::thematic::prepare(t, style, &row.theme).map_err(|e| GbError(format!("{}: {}", part.label, e.0)))?;
         themes.push(th);
     }
+    // How the layers that carry a raster draw it.
+    let mut rasters = Vec::new();
+    for ((t, _), (part, row)) in tables.iter().zip(&rows_drawn) {
+        rasters.push(crate::rasterlook::prepare(t, &row.raster).map_err(|e| GbError(format!("{}: {}", part.label, e.0)))?);
+    }
     // The labels and the icons of each layer.
     let mut labels = Vec::new();
     let mut icons = Vec::new();
@@ -331,13 +379,21 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
                 .iter()
                 .zip(&rows_drawn)
                 .zip(&themes)
+                .zip(&rasters)
                 .rev()
-                .map(|(((t, style), (part, row)), th)| crate::mapdraw::LegendItem {
+                .map(|((((t, style), (part, row)), th), ra)| crate::mapdraw::LegendItem {
                     name: if row.name.trim().is_empty() { part.label.clone() } else { row.name.trim().to_string() },
-                    style: style.clone(),
-                    shape: crate::mapdraw::shape_of(t),
+                    // A raster without keys, such as relief or a picture, gets a grey square.
+                    style: match ra {
+                        Some(r) if r.keys.is_empty() => crate::mapdraw::LayerStyle { fill: Some([0xb4, 0xb2, 0xac, 255]), stroke: None, ..style.clone() },
+                        _ => style.clone(),
+                    },
+                    shape: if ra.is_some() { "area" } else { crate::mapdraw::shape_of(t) },
                     heading: th.heading.clone(),
-                    keys: th.keys.clone(),
+                    keys: match ra {
+                        Some(r) => r.keys.clone(),
+                        None => th.keys.clone(),
+                    },
                     size_heading: th.size_heading.clone(),
                     size_keys: th.size_keys.clone(),
                     icon: (!row.icon.name.trim().is_empty() && row.icon.by.trim().is_empty()).then(|| crate::icons::icon_for(&row.icon.name)).flatten(),
@@ -365,6 +421,7 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
         themes,
         labels,
         icons,
+        rasters,
         legend,
     };
     let gate = ctx.gate;

@@ -194,6 +194,9 @@ pub struct Request<'a> {
     pub labels: Vec<Option<Labels>>,
     /// The icons of the points of each layer, in the order of `layers`. Empty: none.
     pub icons: Vec<Option<Icons>>,
+    /// How each layer that carries a raster draws it, in the order of `layers`. A layer
+    /// without one draws its features. Empty: none does.
+    pub rasters: Vec<Option<crate::rasterlook::Prepared>>,
     /// A legend in a corner of the map.
     pub legend: Option<Legend>,
     /// Width of the picture in pixels. The height follows from the extent.
@@ -266,6 +269,74 @@ fn extent(layers: &[(&Table, LayerStyle)]) -> Option<[f64; 4]> {
     b[0].is_finite().then_some(b)
 }
 
+/// Draws the raster of a layer: each pixel of the picture gets the cell under its middle.
+/// `origin` is the west and north edge of the picture, and `px` the size of a pixel.
+fn draw_raster(pixmap: &mut Pixmap, table: &Table, r: &crate::rasterlook::Prepared, origin: [f64; 2], px: f64) {
+    use crate::rasterlook::Paint as RP;
+    // The source of the colours: a picture, or the cells of a grid.
+    let shaded;
+    let (image, grid): (Option<&RasterImage>, Option<&crate::model::Grid>) = match (&r.paint, &table.grid, &table.image) {
+        (RP::Image, _, Some(img)) => (Some(img.as_ref()), None),
+        (RP::Shade, Some(g), _) => {
+            shaded = crate::rasterlook::picture(g, &RP::Shade);
+            (Some(&shaded), None)
+        }
+        (_, Some(g), _) => (None, Some(g.as_ref())),
+        (_, None, Some(img)) => (Some(img.as_ref()), None),
+        _ => return,
+    };
+    let gt = image.map_or_else(|| grid.map(|g| g.geotransform).unwrap_or_default(), |i| i.geotransform);
+    let (w, h) = image.map_or_else(|| grid.map_or((0, 0), |g| (g.width, g.height)), |i| (i.width, i.height));
+    if gt[1] == 0.0 || gt[5] == 0.0 || gt[2] != 0.0 || gt[4] != 0.0 || w == 0 || h == 0 {
+        return;
+    }
+    let (pw, ph) = (pixmap.width() as usize, pixmap.height() as usize);
+    // The pixels the raster covers.
+    let xs = [gt[0], gt[0] + gt[1] * w as f64];
+    let ys = [gt[3], gt[3] + gt[5] * h as f64];
+    let c0 = (((xs[0].min(xs[1]) - origin[0]) / px).floor().max(0.0) as usize).min(pw);
+    let c1 = (((xs[0].max(xs[1]) - origin[0]) / px).ceil().max(0.0) as usize).min(pw);
+    let r0 = (((origin[1] - ys[0].max(ys[1])) / px).floor().max(0.0) as usize).min(ph);
+    let r1 = (((origin[1] - ys[0].min(ys[1])) / px).ceil().max(0.0) as usize).min(ph);
+    if c0 >= c1 || r0 >= r1 {
+        return;
+    }
+    let Some(mut layer) = Pixmap::new(pw as u32, ph as u32) else { return };
+    let data = layer.pixels_mut();
+    for row in r0..r1 {
+        let y = origin[1] - (row as f64 + 0.5) * px;
+        let sr = (y - gt[3]) / gt[5];
+        if sr < 0.0 || sr >= h as f64 {
+            continue;
+        }
+        for col in c0..c1 {
+            let x = origin[0] + (col as f64 + 0.5) * px;
+            let sc = (x - gt[0]) / gt[1];
+            if sc < 0.0 || sc >= w as f64 {
+                continue;
+            }
+            let k = sr as usize * w + sc as usize;
+            let c = match (image, grid) {
+                (Some(img), _) => {
+                    let p = &img.rgba[k * 4..k * 4 + 4];
+                    [p[0], p[1], p[2], p[3]]
+                }
+                (None, Some(g)) => match crate::rasterlook::colour_of(&r.paint, g.values[k]) {
+                    Some(c) => c,
+                    None => continue,
+                },
+                _ => continue,
+            };
+            if c[3] == 0 {
+                continue;
+            }
+            data[row * pw + col] = tiny_skia::ColorU8::from_rgba(c[0], c[1], c[2], c[3]).premultiply();
+        }
+    }
+    let paint = tiny_skia::PixmapPaint { opacity: r.opacity, quality: tiny_skia::FilterQuality::Nearest, ..Default::default() };
+    pixmap.draw_pixmap(0, 0, layer.as_ref(), &paint, Transform::identity(), None);
+}
+
 /// Draws the layers. `going` is asked now and then whether to go on, and the drawing ends
 /// with an error when it answers false.
 pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
@@ -317,6 +388,11 @@ pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
     for (li, (table, style)) in req.layers.iter().enumerate() {
         if !going() {
             return Err(GbError(crate::model::STOPPED.into()));
+        }
+        // A raster is drawn cell by cell, rather than its outline.
+        if let Some(r) = req.rasters.get(li).and_then(|r| r.as_ref()) {
+            draw_raster(&mut pixmap, table, r, [b[0], top], px);
+            continue;
         }
         // Points with icons are drawn as icons, after the rest of the layer.
         let icons = req.icons.get(li).and_then(|i| i.as_ref());
@@ -967,6 +1043,7 @@ mod tests {
         let red = LayerStyle { fill: None, stroke: Some([255, 0, 0, 255]), width: 4.0, size: 1.0 };
         let black = LayerStyle { fill: Some([0, 0, 0, 255]), stroke: None, width: 0.0, size: 10.0 };
         let req = Request {
+            rasters: Vec::new(),
             layers: vec![(&area, blue), (&line, red), (&dot, black)],
             width: 100,
             margin: 0.0,
@@ -986,6 +1063,7 @@ mod tests {
         assert!(px(0, 50)[2] < 220, "the outline of the area is darker: {:?}", px(0, 50));
         // With a margin the picture holds more around the features, and the background shows.
         let req = Request {
+            rasters: Vec::new(),
             layers: vec![(&area, LayerStyle::default_for(0))],
             width: 120,
             margin: 0.1,
@@ -1000,6 +1078,7 @@ mod tests {
         assert_eq!(&img.rgba[0..4], &[255, 255, 255, 255]);
         // Without a background the corners are see-through.
         let req = Request {
+            rasters: Vec::new(),
             layers: vec![(&area, LayerStyle::default_for(0))],
             width: 120,
             margin: 0.1,
@@ -1016,6 +1095,7 @@ mod tests {
         let empty = Table::default();
         assert!(draw(
             &Request {
+                rasters: Vec::new(),
                 layers: vec![(&empty, LayerStyle::default_for(0))],
                 width: 10,
                 margin: 0.0,
@@ -1031,6 +1111,7 @@ mod tests {
         let tall = table(vec![line_string![(x: 0.0, y: 0.0), (x: 1.0, y: 100_000.0)].into()]);
         let e = draw(
             &Request {
+                rasters: Vec::new(),
                 layers: vec![(&tall, LayerStyle::default_for(0))],
                 width: 2000,
                 margin: 0.0,
@@ -1068,6 +1149,7 @@ mod tests {
         let ink = |img: &RasterImage| img.rgba.chunks(4).filter(|p| p[3] > 0 && p[0] < 100).count();
         let run = |labels: Labels| {
             let req = Request {
+                rasters: Vec::new(),
                 layers: vec![(&pts, style.clone())],
                 width: 400,
                 margin: 0.1,
@@ -1101,6 +1183,7 @@ mod tests {
         // Along a line, turned with it: a line that rises at 45°.
         let line = table(vec![line_string![(x: 0.0, y: 0.0), (x: 1000.0, y: 1000.0)].into()]);
         let req = Request {
+            rasters: Vec::new(),
             layers: vec![(&line, LayerStyle { fill: None, stroke: Some([200, 200, 200, 255]), width: 1.0, size: 1.0 })],
             width: 300,
             margin: 0.0,
@@ -1127,6 +1210,7 @@ mod tests {
         let pts = table(vec![point!(x: 0.0, y: 0.0).into(), point!(x: 1000.0, y: 1000.0).into()]);
         let style = LayerStyle { fill: Some([200, 0, 0, 255]), stroke: Some([255, 255, 255, 255]), width: 1.0, size: 40.0 };
         let req = Request {
+            rasters: Vec::new(),
             layers: vec![(&pts, style.clone())],
             width: 200,
             margin: 0.2,

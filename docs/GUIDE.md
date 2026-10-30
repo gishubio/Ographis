@@ -49,6 +49,7 @@ five models.
 | Duplicate or delete | Ctrl+D and Delete act on the selection. So does a right-click on a node |
 | Copy nodes to another model | Ctrl+C copies the selected nodes with the connections between them, Ctrl+X cuts them, and Ctrl+V pastes them where the pointer is, in this window or another window of Ographis. Paths are made whole when copied, so they still point to the same files. Also in the Edit menu, and Paste in the menu of the canvas |
 | Move the canvas | Hold Space and drag, drag with the middle mouse button, or drag the scrollbars at the right and the bottom edge |
+| Start | The start screen lists the latest models and examples to open with a click. Help → *Start screen* shows it again |
 | Line nodes up | Select several and choose Edit → *Align*, or *Align* on the menu of a node: left, centre, right, top, middle, bottom, or spread them out evenly across or down |
 | Describe the model | Model → *Description…*. The text is shown in a plate on the canvas, which can be hidden, and under the title in a picture of the model |
 | Copy the model as a picture | Edit → *Copy the model as a picture*, or Ctrl+Shift+C, and paste it into a document or an e-mail |
@@ -65,7 +66,9 @@ five models.
 | See data | Click a node or an output port. Table and map appear at the bottom |
 | Shade terrain or see it in 3D | Read the terrain model with *Cells as* set to *Heights or other values on a grid*, and connect it to *Heights* of Shade terrain or Quick terrain view, or to *Terrain* of Render 3D scene. A map from Draw map in the same coordinate system goes to *Map*. A grid is shown on the map under the canvas as grey relief |
 | Measure the terrain | Read the terrain model as a grid and connect it to *Slope and aspect*, *Visible area*, *Values from raster* or *Zonal statistics*. *Reclassify raster* and *Raster to areas* make classes and areas of the result. See `examples/raster_tools.ographis` |
-| Work with a point cloud | Read the LAS or LAZ file. *Filter point cloud* keeps classes, returns and areas, *Height above ground* measures trees and roofs, and *Point cloud to raster* makes terrain and surface models. An output writes points with heights as .las or .laz again |
+| Work with a point cloud | Read the LAS or LAZ file. *Classify ground points* finds the ground in a cloud without classes, *Filter point cloud* keeps classes, returns and areas, *Height above ground* measures trees and roofs, *Building heights from points* measures buildings and their roofs, and *Point cloud to raster* makes terrain and surface models. An output writes points with heights as .las or .laz again. See `examples/point_cloud.ographis` |
+| Draw a raster on a map | Connect it to *Layers* of *Draw map*. Its row then says *Draw as*: a colour ramp, a colour for each value, or grey relief. For each value tick whether it is drawn, choose its colour and give it a name for the legend, such as *Seen*; *Opacity* lets the map under it show |
+| Fetch open map data | *Overture Maps download* within a rectangle, or *OpenStreetMap download*. Both need the internet |
 | Drop files where you want them | An input for a dropped file is put where it was dropped on the canvas. Several files go one below the other |
 | Find rows | Write in *Filter* above the table: a word finds the rows that have it in any value, and an expression such as `population > 10000` or `= name LIKE 'S%'` the rows where it is true. The header says how many of all are shown; the map and the statistics follow |
 | Write an expression | Begin a word: attributes of the stream and functions that begin with it are suggested under the field. Tab or Enter takes one, Escape closes the list. Settings → *General* can turn the suggestions off |
@@ -104,9 +107,11 @@ Settings → *Background maps*: XYZ tiles, WMS or WMTS, with a user and password
 when the service needs one (kept in Windows' Credential Manager, as database passwords
 are), and chosen above the map. *Labels* above the map writes the values of an attribute
 by the features. Right-click the map to copy the coordinates of the point, in the system of
-the data or as latitude and longitude, or to measure a distance or an area: click the
-points, and Escape ends. Measures are on the ellipsoid when the data has a coordinate system.
-Every feature is drawn.
+the data or as latitude and longitude. *Measure* above the map, or the same menu, measures a
+distance or an area: click the points, and Escape ends. Measures are on the ellipsoid when the data has a coordinate system.
+A grid of values is shown in colours: a colour for each value when there are few whole
+values, as for classes or what is seen, and otherwise a ramp from yellow to blue over grey
+relief. Every feature is drawn.
 When up to 40,000 features are in view they are drawn as shapes: click one to find its row
 in the table. When more are in view they are drawn into an image in the background, which
 takes a moment for millions, and the map says so. Zoom in to see them one by one. The tiles are cached on disk. The
@@ -188,6 +193,11 @@ is running now. In the program, Model → *Run history…* shows the same for th
 with a button for the log of each run and one to open the folder.
 
 ## When something goes wrong
+
+Help → *Report a problem…* writes a report with the version, the system and the errors of the
+latest run, to read through and send as an issue on GitHub. Help → *Check for updates* asks
+GitHub whether a newer version is out.
+
 
 - **A fault in a tool** stops only that node. It gets an error that says so, and the rest of
   the model runs as usual: no work is lost, and the program goes on.

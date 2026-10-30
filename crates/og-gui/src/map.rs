@@ -282,14 +282,10 @@ pub fn screen_path(points: impl Iterator<Item = Pos2>, ring: bool) -> Vec<Pos2> 
 /// Makes a table ready for the map: reprojected to Web Mercator when the background map is
 /// wanted, and flattened into a store. Returns None when it was cancelled.
 fn prepare(table: Arc<Table>, want_mercator: bool, backend: &dyn Backend, progress: &Building) -> Option<Prepared> {
-    // A grid of heights is shown as grey shaded relief, made small enough to be quick.
+    // A grid is shown in colours, made small enough to be quick: classes, such as land cover
+    // or what is seen, a colour each, and other values by a ramp over grey relief.
     let preview = match (&table.grid, &table.image) {
-        (Some(grid), None) => {
-            use og_engine::terrain::{self, Colours, Look, Shadows};
-            let small = terrain::at_most(grid, 1200);
-            let look = Look { colours: Colours::White, shadows: Shadows::None, sky_light: false, exaggeration: 2.0, ..Default::default() };
-            Some(Arc::new(terrain::shade(&small, &look, None)))
-        }
+        (Some(grid), None) => Some(Arc::new(og_engine::rasterlook::preview(grid, 1200))),
         _ => None,
     };
     let crs = table.crs;
@@ -1157,6 +1153,24 @@ impl MapView {
         if ui.button("Zoom to data").on_hover_text("Show all features").clicked() {
             self.fit();
         }
+        // Measuring, also on the menu of the secondary button on the map.
+        let text = if self.measuring.is_some() { "Measuring…" } else { "Measure" };
+        ui.menu_button(text, |ui| {
+            if ui.button("A distance").on_hover_text("Click the points on the map; Escape ends").clicked() {
+                self.measuring = Some(crate::maptools::Measuring { what: crate::maptools::Measure::Distance, points: Vec::new() });
+                ui.close();
+            }
+            if ui.button("An area").on_hover_text("Click the corners on the map; Escape ends").clicked() {
+                self.measuring = Some(crate::maptools::Measuring { what: crate::maptools::Measure::Area, points: Vec::new() });
+                ui.close();
+            }
+            if self.measuring.is_some() && ui.button("Stop measuring").clicked() {
+                self.measuring = None;
+                ui.close();
+            }
+        })
+        .response
+        .on_hover_text("Measure a distance or an area on the map, on the ellipsoid when the data has a coordinate system");
         if ui.button("−").on_hover_text("Zoom out").clicked() {
             self.scale /= 1.5;
             self.moved = true;

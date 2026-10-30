@@ -32,7 +32,8 @@ og run examples/skaraborg.ographis            the same model from the command li
 - **Reads and writes** GeoPackage, Shapefile, GeoJSON, FlatGeobuf, GeoParquet, CSV, Excel,
   LibreOffice Calc, DXF, GeoTIFF, CityGML, CityJSON, IFC, OBJ, glTF and 3D Tiles, PostGIS
   and SQL Server, files on the web, WFS, OGC API Features, ArcGIS FeatureServer, STAC,
-  OpenStreetMap and vector tiles (MBTiles, PMTiles). The whole list is in [docs/FORMATS.html](docs/FORMATS.html).
+  OpenStreetMap, Overture Maps and vector tiles (MBTiles, PMTiles). DWG drawings and LAS/LAZ
+  point clouds too. The whole list is in [docs/FORMATS.html](docs/FORMATS.html).
 - **Over a hundred tools** for attributes, geometry, joins by attribute and by location,
   overlays, rasters and terrain, web APIs with paging, keys and OAuth2, charts, maps and
   3D scenes, terrain and point clouds, and toy landscapes ("dioramas") made from land cover. See
@@ -78,7 +79,7 @@ run as they did, and its settings are taken over the first time Ographis starts.
 | `crates/og-cli` | The command line `og`. |
 | `crates/og-gui` | The graphical program `ographis`, built with egui and egui-snarl. No web technology. |
 | `vendor/egui-snarl` | The node canvas library, with a small patch. See `vendor/egui-snarl/OGRAPHIS.md`. |
-| `examples/` | Example data and 44 models, also for web APIs in `apis/`; `formats/` holds a CAD drawing, GeoParquet, a city model and vector tiles. `house/` holds the example house, which Ographis made itself, as OBJ and as glTF, and `tiles/` three of it as 3D Tiles. |
+| `examples/` | Example data and 45 models, also for web APIs in `apis/`; `formats/` holds a CAD drawing, GeoParquet, a city model and vector tiles, and `pointcloud/` a point cloud as from a drone. `house/` holds the example house, which Ographis made itself, as OBJ and as glTF, and `tiles/` three of it as 3D Tiles. |
 | `build.cmd`, `build.ps1` | Builds on Windows 11: finds GDAL, builds, writes launchers and runs the build test. With `-Package`, also a folder and a zip file in `dist` that runs on a computer without OSGeo4W, to give to others. |
 | `docs/GUIDE.md` | The graphical program, the command line and what to do when something goes wrong. |
 | `docs/TOOLS.md` | Every input, tool and output, and the model format. |

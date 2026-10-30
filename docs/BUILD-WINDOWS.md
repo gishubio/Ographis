@@ -250,6 +250,12 @@ On Windows 11, by the first user:
 
 Not yet checked on Windows:
 
+- Version 0.90: that the build compiles acadrust; DWG drawings of the workplace from AutoCAD,
+  compared with the same drawing saved as DXF; Overture Maps download against the real
+  catalog through the proxy, and how many megabytes a small rectangle of buildings fetches;
+  GeoParquet written by Ographis opened in QGIS; Check for updates against GitHub, and Report a
+  problem opening the browser; the start screen in the packed folder, where the examples are
+  beside the program.
 - Version 0.89: Raster to areas with the GDAL of OSGeo4W; a LAZ written by Ographis opened in
   QGIS or CloudCompare, with its coordinate system; Point cloud to raster and Height above
   ground with Lantmäteriet's Laserdata NH over a whole sheet, and how long Visible area takes

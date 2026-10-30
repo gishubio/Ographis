@@ -48,6 +48,7 @@ pub const WRITER_FORMATS: &[(&str, &str)] = &[
     ("xlsx", "Excel (.xlsx)"),
     ("fgb", "FlatGeobuf (.fgb)"),
     ("geojson", "GeoJSON (.geojson)"),
+    ("parquet", "GeoParquet (.parquet)"),
     ("gpkg", "GeoPackage (.gpkg)"),
     ("tif", "GeoTIFF image (.tif)"),
     ("glb", "glTF 3D model (.glb)"),
@@ -71,6 +72,7 @@ pub const OUTPUT_FORMATS: &[(&str, &str)] = &[
     ("xlsx", "Excel (.xlsx)"),
     ("fgb", "FlatGeobuf (.fgb)"),
     ("geojson", "GeoJSON (.geojson)"),
+    ("parquet", "GeoParquet (.parquet)"),
     ("gpkg", "GeoPackage (.gpkg)"),
     ("geopdf", "GeoSpatial PDF with layers (.pdf)"),
     ("tif", "GeoTIFF image (.tif)"),
@@ -387,6 +389,15 @@ pub(super) fn run_writer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
             "The file name {} has no extension. Choose a format, or use .gpkg, .shp, .geojson, .xlsx, .ods, .csv, .txt, .png, .jpg, .tif, .pdf, .obj, .glb or .laz.",
             path.display()
         ));
+    }
+    if ext == "parquet" {
+        // GeoParquet, written by Ographis itself.
+        let table = input(inp, "Input");
+        let projjson = table.crs.filter(|c| *c != 4326).and_then(|c| ctx.backend.and_then(|b| b.crs_projjson(c)));
+        let n = crate::parquet_io::write_parquet(table, &path, projjson.as_deref())?;
+        ctx.notes.info(format!("{} rows written as GeoParquet", fmt_count(n)));
+        ctx.files.push(path);
+        return Ok(Vec::new());
     }
     if matches!(ext.as_str(), "las" | "laz") {
         // A point cloud: points with heights, with the attributes of LAS that they have.

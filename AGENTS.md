@@ -76,6 +76,7 @@ The program draws it on a canvas, and `og run model.ographis` runs it from the c
 | Draw a map as a picture or a PDF | `examples/map.ographis`, `examples/village.ographis` |
 | Charts | `examples/chart.ographis` |
 | Terrain, rasters and 3D | `examples/terrain.ographis`, `examples/raster_tools.ographis`, `examples/extrude_tin.ographis`, `examples/house.ographis` |
+| Point clouds: ground, terrain models, buildings | `examples/point_cloud.ographis` |
 | A folder of files read as one | `examples/stops.ographis` |
 
 Every example passes `og check`; a test makes sure of it.

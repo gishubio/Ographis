@@ -44,6 +44,9 @@ pub struct ParamCtx<'a> {
     /// The attributes of what an output port gave in the latest run, by "node:port", each
     /// with whether it is a number.
     pub stream_fields: &'a dyn Fn(&str) -> Vec<(String, bool)>,
+    /// What the raster of an output port in the latest run holds, by "node:port": None for a
+    /// stream of features, or one that has not run.
+    pub stream_raster: &'a dyn Fn(&str) -> Option<og_engine::rasterlook::RasterInfo>,
     /// Whether expressions get suggestions while they are written.
     pub suggest: bool,
 }
@@ -228,7 +231,7 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         "obj_unit" | "obj_up" => reader && matches!(ext.as_str(), "obj" | "gltf" | "glb"),
         "obj_east" | "obj_north" | "obj_height" | "obj_rotation" => reader && matches!(ext.as_str(), "obj" | "gltf" | "glb" | "ifc"),
         "ifc_openings" | "ifc_spaces" | "ifc_properties" => reader && ext == "ifc",
-        "dxf_blocks" | "dxf_closed" => reader && ext == "dxf",
+        "dxf_blocks" | "dxf_closed" => reader && matches!(ext.as_str(), "dxf" | "dwg"),
         "city_lod" => {
             reader && matches!(ext.as_str(), "gml" | "xml" | "json" | "jsonl") && og_engine::citymodel::is_city_path(&base.join(path).to_string_lossy())
         }
@@ -449,7 +452,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
     let layers: &[og_engine::io::LayerInfo] = cx.layers.and_then(|l| l.as_ref().ok()).map_or(&[], |l| l.as_slice());
     // The ticks are for one file. A folder holds many, with layers that may differ.
     // A drawing is one layer, entities, to GDAL: its CAD layers are in the attribute layer.
-    let layers = if folder.is_some() || format_of(node, folder) == "dxf" { &[] } else { layers };
+    let layers = if folder.is_some() || matches!(format_of(node, folder).as_str(), "dxf" | "dwg") { &[] } else { layers };
     let specs: Vec<&ParamSpec> = ty.params.iter().filter(|s| relevant(node, s, folder, !layers.is_empty(), cx.base_dir)).collect();
     let sheets = is_spreadsheet(&format_of(node, folder));
     let what = if node.kind == "PostgisReader" {
@@ -594,8 +597,8 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                             .add_filter(
                                 "Spatial data and tables",
                                 &[
-                                    "gpkg", "shp", "geojson", "json", "fgb", "parquet", "sqlite", "db", "dxf", "gml", "xlsx", "ods", "csv", "txt", "png",
-                                    "jpg", "tif", "pbf", "zip",
+                                    "gpkg", "shp", "geojson", "json", "fgb", "parquet", "sqlite", "db", "dxf", "dwg", "gml", "xlsx", "ods", "csv", "txt",
+                                    "png", "jpg", "tif", "pbf", "zip",
                                 ],
                             )
                             .add_filter("3D models, IFC and 3D Tiles", &["obj", "gltf", "glb", "ifc", "json", "b3dm"])
@@ -866,7 +869,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                 value = before.clone();
             }
             ParamKind::MapLayers(port) => {
-                changed |= map_layer_rows(ui, node, spec, &(cx.connections)(port), &cx.pal, cx.stream_fields);
+                changed |= map_layer_rows(ui, node, spec, &(cx.connections)(port), &cx.pal, cx.stream_fields, cx.stream_raster);
                 value = before.clone();
             }
             ParamKind::Values(port, attr_key) => {
@@ -1600,6 +1603,7 @@ fn map_layer_rows(
     connected: &[(String, String)],
     pal: &Palette,
     stream_fields: &dyn Fn(&str) -> Vec<(String, bool)>,
+    stream_raster: &dyn Fn(&str) -> Option<og_engine::rasterlook::RasterInfo>,
 ) -> bool {
     use og_engine::nodes::{arrange_layers, map_layers, map_layers_json};
     if connected.is_empty() {
@@ -1653,6 +1657,12 @@ fn map_layer_rows(
                     // Screen readers, and the tests, know the field by the layer it names.
                     .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, label));
             });
+            // A raster is drawn by its cells, with settings of its own.
+            let raster = if named { None } else { stream_raster(&row.from) };
+            if let Some(info) = &raster {
+                raster_rows(ui, &mut row.raster, info, &row.from, pal);
+                return;
+            }
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(4.0, 2.0);
                 // The secondary button on a colour copies it, and pastes a copied one on another.
@@ -1751,6 +1761,112 @@ fn map_layer_rows(
     }
     node.params.insert(spec.key.to_string(), map_layers_json(&rows));
     true
+}
+
+/// How a layer of Draw map draws a raster: a picture as it is; a grid by a colour ramp, a
+/// colour for each value, or as relief; and how see-through.
+fn raster_rows(ui: &mut Ui, r: &mut og_engine::rasterlook::RasterSpec, info: &og_engine::rasterlook::RasterInfo, from: &str, pal: &Palette) {
+    use og_engine::rasterlook::{class_colour, value_text};
+    if !info.image {
+        const MODES: &[(&str, &str)] =
+            &[("", "By its values"), ("ramp", "Colour ramp"), ("classes", "A colour for each value"), ("shade", "Grey relief, as heights")];
+        let auto = if info.classes.is_some() { "classes" } else { "ramp" };
+        let shown = MODES.iter().find(|m| m.0 == r.mode).map_or("By its values", |m| m.1);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Draw as").small().color(pal.muted));
+            egui::ComboBox::from_id_salt(("raster-mode", from)).selected_text(shown).width(190.0).show_ui(ui, |ui| {
+                for (v, l) in MODES {
+                    ui.selectable_value(&mut r.mode, v.to_string(), *l);
+                }
+            });
+        });
+        let mode = if r.mode.is_empty() { auto } else { r.mode.as_str() };
+        match mode {
+            "classes" => {
+                // Each value, with its colour, whether it is drawn, and its name in the legend.
+                let mut values: Vec<f64> = info.classes.clone().unwrap_or_default();
+                for (v, _, _) in &r.colors {
+                    if let Some(v) = og_engine::model::parse_number(v) {
+                        if !values.contains(&v) {
+                            values.push(v);
+                        }
+                    }
+                }
+                values.sort_by(f64::total_cmp);
+                if values.is_empty() {
+                    ui.label(RichText::new("Run the model, and the values of the raster are listed here.").small().color(pal.muted));
+                }
+                for (k, v) in values.iter().enumerate() {
+                    let text = value_text(*v);
+                    let at = r.colors.iter().position(|c| og_engine::model::parse_number(&c.0) == Some(*v));
+                    let (colour, label) = match at {
+                        Some(i) => (og_engine::mapdraw::parse_color(&r.colors[i].1).ok().unwrap_or(Some(class_colour(k))), r.colors[i].2.clone()),
+                        None => (Some(class_colour(k)), String::new()),
+                    };
+                    let (mut on, mut c, mut name) = (colour.is_some(), colour.unwrap_or(class_colour(k)), label);
+                    let mut changed = false;
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        changed |= ui
+                            .checkbox(&mut on, RichText::new(&text).monospace())
+                            .on_hover_text("Drawn or not: a value that is not drawn lets the map under it show")
+                            .changed();
+                        if on {
+                            changed |= colour_button(ui, &mut c);
+                        }
+                        changed |= ui
+                            .add(TextEdit::singleline(&mut name).id_salt(("raster-class", from, k)).hint_text("name in the legend").desired_width(120.0))
+                            .on_hover_text(format!("What {} stands for, such as Seen. Empty shows the value", text))
+                            .changed();
+                    });
+                    if changed {
+                        let colour = if on { og_engine::mapdraw::color_text(Some(c)) } else { "none".to_string() };
+                        match at {
+                            Some(i) => r.colors[i] = (text.clone(), colour, name),
+                            None => r.colors.push((text.clone(), colour, name)),
+                        }
+                    }
+                }
+            }
+            "ramp" => {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Colours").small().color(pal.muted));
+                    let shown = og_engine::thematic::RAMPS.iter().find(|x| x.0 == r.ramp).map_or("Yellow to blue", |x| x.1);
+                    egui::ComboBox::from_id_salt(("raster-ramp", from)).selected_text(shown).width(150.0).show_ui(ui, |ui| {
+                        for (v, l, _) in og_engine::thematic::RAMPS {
+                            ui.selectable_value(&mut r.ramp, v.to_string(), *l);
+                        }
+                    });
+                });
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    let (lo, hi) = info.range.unwrap_or((0.0, 1.0));
+                    let edit = |ui: &mut Ui, v: &mut Option<f64>, hint: f64, id: &str| {
+                        let mut t = v.map(value_text).unwrap_or_default();
+                        let resp =
+                            ui.add(TextEdit::singleline(&mut t).id_salt((id, from)).hint_text(value_text((hint * 100.0).round() / 100.0)).desired_width(70.0));
+                        if resp.changed() {
+                            *v = og_engine::model::parse_number(&t);
+                        }
+                    };
+                    ui.label(RichText::new("from").small().color(pal.muted));
+                    edit(ui, &mut r.min, lo, "raster-min");
+                    ui.label(RichText::new("to").small().color(pal.muted));
+                    edit(ui, &mut r.max, hi, "raster-max");
+                })
+                .response
+                .on_hover_text("The values at the ends of the colours. Empty takes the smallest and the largest");
+            }
+            _ => {}
+        }
+    }
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Opacity").small().color(pal.muted));
+        let mut pct = (r.opacity * 100.0).round();
+        if ui.add(egui::Slider::new(&mut pct, 0.0..=100.0).suffix(" %").step_by(5.0)).on_hover_text("How much it covers what is under it").changed() {
+            r.opacity = pct / 100.0;
+        }
+    });
 }
 
 /// How a layer of Draw map shows the values of its features: size, colour, order and

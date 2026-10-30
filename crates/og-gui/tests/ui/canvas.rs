@@ -733,9 +733,13 @@ fn the_panel_says_what_the_program_is_for_when_nothing_is_selected() {
     for text in ["Work with geodata", "Reads", "Writes"] {
         assert!(h.query_all_by_label(text).count() >= 1, "the panel should say: {}", text);
     }
-    for text in
-        ["LibreOffice Calc (.ods)", "Excel (.xlsx)", "GeoTIFF, also Cloud Optimized (.tif)", "Point clouds (.las, .laz, .copc.laz)", "CAD drawings (.dxf)"]
-    {
+    for text in [
+        "LibreOffice Calc (.ods)",
+        "Excel (.xlsx)",
+        "GeoTIFF, also Cloud Optimized (.tif)",
+        "Point clouds (.las, .laz, .copc.laz)",
+        "CAD drawings (.dxf, .dwg)",
+    ] {
         assert!(h.query_all_by_label_contains(text).count() >= 1, "the panel should say: {}", text);
     }
     // The panel keeps its width: long lines wrap.

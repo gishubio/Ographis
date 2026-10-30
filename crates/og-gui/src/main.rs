@@ -28,10 +28,14 @@ fn main() -> eframe::Result {
     og_engine::crash::install(concat!("Ographis ", env!("CARGO_PKG_VERSION")));
     let mut app = App::new();
     app.look_for_recovery();
-    if let Some(path) = std::env::args().nth(1) {
-        if let Err(e) = app.load(std::path::Path::new(&path)) {
-            eprintln!("{}", e);
+    match std::env::args().nth(1) {
+        Some(path) => {
+            if let Err(e) = app.load(std::path::Path::new(&path)) {
+                eprintln!("{}", e);
+            }
         }
+        // Without a model, the start screen shows the latest models and the examples.
+        None => app.start_screen = true,
     }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_title("Ographis").with_inner_size([1600.0, 960.0]).with_min_inner_size([960.0, 600.0]),

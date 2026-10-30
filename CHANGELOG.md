@@ -3,6 +3,44 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.90
+
+Rasters on maps
+
+- **Draw map draws rasters**: a picture as it is, and a grid of values by a colour ramp, with a
+  colour of one's own for each value (such as green for seen and nothing for not seen), or as
+  grey relief; with an opacity, and in the legend. Before, a raster was drawn as its outline.
+- The map under the canvas shows grids in colours: classes a colour each, other values by a
+  ramp over relief, rather than all in grey.
+
+For someone new
+
+- **A start screen** with the latest models and examples to open with a click.
+- **Measure** above the map, beside Zoom to data.
+- Help → **Check for updates** and **Report a problem…**, which writes a report with the
+  version and the latest errors, to send as an issue on GitHub.
+
+Rasters and terrain
+
+- **Interpolate points to raster**: TIN, natural neighbours, inverse distance or the nearest.
+- **Catchments and streams**: catchments above outlets or of all that drains off the terrain,
+  streams with their Strahler order, and the flow as a raster.
+- **Resample raster** and **Fill empty cells**. *Reproject* can give a raster a cell size.
+
+Point clouds
+
+- **Classify ground points** (SMRF) for clouds without classes, as from a drone.
+- **Building heights from points**: the height of each building, and the shape, slope and ridge
+  direction of its roof.
+- A made-up drone point cloud and `point_cloud.ographis` among the examples.
+
+Formats and data
+
+- **Overture Maps download**: buildings, places, addresses, roads, land use, water and
+  borders, only within a rectangle, fetching only the parts of the files that hold it.
+- **DWG drawings** are read, made DXF by acadrust and read as DXF is.
+- **GeoParquet is written**, as GeoParquet 1.1 with Zstandard and a box column for each row.
+
 ## 0.89
 
 Rasters

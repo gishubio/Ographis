@@ -262,7 +262,9 @@ impl App {
         self.scrollbars(ui.ctx(), pal);
         self.description_plate(ui.ctx(), pal);
 
-        if self.snarl.nodes().next().is_none() {
+        if self.snarl.nodes().next().is_none() && self.start_screen {
+            self.start_screen_ui(ui.ctx(), pal);
+        } else if self.snarl.nodes().next().is_none() {
             // On a plate of its own above the canvas, so that the grid does not run through it.
             let at = self.canvas_rect.center();
             egui::Area::new(egui::Id::new("canvas_empty"))

@@ -28,6 +28,7 @@ mod files;
 mod form;
 mod frame;
 mod groups;
+mod help;
 mod navigator;
 mod palette;
 mod run;
@@ -255,6 +256,13 @@ pub struct App {
     run_started: Option<chrono::NaiveDateTime>,
     /// Whether the window with tips and shortcuts is open.
     pub tips: bool,
+    /// Whether the start screen shows on the empty canvas. The program turns it on when it
+    /// starts without a model.
+    pub start_screen: bool,
+    /// The check for a newer version, while its window is open.
+    update_check: Option<help::UpdateCheck>,
+    /// The report of a problem being written: its title and its text.
+    pub report: Option<(String, String)>,
     /// The models that were opened or saved most recently.
     pub recent: crate::recent::Recent,
     /// The headings in the list of things to add that are folded out. All are folded in
@@ -421,6 +429,9 @@ impl App {
             run_log: None,
             run_started: None,
             tips: false,
+            start_screen: false,
+            update_check: None,
+            report: None,
             recent: crate::recent::Recent::load(),
             open_sections: HashSet::new(),
             focus: None,

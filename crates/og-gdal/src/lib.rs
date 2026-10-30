@@ -428,7 +428,7 @@ pub(crate) fn zip_member(path: &Path, asked: Option<&str>, notes: &mut Notes) ->
     }
     let root = format!("/vsizip/{}", path.to_string_lossy().replace('\\', "/"));
     let entries: Vec<String> = gdal::vsi::read_dir(&root, true).unwrap_or_default().iter().map(|e| e.to_string_lossy().replace('\\', "/")).collect();
-    const DATA: [&str; 15] = ["shp", "gpkg", "geojson", "json", "gml", "kml", "tab", "xlsx", "ods", "csv", "fgb", "sqlite", "tif", "parquet", "dxf"];
+    const DATA: [&str; 16] = ["shp", "gpkg", "geojson", "json", "gml", "kml", "tab", "xlsx", "ods", "csv", "fgb", "sqlite", "tif", "parquet", "dxf", "dwg"];
     let data: Vec<&String> = entries.iter().filter(|e| DATA.contains(&ext_of(Path::new(e)).as_str())).collect();
     let name_of = |e: &str| e.rsplit('/').next().unwrap_or(e).to_string();
     match asked {
@@ -658,6 +658,15 @@ impl Backend for GdalBackend {
         if ext == "dxf" {
             let t = dxf::read(path, opts, notes, progress);
             drain_messages(notes);
+            return t;
+        }
+        // A DWG is made a DXF by acadrust, and read as one.
+        if ext == "dwg" {
+            let (dxf_path, _) = og_engine::dwg::to_dxf(path)?;
+            notes.info("A DWG drawing, made DXF by acadrust and read as one");
+            let t = dxf::read(&dxf_path, opts, notes, progress);
+            drain_messages(notes);
+            let _ = std::fs::remove_file(&dxf_path);
             return t;
         }
         let mut open_opts = opts.open_options.clone();
@@ -924,6 +933,20 @@ impl Backend for GdalBackend {
         t
     }
 
+    fn crs_projjson(&self, epsg: u32) -> Option<String> {
+        let s = SpatialRef::from_epsg(epsg).ok()?;
+        let mut out: *mut std::ffi::c_char = std::ptr::null_mut();
+        // SAFETY: the spatial reference is live, and the text GDAL gives is copied and freed.
+        unsafe {
+            if gdal_sys::OSRExportToPROJJSON(s.to_c_hsrs(), &mut out, std::ptr::null()) != gdal_sys::OGRErr::OGRERR_NONE || out.is_null() {
+                return None;
+            }
+            let text = std::ffi::CStr::from_ptr(out).to_string_lossy().into_owned();
+            gdal_sys::VSIFree(out as *mut std::ffi::c_void);
+            Some(text)
+        }
+    }
+
     fn crs_wkt(&self, epsg: u32) -> Option<String> {
         SpatialRef::from_epsg(epsg).ok()?.to_wkt().ok()
     }
@@ -1056,7 +1079,8 @@ pub fn download_name(url: &str, disposition: Option<&str>, content_type: Option<
         name = "download".to_string();
     }
     let known = [
-        "gpkg", "shp", "zip", "csv", "txt", "tsv", "xlsx", "xls", "ods", "geojson", "json", "gml", "kml", "tab", "sqlite", "db", "dxf", "gdb", "fgb", "parquet",
+        "gpkg", "shp", "zip", "csv", "txt", "tsv", "xlsx", "xls", "ods", "geojson", "json", "gml", "kml", "tab", "sqlite", "db", "dxf", "dwg", "gdb", "fgb",
+        "parquet",
     ];
     if !known.contains(&ext_of(Path::new(&name)).as_str()) {
         let kind = content_type.unwrap_or("").split(';').next().unwrap_or("").trim().to_lowercase();

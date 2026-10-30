@@ -83,6 +83,8 @@ impl App {
         self.about_dialog(&ctx, &pal);
         self.history_dialog(&ctx, &pal);
         self.tips_dialog(&ctx, &pal);
+        self.update_dialog(&ctx, &pal);
+        self.report_dialog(&ctx, &pal);
         self.variables_dialog(&ctx, &pal);
         self.description_dialog(&ctx, &pal);
         self.postgis_dialog(&ctx, &pal);

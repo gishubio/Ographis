@@ -11,13 +11,42 @@ use std::sync::Arc;
 
 // ---------- Reproject (Reprojector) ----------
 
-pub(super) const REPROJECTOR_PARAMS: &[ParamSpec] =
-    &[ParamSpec { key: "crs", label: "To coordinate system", kind: ParamKind::Crs, default: "EPSG:3006", hint: "" }];
+pub(super) const REPROJECTOR_PARAMS: &[ParamSpec] = &[
+    ParamSpec { key: "crs", label: "To coordinate system", kind: ParamKind::Crs, default: "EPSG:3006", hint: "" },
+    ParamSpec {
+        key: "cell",
+        label: "Cell size of a raster",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "A raster gets cells of this size in the new system. Empty keeps about the size it had",
+    },
+];
 
 pub(super) fn run_reprojector(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let table = input(inp, "Input");
     let to = p.crs("crs")?.ok_or_else(|| GbError("Choose the coordinate system to reproject to.".into()))?;
-    Ok(vec![("Reprojected".into(), reproject(table, to, ctx.backend)?)])
+    let mut out = reproject(table, to, ctx.backend)?;
+    // A grid gets the cells asked for: the cell under the middle for classes, else between.
+    if let (Some(size), Some(g)) = (number_param(p, "cell", "Cell size of a raster")?, out.grid.clone()) {
+        if size <= 0.0 {
+            return err("The cell size must be more than 0.");
+        }
+        use geo::BoundingRect;
+        let r = g.outline().bounding_rect().expect("an outline");
+        let (w, h) = ((r.width() / size).round().max(1.0) as usize, (r.height() / size).round().max(1.0) as usize);
+        if w * h > GRID_CELLS {
+            return err("That many cells is more than a raster may have. Choose larger cells.");
+        }
+        let classes = crate::rasterlook::grid_info(&g).classes.is_some();
+        let method = if classes { "nearest" } else { "bilinear" };
+        let resampled = super::raster090::resample_to(&g, w, h, [r.min().x, size, 0.0, r.max().y, 0.0, -size], method);
+        ctx.notes.info(format!("{} × {} cells of {}", w, h, crate::model::fmt_real(size)));
+        out = match out.image.take() {
+            Some(img) => (*img).clone().into_table_with(Some(to), Some(resampled)),
+            None => resampled.into_table(),
+        };
+    }
+    Ok(vec![("Reprojected".into(), out)])
 }
 
 // ---------- Set coordinate system (CrsSetter) ----------

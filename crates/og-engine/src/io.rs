@@ -409,6 +409,11 @@ pub trait Backend: Sync {
         let _ = (grid, name, eight);
         Err(crate::model::GbError("Raster to areas needs the GDAL support.".into()))
     }
+    /// A coordinate system as PROJJSON, as GeoParquet keeps it.
+    fn crs_projjson(&self, epsg: u32) -> Option<String> {
+        let _ = epsg;
+        None
+    }
     /// A coordinate system as WKT, for formats that keep it so, such as LAS.
     fn crs_wkt(&self, epsg: u32) -> Option<String> {
         let _ = epsg;

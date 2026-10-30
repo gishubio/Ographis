@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.89.0",
+  "version": "0.90.0",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a name that is shown, x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -1364,6 +1364,10 @@
               "label": "GeoJSON (.geojson)"
             },
             {
+              "value": "parquet",
+              "label": "GeoParquet (.parquet)"
+            },
+            {
               "value": "gpkg",
               "label": "GeoPackage (.gpkg)"
             },
@@ -1893,6 +1897,10 @@
               "label": "GeoJSON (.geojson)"
             },
             {
+              "value": "parquet",
+              "label": "GeoParquet (.parquet)"
+            },
+            {
               "value": "gpkg",
               "label": "GeoPackage (.gpkg)"
             },
@@ -2066,6 +2074,10 @@
             {
               "value": "geojson",
               "label": "GeoJSON (.geojson)"
+            },
+            {
+              "value": "parquet",
+              "label": "GeoParquet (.parquet)"
             },
             {
               "value": "gpkg",
@@ -2522,6 +2534,10 @@
             {
               "value": "geojson",
               "label": "GeoJSON (.geojson)"
+            },
+            {
+              "value": "parquet",
+              "label": "GeoParquet (.parquet)"
             },
             {
               "value": "gpkg",
@@ -5683,6 +5699,14 @@
           "kind": "crs",
           "shape": "a coordinate system, such as \"EPSG:3006\"",
           "default": "EPSG:3006"
+        },
+        {
+          "key": "cell",
+          "label": "Cell size of a raster",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "A raster gets cells of this size in the new system. Empty keeps about the size it had"
         }
       ]
     },
@@ -8498,6 +8522,132 @@
       ]
     },
     {
+      "type": "OvertureDownloader",
+      "title": "Overture Maps download",
+      "group": "tool",
+      "category": "Web",
+      "description": "Fetches open map data from Overture Maps: buildings with their heights, places such as shops and schools with their categories, addresses, roads and paths, land use, water, and the borders of countries and municipalities. Only what reaches into a rectangle, or the extent of what comes in on Extent, is fetched, by reading only the parts of the large files on the web that hold it. Needs the internet.",
+      "inputs": [
+        "Extent"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "kind",
+          "label": "What",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "buildings/building",
+              "label": "Buildings"
+            },
+            {
+              "value": "buildings/building_part",
+              "label": "Building parts"
+            },
+            {
+              "value": "places/place",
+              "label": "Places: shops, schools, restaurants and more"
+            },
+            {
+              "value": "addresses/address",
+              "label": "Addresses"
+            },
+            {
+              "value": "transportation/segment",
+              "label": "Roads, paths and railways"
+            },
+            {
+              "value": "transportation/connector",
+              "label": "Where roads join"
+            },
+            {
+              "value": "base/land_use",
+              "label": "Land use"
+            },
+            {
+              "value": "base/land_cover",
+              "label": "Land cover"
+            },
+            {
+              "value": "base/land",
+              "label": "Land: forests, rocks, islands and more"
+            },
+            {
+              "value": "base/water",
+              "label": "Water"
+            },
+            {
+              "value": "base/infrastructure",
+              "label": "Infrastructure: bridges, towers, power lines and more"
+            },
+            {
+              "value": "base/bathymetry",
+              "label": "Depths of the sea"
+            },
+            {
+              "value": "divisions/division_area",
+              "label": "Areas of countries, regions and municipalities"
+            },
+            {
+              "value": "divisions/division",
+              "label": "Places of countries, regions, towns"
+            },
+            {
+              "value": "divisions/division_boundary",
+              "label": "Borders"
+            }
+          ],
+          "default": "buildings/building"
+        },
+        {
+          "key": "bbox",
+          "label": "Rectangle",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "West, south, east, north in degrees, such as 11.95, 57.69, 11.99, 57.71. Not needed when something comes in on Extent"
+        },
+        {
+          "key": "max_km2",
+          "label": "Largest area in km²",
+          "kind": "text",
+          "shape": "a string",
+          "default": "25",
+          "hint": "A larger rectangle is made smaller around its middle to this size. The files are large, and each part of one that reaches into the rectangle is fetched"
+        },
+        {
+          "key": "crs",
+          "label": "Coordinate system",
+          "kind": "crs",
+          "shape": "a coordinate system, such as \"EPSG:3006\"",
+          "default": "EPSG:3006",
+          "hint": "Of what comes out. Overture Maps is in WGS 84"
+        },
+        {
+          "key": "release",
+          "label": "Release",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Such as 2026-10-21.0. Empty takes the latest; a release is kept for a few months"
+        },
+        {
+          "key": "catalog",
+          "label": "Catalog",
+          "kind": "text",
+          "shape": "a string",
+          "default": "https://stac.overturemaps.org",
+          "hint": "Where the catalog of the releases is"
+        }
+      ]
+    },
+    {
       "type": "RasterSampler",
       "title": "Values from raster",
       "group": "tool",
@@ -9004,6 +9154,235 @@
       ]
     },
     {
+      "type": "PointInterpolator",
+      "title": "Interpolate points to raster",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Makes a raster of values between points: heights from measured points, depths from soundings, noise or temperature from where it was measured. Linear in triangles (TIN), smooth by natural neighbours, by inverse distance, or the nearest point, at a cell size or on the cells of a raster on Like.",
+      "inputs": [
+        "Points",
+        "Like"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "value",
+          "label": "Value",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Points",
+          "default": "",
+          "hint": "Empty takes the height of the points. Or an attribute or expression, such as depth or the noise measured"
+        },
+        {
+          "key": "method",
+          "label": "Between the points",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "tin",
+              "label": "Linear in triangles between the points (TIN)"
+            },
+            {
+              "value": "natural",
+              "label": "Natural neighbours: smooth, through the points"
+            },
+            {
+              "value": "idw",
+              "label": "Inverse distance: the nearest points, weighted"
+            },
+            {
+              "value": "nearest",
+              "label": "The nearest point"
+            }
+          ],
+          "default": "tin"
+        },
+        {
+          "key": "cell",
+          "label": "Cell size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "10",
+          "hint": "In the units of the coordinate system, such as metres. A raster connected to Like gives its cells instead"
+        },
+        {
+          "key": "neighbours",
+          "label": "Nearest points",
+          "kind": "text",
+          "shape": "a string",
+          "default": "12",
+          "hint": "For inverse distance: how many of the nearest points each cell takes"
+        },
+        {
+          "key": "power",
+          "label": "Power",
+          "kind": "text",
+          "shape": "a string",
+          "default": "2",
+          "hint": "For inverse distance: higher lets the nearest points count for more"
+        },
+        {
+          "key": "reach",
+          "label": "As far as",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Cells farther than this from every point are left empty. Empty: no limit. The triangles reach only between the points"
+        }
+      ]
+    },
+    {
+      "type": "RasterResampler",
+      "title": "Resample raster",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Gives a raster other cells: a cell size, or the cells of a raster on Like, so that two rasters line up cell by cell for Raster calculator. The cell under the middle for classes, between the nearest for heights, or the mean or most common value to make it coarser.",
+      "inputs": [
+        "Raster",
+        "Like"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "cell",
+          "label": "Cell size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "10",
+          "hint": "The new size of the cells. A raster connected to Like gives its cells instead, so that the two line up cell by cell"
+        },
+        {
+          "key": "method",
+          "label": "The new value",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "nearest",
+              "label": "The cell under the middle: for classes"
+            },
+            {
+              "value": "bilinear",
+              "label": "Between the four nearest cells: for heights and measures"
+            },
+            {
+              "value": "mean",
+              "label": "The mean of the cells within: to make it coarser"
+            },
+            {
+              "value": "majority",
+              "label": "The most common value within: classes made coarser"
+            }
+          ],
+          "default": "nearest"
+        }
+      ]
+    },
+    {
+      "type": "RasterFiller",
+      "title": "Fill empty cells",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Fills the empty cells of a raster: holes in a terrain model under water or buildings, gaps between scans. From the cells around, weighted by how near they are, or with one value.",
+      "inputs": [
+        "Raster"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "method",
+          "label": "Fill",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "nearby",
+              "label": "From the cells around, weighted by how near"
+            },
+            {
+              "value": "value",
+              "label": "With one value"
+            }
+          ],
+          "default": "nearby"
+        },
+        {
+          "key": "reach",
+          "label": "As far as",
+          "kind": "text",
+          "shape": "a string",
+          "default": "10",
+          "hint": "How many cells away the values are taken from. Holes wider than twice this stay empty in the middle"
+        },
+        {
+          "key": "value",
+          "label": "Value",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "For one value: what every empty cell gets"
+        }
+      ]
+    },
+    {
+      "type": "Watershed",
+      "title": "Catchments and streams",
+      "group": "tool",
+      "category": "Terrain",
+      "description": "Follows the water over a terrain model: the catchment above each outlet on Outlets, or the areas that drain off the terrain, as polygons with their area; the streams, with their order (Strahler) and the land they drain; and the flow, the area upstream of each cell, as a raster. Hollows are filled first, so that all water runs off.",
+      "inputs": [
+        "Heights",
+        "Outlets"
+      ],
+      "outputs": [
+        "Catchments",
+        "Streams",
+        "Flow"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "snap",
+          "label": "Move outlets",
+          "kind": "text",
+          "shape": "a string",
+          "default": "50",
+          "hint": "An outlet is moved to the cell with the most water running through it within this distance, so that it lies on the stream"
+        },
+        {
+          "key": "stream",
+          "label": "Streams from",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "Square kilometres: a cell with water from this much land or more is part of a stream"
+        },
+        {
+          "key": "smallest",
+          "label": "Without outlets, smallest",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "Square kilometres: without outlets on Outlets, each area that drains to the edge of the terrain this large or larger is a catchment"
+        }
+      ]
+    },
+    {
       "type": "PointCloudRasterizer",
       "title": "Point cloud to raster",
       "group": "tool",
@@ -9206,6 +9585,107 @@
           "shape": "a string",
           "default": "",
           "hint": "Empty uses the heights of the points. An attribute, such as above_ground from Height above ground, uses that"
+        }
+      ]
+    },
+    {
+      "type": "GroundClassifier",
+      "title": "Classify ground points",
+      "group": "tool",
+      "category": "Point clouds",
+      "description": "Finds the ground in a point cloud without classes, as from a drone or a scanner of one's own, by a morphological filter (SMRF): the points on the ground get class 2, the others class 1. The largest object sets how large buildings it takes away. Then Point cloud to raster makes a terrain model of the ground.",
+      "inputs": [
+        "Points"
+      ],
+      "outputs": [
+        "Points",
+        "Ground"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "cell",
+          "label": "Cell size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "Of the surface the ground is found on, in metres: about the distance between the points, or a little more"
+        },
+        {
+          "key": "window",
+          "label": "Largest object",
+          "kind": "text",
+          "shape": "a string",
+          "default": "20",
+          "hint": "Metres across: the largest building or thing on the ground that is to be taken away. Larger finds bigger buildings, and may cut hilltops"
+        },
+        {
+          "key": "slope",
+          "label": "Slope of the ground",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0.15",
+          "hint": "The steepest ground, as rise over run: 0.15 is 15 %. Raise it for hilly land"
+        },
+        {
+          "key": "threshold",
+          "label": "Within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0.4",
+          "hint": "Metres: a point this close to the ground surface, above or below, is ground"
+        }
+      ]
+    },
+    {
+      "type": "BuildingHeights",
+      "title": "Building heights from points",
+      "group": "tool",
+      "category": "Point clouds",
+      "description": "Measures each building on Buildings from the points of the cloud on Points that lie on its footprint: the ground, the height (90 % of the roof points), the highest point and the low edge of the roof above the ground, and the shape of the roof (flat, shed, gable or other) with its slope and the direction of its ridge. The ground from a terrain model on Ground, or from the ground points around.",
+      "inputs": [
+        "Buildings",
+        "Points",
+        "Ground"
+      ],
+      "outputs": [
+        "Buildings"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "classes",
+          "label": "Roof points",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The classes of the points on the roofs, such as 6 for buildings. Empty takes every point on the footprint that is not ground"
+        },
+        {
+          "key": "ground_classes",
+          "label": "Ground points",
+          "kind": "text",
+          "shape": "a string",
+          "default": "2",
+          "hint": "Without a terrain model on Ground, the ground is taken from the points of these classes around the building"
+        },
+        {
+          "key": "inset",
+          "label": "Leave out the edge",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0.5",
+          "hint": "Metres inside the footprint, so that walls, eaves and trees at the edge do not count"
+        },
+        {
+          "key": "prefix",
+          "label": "Before the names",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Such as las_, to give las_height"
         }
       ]
     },

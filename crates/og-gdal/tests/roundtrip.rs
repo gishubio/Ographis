@@ -2678,3 +2678,86 @@ fn rasters_are_measured_and_point_clouds_written() {
     assert_eq!(d.cell_size().0, 1000.0);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The raster tools of 0.90 on the example terrain: catchments and streams, a raster
+/// reprojected to cells of a size, and heights interpolated from points laid on it.
+#[test]
+fn catchments_streams_and_interpolation() {
+    let b = GdalBackend::new();
+    let dir = tmp("raster090");
+    std::fs::copy(root().join("examples/terrain.tif"), dir.join("terrain.tif")).unwrap();
+    std::fs::write(dir.join("outlet.csv"), "name,x,y\nmouth,424790,6471000\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "dem", "type": "Reader", "params": {"path": "terrain.tif", "raster_as": "grid"}},
+        {"id": "outlet", "type": "Reader", "params": {"path": "outlet.csv", "x": "x", "y": "y", "crs": "EPSG:3006"}},
+        {"id": "all", "type": "Watershed", "params": {"smallest": "2"}},
+        {"id": "one", "type": "Watershed", "params": {"snap": "300"}},
+        {"id": "wgs", "type": "Reprojector", "params": {"crs": "EPSG:3021", "cell": "100"}},
+        {"id": "cells", "type": "Reader", "params": {"path": "terrain.tif", "raster_as": "points", "cell_size": "200"}},
+        {"id": "on_ground", "type": "HeightSetter", "params": {"mode": "terrain", "height": "0"}},
+        {"id": "tin", "type": "PointInterpolator", "params": {"cell": "100"}}],
+      "edges": [
+        {"from": ["dem", "Output"], "to": ["all", "Heights"]},
+        {"from": ["dem", "Output"], "to": ["one", "Heights"]},
+        {"from": ["outlet", "Output"], "to": ["one", "Outlets"]},
+        {"from": ["dem", "Output"], "to": ["wgs", "Input"]},
+        {"from": ["cells", "Output"], "to": ["on_ground", "Input"]},
+        {"from": ["dem", "Output"], "to": ["on_ground", "Terrain"]},
+        {"from": ["on_ground", "Output"], "to": ["tin", "Points"]}]}"#,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    assert_eq!(r.errors, 0);
+    let all = r.output("all", "Catchments").unwrap();
+    assert!(all.len() >= 2, "{}", all.len());
+    let total: f64 = col(all, "area_km2").iter().filter_map(|v| v.as_f64()).sum();
+    assert!(total > 50.0 && total <= 640.0 * 480.0 * 400.0 / 1e6 + 0.01, "{}", total);
+    assert!(!r.output("all", "Streams").unwrap().is_empty());
+    let one = r.output("one", "Catchments").unwrap();
+    assert_eq!(one.len(), 1);
+    assert_eq!(col(one, "name"), [text("mouth")]);
+    let flow = r.output("all", "Flow").unwrap().grid.clone().unwrap();
+    assert_eq!((flow.width, flow.height), (640, 480));
+    let g = r.output("wgs", "Reprojected").unwrap().grid.clone().unwrap();
+    assert_eq!((g.crs, g.cell_size().0), (Some(3021), 100.0));
+    let tin = r.output("tin", "Raster").unwrap().grid.clone().unwrap();
+    let dem = r.output("dem", "Output").unwrap().grid.clone().unwrap();
+    let (x, y) = (418400.0, 6474800.0);
+    assert!((tin.at(x, y).unwrap() - dem.at(x, y).unwrap()).abs() < 15.0, "{:?} {:?}", tin.at(x, y), dem.at(x, y));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A DWG drawing is read as the same drawing in DXF is: the example plan written as DWG by
+/// acadrust, and read again through it.
+#[test]
+fn a_dwg_drawing_is_read_as_its_dxf() {
+    let b = GdalBackend::new();
+    let dir = tmp("dwg");
+    let dxf = root().join("examples/formats/plan.dxf");
+    let dwg = dir.join("plan.dwg");
+    og_engine::dwg::dxf_to_dwg(&dxf, &dwg).unwrap();
+    let opts = ReadOpts { crs: Some(3006), dxf_blocks_as_points: true, dxf_areas: true, ..Default::default() };
+    let mut notes = Notes::default();
+    let a = b.read(&dxf, &opts, &mut notes).unwrap();
+    let mut notes = Notes::default();
+    let d = b.read(&dwg, &opts, &mut notes).unwrap();
+    println!("{:?}", notes.info);
+    assert!(notes.info.iter().any(|n| n.contains("DWG drawing")), "{:?}", notes.info);
+    assert_eq!(d.len(), a.len());
+    assert_eq!(d.field_names(), a.field_names());
+    // The same layers, entities, blocks and their attributes.
+    for name in ["layer", "entity", "block", "ID", "DJUP", "text"] {
+        if a.field_index(name).is_some() {
+            let mut x = col(&a, name);
+            let mut y = col(&d, name);
+            x.sort_by_key(|v| v.to_text());
+            y.sort_by_key(|v| v.to_text());
+            assert_eq!(x, y, "{}", name);
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/og-engine", "crates/og-gdal", "crates/og-cli", "crates/og-gui"]
 
 [workspace.package]
-version = "0.89.0"
+version = "0.90.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/gishubio/Ographis"

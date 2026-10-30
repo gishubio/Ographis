@@ -237,6 +237,21 @@ impl App {
                     self.tips = true;
                     ui.close();
                 }
+                if ui.button("Start screen").on_hover_text("The latest models and the examples, on the empty canvas of a new model").clicked() {
+                    self.start_screen = true;
+                    self.request(Pending::New);
+                    ui.close();
+                }
+                ui.separator();
+                if ui.button("Check for updates").on_hover_text("Asks GitHub whether a newer version of Ographis is out").clicked() {
+                    self.check_for_updates();
+                    ui.close();
+                }
+                if ui.button("Report a problem…").on_hover_text("Writes a report with the version and the latest errors, to send as an issue on GitHub").clicked() {
+                    self.open_report();
+                    ui.close();
+                }
+                ui.separator();
                 if ui.button("About Ographis").clicked() {
                     self.about = true;
                     ui.close();

@@ -905,3 +905,54 @@ fn a_zip_file_on_the_web_is_read_and_a_file_in_it_chosen() {
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&serve);
 }
+
+/// Overture Maps, as its catalog and its files are laid out, served from this computer: the
+/// catalog names the latest release, the files are found by their extents, and of a file only
+/// the parts with buildings within the rectangle are fetched.
+#[test]
+fn overture_maps_is_read_within_a_rectangle_in_parts() {
+    use og_engine::{Feature, Field, FieldType, Table, Value};
+    let dir = std::env::temp_dir().join(format!("og-overture-{}", std::process::id()));
+    let kind = dir.join("2026-10-21.0/buildings/building");
+    std::fs::create_dir_all(kind.join("00000")).unwrap();
+    std::fs::create_dir_all(kind.join("00001")).unwrap();
+    // A grid of 40 × 40 small buildings around Göteborg, sorted from west to east, in row
+    // groups of 100: each group covers a strip.
+    let mut t = Table { fields: vec![Field::new("id", FieldType::Text), Field::new("height", FieldType::Real)], crs: Some(4326), ..Default::default() };
+    for i in 0..40 {
+        for j in 0..40 {
+            let (x, y) = (11.9 + i as f64 * 0.002, 57.68 + j as f64 * 0.001);
+            let sq = geo::Rect::new(geo::coord! {x: x, y: y}, geo::coord! {x: x + 0.0005, y: y + 0.0003}).to_polygon();
+            t.features.push(Feature::new(vec![Value::Text(format!("b{}_{}", i, j)), Value::Real(3.0 + j as f64)], Some(geo::Geometry::Polygon(sq))));
+        }
+    }
+    og_engine::parquet_io::write_parquet_in(&t, &kind.join("part-0.parquet"), None, 100).unwrap();
+    std::fs::write(kind.join("part-1.parquet"), b"not fetched, since it lies elsewhere").unwrap();
+    let (base, asked) = file_server(dir.clone());
+    let base = format!("{}/tiles", base);
+    std::fs::write(dir.join("catalog.json"), r#"{"latest": "2026-10-21.0", "links": []}"#).unwrap();
+    std::fs::write(
+        kind.join("collection.json"),
+        r#"{"links": [{"rel": "root", "href": "../../../catalog.json"}, {"rel": "item", "href": "./00000/00000.json"}, {"rel": "item", "href": "./00001/00001.json"}]}"#,
+    )
+    .unwrap();
+    std::fs::write(kind.join("00000/00000.json"), r#"{"bbox": [11.9, 57.68, 11.98, 57.72], "assets": {"aws": {"href": "../part-0.parquet"}}}"#).unwrap();
+    std::fs::write(kind.join("00001/00001.json"), r#"{"bbox": [20.0, 60.0, 21.0, 61.0], "assets": {"aws": {"href": "../part-1.parquet"}}}"#).unwrap();
+    let ws = og_engine::Workspace::from_json(&format!(
+        r#"{{"nodes": [{{"id": "o", "type": "OvertureDownloader", "params": {{"kind": "buildings/building", "bbox": "11.9195, 57.69, 11.9245, 57.695", "catalog": "{}", "crs": "EPSG:3006"}}}}], "edges": []}}"#,
+        base
+    ))
+    .unwrap();
+    let r = og_engine::run(&ws, Some(&og_gdal::GdalBackend::new()), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    let out = r.output("o", "Output").expect("buildings");
+    // Columns 10 to 12 (x 11.92 to 11.924) and rows 10 to 15.
+    assert_eq!((out.len(), out.crs), (18, Some(3006)), "{:?}", r.log);
+    assert!(out.field_names().contains(&"height".to_string()));
+    let fetched = asked.lock().unwrap().clone();
+    assert!(!fetched.iter().any(|p| p.contains("part-1")), "the file elsewhere is not read: {:?}", fetched);
+    assert!(r.log.iter().any(|l| l.msg.contains("parts of 1 files") && !l.msg.contains("16 of 16")), "only some row groups: {:?}", r.log);
+    let _ = std::fs::remove_dir_all(&dir);
+}

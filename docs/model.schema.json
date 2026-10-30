@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.89.0. Written by og schema.",
+  "description": "A model of Ographis 0.90.0. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -178,6 +178,7 @@
             "LineEndsExtractor",
             "RandomNumber",
             "Duplicator",
+            "OvertureDownloader",
             "RasterSampler",
             "ZonalStatistics",
             "TerrainAnalyzer",
@@ -187,9 +188,15 @@
             "RasterReclassifier",
             "DistanceRaster",
             "Viewshed",
+            "PointInterpolator",
+            "RasterResampler",
+            "RasterFiller",
+            "Watershed",
             "PointCloudRasterizer",
             "HeightAboveGround",
             "PointCloudFilter",
+            "GroundClassifier",
+            "BuildingHeights",
             "OsmDownloader",
             "TanakaContours",
             "TerrainShader",
@@ -897,6 +904,7 @@
                           "xlsx",
                           "fgb",
                           "geojson",
+                          "parquet",
                           "gpkg",
                           "geopdf",
                           "tif",
@@ -1248,6 +1256,7 @@
                           "xlsx",
                           "fgb",
                           "geojson",
+                          "parquet",
                           "gpkg",
                           "geopdf",
                           "tif",
@@ -1352,6 +1361,7 @@
                           "xlsx",
                           "fgb",
                           "geojson",
+                          "parquet",
                           "gpkg",
                           "geopdf",
                           "tif",
@@ -1633,6 +1643,7 @@
                           "xlsx",
                           "fgb",
                           "geojson",
+                          "parquet",
                           "gpkg",
                           "geopdf",
                           "tif",
@@ -4155,6 +4166,10 @@
                     "title": "To coordinate system",
                     "description": "a coordinate system, such as \"EPSG:3006\".",
                     "default": "EPSG:3006"
+                  },
+                  "cell": {
+                    "title": "Cell size of a raster",
+                    "description": "a string. A raster gets cells of this size in the new system. Empty keeps about the size it had"
                   }
                 }
               }
@@ -6258,6 +6273,77 @@
           "if": {
             "properties": {
               "type": {
+                "const": "OvertureDownloader"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "title": "What",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "buildings/building",
+                          "buildings/building_part",
+                          "places/place",
+                          "addresses/address",
+                          "transportation/segment",
+                          "transportation/connector",
+                          "base/land_use",
+                          "base/land_cover",
+                          "base/land",
+                          "base/water",
+                          "base/infrastructure",
+                          "base/bathymetry",
+                          "divisions/division_area",
+                          "divisions/division",
+                          "divisions/division_boundary"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "buildings/building"
+                  },
+                  "bbox": {
+                    "title": "Rectangle",
+                    "description": "a string. West, south, east, north in degrees, such as 11.95, 57.69, 11.99, 57.71. Not needed when something comes in on Extent"
+                  },
+                  "max_km2": {
+                    "title": "Largest area in km²",
+                    "description": "a string. A larger rectangle is made smaller around its middle to this size. The files are large, and each part of one that reaches into the rectangle is fetched",
+                    "default": "25"
+                  },
+                  "crs": {
+                    "title": "Coordinate system",
+                    "description": "a coordinate system, such as \"EPSG:3006\". Of what comes out. Overture Maps is in WGS 84",
+                    "default": "EPSG:3006"
+                  },
+                  "release": {
+                    "title": "Release",
+                    "description": "a string. Such as 2026-10-21.0. Empty takes the latest; a release is kept for a few months"
+                  },
+                  "catalog": {
+                    "title": "Catalog",
+                    "description": "a string. Where the catalog of the releases is",
+                    "default": "https://stac.overturemaps.org"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "RasterSampler"
               }
             }
@@ -6686,6 +6772,186 @@
           "if": {
             "properties": {
               "type": {
+                "const": "PointInterpolator"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "title": "Value",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". Empty takes the height of the points. Or an attribute or expression, such as depth or the noise measured"
+                  },
+                  "method": {
+                    "title": "Between the points",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "tin",
+                          "natural",
+                          "idw",
+                          "nearest"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "tin"
+                  },
+                  "cell": {
+                    "title": "Cell size",
+                    "description": "a string. In the units of the coordinate system, such as metres. A raster connected to Like gives its cells instead",
+                    "default": "10"
+                  },
+                  "neighbours": {
+                    "title": "Nearest points",
+                    "description": "a string. For inverse distance: how many of the nearest points each cell takes",
+                    "default": "12"
+                  },
+                  "power": {
+                    "title": "Power",
+                    "description": "a string. For inverse distance: higher lets the nearest points count for more",
+                    "default": "2"
+                  },
+                  "reach": {
+                    "title": "As far as",
+                    "description": "a string. Cells farther than this from every point are left empty. Empty: no limit. The triangles reach only between the points"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "RasterResampler"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "cell": {
+                    "title": "Cell size",
+                    "description": "a string. The new size of the cells. A raster connected to Like gives its cells instead, so that the two line up cell by cell",
+                    "default": "10"
+                  },
+                  "method": {
+                    "title": "The new value",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "nearest",
+                          "bilinear",
+                          "mean",
+                          "majority"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "nearest"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "RasterFiller"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "title": "Fill",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "nearby",
+                          "value"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "nearby"
+                  },
+                  "reach": {
+                    "title": "As far as",
+                    "description": "a string. How many cells away the values are taken from. Holes wider than twice this stay empty in the middle",
+                    "default": "10"
+                  },
+                  "value": {
+                    "title": "Value",
+                    "description": "a string. For one value: what every empty cell gets",
+                    "default": "0"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Watershed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "snap": {
+                    "title": "Move outlets",
+                    "description": "a string. An outlet is moved to the cell with the most water running through it within this distance, so that it lies on the stream",
+                    "default": "50"
+                  },
+                  "stream": {
+                    "title": "Streams from",
+                    "description": "a string. Square kilometres: a cell with water from this much land or more is part of a stream",
+                    "default": "1"
+                  },
+                  "smallest": {
+                    "title": "Without outlets, smallest",
+                    "description": "a string. Square kilometres: without outlets on Outlets, each area that drains to the edge of the terrain this large or larger is a catchment",
+                    "default": "1"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "PointCloudRasterizer"
               }
             }
@@ -6831,6 +7097,80 @@
                   "height_of": {
                     "title": "Height from",
                     "description": "a string. Empty uses the heights of the points. An attribute, such as above_ground from Height above ground, uses that"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "GroundClassifier"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "cell": {
+                    "title": "Cell size",
+                    "description": "a string. Of the surface the ground is found on, in metres: about the distance between the points, or a little more",
+                    "default": "1"
+                  },
+                  "window": {
+                    "title": "Largest object",
+                    "description": "a string. Metres across: the largest building or thing on the ground that is to be taken away. Larger finds bigger buildings, and may cut hilltops",
+                    "default": "20"
+                  },
+                  "slope": {
+                    "title": "Slope of the ground",
+                    "description": "a string. The steepest ground, as rise over run: 0.15 is 15 %. Raise it for hilly land",
+                    "default": "0.15"
+                  },
+                  "threshold": {
+                    "title": "Within",
+                    "description": "a string. Metres: a point this close to the ground surface, above or below, is ground",
+                    "default": "0.4"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "BuildingHeights"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "classes": {
+                    "title": "Roof points",
+                    "description": "a string. The classes of the points on the roofs, such as 6 for buildings. Empty takes every point on the footprint that is not ground"
+                  },
+                  "ground_classes": {
+                    "title": "Ground points",
+                    "description": "a string. Without a terrain model on Ground, the ground is taken from the points of these classes around the building",
+                    "default": "2"
+                  },
+                  "inset": {
+                    "title": "Leave out the edge",
+                    "description": "a string. Metres inside the footprint, so that walls, eaves and trees at the edge do not count",
+                    "default": "0.5"
+                  },
+                  "prefix": {
+                    "title": "Before the names",
+                    "description": "a string. Such as las_, to give las_height"
                   }
                 }
               }

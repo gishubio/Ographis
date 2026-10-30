@@ -171,7 +171,19 @@ Why Ographis works as it does, and what it does not do yet.
   through: quick, and a little rougher than tracing every cell on its own.
 - Point clouds: Height above ground makes its ground of the lowest ground point in each cell,
   with holes filled from around; a real terrain model on *Ground* is better where it exists.
-  There is no classification of the ground for clouds without classes yet.
+  Classify ground points is a simple morphological filter: it finds most of the ground on
+  ordinary land, but steep slopes need a larger slope, and the largest object must be larger
+  than the largest building. Building heights tells flat, shed and gable roofs; hipped roofs
+  and roofs with dormers or many planes are told as other.
+- DWG is read through acadrust, a young library that is held at one version. It writes the
+  drawing as DXF, which is then read as DXF is; what acadrust cannot read is left out with a
+  warning, or the drawing cannot be read. Writing DWG is not offered.
+- Overture Maps: the catalog and the files are read as Overture lays them out. When it changes
+  that, the tool may need to follow. A part (row group) of a file holds tens of thousands of
+  features, so even a small rectangle fetches some megabytes. A release is kept by Overture
+  for a few months; models that name one stop working after that.
+- Catchments and streams use D8 (each cell drains to one neighbour), which draws streams in
+  steps of 45°. Hollows are filled, so lakes drain through their lowest outlet.
 - Background maps: WMS is asked for in Web Mercator (EPSG:3857), and WMTS only with a tile
   matrix set in Web Mercator, as the tiles of the map are.
 - City models: textures and other appearances of CityGML and CityJSON are not read; the

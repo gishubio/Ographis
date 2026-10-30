@@ -1,0 +1,34 @@
+{
+  "format": "ographis/1",
+  "name": "A drone point cloud",
+  "description": "A made-up point cloud as a drone gives it, without classes: the ground is found, a terrain model and a surface model are made of it, and five buildings are measured, with the shapes of their roofs.",
+  "nodes": [
+    {"id": "cloud", "type": "Reader", "name": "Drone points", "x": 20, "y": 20, "params": {"path": "pointcloud/drone_points.laz"}},
+    {"id": "footprints", "type": "Reader", "name": "Footprints", "x": 20, "y": 420, "params": {"path": "pointcloud/footprints.geojson"}},
+    {"id": "ground", "type": "GroundClassifier", "name": "Find the ground", "x": 280, "y": 20, "params": {"window": "30"}},
+    {"id": "dem", "type": "PointCloudRasterizer", "name": "Terrain model, 1 m", "x": 540, "y": 120, "params": {"stat": "min", "fill": "50"}},
+    {"id": "dsm", "type": "PointCloudRasterizer", "name": "Surface model, 1 m", "x": 540, "y": -60, "params": {"stat": "max", "fill": "3"}},
+    {"id": "above", "type": "HeightAboveGround", "name": "Height above ground", "x": 800, "y": 20, "params": {}},
+    {"id": "tall", "type": "PointCloudFilter", "name": "Above 2 m", "x": 1060, "y": 20, "params": {"zmin": "2", "height_of": "above_ground"}},
+    {"id": "houses", "type": "BuildingHeights", "name": "Measure the buildings", "x": 800, "y": 300, "params": {}},
+    {"id": "out_dem", "type": "Writer", "name": "Terrain model", "x": 800, "y": 160, "params": {"path": "out/drone_terrain.tif"}},
+    {"id": "out_dsm", "type": "Writer", "name": "Surface model", "x": 800, "y": -100, "params": {"path": "out/drone_surface.tif"}},
+    {"id": "out_tall", "type": "Writer", "name": "Trees and roofs", "x": 1320, "y": 20, "params": {"path": "out/drone_above_2m.laz"}},
+    {"id": "out_houses", "type": "Writer", "name": "Buildings", "x": 1060, "y": 300, "params": {"path": "out/building_heights.gpkg"}}
+  ],
+  "edges": [
+    {"from": ["cloud", "Output"], "to": ["ground", "Points"]},
+    {"from": ["ground", "Ground"], "to": ["dem", "Points"]},
+    {"from": ["cloud", "Output"], "to": ["dsm", "Points"]},
+    {"from": ["dem", "Raster"], "to": ["out_dem", "Input"]},
+    {"from": ["dsm", "Raster"], "to": ["out_dsm", "Input"]},
+    {"from": ["ground", "Points"], "to": ["above", "Points"]},
+    {"from": ["dem", "Raster"], "to": ["above", "Ground"]},
+    {"from": ["above", "Points"], "to": ["tall", "Points"]},
+    {"from": ["tall", "Points"], "to": ["out_tall", "Input"]},
+    {"from": ["footprints", "Output"], "to": ["houses", "Buildings"]},
+    {"from": ["ground", "Points"], "to": ["houses", "Points"]},
+    {"from": ["dem", "Raster"], "to": ["houses", "Ground"]},
+    {"from": ["houses", "Buildings"], "to": ["out_houses", "Input"]}
+  ]
+}

@@ -62,10 +62,10 @@ pub const FORMATS: &[Format] = &[
     Format { name: "ArcGIS feature services", files: "web services", read: "GDAL (ESRIJSON)", write: "", note: "Layer by layer" },
     Format {
         name: "CAD drawings",
-        files: ".dxf",
-        read: "GDAL and Ographis",
+        files: ".dxf, .dwg",
+        read: "GDAL and Ographis; DWG through acadrust",
         write: "",
-        note: "Layers, colours, line types, texts and block attributes as attributes; the header by Ographis",
+        note: "Layers, colours, line types, texts and block attributes as attributes; the header by Ographis. DWG from AutoCAD R13 to 2018 and later is made DXF by acadrust and read as one",
     },
     Format { name: "CSV and text", files: ".csv, .txt, .tsv", read: OWN, write: OWN, note: "Coordinates or WKT in columns, encodings and separators" },
     Format {
@@ -80,8 +80,8 @@ pub const FORMATS: &[Format] = &[
         name: "GeoParquet",
         files: ".parquet",
         read: "Ographis (Apache Parquet)",
-        write: "",
-        note: "Uncompressed, Snappy, Zstandard, LZ4, gzip and Brotli",
+        write: "Ographis (Apache Parquet)",
+        note: "Uncompressed, Snappy, Zstandard, LZ4, gzip and Brotli. Written as GeoParquet 1.1 with Zstandard and a box for each row, which readers skip parts of the file by",
     },
     Format {
         name: "JSON",

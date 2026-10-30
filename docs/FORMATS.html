@@ -32,7 +32,7 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 <main>
 <h1>What Ographis reads and writes</h1>
 <p class="lead">Each format with what handles it: <span class="tag gdal">GDAL</span>, the geodata library installed with the program, or <span class="tag own">Ographis</span>, code of the program's own, with the library it uses in brackets.</p>
-<div class="sum"><div><b>28</b>read</div><div><b>21</b>written</div><div><b>17</b>by Ographis itself</div></div>
+<div class="sum"><div><b>28</b>read</div><div><b>22</b>written</div><div><b>17</b>by Ographis itself</div></div>
 <div class="wrap">
 <table>
 <thead><tr><th scope="col">Format</th><th scope="col">Reads</th><th scope="col">Writes</th><th scope="col">Notes</th></tr></thead>
@@ -50,11 +50,11 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 <tr><th scope="row">Vector tiles (Mapbox Vector Tiles)<div class="files">.mbtiles, .pmtiles, a folder of tiles, {z}/{x}/{y}.pbf on the web</div></th><td><span class="tag gdal">GDAL and Ographis</span></td><td class="no">–</td><td class="note">As MapLibre draws maps from, at a zoom level; the pieces of a feature that the tiles cut apart are put together again. PMTiles on the web are read where they are. Not yet the newer MapLibre Tile (MLT)</td></tr>
 <tr><th scope="row">OGC API Features, WFS<div class="files">web services</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note">Page by page, only what lies in a rectangle if asked</td></tr>
 <tr><th scope="row">ArcGIS feature services<div class="files">web services</div></th><td><span class="tag gdal">GDAL (ESRIJSON)</span></td><td class="no">–</td><td class="note">Layer by layer</td></tr>
-<tr><th scope="row">CAD drawings<div class="files">.dxf</div></th><td><span class="tag gdal">GDAL and Ographis</span></td><td class="no">–</td><td class="note">Layers, colours, line types, texts and block attributes as attributes; the header by Ographis</td></tr>
+<tr><th scope="row">CAD drawings<div class="files">.dxf, .dwg</div></th><td><span class="tag gdal">GDAL and Ographis; DWG through acadrust</span></td><td class="no">–</td><td class="note">Layers, colours, line types, texts and block attributes as attributes; the header by Ographis. DWG from AutoCAD R13 to 2018 and later is made DXF by acadrust and read as one</td></tr>
 <tr><th scope="row">CSV and text<div class="files">.csv, .txt, .tsv</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">Coordinates or WKT in columns, encodings and separators</td></tr>
 <tr><th scope="row">Excel<div class="files">.xlsx</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag own">Ographis (umya-spreadsheet)</span></td><td class="note">Written with a font, a locked top row, widths and colours</td></tr>
 <tr><th scope="row">LibreOffice Calc<div class="files">.ods</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag own">Ographis (spreadsheet-ods)</span></td><td class="note">As Excel</td></tr>
-<tr><th scope="row">GeoParquet<div class="files">.parquet</div></th><td><span class="tag own">Ographis (Apache Parquet)</span></td><td class="no">–</td><td class="note">Uncompressed, Snappy, Zstandard, LZ4, gzip and Brotli</td></tr>
+<tr><th scope="row">GeoParquet<div class="files">.parquet</div></th><td><span class="tag own">Ographis (Apache Parquet)</span></td><td><span class="tag own">Ographis (Apache Parquet)</span></td><td class="note">Uncompressed, Snappy, Zstandard, LZ4, gzip and Brotli. Written as GeoParquet 1.1 with Zstandard and a box for each row, which readers skip parts of the file by</td></tr>
 <tr><th scope="row">JSON<div class="files">.json, web addresses</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis (Build JSON)</span></td><td class="note">Flattened, exploded and picked by path; JSON-stat from statistics offices</td></tr>
 <tr><th scope="row">GeoTIFF and other rasters<div class="files">.tif, .jp2, .asc and others</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Cloud Optimized GeoTIFF over the web; grids of values and pictures</td></tr>
 <tr><th scope="row">PNG and JPEG pictures<div class="files">.png, .jpg</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Maps, charts and 3D scenes, with a world file when they have coordinates</td></tr>
@@ -73,7 +73,7 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 </tbody>
 </table>
 </div>
-<footer>Ographis 0.89 · GDAL 3.8.4. Which further formats GDAL reads depends on how it was built; <code>og info</code> tells whether a file can be read.</footer>
+<footer>Ographis 0.90 · GDAL 3.8.4. Which further formats GDAL reads depends on how it was built; <code>og info</code> tells whether a file can be read.</footer>
 </main>
 </body>
 </html>

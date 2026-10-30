@@ -273,11 +273,10 @@ fn url_encode(s: &str) -> String {
         .collect()
 }
 
-fn run_osm(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let extent = input(inp, "Extent");
-    let b = ctx.backend("OpenStreetMap download")?;
-    // The rectangle in degrees: of what comes in, or as written.
-    let bbox = if extent.has_geometry() && !extent.features.is_empty() {
+/// The rectangle to fetch, in degrees: the extent of what comes in on Extent, or the one
+/// written in the setting bbox.
+pub(super) fn rect_in_degrees(p: &P, extent: &Table, b: &dyn Backend) -> Result<[f64; 4]> {
+    Ok(if extent.has_geometry() && !extent.features.is_empty() {
         let mut r: Option<geo::Rect<f64>> = None;
         for f in &extent.features {
             if let Some(fr) = f.geom.as_ref().and_then(|g| g.bounding_rect()) {
@@ -304,7 +303,13 @@ fn run_osm(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             return err(format!("\"{}\" is not a rectangle. Write west, south, east, north, such as 11.95, 57.69, 11.99, 57.71.", text));
         }
         [v[0], v[1], v[2], v[3]]
-    };
+    })
+}
+
+fn run_osm(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+    let extent = input(inp, "Extent");
+    let b = ctx.backend("OpenStreetMap download")?;
+    let bbox = rect_in_degrees(p, extent, b)?;
     let max_km2 = number_param(p, "max_km2", "The largest area")?.unwrap_or(25.0).max(0.01);
     let (bbox, smaller) = limit_bbox(bbox, max_km2);
     if smaller {

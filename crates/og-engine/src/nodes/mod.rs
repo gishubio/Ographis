@@ -626,10 +626,13 @@ mod more_tools;
 mod network;
 mod osm;
 mod output;
+mod overture_dl;
 mod pointcloud089;
+mod pointcloud090;
 mod props;
 mod raster;
 mod raster089;
+mod raster090;
 mod scene;
 mod solid;
 #[cfg(test)]
@@ -685,8 +688,11 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         diorama::TYPES,
         more_tools::TYPES,
         tools088::TYPES,
+        overture_dl::TYPES,
         raster089::TYPES,
+        raster090::TYPES,
         pointcloud089::TYPES,
+        pointcloud090::TYPES,
         osm::TYPES,
         terrain::TYPES,
         raster::TYPES,
