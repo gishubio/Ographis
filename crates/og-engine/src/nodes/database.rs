@@ -67,7 +67,12 @@ pub(super) const GEOMETRY_TYPES: &[(&str, &str)] = &[
     ("multipolygon", "MultiPolygon"),
     ("none", "No geometry"),
 ];
-pub(super) const WRITE_MODES: &[(&str, &str)] = &[("replace", "Replace the table"), ("append", "Add to the table")];
+pub(super) const WRITE_MODES: &[(&str, &str)] = &[
+    ("replace", "Replace the table"),
+    ("empty", "Empty it and fill it again: it keeps its indexes, rights and the views on it"),
+    ("append", "Add to the table"),
+];
+pub(super) const COMMITS: &[(&str, &str)] = &[("all", "All or nothing: one transaction"), ("every", "In parts: commit every so many rows")];
 
 pub(super) const POSTGIS_WRITE_PARAMS: &[ParamSpec] = &[
     ParamSpec { key: "format", label: "Format", kind: ParamKind::Choice(super::OUTPUT_FORMATS), default: "postgis", hint: "" },
@@ -86,6 +91,14 @@ pub(super) const POSTGIS_WRITE_PARAMS: &[ParamSpec] = &[
         hint: "Made lower case, with spaces as _, as PostgreSQL prefers. The names of the columns too",
     },
     ParamSpec { key: "mode", label: "If the table is there", kind: ParamKind::Choice(WRITE_MODES), default: "replace", hint: "" },
+    ParamSpec {
+        key: "commit",
+        label: "Transaction",
+        kind: ParamKind::Choice(COMMITS),
+        default: "all",
+        hint: "All or nothing leaves the table as it was if anything goes wrong. In parts suits very large writes",
+    },
+    ParamSpec { key: "commit_rows", label: "Rows in each part", kind: ParamKind::Text, default: "10000", hint: "" },
     ParamSpec {
         key: "geometry",
         label: "Geometry type",
@@ -296,6 +309,12 @@ pub(super) fn run_postgis_writer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Resu
         geom_column: p.get("geom_column").unwrap_or_else(|| "geom".into()),
         append: p.get("mode").as_deref() == Some("append"),
         key: super::primary_key(p, "ogc_fid")?,
+        empty_first: p.get("mode").as_deref() == Some("empty"),
+        commit_every: if p.get("commit").as_deref() == Some("every") {
+            Some(super::geom_transform::number_param(p, "commit_rows", "Rows in each part")?.unwrap_or(10_000.0).max(1.0) as usize)
+        } else {
+            None
+        },
     };
     if table.image.is_some() || table.grid.is_some() {
         return err("A picture or a grid cannot be written to PostGIS. Write it to a file.");

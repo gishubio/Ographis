@@ -24,7 +24,38 @@ pub(super) const COLOURS: &[(&str, &str)] = &[
     ("grey", "Grey"),
 ];
 
+const KINDS: &[(&str, &str)] = &[("bars", "Bars"), ("lines", "Lines")];
+
 pub(super) const CHART_PARAMS: &[ParamSpec] = &[
+    ParamSpec {
+        key: "kind",
+        label: "Chart",
+        kind: ParamKind::Choice(KINDS),
+        default: "bars",
+        hint: "Lines show how a value changes, such as the inhabitants year by year",
+    },
+    ParamSpec {
+        key: "x",
+        label: "Along",
+        kind: ParamKind::Attribute("Input"),
+        default: "",
+        hint: "For lines: the attribute along the bottom, a number such as a year, or a date",
+    },
+    ParamSpec {
+        key: "series",
+        label: "A line for each",
+        kind: ParamKind::Attribute("Input"),
+        default: "",
+        hint: "For lines: an attribute whose values each get a line of their own, such as the municipality. Empty draws one line",
+    },
+    ParamSpec {
+        key: "from_zero",
+        label: "The scale starts at 0",
+        kind: ParamKind::Choice(YES_NO),
+        default: "no",
+        hint: "For lines. Else it starts near the smallest value",
+    },
+    ParamSpec { key: "markers", label: "A dot at each point", kind: ParamKind::Choice(YES_NO), default: "no", hint: "For lines" },
     ParamSpec {
         key: "category",
         label: "Names",
@@ -114,8 +145,123 @@ pub fn alphabetical(s: &str) -> String {
         .collect()
 }
 
+/// A value along the bottom of a line chart: a number, or a date as days since 1970.
+fn x_value(v: &Value) -> Option<(f64, bool)> {
+    match v {
+        Value::Int(x) => Some((*x as f64, false)),
+        Value::Real(x) if x.is_finite() => Some((*x, false)),
+        Value::Text(t) => {
+            let t = t.trim();
+            if let Some(n) = crate::model::parse_number(t) {
+                return Some((n, false));
+            }
+            let day = |d: chrono::NaiveDate| (d - chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("a date")).num_days() as f64;
+            let first10: String = t.chars().take(10).collect();
+            chrono::NaiveDate::parse_from_str(&first10, "%Y-%m-%d")
+                .ok()
+                .or_else(|| chrono::NaiveDate::parse_from_str(&format!("{}-01", t), "%Y-%m-%d").ok())
+                .map(|d| (day(d), true))
+        }
+        _ => None,
+    }
+}
+
+fn run_lines(p: &P, table: &Table, ctx: &mut NodeCtx) -> Result<Outputs> {
+    let xi = table.need_field(&p.need("x", "Choose the attribute along the bottom, such as the year.")?)?;
+    let yi = table.need_field(&p.need("value", "Choose the values the line goes through.")?)?;
+    let si = match p.get("series").filter(|v| !v.is_empty()) {
+        Some(v) => Some(table.need_field(&v)?),
+        None => None,
+    };
+    let combine = p.get("combine").unwrap_or_else(|| "sum".into());
+    // The points of each series, with points at the same x put together.
+    let mut names: Vec<String> = Vec::new();
+    let mut points: Vec<std::collections::BTreeMap<i64, (f64, Vec<f64>)>> = Vec::new();
+    let (mut dates, mut skipped) = (false, 0usize);
+    for f in &table.features {
+        let (Some((x, d)), Some(y)) = (x_value(&f.attrs[xi]), f.attrs[yi].as_f64().or_else(|| crate::model::parse_number(&f.attrs[yi].to_text()))) else {
+            skipped += 1;
+            continue;
+        };
+        dates |= d;
+        let name = si.map(|i| f.attrs[i].to_text()).unwrap_or_default();
+        let k = match names.iter().position(|n| *n == name) {
+            Some(k) => k,
+            None => {
+                names.push(name);
+                points.push(Default::default());
+                names.len() - 1
+            }
+        };
+        points[k].entry((x * 1e6).round() as i64).or_insert((x, Vec::new())).1.push(y);
+    }
+    if names.is_empty() {
+        return err("There is nothing to draw: no feature has both a value along the bottom and a number.");
+    }
+    if skipped > 0 {
+        ctx.notes.info(format!("{} features without a value along the bottom or a number left out", fmt_count(skipped as u64)));
+    }
+    let mut series: Vec<(String, Vec<(f64, f64)>)> = names
+        .into_iter()
+        .zip(points)
+        .map(|(n, pts)| {
+            let pts = pts
+                .into_values()
+                .map(|(x, ys)| {
+                    let y = match combine.as_str() {
+                        "mean" => ys.iter().sum::<f64>() / ys.len() as f64,
+                        "max" => ys.iter().copied().fold(f64::MIN, f64::max),
+                        "min" => ys.iter().copied().fold(f64::MAX, f64::min),
+                        _ => ys.iter().sum(),
+                    };
+                    (x, y)
+                })
+                .collect();
+            (n, pts)
+        })
+        .collect();
+    if series.len() > 20 {
+        ctx.notes.warn(format!("{} lines are hard to tell apart. The 20 with the largest last values are drawn.", series.len()));
+        series.sort_by(|a, b| b.1.last().map_or(0.0, |p| p.1).total_cmp(&a.1.last().map_or(0.0, |p| p.1)));
+        series.truncate(20);
+    }
+    let width = number_param(p, "width", "The width")?.unwrap_or(1200.0);
+    if !(200.0..=8000.0).contains(&width) {
+        return err("The width must be from 200 to 8000 pixels.");
+    }
+    let c = chart::LineChart {
+        series,
+        dates,
+        title: p.exact("title").trim().to_string(),
+        subtitle: p.exact("subtitle").trim().to_string(),
+        note: p.exact("note").trim().to_string(),
+        unit: p.exact("unit").trim().to_string(),
+        decimals: number_param(p, "decimals", "The decimals")?.unwrap_or(0.0).clamp(0.0, 6.0) as usize,
+        swedish: p.get("format").as_deref() != Some("en"),
+        from_zero: p.get("from_zero").as_deref() == Some("yes"),
+        markers: p.get("markers").as_deref() == Some("yes"),
+        colour: chart::colour(&p.get("colour").unwrap_or_default()),
+        width: width as u32,
+        height: number_param(p, "height", "The height")?.map(|h| h.clamp(150.0, 20000.0) as u32),
+        background: match p.get("background").as_deref() {
+            Some("white") => Some([255, 255, 255]),
+            Some("none") => None,
+            _ => Some(chart::PAPER),
+        },
+    };
+    if p.get("html").is_some_and(|h| !h.trim().is_empty()) {
+        ctx.notes.warn("The web page is made for bar charts only, so none was written for the lines.");
+    }
+    let image = chart::draw_lines(&c)?;
+    ctx.notes.info(format!("{} lines · {} × {} pixels", c.series.len(), image.width, image.height));
+    Ok(vec![("Chart".into(), image.into_table(None))])
+}
+
 pub(super) fn run_chart(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let table = input(inp, "Input");
+    if p.get("kind").as_deref() == Some("lines") {
+        return run_lines(p, table, ctx);
+    }
     let cat = p.need("category", "Choose the attribute that names the bars.")?;
     let ci = table.need_field(&cat)?;
     let vi = match p.get("value").filter(|v| !v.is_empty()) {
@@ -281,13 +427,16 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Charts",
-        desc: "Draws a bar chart of the features: a bar for each name, as long as its value, such as the area of each municipality. Sorted by size or by name, with a title, an explanation and a note. The chart comes out as a picture to write to a .png or a .pdf, and can also be written as an interactive web page, where each value shows under the pointer and the bars can be sorted.",
+        desc: "Draws a bar chart of the features: a bar for each name, as long as its value, such as the area of each municipality. Or a line chart, with a line for each value of an attribute through its points along a number or a date, such as the inhabitants of each municipality year by year. Sorted by size or by name, with a title, an explanation and a note. The chart comes out as a picture to write to a .png or a .pdf, and can also be written as an interactive web page, where each value shows under the pointer and the bars can be sorted.",
         inputs: &["Input"],
         outputs: &["Chart"],
         ports: None,
         params: CHART_PARAMS,
         run: run_chart,
         summary: |p| {
+            if p.get("kind").as_deref() == Some("lines") {
+                return format!("lines of {} along {}", p.get("value").unwrap_or_default(), p.get("x").unwrap_or_default());
+            }
             let what = p.get("value").filter(|v| !v.is_empty()).unwrap_or_else(|| "count".into());
             let sort = match p.get("sort").as_deref() {
                 Some("up") => "smallest first",
@@ -306,6 +455,37 @@ pub(super) const TYPES: &[NodeType] = &[
 #[cfg(test)]
 mod tests {
     use super::alphabetical;
+    use super::*;
+    use crate::model::{Feature, Field, FieldType};
+
+    #[test]
+    fn lines_are_drawn_for_each_series_along_years_or_dates() {
+        let mut t = Table {
+            fields: vec![Field::new("year", FieldType::Text), Field::new("place", FieldType::Text), Field::new("people", FieldType::Int)],
+            ..Default::default()
+        };
+        for (y, pl, n) in [("2020", "Borås", 100), ("2021", "Borås", 110), ("2022", "Borås", 120), ("2020", "Skövde", 50), ("2022", "Skövde", 70)] {
+            t.features.push(Feature::new(vec![Value::Text(y.into()), Value::Text(pl.into()), Value::Int(n)], None));
+        }
+        let (out, notes) = run_for_test(
+            "ChartDrawer",
+            &[("kind", "lines"), ("x", "year"), ("value", "people"), ("series", "place"), ("width", "600")],
+            vec![("Input", t.clone())],
+        )
+        .unwrap();
+        assert!(notes.info.iter().any(|n| n.starts_with("2 lines")), "{:?}", notes.info);
+        let img = out[0].1.image.clone().unwrap();
+        assert_eq!(img.width, 600);
+        // Something is drawn in the colour of the first line.
+        let blue = chart::colour("blue");
+        assert!(img.rgba.chunks_exact(4).any(|p| p[0] == blue[0] && p[1] == blue[1] && p[2] == blue[2]));
+        // Dates along the bottom.
+        for f in t.features.iter_mut() {
+            f.attrs[0] = Value::Text(format!("{}-06-01", f.attrs[0].to_text()));
+        }
+        let (out, _) = run_for_test("ChartDrawer", &[("kind", "lines"), ("x", "year"), ("value", "people"), ("series", "place")], vec![("Input", t)]).unwrap();
+        assert!(out[0].1.image.is_some());
+    }
 
     #[test]
     fn swedish_letters_come_after_z() {

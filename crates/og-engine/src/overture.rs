@@ -38,6 +38,10 @@ pub struct Sparse {
 }
 
 impl Sparse {
+    /// The length of the whole file.
+    pub fn len_of(&self) -> u64 {
+        self.len
+    }
     fn piece(&self, start: u64) -> parquet::errors::Result<(u64, &Bytes)> {
         self.pieces
             .iter()
@@ -214,28 +218,15 @@ fn flatten(prefix: &str, f: &parquet::record::Field, out: &mut Vec<(String, Valu
     }
 }
 
-/// A min or max of the statistics of a column, as a number.
-fn stat(s: &parquet::file::statistics::Statistics, max: bool) -> Option<f64> {
-    use parquet::file::statistics::Statistics as S;
-    match s {
-        S::Float(v) => (if max { v.max_opt() } else { v.min_opt() }).map(|x| *x as f64),
-        S::Double(v) => (if max { v.max_opt() } else { v.min_opt() }).copied(),
-        _ => None,
-    }
-}
-
-/// What reading the parts of one file gave.
-pub struct Read {
-    pub table: Table,
-    /// The row groups of the file, and how many were fetched.
-    pub groups: (usize, usize),
-    pub bytes: u64,
-}
-
-/// Reads the features of a GeoParquet file on the web that reach into `rect` (west, south,
-/// east, north, in the system of the file), fetching only the footer and the row groups whose
-/// boxes reach into it. The attributes of groups become attributes of their own.
-pub fn read_within(backend: &dyn Backend, url: &str, rect: [f64; 4], going: &dyn Fn() -> bool) -> Result<Read> {
+/// Fetches the parts of a Parquet file on the web that `choose` chooses among its row
+/// groups: the footer with the metadata first, then the bytes of each chosen group. Gives the
+/// file as far as it was fetched, its metadata, the groups and the bytes fetched.
+pub fn fetch_parts(
+    backend: &dyn Backend,
+    url: &str,
+    choose: &dyn Fn(&parquet::file::metadata::ParquetMetaData) -> Result<Vec<usize>>,
+    going: &dyn Fn() -> bool,
+) -> Result<(Sparse, parquet::file::metadata::ParquetMetaData, Vec<usize>, u64)> {
     let named = |e: parquet::errors::ParquetError| GbError(format!("{} cannot be read as Parquet: {}", url, e));
     // The end of the file: the footer, with the length of the metadata before it.
     let (first, total) = backend.fetch_range(url, &[], 0, 8)?;
@@ -257,37 +248,7 @@ pub fn read_within(backend: &dyn Backend, url: &str, rect: [f64; 4], going: &dyn
     }
     let n = tail.len();
     let meta = parquet::file::metadata::ParquetMetaDataReader::decode_metadata(&tail[n - 8 - meta_len as usize..n - 8]).map_err(named)?;
-    // The columns of the box of each row: those of the covering of GeoParquet, else bbox.
-    let file_meta = meta.file_metadata();
-    let geo: Option<serde_json::Value> = file_meta
-        .key_value_metadata()
-        .and_then(|kv| kv.iter().find(|k| k.key == "geo").and_then(|k| k.value.as_deref()).and_then(|v| serde_json::from_str(v).ok()));
-    let primary = geo.as_ref().and_then(|g| g.get("primary_column")?.as_str().map(str::to_string)).unwrap_or_else(|| "geometry".into());
-    let cover = geo
-        .as_ref()
-        .and_then(|g| g.get("columns")?.get(&primary)?.get("covering")?.get("bbox")?.get("xmin")?.get(0)?.as_str().map(str::to_string))
-        .unwrap_or_else(|| "bbox".into());
-    let schema = file_meta.schema_descr();
-    let col_of = |side: &str| (0..schema.num_columns()).find(|i| schema.column(*i).path().parts() == [cover.clone(), side.to_string()]);
-    let sides = [col_of("xmin"), col_of("ymin"), col_of("xmax"), col_of("ymax")];
-    let groups = meta.num_row_groups();
-    let mut chosen: Vec<usize> = Vec::new();
-    for g in 0..groups {
-        let rg = meta.row_group(g);
-        let reach = match sides {
-            [Some(a), Some(b), Some(c), Some(d)] => {
-                let s = |i: usize, max: bool| rg.column(i).statistics().and_then(|s| stat(s, max));
-                match (s(a, false), s(b, false), s(c, true), s(d, true)) {
-                    (Some(x0), Some(y0), Some(x1), Some(y1)) => overlaps([x0, y0, x1, y1], rect),
-                    _ => true,
-                }
-            }
-            _ => true,
-        };
-        if reach {
-            chosen.push(g);
-        }
-    }
+    let chosen = choose(&meta)?;
     let mut pieces: Vec<(u64, Bytes)> = vec![(tail_start, Bytes::from(tail)), (0, Bytes::from(first))];
     for g in &chosen {
         if !going() {
@@ -300,13 +261,39 @@ pub fn read_within(backend: &dyn Backend, url: &str, rect: [f64; 4], going: &dyn
             a = a.min(s);
             b = b.max(s + l);
         }
-        if a < b {
+        // A small file came whole with its footer.
+        let have = pieces.iter().any(|(at, p)| a >= *at && b <= at + p.len() as u64);
+        if a < b && !have {
             let (bytes, _) = backend.fetch_range(url, &[], a, b - a)?;
             fetched += bytes.len() as u64;
             pieces.push((a, Bytes::from(bytes)));
         }
     }
-    let sparse = Sparse { len, pieces };
+    Ok((Sparse { len, pieces }, meta, chosen, fetched.min(len)))
+}
+
+/// What reading the parts of one file gave.
+pub struct Read {
+    pub table: Table,
+    /// The row groups of the file, and how many were fetched.
+    pub groups: (usize, usize),
+    pub bytes: u64,
+}
+
+/// Reads the features of a GeoParquet file on the web that reach into `rect` (west, south,
+/// east, north, in the system of the file), fetching only the footer and the row groups whose
+/// boxes reach into it. The attributes of groups become attributes of their own.
+pub fn read_within(backend: &dyn Backend, url: &str, rect: [f64; 4], going: &dyn Fn() -> bool) -> Result<Read> {
+    let named = |e: parquet::errors::ParquetError| GbError(format!("{} cannot be read as Parquet: {}", url, e));
+    let (sparse, meta, chosen, fetched) = fetch_parts(backend, url, &|m| Ok(crate::parquet_io::groups_within(m, rect)), going)?;
+    let groups = meta.num_row_groups();
+    let file_meta = meta.file_metadata();
+    let geo = crate::parquet_io::geo_meta(file_meta);
+    let primary = geo.as_ref().and_then(|g| g.get("primary_column")?.as_str().map(str::to_string)).unwrap_or_else(|| "geometry".into());
+    let cover = geo
+        .as_ref()
+        .and_then(|g| g.get("columns")?.get(&primary)?.get("covering")?.get("bbox")?.get("xmin")?.get(0)?.as_str().map(str::to_string))
+        .unwrap_or_else(|| "bbox".into());
     use parquet::file::reader::{FileReader, SerializedFileReader};
     let keep = chosen.clone();
     let opts = parquet::file::serialized_reader::ReadOptionsBuilder::new().with_predicate(Box::new(move |_, i| keep.contains(&i))).build();

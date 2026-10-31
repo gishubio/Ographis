@@ -17,6 +17,7 @@ rstar = "0.12"
 bytes = "1"
 # DWG drawings. Released often, so held at one version until the next is tried.
 acadrust = "=0.6.8"
+kamadak-exif = "0.6"
 # Only for the local date and time that the DateTimeStamper writes.
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # Draws maps into pictures, with smooth edges.

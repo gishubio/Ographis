@@ -765,6 +765,10 @@ pub(super) const TEXT_KINDS: &[(&str, &str)] = &[
     ("esri", "Esri JSON, as from ArcGIS"),
     ("polyline", "Encoded polyline, as routes from OpenTripPlanner and OSRM"),
     ("polyline6", "Encoded polyline with 6 decimals, as from Valhalla"),
+    ("flexpolyline", "Flexible polyline, as routes from HERE"),
+    ("flexpolyline_area", "Flexible polyline as an area, as isolines from HERE"),
+    ("points", "A JSON list of points, as a route from TomTom: a line"),
+    ("points_area", "A JSON list of points as an area, as a reachable range from TomTom"),
 ];
 
 pub(super) const FROM_TEXT_PARAMS: &[ParamSpec] = &[
@@ -890,6 +894,10 @@ pub(super) fn run_from_text(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Ou
         Some("esri") => Some(Kind::EsriJson),
         Some("polyline") => Some(Kind::Polyline(5)),
         Some("polyline6") => Some(Kind::Polyline(6)),
+        Some("flexpolyline") => Some(Kind::FlexPolyline(false)),
+        Some("flexpolyline_area") => Some(Kind::FlexPolyline(true)),
+        Some("points") => Some(Kind::PointList(false)),
+        Some("points_area") => Some(Kind::PointList(true)),
         _ => None,
     };
     let chosen = p.crs("crs")?;

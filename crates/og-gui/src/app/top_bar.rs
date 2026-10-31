@@ -150,6 +150,14 @@ impl App {
                     self.fit_requested = Some(SMALLEST_SCALE);
                     ui.close();
                 }
+                if ui.add(egui::Button::new("Find a node…").shortcut_text("Ctrl+F")).clicked() {
+                    self.picker = Some(Default::default());
+                    ui.close();
+                }
+                let mut mini = self.show_minimap;
+                if ui.checkbox(&mut mini, "Map of the model").on_hover_text("A small map of the whole model in the corner of the canvas: click it to go there").clicked() {
+                    self.show_minimap = mini;
+                }
                 ui.separator();
                 if ui.button("Show the attributes on all nodes").on_hover_text("The attributes are known after a run").clicked() {
                     self.expanded = self.snarl.nodes().filter(|n| !n.is_note()).map(|n| n.id.clone()).collect();
@@ -220,6 +228,15 @@ impl App {
                     .clicked()
                 {
                     self.history_open = true;
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(self.path.is_some(), egui::Button::new("Schedule…"))
+                    .on_hover_text("Runs the model by itself at set times, through the Task Scheduler of Windows")
+                    .on_disabled_hover_text("Save the model first: the scheduled run runs the saved file")
+                    .clicked()
+                {
+                    self.open_schedule();
                     ui.close();
                 }
                 if ui

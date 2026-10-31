@@ -25,6 +25,7 @@ pub fn kind_of(kind: &ParamKind) -> Kind {
         ParamKind::Connection => k("connection", "the name of a database connection in the settings of the user", None),
         ParamKind::ApiConnection => k("api_connection", "the name of an API connection in the settings of the user", None),
         ParamKind::Choice(_) => k("choice", "one of the values in choices, as a string", None),
+        ParamKind::Picks(_) => k("picks", "some of the values in choices: a list of strings, or one string separated by commas", None),
         ParamKind::Crs => k("crs", "a coordinate system, such as \"EPSG:3006\"", None),
         ParamKind::Attribute(p) => k("attribute", "the name of one attribute of the stream on the port", Some(p)),
         ParamKind::Attributes(p) => k("attributes", "names of attributes of the stream on the port: a list of strings, or one string separated by commas", Some(p)),
@@ -74,7 +75,7 @@ fn param_json(p: &ParamSpec) -> Value {
     if let Some(port) = k.port {
         o.insert("port".into(), json!(port));
     }
-    if let ParamKind::Choice(list) = p.kind {
+    if let ParamKind::Choice(list) | ParamKind::Picks(list) = p.kind {
         o.insert("choices".into(), Value::Array(list.iter().map(|(v, l)| json!({"value": v, "label": l})).collect()));
     }
     o.insert("default".into(), json!(p.default));
@@ -435,6 +436,22 @@ fn check_value(id: &str, t: &NodeType, spec: &ParamSpec, value: &Value, ws: &Wor
             if !v.contains("$(") && !list.iter().any(|c| c.0 == v) {
                 let values: Vec<&str> = list.iter().map(|c| c.0).collect();
                 out.push(bad(format!("is \"{}\", which is not one of its choices: {}.{}", v, values.join(", "), nearest(&v, values.iter().copied()))));
+            }
+        }
+        ParamKind::Picks(list) => {
+            let values: Vec<String> = match value {
+                Value::String(s) => s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect(),
+                Value::Array(a) => a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(),
+                _ => {
+                    out.push(bad("must be a list of its choices.".into()));
+                    return;
+                }
+            };
+            for v in values {
+                if !v.contains("$(") && !list.iter().any(|c| c.0 == v) {
+                    let names: Vec<&str> = list.iter().map(|c| c.0).collect();
+                    out.push(bad(format!("has \"{}\", which is not one of its choices: {}.{}", v, names.join(", "), nearest(&v, names.iter().copied()))));
+                }
             }
         }
         ParamKind::Expression(_) => {

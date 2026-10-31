@@ -430,6 +430,94 @@ pub fn buffer(g: &Geometry<f64>, distance: f64) -> Option<Geometry<f64>> {
     simplify_polygons(g.buffer(distance))
 }
 
+/// Which side of a line a buffer reaches to, along the direction the line is drawn in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    Both,
+    Left,
+    Right,
+}
+
+/// A buffer with flat ends if asked, and of lines only on one side if asked: the full buffer
+/// with flat ends, cut along the line, keeping the pieces on that side. Areas and points are
+/// buffered all round.
+pub fn buffer_with(g: &Geometry<f64>, distance: f64, flat: bool, side: Side) -> Option<Geometry<f64>> {
+    use geo::algorithm::buffer::{BufferStyle, LineCap};
+    use geo::{BooleanOps, Buffer, InteriorPoint};
+    if distance == 0.0 {
+        return if family(g) == Family::Area { Some(g.clone()) } else { None };
+    }
+    let one_side = side != Side::Both && family(g) == Family::Line;
+    if !flat && !one_side {
+        return buffer(g, distance);
+    }
+    let d = distance.abs();
+    // Only flat ends come here without one side: round ends with both sides go to buffer().
+    let full = g.buffer_with_style(BufferStyle::new(if one_side { d } else { distance }).line_cap(LineCap::Butt));
+    if !one_side {
+        return simplify_polygons(full);
+    }
+    // The line cuts the buffer in two: a hair's width taken away leaves the sides apart.
+    let strip = g.buffer_with_style(BufferStyle::new(d * 1e-4).line_cap(LineCap::Butt));
+    let parts = full.difference(&strip);
+    let lines: Vec<geo::Line<f64>> = match g {
+        Geometry::LineString(l) => l.lines().collect(),
+        Geometry::MultiLineString(m) => m.0.iter().flat_map(|l| l.lines()).collect(),
+        Geometry::Line(l) => vec![*l],
+        _ => Vec::new(),
+    };
+    let want_left = side == Side::Left;
+    let kept: Vec<Polygon<f64>> = parts
+        .0
+        .into_iter()
+        .filter(|p| {
+            let Some(at) = p.interior_point() else { return false };
+            // The side of the nearest piece of the line.
+            let nearest = lines.iter().min_by(|a, b| {
+                use geo::Distance;
+                let da = geo::Euclidean.distance(&at, *a);
+                let db = geo::Euclidean.distance(&at, *b);
+                da.total_cmp(&db)
+            });
+            nearest.is_some_and(|l| {
+                let cross = (l.end.x - l.start.x) * (at.y() - l.start.y) - (l.end.y - l.start.y) * (at.x() - l.start.x);
+                (cross > 0.0) == want_left
+            })
+        })
+        .collect();
+    simplify_polygons(MultiPolygon::new(kept))
+}
+
+/// The holes of areas smaller than `smallest`, in square metres or square degrees as the
+/// coordinates are, taken away; all of them without a size. Gives how many went.
+pub fn remove_holes(g: &Geometry<f64>, smallest: Option<f64>, geographic: bool) -> (Geometry<f64>, usize) {
+    let mut removed = 0usize;
+    let mut keep = |p: &Polygon<f64>| -> Polygon<f64> {
+        let holes: Vec<LineString<f64>> = p
+            .interiors()
+            .iter()
+            .filter(|h| {
+                let small = match smallest {
+                    None => true,
+                    Some(s) => area(&Geometry::Polygon(Polygon::new((*h).clone(), vec![])), geographic) < s,
+                };
+                if small {
+                    removed += 1;
+                }
+                !small
+            })
+            .cloned()
+            .collect();
+        Polygon::new(p.exterior().clone(), holes)
+    };
+    let out = match g {
+        Geometry::Polygon(p) => Geometry::Polygon(keep(p)),
+        Geometry::MultiPolygon(m) => Geometry::MultiPolygon(MultiPolygon::new(m.0.iter().map(&mut keep).collect())),
+        other => other.clone(),
+    };
+    (out, removed)
+}
+
 /// Rounds areas as in a drawing for children: narrow gaps and inlets narrower than twice
 /// the radius are filled, points and spits narrower than that are cut away, and every
 /// corner becomes a curve of the radius. Parts and holes smaller than `smallest` square

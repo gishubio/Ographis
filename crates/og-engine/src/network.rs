@@ -146,7 +146,7 @@ impl Network {
     }
 
     /// The cost per unit of length on an edge, along or against it.
-    fn rate(&self, e: usize, along: bool) -> Option<f64> {
+    pub fn rate(&self, e: usize, along: bool) -> Option<f64> {
         let e = &self.edges[e];
         let c = if along { e.along } else { e.against }?;
         Some(if e.length > 0.0 { c / e.length } else { 0.0 })

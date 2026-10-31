@@ -59,6 +59,7 @@ pub const WRITER_FORMATS: &[(&str, &str)] = &[
     ("obj", "OBJ 3D model (.obj)"),
     ("pdf", "PDF (.pdf)"),
     ("png", "PNG image (.png)"),
+    ("pmtiles", "PMTiles vector tiles (.pmtiles)"),
     ("shp", "Shapefile (.shp)"),
     ("txt", "Text (.txt)"),
 ];
@@ -84,6 +85,7 @@ pub const OUTPUT_FORMATS: &[(&str, &str)] = &[
     ("obj", "OBJ 3D model (.obj)"),
     ("pdf", "PDF (.pdf)"),
     ("png", "PNG image (.png)"),
+    ("pmtiles", "PMTiles vector tiles (.pmtiles)"),
     ("postgis", "PostGIS table"),
     ("pptx", "PowerPoint slides (.pptx)"),
     ("odp", "LibreOffice Impress slides (.odp)"),
@@ -208,6 +210,69 @@ pub(super) const WRITER_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Choice(SHEET_COLORS),
         default: "",
         hint: "The top row filled, and every second row tinted to make the rows easier to follow",
+    },
+    ParamSpec {
+        key: "gltf_name",
+        label: "Object names",
+        kind: ParamKind::Expression("Input"),
+        default: "",
+        hint: "glTF: the name of each object in Blender, such as the attribute name or address. Empty: as the model has them",
+    },
+    ParamSpec {
+        key: "gltf_group",
+        label: "Group by",
+        kind: ParamKind::Expression("Input"),
+        default: "",
+        hint: "glTF: the objects of each value under a parent of its own, such as the kind of building, to show and hide together in Blender",
+    },
+    ParamSpec {
+        key: "gltf_material",
+        label: "Materials by",
+        kind: ParamKind::Expression("Input"),
+        default: "",
+        hint: "glTF: a material named after each value, such as the material of the roof, to give them all a new look at once in Blender",
+    },
+    ParamSpec {
+        key: "gltf_origin",
+        label: "Origin",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "glTF: x, y and z the model is written around, the same for files that are to fit together in Blender, such as 418300, 6472550, 0. Empty: near its middle",
+    },
+    ParamSpec {
+        key: "gltf_georef",
+        label: "Where it lies",
+        kind: ParamKind::Choice(&[("true", "Kept for BlenderGIS: the coordinate system and the origin"), ("false", "Not kept")]),
+        default: "true",
+        hint: "glTF: BlenderGIS can then add maps and terrain in their place",
+    },
+    ParamSpec {
+        key: "gltf_sun",
+        label: "Sun and camera",
+        kind: ParamKind::Choice(&[("none", "None"), ("sun", "A sun"), ("both", "A sun and a camera"), ("camera", "A camera")]),
+        default: "none",
+        hint: "glTF: a sun where it stands at the time below, and a camera looking from the south-west",
+    },
+    ParamSpec {
+        key: "gltf_when",
+        label: "Time of the sun",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Swedish time, such as 2026-06-21 15:00. Empty: midsummer at three in the afternoon",
+    },
+    ParamSpec {
+        key: "pm_min",
+        label: "From zoom level",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "PMTiles: the smallest zoom level with tiles. 0 is the whole world in one tile",
+    },
+    ParamSpec {
+        key: "pm_max",
+        label: "To zoom level",
+        kind: ParamKind::Text,
+        default: "14",
+        hint: "PMTiles: the largest, at most 16. 14 has tiles of about 2 km, and maps zoom in beyond it",
     },
     ParamSpec { key: "pdf_size", label: "Page size", kind: ParamKind::Choice(PDF_SIZES), default: "a4", hint: "" },
     ParamSpec { key: "pdf_width", label: "Page width in mm", kind: ParamKind::Text, default: "210", hint: "" },
@@ -369,6 +434,77 @@ pub(super) fn split_by_name(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Op
     Ok(Some(Vec::new()))
 }
 
+/// The settings of a glTF file for Blender, with the values of the features evaluated.
+fn gltf_opts(p: &P, table: &Table, ctx: &NodeCtx) -> Result<crate::mesh_write::GltfOpts> {
+    let values = |key: &str, label: &str| -> Result<Option<Vec<String>>> {
+        let Some(text) = p.get(key).filter(|t| !t.trim().is_empty()) else { return Ok(None) };
+        let e = crate::expr::compile(&text, &table.field_names()).map_err(|e| GbError(format!("{}: {}", label, e.0)))?;
+        let geographic = ctx.geographic(table.crs);
+        let mut out = Vec::with_capacity(table.len());
+        for (i, f) in table.features.iter().enumerate() {
+            out.push(e.eval(&crate::expr::Row { feature: f, index: i, geographic })?.to_text());
+        }
+        Ok(Some(out))
+    };
+    let sun_camera = p.get("gltf_sun").unwrap_or_else(|| "none".into());
+    let sun = if matches!(sun_camera.as_str(), "sun" | "both") {
+        let when = p.get("gltf_when").filter(|w| !w.trim().is_empty());
+        let (date, time) = match &when {
+            Some(w) => {
+                let mut parts = w.split_whitespace();
+                (parts.next().unwrap_or("").to_string(), parts.next().unwrap_or("15:00").to_string())
+            }
+            None => (format!("{}-06-21", chrono::Local::now().format("%Y")), "15:00".to_string()),
+        };
+        let at = crate::sun::time_on(&date, &time, crate::sun::Clock::Swedish)
+            .ok_or_else(|| GbError(format!("The time of the sun is written as 2026-06-21 15:00, not \"{}\".", when.unwrap_or_default())))?;
+        // The place of the model in degrees, for where the sun stands.
+        let middle = table.mesh.as_deref().and_then(|m| m.bounds()).map(|(lo, hi)| ((lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0)).or_else(|| {
+            use geo::BoundingRect;
+            let r = table.features.iter().filter_map(|f| f.geom.as_ref()?.bounding_rect()).reduce(|a, b| {
+                geo::Rect::new(
+                    geo::Coord { x: a.min().x.min(b.min().x), y: a.min().y.min(b.min().y) },
+                    geo::Coord { x: a.max().x.max(b.max().x), y: a.max().y.max(b.max().y) },
+                )
+            })?;
+            Some(((r.min().x + r.max().x) / 2.0, (r.min().y + r.max().y) / 2.0))
+        });
+        let lonlat = match (middle, table.crs, ctx.backend) {
+            (Some((x, y)), Some(4326), _) => Some((x, y)),
+            (Some((x, y)), Some(c), Some(b)) => {
+                let (mut xs, mut ys) = (vec![x], vec![y]);
+                b.transform(c, 4326, &mut xs, &mut ys).ok().map(|_| (xs[0], ys[0]))
+            }
+            _ => None,
+        };
+        // Without a place, Göteborg.
+        let (lon, lat) = lonlat.unwrap_or((11.97, 57.71));
+        let (az, alt) = crate::sun::position(at, lat, lon);
+        Some((az, alt))
+    } else {
+        None
+    };
+    Ok(crate::mesh_write::GltfOpts {
+        georef: p.get("gltf_georef").as_deref() != Some("false"),
+        names: values("gltf_name", "Object names")?,
+        groups: values("gltf_group", "Group by")?,
+        kinds: values("gltf_material", "Materials by")?,
+        sun,
+        camera: matches!(sun_camera.as_str(), "camera" | "both"),
+        origin: match p.get("gltf_origin").filter(|o| !o.trim().is_empty()) {
+            None => None,
+            Some(text) => {
+                let v: Vec<f64> = text.split([',', ';', ' ']).filter(|t| !t.trim().is_empty()).filter_map(|t| crate::model::parse_number(t.trim())).collect();
+                match v.as_slice() {
+                    [x, y] => Some([*x, *y, 0.0]),
+                    [x, y, z] => Some([*x, *y, *z]),
+                    _ => return err(format!("The origin is written as x, y, z, such as 418300, 6472550, 0, not \"{}\".", text)),
+                }
+            }
+        },
+    })
+}
+
 pub(super) fn run_writer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     if let Some(out) = split_by_name(p, inp, ctx)? {
         return Ok(out);
@@ -399,6 +535,39 @@ pub(super) fn run_writer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
         ctx.files.push(path);
         return Ok(Vec::new());
     }
+    if ext == "pmtiles" {
+        // Vector tiles, cut by Ographis itself, in WGS 84.
+        let table = input(inp, "Input");
+        let table = if table.crs.is_some_and(|c| c != 4326) { reproject(table, 4326, ctx.backend)? } else { table.clone() };
+        if table.crs.is_none() && table.has_geometry() {
+            ctx.notes.warn("The features have no coordinate system, and were taken to be in WGS 84.");
+        }
+        let zoom = |key: &str, label: &str, d: f64| -> Result<u8> { Ok(number_param(p, key, label)?.unwrap_or(d).clamp(0.0, 16.0) as u8) };
+        let (min_zoom, max_zoom) = (zoom("pm_min", "From zoom level", 0.0)?, zoom("pm_max", "To zoom level", 14.0)?);
+        let layer = p
+            .get("layer")
+            .filter(|l| !l.trim().is_empty())
+            .unwrap_or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "layer".into()));
+        let gate = ctx.gate;
+        let progress = ctx.progress;
+        let o = crate::pmtiles_write::PmOpts { min_zoom, max_zoom, layer: layer.clone() };
+        let s = crate::pmtiles_write::write_pmtiles(&table, &path, &o, &|i, n| progress("zoom levels", i, Some(n)), &|| gate.going())?;
+        ctx.notes.info(format!(
+            "{} tiles of zoom {} to {} in the layer {}, {} of them different; the largest {} kB",
+            fmt_count(s.tiles),
+            o.min_zoom.min(o.max_zoom),
+            o.max_zoom.max(o.min_zoom),
+            layer,
+            fmt_count(s.contents),
+            crate::model::fmt_real((s.largest as f64 / 102.4).round() / 10.0)
+        ));
+        if s.largest > 500 * 1024 {
+            ctx.notes
+                .warn("Some tiles are larger than 500 kB, which maps draw slowly. Start from a higher zoom level, or simplify the features with Generalize.");
+        }
+        ctx.files.push(path);
+        return Ok(Vec::new());
+    }
     if matches!(ext.as_str(), "las" | "laz") {
         // A point cloud: points with heights, with the attributes of LAS that they have.
         let table = input(inp, "Input");
@@ -417,6 +586,31 @@ pub(super) fn run_writer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
     if matches!(ext.as_str(), "obj" | "glb") {
         // A 3D model: the one the stream carries, from a 3D file, Extrude or Generate TIN.
         let table = input(inp, "Input");
+        if ext == "glb" {
+            if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
+            }
+            let opts = gltf_opts(p, table, ctx)?;
+            if table.mesh.is_none() && table.has_geometry() && ctx.geographic(table.crs) == Some(true) {
+                ctx.notes.warn("The lines and points are in degrees: reproject them to metres first, or they come out tiny and flat in a 3D program.");
+            }
+            let files = crate::mesh_write::write_glb_with(table, &path, &opts)?;
+            match table.mesh.as_deref() {
+                Some(m) => {
+                    let o = opts.origin.unwrap_or_else(|| crate::mesh_write::origin_of(m));
+                    ctx.notes.info(format!(
+                        "{} triangles written around the origin {}, {}, {}, which is kept in the file",
+                        fmt_count(m.tris.len() as u64),
+                        o[0],
+                        o[1],
+                        o[2]
+                    ));
+                }
+                None => ctx.notes.info(format!("{} lines and points written as a 3D model", fmt_count(table.len() as u64))),
+            }
+            ctx.files.extend(files);
+            return Ok(Vec::new());
+        }
         if table.mesh.is_none() {
             return err(format!("The stream has no 3D model to write as .{}. Read an OBJ, glTF or IFC file, or make one with Extrude or Generate TIN.", ext));
         }

@@ -282,10 +282,14 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
     sorted[at.min(sorted.len() - 1)]
 }
 
-fn run_buildings(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let buildings = input(inp, "Buildings");
-    let cloud = input(inp, "Points");
-    let ground_grid = input(inp, "Ground").grid.clone();
+/// The points of the cloud on each building, without its edge, and the ground of each: from
+/// a terrain model at its corners, or from the ground points around it.
+pub(super) struct OnBuildings {
+    pub roofs: Vec<Vec<(f64, f64, f64)>>,
+    pub ground: Vec<Option<f64>>,
+}
+
+pub(super) fn points_on_buildings(p: &P, buildings: &Table, cloud: &Table, ground_grid: Option<&Grid>) -> Result<OnBuildings> {
     if cloud.crs.is_some() && buildings.crs.is_some() && cloud.crs != buildings.crs {
         return err(format!(
             "The buildings are in {} and the points in {}. Reproject the buildings to the system of the points first.",
@@ -306,7 +310,6 @@ fn run_buildings(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         }
     };
     let inset = number_param(p, "inset", "Leave out the edge")?.unwrap_or(0.5).max(0.0);
-    let prefix = p.get("prefix").unwrap_or_default();
     let class_at = cloud.field_index("classification");
     if class_at.is_none() && ground_grid.is_none() {
         return err("The points have no classes to tell the ground by. Classify the ground points first, or connect a terrain model to Ground.");
@@ -346,13 +349,42 @@ fn run_buildings(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         }
     }
     let ground_tree = rstar::RTree::bulk_load(ground_pts);
+    use geo::BoundingRect;
+    let ground = buildings
+        .features
+        .iter()
+        .map(|f| {
+            let g = f.geom.as_ref()?;
+            match ground_grid {
+                Some(gr) => {
+                    let mut zs: Vec<f64> = geom::coords(g).iter().filter_map(|c| gr.bilinear(c.x, c.y)).map(|v| v as f64).collect();
+                    zs.sort_by(f64::total_cmp);
+                    (!zs.is_empty()).then(|| percentile(&zs, 50.0))
+                }
+                None => g.bounding_rect().and_then(|r| {
+                    let env = rstar::AABB::from_corners([r.min().x - 3.0, r.min().y - 3.0], [r.max().x + 3.0, r.max().y + 3.0]);
+                    let mut zs: Vec<f64> = ground_tree.locate_in_envelope(&env).map(|p| p.data).collect();
+                    zs.sort_by(f64::total_cmp);
+                    (!zs.is_empty()).then(|| percentile(&zs, 50.0))
+                }),
+            }
+        })
+        .collect();
+    Ok(OnBuildings { roofs, ground })
+}
+
+fn run_buildings(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+    let buildings = input(inp, "Buildings");
+    let cloud = input(inp, "Points");
+    let ground_grid = input(inp, "Ground").grid.clone();
+    let prefix = p.get("prefix").unwrap_or_default();
+    let OnBuildings { mut roofs, ground: grounds } = points_on_buildings(p, buildings, cloud, ground_grid.as_deref())?;
     let mut out = buildings.clone();
     let names = ["ground", "height", "height_max", "roof_low", "points", "roof_shape", "roof_slope", "ridge_direction"];
     let types = [FieldType::Real, FieldType::Real, FieldType::Real, FieldType::Real, FieldType::Int, FieldType::Text, FieldType::Real, FieldType::Real];
     let slots: Vec<usize> = names.iter().zip(types).map(|(n, t)| column(&mut out, &format!("{}{}", prefix, n), t)).collect();
     let round = |v: f64, d: i32| (v * 10f64.powi(d)).round() / 10f64.powi(d);
     let (mut measured, mut without) = (0usize, 0usize);
-    use geo::BoundingRect;
     for (k, f) in out.features.iter_mut().enumerate() {
         let Some(g) = &buildings.features[k].geom else { continue };
         let mut pts = std::mem::take(&mut roofs[k]);
@@ -361,20 +393,7 @@ fn run_buildings(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             f.attrs[slots[4]] = Value::Int(pts.len() as i64);
             continue;
         }
-        // The ground: the terrain model at the corners, or the ground points around.
-        let ground = match &ground_grid {
-            Some(gr) => {
-                let mut zs: Vec<f64> = geom::coords(g).iter().filter_map(|c| gr.bilinear(c.x, c.y)).map(|v| v as f64).collect();
-                zs.sort_by(f64::total_cmp);
-                (!zs.is_empty()).then(|| percentile(&zs, 50.0))
-            }
-            None => g.bounding_rect().and_then(|r| {
-                let env = rstar::AABB::from_corners([r.min().x - 3.0, r.min().y - 3.0], [r.max().x + 3.0, r.max().y + 3.0]);
-                let mut zs: Vec<f64> = ground_tree.locate_in_envelope(&env).map(|p| p.data).collect();
-                zs.sort_by(f64::total_cmp);
-                (!zs.is_empty()).then(|| percentile(&zs, 50.0))
-            }),
-        };
+        let ground = grounds[k];
         pts.sort_by(|a, b| a.2.total_cmp(&b.2));
         let zs: Vec<f64> = pts.iter().map(|p| p.2).collect();
         let base = ground.unwrap_or(zs[0]);

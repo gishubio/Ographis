@@ -129,8 +129,10 @@ pub fn db_layers(backend: &dyn Backend, connection: &str) -> Layers {
 /// The filter that suits a folder: the kind of data file there is most of. `None` when the
 /// folder holds no data files that are recognised.
 pub fn guess_pattern(dir: &Path) -> Option<String> {
-    const KNOWN: &[&str] =
-        &["shp", "gpkg", "csv", "xlsx", "txt", "geojson", "tab", "gml", "kml", "ods", "tif", "fgb", "parquet", "dxf", "dwg", "sqlite", "ifc", "las", "laz"];
+    const KNOWN: &[&str] = &[
+        "shp", "gpkg", "csv", "xlsx", "txt", "geojson", "tab", "gml", "kml", "ods", "tif", "fgb", "parquet", "dxf", "dwg", "gpx", "jpg", "jpeg", "sqlite",
+        "ifc", "las", "laz",
+    ];
     let mut counts: Vec<(usize, usize)> = KNOWN.iter().enumerate().map(|(i, _)| (i, 0)).collect();
     for entry in std::fs::read_dir(dir).ok()?.flatten() {
         let ext = ext_of(&entry.path());

@@ -21,8 +21,10 @@ impl App {
         // A moved port is marked for two seconds.
         let now = ui.input(|i| i.time);
         let moved = self.moved_port.as_ref().filter(|m| now - m.3 < 2.0).map(|m| (m.0, m.1, m.2.clone()));
-        // The dots along the connections into a node at work keep moving.
-        if self.running_node.is_some() && !self.paused {
+        // The dots along the connections into a node at work keep moving, unless motion is
+        // to be kept down.
+        let calm = crate::settings::reduce_motion(&self.settings);
+        if self.running_node.is_some() && !self.paused && !calm {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
         }
         if moved.is_some() {
@@ -47,7 +49,7 @@ impl App {
                 transform: &mut self.transform,
                 fit: &mut self.fit,
                 running: running.as_deref(),
-                flow_phase: (now * 1.4).fract() as f32,
+                flow_phase: if calm { 0.3 } else { (now * 1.4).fract() as f32 },
                 files: &files,
                 expanded: &self.expanded,
                 groups: &self.groups,
@@ -92,6 +94,7 @@ impl App {
             self.quick_add = Some((p, self.transform.inverse() * p, after));
         }
         self.quick_add_box(ui.ctx(), pal);
+        self.minimap(ui, pal);
         self.node_rects = std::mem::take(&mut events.rects);
         if background_clicked {
             self.selected_group = None;

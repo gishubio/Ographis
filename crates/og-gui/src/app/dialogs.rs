@@ -209,6 +209,15 @@ impl App {
                                 if !r.log.is_empty() && ui.small_button("Log").on_hover_text(&r.log).clicked() {
                                     show = Some(og_engine::history::runs_dir(&path).join("logs").join(&r.log));
                                 }
+                                let lineage = og_engine::history::runs_dir(&path).join("lineage").join(format!("{}.json", r.started.replace([':', ' '], "-")));
+                                if lineage.is_file()
+                                    && ui
+                                        .small_button("Lineage")
+                                        .on_hover_text("Where the data came from and went: the files, addresses and tables read and written, with their sizes and times, and the model as it was")
+                                        .clicked()
+                                {
+                                    show = Some(lineage);
+                                }
                                 if !r.message.is_empty() {
                                     let short: String = r.message.chars().take(70).collect();
                                     ui.label(RichText::new(short).small().color(pal.muted)).on_hover_text(&r.message);
@@ -237,6 +246,167 @@ impl App {
         }
         if close || modal.should_close() {
             self.history_open = false;
+        }
+    }
+
+    pub fn open_schedule(&mut self) {
+        self.schedule = Some(ScheduleForm {
+            name: self.name.clone(),
+            every: og_engine::schedule::Every::Weekday,
+            time: "06:00".into(),
+            day: "MON".into(),
+            hours: 1,
+            date: 1,
+            answer: None,
+        });
+    }
+
+    /// Runs schtasks with these arguments, and gives whether it went well and what it said.
+    fn schtasks(args: &[String]) -> (bool, String) {
+        let mut cmd = std::process::Command::new("schtasks");
+        cmd.args(args);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000);
+        }
+        match cmd.output() {
+            Ok(o) => {
+                let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)).trim().to_string();
+                (o.status.success(), text)
+            }
+            Err(e) => (false, format!("schtasks could not be started: {}", e)),
+        }
+    }
+
+    /// Model → Schedule: when the saved model runs by itself, through the Task Scheduler.
+    pub(super) fn schedule_dialog(&mut self, ctx: &egui::Context, pal: &Palette) {
+        use og_engine::schedule::{self, Every};
+        let Some(mut form) = self.schedule.take() else { return };
+        let Some(path) = self.path.clone() else { return };
+        let command = self.command_line().unwrap_or_default();
+        let mut close = false;
+        let modal = egui::Modal::new(egui::Id::new("schedule")).show(ctx, |ui| {
+            ui.set_width(560.0);
+            ui.label(RichText::new(format!("Schedule · {}", self.name)).font(theme::strong(18.0)).color(pal.ink));
+            ui.label(
+                RichText::new("The saved model runs by itself, through the Task Scheduler of Windows, while you are logged in. Each run is kept in Model → Run history, with its log and lineage.")
+                    .color(pal.muted),
+            );
+            ui.add_space(8.0);
+            egui::Grid::new("schedule-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                ui.label("Name of the task");
+                ui.text_edit_singleline(&mut form.name);
+                ui.end_row();
+                ui.label("Runs");
+                ui.horizontal_wrapped(|ui| {
+                    let kinds = [("day", "Every day"), ("weekday", "Every weekday"), ("week", "Every week"), ("month", "Every month"), ("hours", "Every few hours")];
+                    let now = match form.every {
+                        Every::Day => "day",
+                        Every::Weekday => "weekday",
+                        Every::Week(_) => "week",
+                        Every::Month(_) => "month",
+                        Every::Hours(_) => "hours",
+                    };
+                    for (k, label) in kinds {
+                        if ui.selectable_label(now == k, label).clicked() {
+                            form.every = match k {
+                                "day" => Every::Day,
+                                "weekday" => Every::Weekday,
+                                "week" => Every::Week(form.day.clone()),
+                                "month" => Every::Month(form.date),
+                                _ => Every::Hours(form.hours),
+                            };
+                        }
+                    }
+                });
+                ui.end_row();
+                match &mut form.every {
+                    Every::Week(d) => {
+                        ui.label("On");
+                        egui::ComboBox::from_id_salt("schedule-day").selected_text(schedule::DAYS.iter().find(|x| x.0 == d).map_or("", |x| x.1)).show_ui(ui, |ui| {
+                            for (k, label) in schedule::DAYS {
+                                ui.selectable_value(d, k.to_string(), *label);
+                            }
+                        });
+                        form.day = d.clone();
+                        ui.end_row();
+                    }
+                    Every::Month(n) => {
+                        ui.label("On day");
+                        ui.add(egui::DragValue::new(n).range(1..=28));
+                        form.date = *n;
+                        ui.end_row();
+                    }
+                    Every::Hours(n) => {
+                        ui.label("Every");
+                        ui.horizontal(|ui| {
+                            ui.add(egui::DragValue::new(n).range(1..=23));
+                            ui.label("hours");
+                        });
+                        form.hours = *n;
+                        ui.end_row();
+                    }
+                    _ => {}
+                }
+                ui.label(if matches!(form.every, Every::Hours(_)) { "From" } else { "At" });
+                ui.add(egui::TextEdit::singleline(&mut form.time).desired_width(70.0).hint_text("06:00"));
+                ui.end_row();
+            });
+            ui.add_space(6.0);
+            ui.label(RichText::new(format!("It runs: {}", command)).small().color(pal.muted));
+            if self.dirty {
+                ui.label(RichText::new("The model has changes that are not saved: the scheduled run runs what is saved.").color(pal.warn));
+            }
+            if let Some((ok, text)) = &form.answer {
+                ui.add_space(4.0);
+                ui.label(RichText::new(text).color(if *ok { pal.ok } else { pal.err }));
+            }
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if cfg!(windows) {
+                    if ui.button("Create the scheduled run").clicked() {
+                        let script = schedule::script_path(&path);
+                        let made = script
+                            .parent()
+                            .map(std::fs::create_dir_all)
+                            .unwrap_or(Ok(()))
+                            .and_then(|_| std::fs::write(&script, schedule::script(&path, &command)));
+                        form.answer = Some(match made {
+                            Err(e) => (false, format!("Cannot write {}: {}", script.display(), e)),
+                            Ok(()) => match schedule::create_args(&form.name, &form.every, &form.time, &script) {
+                                Err(e) => (false, e),
+                                Ok(args) => {
+                                    let (ok, text) = Self::schtasks(&args);
+                                    if ok {
+                                        (true, format!("Made: {} in the Task Scheduler, under Ographis. It starts {}.", schedule::task_name(&form.name), script.display()))
+                                    } else {
+                                        (false, text)
+                                    }
+                                }
+                            },
+                        });
+                    }
+                    if ui.button("Remove it").on_hover_text("Removes the task of this name from the Task Scheduler").clicked() {
+                        let (ok, text) = Self::schtasks(&schedule::delete_args(&form.name));
+                        form.answer = Some((ok, if ok { format!("{} is removed.", schedule::task_name(&form.name)) } else { text }));
+                    }
+                    if ui.button("Is it there?").clicked() {
+                        form.answer = Some(Self::schtasks(&schedule::query_args(&form.name)));
+                    }
+                } else if let Some(line) = schedule::cron_line(&form.every, &form.time, &command) {
+                    if ui.button("Copy a line for crontab").on_hover_text(&line).clicked() {
+                        ctx.copy_text(line);
+                        form.answer = Some((true, "Copied. Add it with crontab -e.".into()));
+                    }
+                }
+                if ui.button("Close").clicked() {
+                    close = true;
+                }
+            });
+        });
+        if !(close || modal.should_close()) {
+            self.schedule = Some(form);
         }
     }
 

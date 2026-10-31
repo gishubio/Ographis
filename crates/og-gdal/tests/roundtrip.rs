@@ -2511,6 +2511,8 @@ fn a_postgis_table_gets_the_primary_key_asked_for() {
         geom_column: "geom".into(),
         append: false,
         key,
+        empty_first: false,
+        commit_every: None,
     };
     b.write_postgis(&sample(), &conn, &opts("og_key_default", None), &mut notes).unwrap();
     assert_eq!(key_of("og_key_default"), ["ogc_fid"]);
@@ -2529,6 +2531,46 @@ fn a_postgis_table_gets_the_primary_key_asked_for() {
     let back = b.read(std::path::Path::new(&conn), &ReadOpts { layer: Some("og_key_text".into()), ..Default::default() }, &mut notes).unwrap();
     assert_eq!(col(&back, "muni_code"), [text("0114"), text("1480")]);
     assert!(back.field_index("ogc_fid").is_none(), "{:?}", back.field_names());
+}
+
+/// A table emptied and filled again in one transaction keeps the view on it; and a large
+/// write is committed in parts. Needs OG_TEST_PG, as above.
+#[test]
+fn a_postgis_table_is_emptied_and_filled_or_written_in_parts() {
+    use og_engine::io::DbWrite;
+    let Ok(conn) = std::env::var("OG_TEST_PG") else { return };
+    let b = GdalBackend::new();
+    let mut notes = Notes::default();
+    let sql = |q: &str| -> Option<String> {
+        let ds = gdal::Dataset::open_ex(
+            &conn,
+            gdal::DatasetOptions { open_flags: gdal::GdalOpenFlags::GDAL_OF_VECTOR | gdal::GdalOpenFlags::GDAL_OF_UPDATE, ..Default::default() },
+        )
+        .unwrap();
+        let mut rs = ds.execute_sql(q, None, gdal::vector::sql::Dialect::DEFAULT).unwrap()?;
+        let v = rs.features().next().and_then(|f| f.field_as_string(0).ok().flatten());
+        v
+    };
+    let opts = |empty_first: bool, commit_every: Option<usize>| DbWrite {
+        schema: "public".into(),
+        table: "og_tx".into(),
+        geometry: "auto".into(),
+        geom_column: "geom".into(),
+        append: false,
+        key: None,
+        empty_first,
+        commit_every,
+    };
+    let _ = sql("DROP VIEW IF EXISTS og_tx_view");
+    b.write_postgis(&sample(), &conn, &opts(false, None), &mut notes).unwrap();
+    sql("CREATE VIEW og_tx_view AS SELECT * FROM og_tx");
+    let mut more = sample();
+    let first = more.features[0].clone();
+    more.features = (0..25).map(|_| first.clone()).collect();
+    b.write_postgis(&more, &conn, &opts(true, Some(10)), &mut notes).unwrap();
+    assert_eq!(sql("SELECT count(*) FROM og_tx_view").as_deref(), Some("25"), "the view is there, on the new rows");
+    assert!(notes.info.iter().any(|n| n.contains("committed in 3 parts")), "{:?}", notes.info);
+    let _ = sql("DROP VIEW IF EXISTS og_tx_view");
 }
 
 #[test]
@@ -2750,7 +2792,7 @@ fn a_dwg_drawing_is_read_as_its_dxf() {
     assert_eq!(d.len(), a.len());
     assert_eq!(d.field_names(), a.field_names());
     // The same layers, entities, blocks and their attributes.
-    for name in ["layer", "entity", "block", "ID", "DJUP", "text"] {
+    for name in ["layer", "entity", "block", "ID", "DJUP", "text", "colour", "linetype"] {
         if a.field_index(name).is_some() {
             let mut x = col(&a, name);
             let mut y = col(&d, name);
@@ -2759,5 +2801,31 @@ fn a_dwg_drawing_is_read_as_its_dxf() {
             assert_eq!(x, y, "{}", name);
         }
     }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A GPX file gives its tracks, without the empty columns of GPX.
+#[test]
+fn a_gpx_file_gives_its_tracks() {
+    let b = GdalBackend::new();
+    let dir = tmp("gpx");
+    std::fs::write(
+        dir.join("walk.gpx"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="57.7089" lon="11.9746"><name>Start</name></wpt>
+  <trk><name>Walk</name><trkseg>
+    <trkpt lat="57.7089" lon="11.9746"><ele>12</ele></trkpt>
+    <trkpt lat="57.7095" lon="11.9760"><ele>14</ele></trkpt>
+  </trkseg></trk>
+</gpx>"#,
+    )
+    .unwrap();
+    let mut notes = Notes::default();
+    let t = b.read(&dir.join("walk.gpx"), &ReadOpts::default(), &mut notes).unwrap();
+    assert_eq!((t.len(), t.crs), (1, Some(4326)));
+    assert_eq!(t.field_names(), ["name"]);
+    let pts = b.read(&dir.join("walk.gpx"), &ReadOpts { layer: Some("track_points".into()), ..Default::default() }, &mut notes).unwrap();
+    assert_eq!(pts.len(), 2);
     let _ = std::fs::remove_dir_all(&dir);
 }

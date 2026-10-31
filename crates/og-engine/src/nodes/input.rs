@@ -450,6 +450,10 @@ pub(super) fn run_reader(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
         if !as_file && (url.to_lowercase().split(['?', '#']).next().unwrap_or("").ends_with(".copc.laz") || p.get("web_as").as_deref() == Some("copc")) {
             // A COPC point cloud is read in parts, where it is, and not fetched whole.
             sources.files = vec![PathBuf::from(url.clone())];
+        } else if !as_file && matches!(ext.as_str(), "parquet" | "geoparquet") && matches!(p.get("within").as_deref(), Some("rectangle" | "variables")) {
+            // GeoParquet on the web within a rectangle: only the parts of the file that reach
+            // into it are fetched, by the boxes of its row groups.
+            sources.files = vec![PathBuf::from(url.clone())];
         } else if !as_file && ext == "pmtiles" {
             // PMTiles on the web are read where they are, a tile at a time, as maps do.
             sources.files = vec![PathBuf::from(format!("/vsicurl/{}", url))];
@@ -598,6 +602,9 @@ pub(super) fn run_reader(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
                 crate::citymodel::read_citygml(file, &lod, crs, &mut notes, &going)
             };
             read.push((t.map_err(named)?, None));
+        } else if crate::photos::is_photo(file) {
+            // A photo from a camera or a phone: a point where it was taken, from its Exif.
+            read.push((crate::photos::read_photos(&[file]).map_err(named)?, None));
         } else if matches!(ext.as_str(), "parquet" | "geoparquet") {
             // GeoParquet is read here, not by GDAL, which is often built without it.
             let (progress, gate) = (ctx.progress, ctx.gate);
@@ -605,7 +612,47 @@ pub(super) fn run_reader(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
                 progress("read", done, total);
                 gate.going()
             };
-            let t = crate::parquet_io::read_parquet(file, crs, left, &mut notes, &going).map_err(named)?;
+            // Within a rectangle only the row groups that reach into it, in the system of
+            // the file.
+            let backend = ctx.backend;
+            let rect_for = |file_crs: Option<u32>| -> Result<Option<[f64; 4]>> {
+                let Some((r, from)) = within else { return Ok(None) };
+                match (from, file_crs) {
+                    (Some(a), Some(b)) if a != b => {
+                        let b2 = backend.ok_or_else(|| GbError("Reprojecting the rectangle needs the GDAL support.".into()))?;
+                        let (mut xs, mut ys) = (vec![r[0], r[2], r[2], r[0]], vec![r[1], r[1], r[3], r[3]]);
+                        b2.transform(a, b, &mut xs, &mut ys)?;
+                        let fold = |v: &[f64], f: fn(f64, f64) -> f64, s: f64| v.iter().copied().fold(s, f);
+                        Ok(Some([
+                            fold(&xs, f64::min, f64::INFINITY),
+                            fold(&ys, f64::min, f64::INFINITY),
+                            fold(&xs, f64::max, f64::NEG_INFINITY),
+                            fold(&ys, f64::max, f64::NEG_INFINITY),
+                        ]))
+                    }
+                    _ => Ok(Some(r)),
+                }
+            };
+            let t = match sources.url.as_deref().filter(|_| file.to_string_lossy().contains("://")) {
+                Some(url) => {
+                    let b = ctx.backend("Reading GeoParquet from the web")?;
+                    let stop = || gate.going();
+                    let (sparse, _, _, fetched) = crate::overture::fetch_parts(
+                        b,
+                        url,
+                        &|m| {
+                            Ok(match rect_for(crate::parquet_io::crs_of(m.file_metadata()).or(crs))? {
+                                Some(r) => crate::parquet_io::groups_within(m, r),
+                                None => (0..m.num_row_groups()).collect(),
+                            })
+                        },
+                        &stop,
+                    )?;
+                    notes.info(format!("{} fetched of the {} of the file", crate::overture::size_text(fetched), crate::overture::size_text(sparse.len_of())));
+                    crate::parquet_io::read_parquet_from(sparse, url, crs, left, &rect_for, &mut notes, &going).map_err(named)?
+                }
+                None => crate::parquet_io::read_parquet_within(file, crs, left, &rect_for, &mut notes, &going).map_err(named)?,
+            };
             read.push((t, None));
         } else if ext == "ifc" {
             // A building model: placed where the file says, or where the input puts it.
@@ -974,6 +1021,8 @@ pub const READ_FORMATS: &[&str] = &[
     "3D Tiles (tileset.json)",
     "IFC building models (.ifc)",
     "CAD drawings (.dxf, .dwg)",
+    "GPS tracks and waypoints (.gpx)",
+    "Photos with their places (.jpg)",
     "CityGML and CityJSON (.gml, .city.json)",
     "CSV and text (.csv, .txt)",
     "Excel (.xlsx)",

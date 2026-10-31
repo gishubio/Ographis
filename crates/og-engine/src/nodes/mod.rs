@@ -51,6 +51,8 @@ pub enum ParamKind {
     JsonPaths(&'static str, &'static str),
     /// A choice from a list of (value, label).
     Choice(&'static [(&'static str, &'static str)]),
+    /// Some of a list of (value, label), ticked: kept as a list of the values.
+    Picks(&'static [(&'static str, &'static str)]),
     /// The name of an API connection from the settings of the user.
     ApiConnection,
     Crs,
@@ -622,8 +624,10 @@ mod geom_transform;
 mod input;
 mod json;
 mod map;
+mod models091;
 mod more_tools;
 mod network;
+mod network091;
 mod osm;
 mod output;
 mod overture_dl;
@@ -640,6 +644,7 @@ mod tests086;
 #[cfg(test)]
 mod tests087;
 mod tools088;
+mod tools091;
 pub mod vector_tiles;
 #[cfg(test)]
 pub(crate) use solid::add_block;
@@ -688,6 +693,9 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         diorama::TYPES,
         more_tools::TYPES,
         tools088::TYPES,
+        tools091::TYPES,
+        network091::TYPES,
+        models091::TYPES,
         overture_dl::TYPES,
         raster089::TYPES,
         raster090::TYPES,

@@ -4,6 +4,23 @@ use super::*;
 
 impl App {
     pub(super) fn params_panel(&mut self, ui: &mut Ui, pal: &Palette) {
+        // Enter on the canvas: a mark at the top of the form takes the keyboard, and in the
+        // next frame it is handed on to the first field after it.
+        let anchor = ui.allocate_response(egui::Vec2::ZERO, egui::Sense::focusable_noninteractive());
+        match self.focus_form {
+            1 => {
+                anchor.request_focus();
+                self.focus_form = 2;
+                ui.ctx().request_repaint();
+            }
+            2 => {
+                if anchor.has_focus() {
+                    ui.memory_mut(|m| m.move_focus(egui::FocusDirection::Next));
+                }
+                self.focus_form = 0;
+            }
+            _ => {}
+        }
         if self.selected.len() > 1 {
             self.selection_panel(ui, pal);
             return;

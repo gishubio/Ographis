@@ -71,6 +71,13 @@ five models.
 | Fetch open map data | *Overture Maps download* within a rectangle, or *OpenStreetMap download*. Both need the internet |
 | Drop files where you want them | An input for a dropped file is put where it was dropped on the canvas. Several files go one below the other |
 | Find rows | Write in *Filter* above the table: a word finds the rows that have it in any value, and an expression such as `population > 10000` or `= name LIKE 'S%'` the rows where it is true. The header says how many of all are shown; the map and the statistics follow |
+| Work the canvas from the keyboard | Tab and Shift+Tab go from node to node, in reading order. The arrows move the selected nodes, further with Shift. Enter puts the keyboard in the form of the node. Ctrl+L connects the selected node to a port chosen by typing a part of its name, and Ctrl+F finds a node by its name or tool |
+| See the whole model | The small map in the lower right corner of the canvas shows all the nodes and the part that is seen; click or drag on it to go there. View → *Map of the model* hides it |
+| Make everything larger | Ctrl and + or −, Ctrl+0 for 100 %. The size is kept, and set under Settings → *General* too |
+| Keep motion down | Settings → *General* → *Reduce motion*: no moving dots on the connections while a model runs, and no sliding panels |
+| Be told when a long run is done | Settings → *General* → *Tell me when a run that took longer than … seconds has finished*: a notice from Windows, and the button of the program in the taskbar flashes. Off from the start |
+| Run a model at set times | Save it, then Model → *Schedule…*: every day, every weekday, a day each week or month, or every few hours, at a time. The task is made in the Task Scheduler of Windows, under *Ographis*, and runs while you are logged in. *Remove it* takes it away again. On Linux and macOS the same gives a line for crontab |
+| Write values in an expression | After an attribute and `=`, `<>` or `IN (` and a quote, as `kind = '`, the values of the attribute in the latest run are suggested |
 | Write an expression | Begin a word: attributes of the stream and functions that begin with it are suggested under the field. Tab or Enter takes one, Escape closes the list. Settings → *General* can turn the suggestions off |
 | Sort the table | Click the name of a column. A second click sorts the other way, a third gives the order of the stream back |
 | See the attributes after a step | Click *▸ n attributes* under the node. View → *Show the attributes on all nodes* folds out all of them |
@@ -188,9 +195,17 @@ model, named after it: `house.ographis` keeps its runs in `house.runs`.
   lock* in the program removes one by hand. `--no-lock` runs regardless.
 - `--no-history` keeps neither the line nor the log, for example in a test.
 
+- `lineage/2026-10-30-18-30-00.json` is the **lineage** of each run: where the data came from
+  and where it went. The model with a fingerprint of its file, each input with its files
+  (path, size, time of change and a fingerprint) or web address (without what follows `?`,
+  where keys are often written) or table, and how many features it gave; each output with the
+  files or table it wrote, how many features, and which inputs it was made from; the order
+  the nodes ran in, the variables (passwords left out), the version of Ographis, the user and
+  the computer. They go after 30 days, as the logs do.
+
 `og history <model>` shows the latest runs (`--last N`, 20 to begin with), and whether it
 is running now. In the program, Model → *Run history…* shows the same for the open model,
-with a button for the log of each run and one to open the folder.
+with a button for the log and the lineage of each run and one to open the folder.
 
 ## When something goes wrong
 

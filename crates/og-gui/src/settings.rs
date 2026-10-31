@@ -31,6 +31,24 @@ pub fn suggestions(s: &Settings) -> bool {
     s.other.get("suggestions").and_then(|v| v.as_bool()).unwrap_or(true)
 }
 
+/// Whether a notice is shown when a long run finishes, and after how many seconds a run counts
+/// as long.
+pub fn notify(s: &Settings) -> Option<f64> {
+    let on = s.other.get("notify").and_then(|v| v.as_bool()).unwrap_or(false);
+    on.then(|| s.other.get("notify_after").and_then(|v| v.as_f64()).unwrap_or(30.0).max(0.0))
+}
+
+/// Whether motion is kept to a minimum: no running dots on the wires, no glide when the view
+/// moves.
+pub fn reduce_motion(s: &Settings) -> bool {
+    s.other.get("reduce_motion").and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
+/// How large the whole program is drawn, 1 as it is made.
+pub fn ui_scale(s: &Settings) -> f32 {
+    s.other.get("ui_scale").and_then(|v| v.as_f64()).map_or(1.0, |v| v as f32).clamp(0.5, 3.0)
+}
+
 const MAP_KINDS: &[(&str, &str)] = &[("xyz", "Tiles: an address with {z}/{x}/{y}"), ("wms", "WMS"), ("wmts", "WMTS")];
 const MAP_LOGINS: &[(&str, &str)] =
     &[("", "None"), ("basic", "A user and a password"), ("key_query", "A key in the address"), ("key_header", "A key in a header")];
@@ -173,6 +191,44 @@ impl SettingsWindow {
             ui.label(RichText::new("features of every input").color(pal.muted));
         });
         ui.label(RichText::new("Model → Trial run, or Ctrl+Shift+F5, to try a model out quickly on large data.").small().color(pal.muted));
+        ui.add_space(10.0);
+        let mut on = notify(settings).is_some();
+        ui.horizontal(|ui| {
+            if ui
+                .checkbox(&mut on, "Tell me when a run that took longer than")
+                .on_hover_text("A notice from Windows, and the button of the program in the taskbar flashes, so that you can do something else meanwhile")
+                .changed()
+            {
+                settings.other.insert("notify".into(), serde_json::json!(on));
+                changed = true;
+            }
+            let mut secs = settings.other.get("notify_after").and_then(|v| v.as_f64()).unwrap_or(30.0);
+            if ui.add_enabled(on, egui::DragValue::new(&mut secs).range(0.0..=86_400.0).speed(1.0)).changed() {
+                settings.other.insert("notify_after".into(), serde_json::json!(secs));
+                changed = true;
+            }
+            ui.label(RichText::new("seconds has finished").color(pal.muted));
+        });
+        ui.add_space(10.0);
+        ui.label(RichText::new("Accessibility").font(theme::strong(13.0)).color(pal.ink));
+        let mut calm = reduce_motion(settings);
+        if ui
+            .checkbox(&mut calm, "Reduce motion")
+            .on_hover_text("No moving dots on the wires while a model runs, and the view jumps instead of gliding")
+            .changed()
+        {
+            settings.other.insert("reduce_motion".into(), serde_json::json!(calm));
+            changed = true;
+        }
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Size of everything").color(pal.muted));
+            let mut pct = (ui_scale(settings) * 100.0).round() as i32;
+            if ui.add(egui::DragValue::new(&mut pct).range(50..=300).speed(1.0).suffix(" %")).changed() {
+                settings.other.insert("ui_scale".into(), serde_json::json!(pct as f64 / 100.0));
+                changed = true;
+            }
+            ui.label(RichText::new("Ctrl and + or −, Ctrl+0 back to 100 %").small().color(pal.muted));
+        });
         changed
     }
 

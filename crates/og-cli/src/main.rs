@@ -461,6 +461,9 @@ fn run_model_inner(file: &Path, opts: &mut RunArgs, started: chrono::NaiveDateTi
         if let Err(e) = og_engine::history::record(file, &run) {
             eprintln!("WARN  {}", e);
         }
+        if let Err(e) = og_engine::history::record_lineage(file, &ws, &result, &run) {
+            eprintln!("WARN  {}", e);
+        }
     }
     if result.errors > 0 {
         Outcome::Errors

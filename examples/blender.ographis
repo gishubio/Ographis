@@ -1,0 +1,33 @@
+{
+  "format": "ographis/1",
+  "name": "To Blender",
+  "description": "The made-up terrain with its shaded relief draped over it, and the blocks raised on it, as glTF files for Blender: the blocks named by their id, grouped and given materials by their number of floors, with a sun on a midsummer afternoon and a camera. Import them in Blender with File > Import > glTF 2.0; Both are written around the same origin, so that they fit together; BlenderGIS reads where they lie.",
+  "nodes": [
+    {"id": "dem", "type": "Reader", "name": "Terrain model", "x": 20, "y": 20,
+     "params": {"path": "terrain.tif", "raster_as": "grid", "within": "rectangle",
+                "min_x": "417800", "min_y": "6472100", "max_x": "418800", "max_y": "6473000"}},
+    {"id": "blocks", "type": "Reader", "name": "Footprints", "x": 20, "y": 240,
+     "params": {"path": "blocks.geojson"}},
+    {"id": "shade", "type": "TerrainShader", "name": "Shaded relief", "x": 280, "y": 20,
+     "params": {"exaggeration": "2", "haze": "20"}},
+    {"id": "model", "type": "TerrainModel", "name": "Terrain as a 3D model", "x": 540, "y": 20,
+     "params": {"most": "300", "base": "block", "texture_most": "2048"}},
+    {"id": "raise", "type": "Extruder", "name": "Blocks on the terrain", "x": 280, "y": 240,
+     "params": {"height": "floors * 3.2", "base": "terrain", "name": "id"}},
+    {"id": "terrain_glb", "type": "Writer", "name": "Terrain for Blender", "x": 800, "y": 20,
+     "params": {"path": "out/blender_terrain.glb", "gltf_origin": "418300, 6472550, 0"}},
+    {"id": "blocks_glb", "type": "Writer", "name": "Blocks for Blender", "x": 540, "y": 240,
+     "params": {"path": "out/blender_blocks.glb", "gltf_origin": "418300, 6472550, 0", "gltf_name": "'Block ' || id",
+                "gltf_group": "floors || ' floors'", "gltf_material": "if(floors > 3, 'render', 'brick')",
+                "gltf_sun": "both", "gltf_when": "2026-06-21 17:00"}}
+  ],
+  "edges": [
+    {"from": ["dem", "Output"], "to": ["shade", "Heights"]},
+    {"from": ["dem", "Output"], "to": ["model", "Heights"]},
+    {"from": ["shade", "Image"], "to": ["model", "Picture"]},
+    {"from": ["model", "Model"], "to": ["terrain_glb", "Input"]},
+    {"from": ["blocks", "Output"], "to": ["raise", "Input"]},
+    {"from": ["dem", "Output"], "to": ["raise", "Terrain"]},
+    {"from": ["raise", "Output"], "to": ["blocks_glb", "Input"]}
+  ]
+}

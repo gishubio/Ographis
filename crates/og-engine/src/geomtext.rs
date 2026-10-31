@@ -32,6 +32,12 @@ pub enum Kind {
     /// Google's encoded polyline, as OpenTripPlanner, OSRM and Valhalla give routes, with
     /// 5 decimals or, as polyline6, with 6.
     Polyline(u32),
+    /// HERE's flexible polyline, with its precision and a third dimension in its header: a
+    /// line, or an area when `true`, as the outline of an isoline.
+    FlexPolyline(bool),
+    /// A JSON list of points, as objects with latitude and longitude (TomTom) or as
+    /// [longitude, latitude]: a line, or an area when `true`.
+    PointList(bool),
 }
 
 /// An encoded polyline as longitude and latitude.
@@ -68,6 +74,87 @@ pub fn decode_polyline(text: &str, decimals: u32) -> Result<Vec<Coord<f64>>> {
     Ok(out)
 }
 
+/// HERE's flexible polyline as longitude, latitude and the third dimension (NaN without):
+/// <https://github.com/heremaps/flexible-polyline>.
+pub fn decode_flexpolyline(text: &str) -> Result<Vec<C>> {
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let bytes = text.trim().as_bytes();
+    let mut i = 0usize;
+    let mut next = || -> Result<Option<u64>> {
+        if i >= bytes.len() {
+            return Ok(None);
+        }
+        let (mut shift, mut result) = (0u32, 0u64);
+        loop {
+            let Some(&b) = bytes.get(i) else { return err("The flexible polyline ends in the middle of a number.") };
+            let v = TABLE.iter().position(|c| *c == b).ok_or_else(|| GbError(format!("\"{}\" does not belong in a flexible polyline.", b as char)))? as u64;
+            i += 1;
+            result |= (v & 0x1f) << shift;
+            if v & 0x20 == 0 {
+                return Ok(Some(result));
+            }
+            shift += 5;
+            if shift > 60 {
+                return err("The flexible polyline has a number that is too long.");
+            }
+        }
+    };
+    let version = next()?.ok_or_else(|| GbError("The flexible polyline is empty.".into()))?;
+    if version != 1 {
+        return err(format!("The flexible polyline is of version {}, and only version 1 is known.", version));
+    }
+    let header = next()?.ok_or_else(|| GbError("The flexible polyline has no header.".into()))?;
+    let precision = (header & 15) as i32;
+    let third = (header >> 4) & 7;
+    let third_precision = ((header >> 7) & 15) as i32;
+    let signed = |v: u64| -> i64 {
+        if v & 1 == 1 {
+            !((v >> 1) as i64)
+        } else {
+            (v >> 1) as i64
+        }
+    };
+    let (f, fz) = (10f64.powi(precision), 10f64.powi(third_precision));
+    let (mut lat, mut lon, mut z) = (0i64, 0i64, 0i64);
+    let mut out = Vec::new();
+    while let Some(a) = next()? {
+        lat += signed(a);
+        lon += signed(next()?.ok_or_else(|| GbError("The flexible polyline ends after a latitude.".into()))?);
+        let h = if third != 0 {
+            z += signed(next()?.ok_or_else(|| GbError("The flexible polyline ends before a third value.".into()))?);
+            z as f64 / fz
+        } else {
+            f64::NAN
+        };
+        out.push([lon as f64 / f, lat as f64 / f, h]);
+    }
+    Ok(out)
+}
+
+/// A JSON list of points: objects with latitude and longitude, lat and lon or lng, or arrays
+/// of longitude and latitude, with a height as the third number or height, if any.
+pub fn point_list(text: &str) -> Result<Vec<C>> {
+    let v: Json = serde_json::from_str(text.trim()).map_err(|e| GbError(format!("This is not JSON: {}", e)))?;
+    let items = v.as_array().ok_or_else(|| GbError("This is not a list of points.".into()))?;
+    let num = |o: &serde_json::Map<String, Json>, keys: &[&str]| {
+        keys.iter().find_map(|k| o.get(*k).and_then(|x| x.as_f64().or_else(|| x.as_str().and_then(|s| s.parse().ok()))))
+    };
+    items
+        .iter()
+        .map(|it| match it {
+            Json::Object(o) => match (num(o, &["longitude", "lon", "lng", "x"]), num(o, &["latitude", "lat", "y"])) {
+                (Some(x), Some(y)) => Ok([x, y, num(o, &["height", "elevation", "z"]).unwrap_or(f64::NAN)]),
+                _ => err("A point of the list has no latitude and longitude."),
+            },
+            Json::Array(a) if a.len() >= 2 => match (a[0].as_f64(), a[1].as_f64()) {
+                (Some(x), Some(y)) => Ok([x, y, a.get(2).and_then(|h| h.as_f64()).unwrap_or(f64::NAN)]),
+                _ => err("A point of the list is not two numbers."),
+            },
+            _ => err("A point of the list is neither an object nor a pair of numbers."),
+        })
+        .collect()
+}
+
 /// Geometry from text, with the heights if it has any, and the coordinate system if the text
 /// says. `kind` None looks at the text to know.
 pub fn parse(text: &str, kind: Option<Kind>) -> Result<Parsed> {
@@ -75,16 +162,19 @@ pub fn parse(text: &str, kind: Option<Kind>) -> Result<Parsed> {
     if t.is_empty() {
         return err("The text is empty.");
     }
-    let kind = kind.unwrap_or(if t.starts_with('{') {
-        let v: Json = serde_json::from_str(t).map_err(|e| GbError(format!("This is not JSON: {}", e)))?;
-        if v.get("type").is_some() {
-            Kind::GeoJson
-        } else {
-            Kind::EsriJson
+    // Looked at only when no kind is given: an encoded polyline may well begin with {.
+    let kind = match kind {
+        Some(k) => k,
+        None if t.starts_with('{') => {
+            let v: Json = serde_json::from_str(t).map_err(|e| GbError(format!("This is not JSON: {}", e)))?;
+            if v.get("type").is_some() {
+                Kind::GeoJson
+            } else {
+                Kind::EsriJson
+            }
         }
-    } else {
-        Kind::Wkt
-    });
+        None => Kind::Wkt,
+    };
     let (shape, crs) = match kind {
         Kind::Polyline(d) => {
             let cs = decode_polyline(t, d)?;
@@ -92,6 +182,26 @@ pub fn parse(text: &str, kind: Option<Kind>) -> Result<Parsed> {
                 0 => return err("The encoded polyline is empty."),
                 1 => Shape::Point([cs[0].x, cs[0].y, f64::NAN]),
                 _ => Shape::Line(cs.iter().map(|c| [c.x, c.y, f64::NAN]).collect()),
+            };
+            (shape, Some(4326))
+        }
+        Kind::FlexPolyline(area) => {
+            let cs = decode_flexpolyline(t)?;
+            let shape = match cs.len() {
+                0 => return err("The flexible polyline is empty."),
+                1 => Shape::Point(cs[0]),
+                n if area && n >= 3 => Shape::Polygon(vec![cs]),
+                _ => Shape::Line(cs),
+            };
+            (shape, Some(4326))
+        }
+        Kind::PointList(area) => {
+            let cs = point_list(t)?;
+            let shape = match cs.len() {
+                0 => return err("The list of points is empty."),
+                1 => Shape::Point(cs[0]),
+                n if area && n >= 3 => Shape::Polygon(vec![cs]),
+                _ => Shape::Line(cs),
             };
             (shape, Some(4326))
         }
@@ -451,6 +561,27 @@ mod polyline_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_polyline_that_begins_with_a_brace_is_not_taken_for_json() {
+        let (g, _, _) = parse("{hj_JkgpgAoKgE", Some(Kind::Polyline(5))).unwrap();
+        assert!(matches!(g, Geometry::LineString(_)));
+    }
+
+    #[test]
+    fn heres_flexible_polyline_and_tomtoms_list_of_points() {
+        // The example of the specification.
+        let cs = decode_flexpolyline("BFoz5xJ67i1B1B7PzIhaxL7Y").unwrap();
+        let want = [(50.10228, 8.69821), (50.10201, 8.69567), (50.10063, 8.69150), (50.09878, 8.68752)];
+        assert_eq!(cs.len(), 4);
+        for (c, w) in cs.iter().zip(want) {
+            assert!((c[1] - w.0).abs() < 1e-9 && (c[0] - w.1).abs() < 1e-9, "{:?}", c);
+        }
+        let (g, _, crs) = parse(r#"[{"latitude": 57.7, "longitude": 11.9}, {"latitude": 57.71, "longitude": 11.95}]"#, Some(Kind::PointList(false))).unwrap();
+        assert!(matches!(g, Geometry::LineString(ref l) if l.0[1].x == 11.95) && crs == Some(4326));
+        let (g, _, _) = parse("[[11.9, 57.7], [11.95, 57.7], [11.95, 57.75]]", Some(Kind::PointList(true))).unwrap();
+        assert!(matches!(g, Geometry::Polygon(ref p) if p.exterior().0.len() == 4));
+    }
     use geo::Area;
 
     #[test]

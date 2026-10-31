@@ -137,6 +137,130 @@ impl Run {
     }
 }
 
+/// A fingerprint of the bytes of a file (FNV-1a, 64 bits): the same file gives the same
+/// text, so that one can tell whether a model or a source has changed between runs.
+pub fn fingerprint(path: &Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    Some(format!("{:016x}", h))
+}
+
+/// A file as the lineage tells it: where, how large and when it was last changed.
+fn file_json(path: &Path, fingerprint_it: bool) -> serde_json::Value {
+    let meta = std::fs::metadata(path).ok();
+    let modified = meta.as_ref().and_then(|m| m.modified().ok()).map(|t| chrono::DateTime::<chrono::Local>::from(t).format("%Y-%m-%d %H:%M:%S").to_string());
+    let mut j = serde_json::json!({ "path": path.display().to_string(), "bytes": meta.as_ref().map(|m| m.len()), "modified": modified });
+    // Small files are fingerprinted, so that a change of their content shows.
+    if fingerprint_it && meta.as_ref().is_some_and(|m| m.is_file() && m.len() <= 200 * 1024 * 1024) {
+        j["fingerprint"] = serde_json::json!(fingerprint(path));
+    }
+    j
+}
+
+/// An address without what follows ?, where keys are often written.
+fn plain_address(a: &str) -> String {
+    a.split(['?', '#']).next().unwrap_or(a).to_string()
+}
+
+/// Where the data of a run came from and where it went: the model and its fingerprint, each
+/// input with its files, addresses or tables and how many features it gave, each output with
+/// the files or tables it wrote, and the order the nodes ran in. No passwords or keys.
+pub fn lineage(model: &Path, ws: &crate::run::Workspace, result: &RunResult, run: &Run) -> serde_json::Value {
+    use crate::nodes::{node_type, Group};
+    let mut sources = Vec::new();
+    let mut outputs = Vec::new();
+    let text = |n: &crate::run::Node, k: &str| n.params.get(k).and_then(|v| v.as_str()).filter(|v| !v.trim().is_empty()).map(str::to_string);
+    for id in &result.order {
+        let (Some(n), Some(r)) = (ws.nodes.iter().find(|n| &n.id == id), result.nodes.get(id)) else { continue };
+        let group = node_type(&n.kind).map(|t| t.group);
+        let mut j = serde_json::json!({ "node": n.label(), "id": n.id, "tool": n.kind });
+        if let Some(c) = text(n, "connection") {
+            j["connection"] = serde_json::json!(c);
+        }
+        for k in ["database", "schema", "table", "layer"] {
+            if let Some(v) = text(n, k) {
+                j[k] = serde_json::json!(v);
+            }
+        }
+        if !r.sources.is_empty() || group == Some(Group::Reader) {
+            if let Some(path) = text(n, "path").filter(|p| p.contains("://")) {
+                j["address"] = serde_json::json!(plain_address(&path));
+            }
+            if !r.sources.is_empty() {
+                j["files"] =
+                    serde_json::json!(r.sources.iter().filter(|s| !s.to_string_lossy().contains("://")).map(|s| file_json(s, true)).collect::<Vec<_>>());
+            }
+            j["features"] = serde_json::json!(r.outputs.values().map(|t| t.len()).sum::<usize>());
+            sources.push(j);
+        } else if !r.files.is_empty() || group == Some(Group::Writer) {
+            j["files"] = serde_json::json!(r.files.iter().map(|s| file_json(s, false)).collect::<Vec<_>>());
+            j["features"] = serde_json::json!(r.inputs.values().map(|t| t.len()).sum::<usize>());
+            // What it was made from: the nodes upstream of it.
+            let mut from: Vec<String> = Vec::new();
+            let mut stack = vec![n.id.clone()];
+            while let Some(at) = stack.pop() {
+                for e in ws.edges.iter().filter(|e| e.to.0 == at) {
+                    if !from.contains(&e.from.0) {
+                        from.push(e.from.0.clone());
+                        stack.push(e.from.0.clone());
+                    }
+                }
+            }
+            let inputs: Vec<String> = from
+                .iter()
+                .filter_map(|f| ws.nodes.iter().find(|x| &x.id == f))
+                .filter(|x| node_type(&x.kind).map(|t| t.group) == Some(Group::Reader))
+                .map(|x| x.label().to_string())
+                .collect();
+            j["from_inputs"] = serde_json::json!(inputs);
+            if let Some(e) = &r.error {
+                j["error"] = serde_json::json!(e);
+            }
+            outputs.push(j);
+        }
+    }
+    let steps: Vec<serde_json::Value> = result
+        .order
+        .iter()
+        .filter_map(|id| ws.nodes.iter().find(|n| &n.id == id))
+        .map(|n| serde_json::json!({ "id": n.id, "node": n.label(), "tool": n.kind, "status": result.nodes.get(&n.id).map(|r| format!("{:?}", r.status).to_lowercase()) }))
+        .collect();
+    let vars: Vec<serde_json::Value> = ws
+        .variables
+        .iter()
+        .map(|v| serde_json::json!({ "name": v.name, "value": if crate::run::is_secret(&v.name) { "…".to_string() } else { v.value.clone() } }))
+        .collect();
+    serde_json::json!({
+        "model": file_json(model, true),
+        "ographis": env!("CARGO_PKG_VERSION"),
+        "started": run.started,
+        "seconds": run.seconds,
+        "outcome": run.outcome,
+        "by": run.by,
+        "user": run.user,
+        "computer": run.computer,
+        "variables": vars,
+        "sources": sources,
+        "outputs": outputs,
+        "steps": steps,
+    })
+}
+
+/// Keeps the lineage of a run in the folder lineage beside the history, named by when the
+/// run started. Gives the file.
+pub fn record_lineage(model: &Path, ws: &crate::run::Workspace, result: &RunResult, run: &Run) -> Result<PathBuf> {
+    let dir = runs_dir(model).join("lineage");
+    std::fs::create_dir_all(&dir).map_err(|e| GbError(format!("Cannot keep the lineage in {}: {}", dir.display(), e)))?;
+    let file = dir.join(format!("{}.json", run.started.replace([':', ' '], "-")));
+    let text = serde_json::to_string_pretty(&lineage(model, ws, result, run)).map_err(|e| GbError(e.to_string()))?;
+    std::fs::write(&file, text).map_err(|e| GbError(format!("Cannot write {}: {}", file.display(), e)))?;
+    Ok(file)
+}
+
 /// Adds a run to the history of a model, a CSV file that a spreadsheet can open.
 pub fn record(model: &Path, run: &Run) -> Result<()> {
     let dir = runs_dir(model);
@@ -175,13 +299,12 @@ pub fn log_file(model: &Path, started: chrono::NaiveDateTime) -> PathBuf {
 
 /// Removes the logs older than so many days. Gives how many were removed.
 pub fn clean_logs(model: &Path, keep_days: u32) -> usize {
-    let dir = runs_dir(model).join("logs");
-    let Ok(entries) = std::fs::read_dir(&dir) else { return 0 };
     let limit = std::time::Duration::from_secs(keep_days as u64 * 86_400);
     let mut removed = 0;
-    for e in entries.flatten() {
+    let entries = ["logs", "lineage"].iter().filter_map(|d| std::fs::read_dir(runs_dir(model).join(d)).ok()).flat_map(|d| d.flatten());
+    for e in entries {
         let p = e.path();
-        if p.extension().is_some_and(|x| x == "log") {
+        if p.extension().is_some_and(|x| x == "log" || x == "json") {
             let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > limit);
             if old && std::fs::remove_file(&p).is_ok() {
                 removed += 1;
@@ -344,6 +467,32 @@ mod tests {
         std::fs::write(&log, "x").unwrap();
         assert_eq!(clean_logs(&model, 30), 0, "just written");
         assert_eq!(clean_logs(&model, 0), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_lineage_tells_where_the_data_came_from_and_went() {
+        let dir = std::env::temp_dir().join(format!("og_lineage_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("towns.csv"), "name;x;y\nA;1;2\n").unwrap();
+        let model = dir.join("m.ographis");
+        let json = r#"{"nodes": [
+            {"id": "in", "type": "Reader", "params": {"path": "towns.csv", "x": "x", "y": "y", "crs": "EPSG:3006"}},
+            {"id": "out", "type": "Writer", "params": {"path": "out.csv"}}],
+            "edges": [{"from": ["in", "Output"], "to": ["out", "Input"]}],
+            "variables": [{"name": "password", "value": "hemligt"}]}"#;
+        std::fs::write(&model, json).unwrap();
+        let ws = crate::run::Workspace::load(&model).unwrap();
+        let result = crate::run::run(&ws, None, &dir);
+        let run = Run::of(&result, chrono::Local::now().naive_local(), "og", false);
+        let file = record_lineage(&model, &ws, &result, &run).unwrap();
+        let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(j["sources"][0]["features"], serde_json::json!(1));
+        assert!(j["sources"][0]["files"][0]["fingerprint"].is_string());
+        assert_eq!(j["outputs"][0]["from_inputs"], serde_json::json!(["Input"]));
+        assert!(j["outputs"][0]["files"][0]["path"].as_str().unwrap().ends_with("out.csv"));
+        assert!(j["model"]["fingerprint"].is_string());
+        assert!(!std::fs::read_to_string(&file).unwrap().contains("hemligt"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1,0 +1,698 @@
+{
+  "format": "ographis/1",
+  "name": "HERE: geocoding, routes, isolines and places",
+  "description": "Four of the APIs of HERE: addresses geocoded, car routes with alternatives and the delay of the traffic, the areas reached in 10, 20 and 30 minutes, and pharmacies near a point, written to a GeoPackage and drawn on a map. Needs a key from HERE, under Settings → API connections as HERE.",
+  "variables": [
+    {
+      "name": "from",
+      "value": "57.7069,11.9698"
+    },
+    {
+      "name": "to",
+      "value": "57.6955,11.9920"
+    },
+    {
+      "name": "departure",
+      "value": "2026-11-04T06:30:00Z"
+    },
+    {
+      "name": "search",
+      "value": "apotek"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "addr",
+      "type": "Reader",
+      "name": "Addresses",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "addresses.csv"
+      }
+    },
+    {
+      "id": "geocode",
+      "type": "HttpCaller",
+      "name": "Geocode with HERE",
+      "x": 280,
+      "y": 20,
+      "comment": "Geocoding and Search API v7: the best match for each address in Sweden. The key is under Settings → API connections as HERE, of the kind 'A key only where {{key}} is written'. Get one at platform.here.com",
+      "params": {
+        "url": "'https://geocode.search.hereapi.com/v1/geocode?q=' || replace(address, ' ', '+') || '&in=countryCode:SWE&limit=1&lang=sv&apiKey={{key}}'",
+        "connection": "HERE",
+        "per_second": "5",
+        "cache": "disk",
+        "timeout": "30"
+      }
+    },
+    {
+      "id": "geo_take",
+      "type": "JsonExtractor",
+      "name": "Place and score",
+      "x": 540,
+      "y": 20,
+      "params": {
+        "attribute": "_response",
+        "paths": [
+          [
+            "items[0].position.lat",
+            "lat"
+          ],
+          [
+            "items[0].position.lng",
+            "lon"
+          ],
+          [
+            "items[0].title",
+            "found"
+          ],
+          [
+            "items[0].resultType",
+            "result_type"
+          ],
+          [
+            "items[0].scoring.queryScore",
+            "score"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "geo_pts",
+      "type": "PointCreator",
+      "name": "As points",
+      "x": 800,
+      "y": 20,
+      "params": {
+        "x": "lon",
+        "y": "lat",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "geo_keep",
+      "type": "AttributeKeeper",
+      "name": "The useful attributes",
+      "x": 1060,
+      "y": 20,
+      "params": {
+        "keep": "address, found, result_type, score"
+      }
+    },
+    {
+      "id": "geo_out",
+      "type": "Writer",
+      "name": "Geocoded",
+      "x": 1320,
+      "y": 20,
+      "params": {
+        "path": "out/here.gpkg",
+        "layer": "geocoded"
+      }
+    },
+    {
+      "id": "route",
+      "type": "HttpCaller",
+      "name": "Car routes",
+      "x": 20,
+      "y": 220,
+      "comment": "Routing API v8: by car from Drottningtorget to Liseberg on Wednesday morning, with two alternatives, the traffic of that time and the route as a flexible polyline. One request, as nothing comes in",
+      "params": {
+        "url": "'https://router.hereapi.com/v8/routes?transportMode=car&origin=$(from)&destination=$(to)&departureTime=$(departure)&alternatives=2&return=polyline,summary&apiKey={{key}}'",
+        "connection": "HERE",
+        "cache": "disk",
+        "timeout": "30"
+      }
+    },
+    {
+      "id": "routes",
+      "type": "JsonExploder",
+      "name": "A feature per route",
+      "x": 280,
+      "y": 220,
+      "params": {
+        "attribute": "_response",
+        "path": "routes",
+        "prefix": "route",
+        "index_attr": "alternative"
+      }
+    },
+    {
+      "id": "sections",
+      "type": "JsonExploder",
+      "name": "A feature per section",
+      "x": 540,
+      "y": 220,
+      "params": {
+        "attribute": "route.sections",
+        "path": "",
+        "prefix": "sec"
+      }
+    },
+    {
+      "id": "route_geom",
+      "type": "GeometryFromText",
+      "name": "Section as a line",
+      "x": 800,
+      "y": 220,
+      "comment": "HERE writes its lines as flexible polylines",
+      "params": {
+        "attribute": "sec.polyline",
+        "kind": "flexpolyline",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "route_attrs",
+      "type": "AttributeManager",
+      "name": "Minutes, km and delay",
+      "x": 1060,
+      "y": 220,
+      "params": {
+        "attributes": [],
+        "create": [
+          {
+            "name": "minutes",
+            "value": "round(\"sec.summary.duration\" / 60, 1)"
+          },
+          {
+            "name": "km",
+            "value": "round(\"sec.summary.length\" / 1000, 1)"
+          },
+          {
+            "name": "delay_minutes",
+            "value": "round((\"sec.summary.duration\" - \"sec.summary.baseDuration\") / 60, 1)"
+          },
+          {
+            "name": "leaves",
+            "value": "\"sec.departure.time\""
+          },
+          {
+            "name": "arrives",
+            "value": "\"sec.arrival.time\""
+          }
+        ]
+      }
+    },
+    {
+      "id": "route_keep",
+      "type": "AttributeKeeper",
+      "name": "The useful attributes",
+      "x": 1320,
+      "y": 220,
+      "params": {
+        "keep": "alternative, minutes, km, delay_minutes, leaves, arrives"
+      }
+    },
+    {
+      "id": "route_out",
+      "type": "Writer",
+      "name": "Routes",
+      "x": 1580,
+      "y": 220,
+      "params": {
+        "path": "out/here.gpkg",
+        "layer": "routes"
+      }
+    },
+    {
+      "id": "iso",
+      "type": "HttpCaller",
+      "name": "Reached by car in 10, 20 and 30 minutes",
+      "x": 20,
+      "y": 420,
+      "comment": "Isoline Routing API v8: the areas reached from Drottningtorget within 10, 20 and 30 minutes by car, in the traffic of Wednesday morning",
+      "params": {
+        "url": "'https://isoline.router.hereapi.com/v8/isolines?transportMode=car&origin=$(from)&departureTime=$(departure)&range[type]=time&range[values]=600,1200,1800&apiKey={{key}}'",
+        "connection": "HERE",
+        "cache": "disk",
+        "timeout": "30"
+      }
+    },
+    {
+      "id": "isolines",
+      "type": "JsonExploder",
+      "name": "A feature per range",
+      "x": 280,
+      "y": 420,
+      "params": {
+        "attribute": "_response",
+        "path": "isolines",
+        "prefix": "iso"
+      }
+    },
+    {
+      "id": "iso_polys",
+      "type": "JsonExploder",
+      "name": "A feature per polygon",
+      "x": 540,
+      "y": 420,
+      "params": {
+        "attribute": "iso.polygons",
+        "path": "",
+        "prefix": "poly"
+      }
+    },
+    {
+      "id": "iso_geom",
+      "type": "GeometryFromText",
+      "name": "Outline as an area",
+      "x": 800,
+      "y": 420,
+      "params": {
+        "attribute": "poly.outer",
+        "kind": "flexpolyline_area",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "iso_attrs",
+      "type": "AttributeManager",
+      "name": "Minutes",
+      "x": 1060,
+      "y": 420,
+      "params": {
+        "attributes": [],
+        "create": [
+          {
+            "name": "minutes",
+            "value": "\"iso.range.value\" / 60"
+          }
+        ]
+      }
+    },
+    {
+      "id": "iso_keep",
+      "type": "AttributeKeeper",
+      "name": "The useful attributes",
+      "x": 1320,
+      "y": 420,
+      "params": {
+        "keep": "minutes"
+      }
+    },
+    {
+      "id": "iso_sort",
+      "type": "Sorter",
+      "name": "Largest first",
+      "x": 1580,
+      "y": 420,
+      "comment": "So that the smaller areas are drawn on top",
+      "params": {
+        "sort_keys": [
+          [
+            "minutes",
+            "descending"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "iso_out",
+      "type": "Writer",
+      "name": "Isolines",
+      "x": 1840,
+      "y": 420,
+      "params": {
+        "path": "out/here.gpkg",
+        "layer": "isolines"
+      }
+    },
+    {
+      "id": "disc",
+      "type": "HttpCaller",
+      "name": "Pharmacies nearby",
+      "x": 20,
+      "y": 620,
+      "comment": "Discover in the Geocoding and Search API: places that match a text near a point, here pharmacies (apotek) around Drottningtorget",
+      "params": {
+        "url": "'https://discover.search.hereapi.com/v1/discover?at=$(from)&q=$(search)&limit=50&lang=sv&apiKey={{key}}'",
+        "connection": "HERE",
+        "cache": "disk",
+        "timeout": "30"
+      }
+    },
+    {
+      "id": "places",
+      "type": "JsonExploder",
+      "name": "A feature per place",
+      "x": 280,
+      "y": 620,
+      "params": {
+        "attribute": "_response",
+        "path": "items",
+        "prefix": "item"
+      }
+    },
+    {
+      "id": "place_pts",
+      "type": "PointCreator",
+      "name": "As points",
+      "x": 540,
+      "y": 620,
+      "params": {
+        "x": "item.position.lng",
+        "y": "item.position.lat",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "place_keep",
+      "type": "AttributeKeeper",
+      "name": "The useful attributes",
+      "x": 800,
+      "y": 620,
+      "params": {
+        "keep": "item.title, item.address.label, item.distance, item.categories"
+      }
+    },
+    {
+      "id": "place_out",
+      "type": "Writer",
+      "name": "Places",
+      "x": 1060,
+      "y": 620,
+      "params": {
+        "path": "out/here.gpkg",
+        "layer": "places"
+      }
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "name": "Map of it all",
+      "x": 2100,
+      "y": 320,
+      "params": {
+        "width": "1600",
+        "crs": "EPSG:3006",
+        "background": "#f4f1ea",
+        "legend": "bottom-right",
+        "legend_title": "HERE, from Drottningtorget",
+        "layers": [
+          {
+            "from": "place_keep:Output",
+            "name": "Pharmacies",
+            "fill": "#2ca25f",
+            "stroke": "#ffffff",
+            "width": 1.0,
+            "size": 8
+          },
+          {
+            "from": "route_keep:Output",
+            "name": "Car routes",
+            "fill": "none",
+            "stroke": "#d7191c",
+            "width": 3.0,
+            "size": 4
+          },
+          {
+            "from": "iso_sort:Sorted",
+            "name": "Reached by car",
+            "fill": "#2a78d6",
+            "stroke": "#ffffff",
+            "width": 1.0,
+            "size": 4,
+            "color_by": "minutes",
+            "ramp": "blues",
+            "classes": 3,
+            "method": "quantile"
+          }
+        ]
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "name": "Map as PNG",
+      "x": 2360,
+      "y": 320,
+      "params": {
+        "path": "out/here.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "addr",
+        "Output"
+      ],
+      "to": [
+        "geocode",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "geocode",
+        "Output"
+      ],
+      "to": [
+        "geo_take",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "geo_take",
+        "Output"
+      ],
+      "to": [
+        "geo_pts",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "geo_pts",
+        "Points"
+      ],
+      "to": [
+        "geo_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "geo_keep",
+        "Output"
+      ],
+      "to": [
+        "geo_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "route",
+        "Output"
+      ],
+      "to": [
+        "routes",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "routes",
+        "Exploded"
+      ],
+      "to": [
+        "sections",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "sections",
+        "Exploded"
+      ],
+      "to": [
+        "route_geom",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "route_geom",
+        "Output"
+      ],
+      "to": [
+        "route_attrs",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "route_attrs",
+        "Output"
+      ],
+      "to": [
+        "route_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "route_keep",
+        "Output"
+      ],
+      "to": [
+        "route_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "iso",
+        "Output"
+      ],
+      "to": [
+        "isolines",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "isolines",
+        "Exploded"
+      ],
+      "to": [
+        "iso_polys",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "iso_polys",
+        "Exploded"
+      ],
+      "to": [
+        "iso_geom",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "iso_geom",
+        "Output"
+      ],
+      "to": [
+        "iso_attrs",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "iso_attrs",
+        "Output"
+      ],
+      "to": [
+        "iso_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "iso_keep",
+        "Output"
+      ],
+      "to": [
+        "iso_sort",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "iso_sort",
+        "Sorted"
+      ],
+      "to": [
+        "iso_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "disc",
+        "Output"
+      ],
+      "to": [
+        "places",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "places",
+        "Exploded"
+      ],
+      "to": [
+        "place_pts",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "place_pts",
+        "Points"
+      ],
+      "to": [
+        "place_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "place_keep",
+        "Output"
+      ],
+      "to": [
+        "place_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "place_keep",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "route_keep",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "iso_sort",
+        "Sorted"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    }
+  ]
+}

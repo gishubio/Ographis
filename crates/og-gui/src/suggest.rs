@@ -56,6 +56,111 @@ pub fn candidates(word: &str, fields: &[String], quote: &dyn Fn(&str) -> String)
     out.into_iter().map(|o| o.1).take(8).collect()
 }
 
+/// When the cursor is in a text being written after an attribute and =, <>, != or IN (…),
+/// such as kind = 'res|: the attribute, where the text begins (after the quote), and what
+/// is written of it so far.
+pub fn value_at(text: &str, cursor: usize) -> Option<(String, usize, String)> {
+    let chars: Vec<char> = text.chars().collect();
+    let end = cursor.min(chars.len());
+    // Inside a text: an odd number of quotes before the cursor.
+    let quotes: Vec<usize> = (0..end).filter(|i| chars[*i] == '\'').collect();
+    if quotes.len().is_multiple_of(2) {
+        return None;
+    }
+    let open = *quotes.last()?;
+    let partial: String = chars[open + 1..end].iter().collect();
+    // Back over spaces, then the operator; in a list of IN, over the texts before.
+    let mut i = open;
+    let skip_space = |i: &mut usize| {
+        while *i > 0 && chars[*i - 1].is_whitespace() {
+            *i -= 1;
+        }
+    };
+    skip_space(&mut i);
+    loop {
+        if i > 0 && chars[i - 1] == ',' {
+            // 'a', 'b', '|: back over the text before the comma.
+            i -= 1;
+            skip_space(&mut i);
+            if i == 0 || chars[i - 1] != '\'' {
+                return None;
+            }
+            i -= 1;
+            while i > 0 && chars[i - 1] != '\'' {
+                i -= 1;
+            }
+            if i == 0 {
+                return None;
+            }
+            i -= 1;
+            skip_space(&mut i);
+            continue;
+        }
+        break;
+    }
+    let before: String = chars[..i].iter().collect();
+    let lower = before.to_lowercase();
+    let rest = if let Some(r) = lower.strip_suffix('(') {
+        let r = r.trim_end();
+        let r = r.strip_suffix("in")?;
+        if r.ends_with(|c: char| c.is_alphanumeric() || c == '_') {
+            return None;
+        }
+        r.len()
+    } else if lower.ends_with("<>") || lower.ends_with("!=") {
+        lower.len() - 2
+    } else if lower.ends_with('=') {
+        lower.len() - 1
+    } else {
+        return None;
+    };
+    let head: Vec<char> = before.chars().take(rest).collect();
+    let mut j = head.len();
+    while j > 0 && head[j - 1].is_whitespace() {
+        j -= 1;
+    }
+    let attr: String = if j > 0 && head[j - 1] == '"' {
+        let close = j - 1;
+        let mut k = close;
+        while k > 0 && head[k - 1] != '"' {
+            k -= 1;
+        }
+        if k == 0 {
+            return None;
+        }
+        head[k..close].iter().collect()
+    } else {
+        let mut k = j;
+        while k > 0 && (head[k - 1].is_alphanumeric() || head[k - 1] == '_' || head[k - 1] == '.') {
+            k -= 1;
+        }
+        head[k..j].iter().collect()
+    };
+    (!attr.is_empty()).then_some((attr, open + 1, partial))
+}
+
+/// The values of an attribute that could finish a text: those that begin with what is
+/// written before those that only have it.
+pub fn value_candidates(partial: &str, values: &[String]) -> Vec<Suggestion> {
+    let w = partial.to_lowercase();
+    let mut out: Vec<(u8, Suggestion)> = values
+        .iter()
+        .filter_map(|v| {
+            let l = v.to_lowercase();
+            let rank = if l.starts_with(&w) {
+                0
+            } else if l.contains(&w) {
+                1
+            } else {
+                return None;
+            };
+            (l != w).then(|| (rank, Suggestion { insert: format!("{}'", v.replace('\'', "''")), shown: v.clone(), kind: "value" }))
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.shown.to_lowercase().cmp(&b.1.shown.to_lowercase())));
+    out.into_iter().map(|o| o.1).take(10).collect()
+}
+
 /// The text with the word at `start..cursor` replaced by `insert`, and where the cursor goes.
 pub fn accept(text: &str, start: usize, cursor: usize, insert: &str) -> (String, usize) {
     let chars: Vec<char> = text.chars().collect();
@@ -65,6 +170,7 @@ pub fn accept(text: &str, start: usize, cursor: usize, insert: &str) -> (String,
 }
 
 /// The field of an expression, with the list of suggestions under it while it is written.
+#[allow(clippy::too_many_arguments)]
 pub fn expression_field(
     ui: &mut Ui,
     pal: &Palette,
@@ -73,6 +179,7 @@ pub fn expression_field(
     on: bool,
     id: egui::Id,
     quote: &dyn Fn(&str) -> String,
+    values: &dyn Fn(&str) -> Vec<String>,
 ) -> egui::Response {
     let list_id = id.with("suggestions");
     // The list from the frame before: its keys are taken before the field sees them.
@@ -99,8 +206,16 @@ pub fn expression_field(
         return response;
     }
     let cursor = output.cursor_range.map(|r| r.primary.index.0).unwrap_or_else(|| value.chars().count());
-    let (start, word) = word_at(value, cursor);
-    let found = if close { Vec::new() } else { candidates(&word, fields, quote) };
+    // In a text after an attribute and =: its values in the data; otherwise attributes and
+    // functions.
+    let (start, found) = match value_at(value, cursor) {
+        Some((attr, start, partial)) if !close => (start, value_candidates(&partial, &values(&attr))),
+        Some((_, start, _)) => (start, Vec::new()),
+        None => {
+            let (start, word) = word_at(value, cursor);
+            (start, if close { Vec::new() } else { candidates(&word, fields, quote) })
+        }
+    };
     if found.is_empty() {
         ui.data_mut(|d| d.insert_temp(list_id, (false, 0usize)));
         return response;
@@ -143,6 +258,18 @@ pub fn expression_field(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn values_are_suggested_in_a_text_after_an_attribute() {
+        assert_eq!(value_at("kind = 'res", 11), Some(("kind".into(), 8, "res".into())));
+        assert_eq!(value_at("\"land use\" <> '", 15), Some(("land use".into(), 15, "".into())));
+        assert_eq!(value_at("kind IN ('a', 'b', 'c", 21), Some(("kind".into(), 20, "c".into())));
+        assert_eq!(value_at("kind = 'a' and x", 16), None);
+        assert_eq!(value_at("upper('ab", 9), None);
+        let v = value_candidates("re", &["residential".into(), "retail".into(), "forest".into(), "farmland reserve".into()]);
+        assert_eq!(v.iter().map(|s| s.shown.as_str()).collect::<Vec<_>>(), ["residential", "retail", "farmland reserve", "forest"]);
+        assert_eq!(value_candidates("", &["O'Brien".into()])[0].insert, "O''Brien'");
+    }
 
     #[test]
     fn the_word_at_the_cursor_is_finished() {

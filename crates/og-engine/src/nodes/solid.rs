@@ -48,7 +48,7 @@ const EXTRUDE_PARAMS: &[ParamSpec] = &[
 ];
 
 /// A colour parameter as sRGB from 0 to 1.
-fn colour_param(p: &P, key: &str, default: [f32; 3]) -> Result<[f32; 3]> {
+pub(super) fn colour_param(p: &P, key: &str, default: [f32; 3]) -> Result<[f32; 3]> {
     match p.get(key).filter(|v| !v.trim().is_empty()) {
         None => Ok(default),
         Some(v) => match crate::mapdraw::parse_color(&v) {

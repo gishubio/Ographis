@@ -182,14 +182,117 @@ fn value_of(f: &parquet::record::Field) -> Value {
 
 /// Reads a Parquet file: GeoParquet with its geometry and coordinate system, or a table.
 pub fn read_parquet(path: &Path, crs_given: Option<u32>, limit: Option<usize>, notes: &mut Notes, going: &dyn Fn(u64, Option<u64>) -> bool) -> Result<Table> {
-    use parquet::file::reader::{FileReader, SerializedFileReader};
+    read_parquet_within(path, crs_given, limit, &|_| Ok(None), notes, going)
+}
+
+/// A rectangle in the coordinate system of a file, from that system: None reads all.
+pub type RectFor<'a> = &'a dyn Fn(Option<u32>) -> Result<Option<[f64; 4]>>;
+
+/// Reads the rows of a Parquet file on this computer whose boxes may reach into a rectangle:
+/// only the row groups whose statistics say so are read.
+pub fn read_parquet_within(
+    path: &Path,
+    crs_given: Option<u32>,
+    limit: Option<usize>,
+    rect_for: RectFor,
+    notes: &mut Notes,
+    going: &dyn Fn(u64, Option<u64>) -> bool,
+) -> Result<Table> {
     let file = std::fs::File::open(path).map_err(|e| GbError(format!("Cannot read {}: {}", path.display(), e)))?;
-    let reader = SerializedFileReader::new(file).map_err(|e| GbError(format!("{} cannot be read as Parquet: {}", path.display(), e)))?;
+    read_parquet_from(file, &path.display().to_string(), crs_given, limit, rect_for, notes, going)
+}
+
+/// The "geo" metadata of GeoParquet in a file.
+pub fn geo_meta(meta: &parquet::file::metadata::FileMetaData) -> Option<serde_json::Value> {
+    meta.key_value_metadata().and_then(|kv| kv.iter().find(|k| k.key == "geo").and_then(|k| k.value.as_deref()).and_then(|v| serde_json::from_str(v).ok()))
+}
+
+/// The coordinate system of a GeoParquet file: WGS 84 when it says none, None when unknown.
+pub fn crs_of(meta: &parquet::file::metadata::FileMetaData) -> Option<u32> {
+    let g = geo_meta(meta)?;
+    let primary = g.get("primary_column").and_then(|v| v.as_str()).unwrap_or("geometry").to_string();
+    match g.get("columns").and_then(|c| c.get(&primary)).and_then(|c| c.as_object()).and_then(|o| o.get("crs")) {
+        None => Some(4326),
+        Some(serde_json::Value::Null) => None,
+        Some(c) => epsg_of(c),
+    }
+}
+
+/// A min or max of the statistics of a column, as a number.
+fn stat(s: &parquet::file::statistics::Statistics, max: bool) -> Option<f64> {
+    use parquet::file::statistics::Statistics as S;
+    match s {
+        S::Float(v) => (if max { v.max_opt() } else { v.min_opt() }).map(|x| *x as f64),
+        S::Double(v) => (if max { v.max_opt() } else { v.min_opt() }).copied(),
+        _ => None,
+    }
+}
+
+/// The row groups of a file that may reach into a rectangle (west, south, east, north), by
+/// the statistics of its box column: the covering of GeoParquet 1.1, or a column named bbox.
+/// Without them all the groups.
+pub fn groups_within(meta: &parquet::file::metadata::ParquetMetaData, rect: [f64; 4]) -> Vec<usize> {
+    let file_meta = meta.file_metadata();
+    let geo = geo_meta(file_meta);
+    let primary = geo.as_ref().and_then(|g| g.get("primary_column")?.as_str().map(str::to_string)).unwrap_or_else(|| "geometry".into());
+    let cover = geo
+        .as_ref()
+        .and_then(|g| g.get("columns")?.get(&primary)?.get("covering")?.get("bbox")?.get("xmin")?.get(0)?.as_str().map(str::to_string))
+        .unwrap_or_else(|| "bbox".into());
+    let schema = file_meta.schema_descr();
+    let col_of = |side: &str| (0..schema.num_columns()).find(|i| schema.column(*i).path().parts() == [cover.clone(), side.to_string()]);
+    let sides = [col_of("xmin"), col_of("ymin"), col_of("xmax"), col_of("ymax")];
+    (0..meta.num_row_groups())
+        .filter(|g| {
+            let rg = meta.row_group(*g);
+            match sides {
+                [Some(a), Some(b), Some(c), Some(d)] => {
+                    let s = |i: usize, max: bool| rg.column(i).statistics().and_then(|s| stat(s, max));
+                    match (s(a, false), s(b, false), s(c, true), s(d, true)) {
+                        (Some(x0), Some(y0), Some(x1), Some(y1)) => x0 <= rect[2] && x1 >= rect[0] && y0 <= rect[3] && y1 >= rect[1],
+                        _ => true,
+                    }
+                }
+                _ => true,
+            }
+        })
+        .collect()
+}
+
+/// Reads Parquet from a file or from the parts of one fetched from the web. With a
+/// rectangle, only the row groups that may reach into it.
+pub fn read_parquet_from<R: parquet::file::reader::ChunkReader + 'static>(
+    src: R,
+    name: &str,
+    crs_given: Option<u32>,
+    limit: Option<usize>,
+    rect_for: RectFor,
+    notes: &mut Notes,
+    going: &dyn Fn(u64, Option<u64>) -> bool,
+) -> Result<Table> {
+    use parquet::file::reader::{FileReader, SerializedFileReader};
+    let bad_file = |e: parquet::errors::ParquetError| GbError(format!("{} cannot be read as Parquet: {}", name, e));
+    let full = parquet::file::metadata::ParquetMetaDataReader::new().parse_and_finish(&src).map_err(bad_file)?;
+    let all_groups = full.num_row_groups();
+    let rect = rect_for(crs_of(full.file_metadata()).or(crs_given))?;
+    let chosen: Option<Vec<usize>> = rect.map(|r| groups_within(&full, r));
+    let reader = match chosen.clone() {
+        Some(keep) => {
+            let opts = parquet::file::serialized_reader::ReadOptionsBuilder::new().with_predicate(Box::new(move |_, i| keep.contains(&i))).build();
+            SerializedFileReader::new_with_options(src, opts).map_err(bad_file)?
+        }
+        None => SerializedFileReader::new(src).map_err(bad_file)?,
+    };
     let meta = reader.metadata().file_metadata();
-    let total = meta.num_rows().max(0) as u64;
+    let total = match &chosen {
+        Some(c) => c.iter().map(|g| full.row_group(*g).num_rows().max(0) as u64).sum(),
+        None => meta.num_rows().max(0) as u64,
+    };
+    if let Some(c) = &chosen {
+        notes.info(format!("{} of the {} row groups reach into the rectangle and were read", c.len(), all_groups));
+    }
     // The geometry column and its coordinate system, from the "geo" metadata of GeoParquet.
-    let geo: Option<serde_json::Value> =
-        meta.key_value_metadata().and_then(|kv| kv.iter().find(|k| k.key == "geo").and_then(|k| k.value.as_deref()).and_then(|v| serde_json::from_str(v).ok()));
+    let geo: Option<serde_json::Value> = geo_meta(meta);
     // A column that only holds the box of each geometry, for readers that skip by it.
     let covering: Option<String> = geo.as_ref().and_then(|g| {
         let primary = g.get("primary_column").and_then(|v| v.as_str()).unwrap_or("geometry");
@@ -213,8 +316,7 @@ pub fn read_parquet(path: &Path, crs_given: Option<u32>, limit: Option<usize>, n
     if geom_col.is_some() && !encoding.eq_ignore_ascii_case("WKB") {
         return err(format!(
             "The geometry of {} is encoded as {}, as GeoArrow, which is not read yet. Write it with WKB, the default of GeoPandas and GDAL.",
-            path.display(),
-            encoding
+            name, encoding
         ));
     }
     let crs = match (crs, crs_given) {
@@ -252,7 +354,7 @@ pub fn read_parquet(path: &Path, crs_given: Option<u32>, limit: Option<usize>, n
     }
     let mut features = Vec::new();
     let (mut bad, mut with_z) = (0usize, 0usize);
-    let rows = reader.get_row_iter(None).map_err(|e| GbError(format!("{} cannot be read: {}", path.display(), e)))?;
+    let rows = reader.get_row_iter(None).map_err(|e| GbError(format!("{} cannot be read: {}", name, e)))?;
     for row in rows {
         if limit.is_some_and(|l| features.len() >= l) {
             break;
@@ -260,7 +362,7 @@ pub fn read_parquet(path: &Path, crs_given: Option<u32>, limit: Option<usize>, n
         if features.len() % 10_000 == 0 && !going(features.len() as u64, Some(total)) {
             return err(crate::model::STOPPED);
         }
-        let row = row.map_err(|e| GbError(format!("{} cannot be read: {}", path.display(), e)))?;
+        let row = row.map_err(|e| GbError(format!("{} cannot be read: {}", name, e)))?;
         let mut attrs = vec![Value::Null; names.len()];
         let (mut geom, mut z) = (None, None);
         for (name, field) in row.get_column_iter() {

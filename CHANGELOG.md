@@ -3,6 +3,78 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.91.1
+
+- **Geometry from text** reads HERE's flexible polyline, as a line or an area, and JSON
+  lists of points with latitude and longitude, as TomTom gives routes and reachable ranges.
+- An encoded polyline that began with `{` was taken for JSON and failed, as many routes of
+  OpenTripPlanner around Göteborg do. Now the kind chosen is always used.
+- Web addresses with å, ä, ö, spaces or brackets in them, such as `range[type]` of HERE,
+  are sent %-coded, as servers expect.
+- New examples in `examples/apis`: `here_examples.ographis`, `tomtom_routing.ographis` and
+  `otp_to_drottningtorget.ographis`, with a hundred made-up start points around Göteborg.
+
+## 0.91
+
+For Blender and 3D
+
+- **LoD2 buildings from points**: buildings with roofs fitted to the point cloud (flat, shed,
+  gable or hipped) and walls up to their edge, with how well the roof fits.
+- **Terrain to 3D model**: the heights of a raster as a surface with an orthophoto or a map
+  draped over it, and a block under it if asked.
+- **glTF for Blender**, as settings of Output: the objects named and grouped by attributes,
+  materials named by an attribute, where the model lies kept for BlenderGIS, and a sun and a
+  camera. Lines and points without a 3D model are written as glTF lines and points.
+
+Networks
+
+- **Build network**: ends joined, lines split where they cross on the same level, doubles
+  taken away, with the loose ends and the parts not joined on *Problems*.
+- **Service areas** within minutes or metres, and **Allocate to nearest**: the catchment of
+  each facility along the roads.
+
+Formats
+
+- **PMTiles are written**: vector tiles in one file, for maps on a web server without a tile
+  server.
+- **GeoParquet within a rectangle** reads only the row groups that reach into it, also from
+  any web address, fetching only those parts.
+- **GPX** (tracks, routes, waypoints) and **photos** as points where they were taken, from
+  their Exif.
+- **Overture Maps and OpenStreetMap download** take several kinds at once, ticked in a list,
+  and only what reaches into the area: features whose box only reaches in are left out, and
+  large ones, such as land cover along a mountain range, are cut at its edge.
+- **DWG and DXF keep their colours** on the map under the canvas, and Draw map can draw in
+  them. Before, everything was drawn in the colour of the layer.
+- **PostGIS**: *Empty it and fill it again* keeps the table with its indexes, rights and
+  views, in one transaction; and very large writes can be committed in parts.
+
+Tools
+
+- **Create raster**, **Focal statistics** and **Cost distance**.
+- **Thin point cloud**: a point in each cube, or none closer than a distance, per class.
+- **Buffer** on one side of a line, and with flat ends. **Remove holes**, all or those smaller
+  than an area.
+- **Draw chart** draws **line charts** too, over numbers or dates.
+- **Stylize picture**: as on a Commodore 64, or as LEGO plates with the list of plates.
+
+Running
+
+- Model → **Schedule…** sets up runs in the Task Scheduler of Windows.
+- A **lineage** of each run, beside the history: what was read and written, with sizes,
+  times and fingerprints, and which inputs each output came from.
+- A **notice when a long run is done**, if asked for in the settings.
+
+Working in the program
+
+- The canvas by the **keyboard**: Tab between nodes, the arrows to move them, Enter to the
+  form, Ctrl+L to connect, **Ctrl+F to find a node**.
+- **A map of the model** in the corner of the canvas.
+- **Values suggested** in expressions after `=` and a quote.
+- Screen readers are told what each node is and what it is connected to; errors and
+  warnings have a sign as well as a colour; Ctrl and + or − make everything larger, and stay
+  so; and *Reduce motion* in the settings.
+
 ## 0.90
 
 Rasters on maps

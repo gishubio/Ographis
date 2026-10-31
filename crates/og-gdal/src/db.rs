@@ -143,29 +143,63 @@ pub(crate) fn write(table: &Table, conn: &str, opts: &DbWrite, notes: &mut Notes
         return Err(GbError(format!("The attribute {} clashes with a column that the table gets. Rename it with Manage attributes.", bad)));
     }
     let fields = plan_fields(&shaped, &features, names, None, &HashMap::new(), notes);
+    // In parts, each committed, or all in one transaction.
+    let chunked = opts.commit_every.filter(|n| *n > 0 && features.len() > *n);
+    let chunked = match (chunked, key.fids.is_some()) {
+        (Some(_), true) => {
+            notes.info("the key is an attribute of whole numbers, so all is written in one transaction");
+            None
+        }
+        (c, _) => c,
+    };
+    let parts: Vec<&[&Feature]> = match chunked {
+        Some(n) => features.chunks(n).collect(),
+        None => vec![&features[..]],
+    };
+    let first = parts[0];
     let mut txn = ds.start_transaction().map_err(|e| gerr("Cannot start writing", e))?;
-    let written = if opts.append && there {
+    let emptied = opts.empty_first && !opts.append && there;
+    let written = if emptied {
+        // The rows go and come back in one transaction: the table itself stays, with its
+        // indexes, rights and the views on it.
+        let sql = if mssql {
+            format!("DELETE FROM [{}].[{}]", schema.replace(']', "]]"), name.replace(']', "]]"))
+        } else {
+            format!("DELETE FROM {}.{}", ident(schema), ident(name))
+        };
+        match txn.execute_sql(sql, None, gdal::vector::sql::Dialect::DEFAULT) {
+            Err(e) => Err(gerr(format!("Cannot empty {}.{}", schema, name), e)),
+            Ok(_) => {
+                let l = txn
+                    .layer_by_name(&full)
+                    .or_else(|_| txn.layer_by_name(&format!("{}.{}", schema, name)))
+                    .map_err(|e| gerr(format!("Cannot open the table {}", full), e))?;
+                notes.info(format!("emptied {}.{} and filled it again", schema, name));
+                append_to_layer(&l, &shaped, first, &fields, notes)
+            }
+        }
+    } else if opts.append && there {
         let l = txn
             .layer_by_name(&full)
             .or_else(|_| txn.layer_by_name(&format!("{}.{}", schema, name)))
             .map_err(|e| gerr(format!("Cannot open the table {}", full), e))?;
         notes.info(format!("added to {}.{}", schema, name));
-        append_to_layer(&l, &shaped, &features, &fields, notes)
+        append_to_layer(&l, &shaped, first, &fields, notes)
     } else {
-        create(&mut txn, &shaped, &features, &fields, ty, name, schema, column, &fid_column, key.fids.as_deref(), mssql)
+        create(&mut txn, &shaped, first, &fields, ty, name, schema, column, &fid_column, key.fids.as_deref(), mssql)
     };
     // An attribute of other values than whole numbers is the key in place of the column of
     // numbers that GDAL makes.
     let written = match (written, &key.unique) {
         // SQL Server keeps the column of numbers as its key, and the attribute gets a unique
         // index: a key of other values would need the column to be made NOT NULL first.
-        (Ok(()), Some(u)) if !(opts.append && there) && mssql => {
+        (Ok(()), Some(u)) if !(opts.append && there) && !emptied && mssql => {
             let t = format!("[{}].[{}]", schema.replace(']', "]]"), name.replace(']', "]]"));
             let sql = format!("CREATE UNIQUE INDEX [ux_{n}_{c}] ON {t} ([{c}])", n = name.replace(']', "]]"), c = launder(u).replace(']', "]]"), t = t);
             notes.info(format!("{} is kept unique by an index; the key of the table is {}", u, fid_column));
             txn.execute_sql(sql, None, gdal::vector::sql::Dialect::DEFAULT).map(|_| ()).map_err(|e| gerr(format!("Cannot make {} unique", u), e))
         }
-        (Ok(()), Some(u)) if !(opts.append && there) => {
+        (Ok(()), Some(u)) if !(opts.append && there) && !emptied => {
             let t = format!("{}.{}", ident(schema), ident(name));
             let sql = format!("ALTER TABLE {t} DROP COLUMN {}; ALTER TABLE {t} ADD PRIMARY KEY ({})", ident(&fid_column), ident(&launder(u)));
             txn.execute_sql(sql, None, gdal::vector::sql::Dialect::DEFAULT).map(|_| ()).map_err(|e| gerr(format!("Cannot make {} the primary key", u), e))
@@ -178,6 +212,25 @@ pub(crate) fn write(table: &Table, conn: &str, opts: &DbWrite, notes: &mut Notes
             let _ = txn.rollback();
             return Err(e);
         }
+    }
+    // The other parts, each in a transaction of its own.
+    let mut done = first.len();
+    for part in parts.iter().skip(1) {
+        let txn = ds.start_transaction().map_err(|e| gerr("Cannot start writing", e))?;
+        let l = txn
+            .layer_by_name(&full)
+            .or_else(|_| txn.layer_by_name(&format!("{}.{}", schema, name)))
+            .map_err(|e| gerr(format!("Cannot open the table {}", full), e))?;
+        let mut quiet = Notes::default();
+        if let Err(e) = append_to_layer(&l, &shaped, part, &fields, &mut quiet) {
+            let _ = txn.rollback();
+            return Err(GbError(format!("{} The first {} rows were written and committed.", e.0, done)));
+        }
+        txn.commit().map_err(|e| gerr(format!("Cannot finish writing; the first {} rows were committed", done), e))?;
+        done += part.len();
+    }
+    if parts.len() > 1 {
+        notes.info(format!("committed in {} parts", parts.len()));
     }
     if let (Some(og_engine::io::PrimaryKey::New(_) | og_engine::io::PrimaryKey::Attribute(_)), true) = (&opts.key, opts.append && there) {
         if opts.key != Some(og_engine::io::PrimaryKey::New("ogc_fid".into())) {

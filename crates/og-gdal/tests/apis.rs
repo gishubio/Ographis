@@ -855,6 +855,94 @@ fn vector_tiles_are_read_from_the_web_by_their_address_and_as_pmtiles() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Vector tiles written into a PMTiles file by Ographis itself, read back by GDAL: each
+/// subregion whole again, with its attributes, at the largest zoom level and the smallest.
+#[test]
+fn features_are_written_as_pmtiles_and_read_back_by_gdal() {
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+    let dir = tmp("pmtiles-write");
+    let out = dir.join("subregions.pmtiles");
+    let ws = model(
+        &format!(
+            r#"{{"id": "in", "type": "Reader", "params": {{"path": "{}"}}}},
+               {{"id": "w", "type": "Writer", "params": {{"path": "{}", "pm_min": "2", "pm_max": "9", "layer": "regions"}}}}"#,
+            examples.join("subregions.gpkg").display().to_string().replace('\\', "/"),
+            out.display().to_string().replace('\\', "/")
+        ),
+        r#"{"from": ["in", "Output"], "to": ["w", "Input"]}"#,
+    );
+    let r = run(&ws, Some(&GdalBackend::new()), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    assert!(r.nodes["w"].error.is_none(), "{:?}", r.nodes["w"].error);
+    let source = r.output("in", "Output").unwrap().clone();
+    for zoom in ["9", "2"] {
+        let back = model(
+            &format!(r#"{{"id": "pm", "type": "Reader", "params": {{"path": "{}", "vt_zoom": "{}"}}}}"#, out.display().to_string().replace('\\', "/"), zoom),
+            "",
+        );
+        let r = run(&back, Some(&GdalBackend::new()), &dir);
+        assert!(r.nodes["pm"].error.is_none(), "{:?}", r.nodes["pm"].error);
+        let t = r.output("pm", "Output").unwrap();
+        assert_eq!(t.len(), source.len(), "zoom {}", zoom);
+        assert!(t.fields.iter().any(|f| f.name == "subregion"));
+        let names = |t: &Table| {
+            let at = t.fields.iter().position(|f| f.name == "subregion").unwrap();
+            let mut v: Vec<String> = t.features.iter().map(|f| f.attrs[at].to_text()).collect();
+            v.sort();
+            v
+        };
+        assert_eq!(names(t), names(&source));
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// GeoParquet within a rectangle: only the row groups whose boxes reach into it are read,
+/// from a file on this computer and from one on the web, where only their bytes are fetched.
+#[test]
+fn geoparquet_is_read_in_parts_within_a_rectangle() {
+    use og_engine::io::Backend;
+    use og_engine::{Feature, Field, FieldType};
+    let dir = tmp("parquet-parts");
+    let serve = tmp("parquet-parts-serve");
+    let mut t = Table { fields: vec![Field::new("n", FieldType::Int)], crs: Some(3006), ..Default::default() };
+    for i in 0..40 {
+        for j in 0..25 {
+            let p = geo::Point::new(500_000.0 + i as f64 * 100.0, 6_400_000.0 + j as f64 * 100.0);
+            t.features.push(Feature::new(vec![Value::Int(i * 100 + j)], Some(geo::Geometry::Point(p))));
+        }
+    }
+    let b = GdalBackend::new();
+    let projjson = b.crs_projjson(3006);
+    og_engine::parquet_io::write_parquet_in(&t, &serve.join("points.parquet"), projjson.as_deref(), 100).unwrap();
+    let (base, asked) = file_server(serve.clone());
+    let rect = r#""within": "rectangle", "min_x": "500000", "min_y": "6400000", "max_x": "500900", "max_y": "6400900""#;
+    let ws = model(
+        &format!(
+            r#"{{"id": "local", "type": "Reader", "params": {{"path": "{}", {rect}}}}},
+               {{"id": "web", "type": "Reader", "params": {{"path": "{base}/tiles/points.parquet", {rect}}}}},
+               {{"id": "deg", "type": "Reader", "params": {{"path": "{base}/tiles/points.parquet", "within": "rectangle", "min_x": "10", "min_y": "57", "max_x": "20", "max_y": "60", "within_crs": "EPSG:4326"}}}}"#,
+            serve.join("points.parquet").display().to_string().replace('\\', "/")
+        ),
+        "",
+    );
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    for id in ["local", "web"] {
+        assert!(r.nodes[id].error.is_none(), "{:?}", r.nodes[id].error);
+        assert_eq!(r.output(id, "Output").unwrap().len(), 100, "{}", id);
+        assert_eq!(r.output(id, "Output").unwrap().crs, Some(3006));
+    }
+    assert!(r.log.iter().any(|l| l.msg.contains("3 of the 10 row groups")), "the groups of x up to 1100 m");
+    assert!(!asked.lock().unwrap().is_empty());
+    assert!(r.nodes["deg"].error.is_none(), "{:?}", r.nodes["deg"].error);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&serve);
+}
+
 /// A zip file on the web is fetched and read as one on the computer. With several data files
 /// in it, the input says which it read, and File in the zip chooses another, by name, path
 /// or pattern.
@@ -939,7 +1027,7 @@ fn overture_maps_is_read_within_a_rectangle_in_parts() {
     std::fs::write(kind.join("00000/00000.json"), r#"{"bbox": [11.9, 57.68, 11.98, 57.72], "assets": {"aws": {"href": "../part-0.parquet"}}}"#).unwrap();
     std::fs::write(kind.join("00001/00001.json"), r#"{"bbox": [20.0, 60.0, 21.0, 61.0], "assets": {"aws": {"href": "../part-1.parquet"}}}"#).unwrap();
     let ws = og_engine::Workspace::from_json(&format!(
-        r#"{{"nodes": [{{"id": "o", "type": "OvertureDownloader", "params": {{"kind": "buildings/building", "bbox": "11.9195, 57.69, 11.9245, 57.695", "catalog": "{}", "crs": "EPSG:3006"}}}}], "edges": []}}"#,
+        r#"{{"nodes": [{{"id": "o", "type": "OvertureDownloader", "params": {{"kind": "buildings/building", "bbox": "11.9195, 57.6895, 11.9245, 57.6955", "catalog": "{}", "crs": "EPSG:3006"}}}}], "edges": []}}"#,
         base
     ))
     .unwrap();

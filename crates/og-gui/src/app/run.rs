@@ -371,10 +371,24 @@ impl App {
             let mut run = og_engine::history::Run::of(&result, started, "program", stopped);
             run.log = self.run_log.take().map(|(_, name)| name).unwrap_or_default();
             let _ = og_engine::history::record(&path, &run);
+            let _ = og_engine::history::record_lineage(&path, &self.workspace(), &result, &run);
             og_engine::history::clean_logs(&path, 30);
         }
         self.run_lock = None;
         self.run_log = None;
+        // A long run tells when it is done, if the settings ask for it.
+        if let Some(after) = crate::settings::notify(&self.settings) {
+            if result.ms / 1000.0 >= after && !stopped {
+                let how = if result.errors > 0 {
+                    format!("with {} errors", result.errors)
+                } else if result.warnings > 0 {
+                    format!("with {} warnings", result.warnings)
+                } else {
+                    "well".to_string()
+                };
+                self.notice = Some(format!("{} has finished {}, after {}.", self.name, how, og_engine::model::fmt_duration(result.ms)));
+            }
+        }
         // After a run of a part of the model, the results of the other nodes are kept from
         // before, as long as nothing they depend on has changed.
         if let Some(before) = self.previous.take() {

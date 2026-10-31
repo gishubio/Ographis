@@ -10,65 +10,65 @@ use geo::{Centroid, Coord, Geometry};
 pub(super) const COSTS: &[(&str, &str)] = &[("length", "Shortest: the length"), ("time", "Quickest: the time, by the speed")];
 pub(super) const TARGETS: &[(&str, &str)] = &[("nearest", "To the nearest on To"), ("all", "To every one on To")];
 
-pub(super) const ROUTE_PARAMS: &[ParamSpec] = &[
-    ParamSpec {
-        key: "to",
-        label: "Routes",
-        kind: ParamKind::Choice(TARGETS),
-        default: "nearest",
-        hint: "Every one gives a route for each pair, as many as From times To",
-    },
-    ParamSpec { key: "cost", label: "By", kind: ParamKind::Choice(COSTS), default: "length", hint: "" },
-    ParamSpec {
-        key: "speed",
-        label: "Speed in km/h",
-        kind: ParamKind::Expression("Network"),
-        default: "",
-        hint: "Along the line as it is drawn, for the quickest route: an attribute such as F_Hogst_225 in NVDB, or a number",
-    },
-    ParamSpec {
-        key: "speed_against",
-        label: "Speed against the line",
-        kind: ParamKind::Expression("Network"),
-        default: "",
-        hint: "Against the way the line is drawn, such as B_Hogst_225 in NVDB. Empty uses the speed along it",
-    },
-    ParamSpec {
-        key: "default_speed",
-        label: "Speed where none is given",
-        kind: ParamKind::Text,
-        default: "50",
-        hint: "In km/h, where the speed is empty or 0",
-    },
-    ParamSpec {
-        key: "along",
-        label: "May be travelled along the line when",
-        kind: ParamKind::Expression("Network"),
-        default: "",
-        hint: "A condition for one-way roads, such as F_ForbjudenFardriktning is null. Empty: always",
-    },
-    ParamSpec {
-        key: "against",
-        label: "May be travelled against the line when",
-        kind: ParamKind::Expression("Network"),
-        default: "",
-        hint: "Such as B_ForbjudenFardriktning is null. Empty: always",
-    },
-    ParamSpec {
-        key: "snap",
-        label: "Farthest from the network, in metres",
-        kind: ParamKind::Text,
-        default: "500",
-        hint: "A point is put on the nearest place of the nearest line. One farther away than this is not reached",
-    },
-    ParamSpec {
-        key: "tolerance",
-        label: "Line ends that meet, within",
-        kind: ParamKind::Text,
-        default: "0.01",
-        hint: "In metres. Lines are joined where their ends are this close, not where they only cross, as at a bridge",
-    },
-];
+pub(super) const P_TO: ParamSpec = ParamSpec {
+    key: "to",
+    label: "Routes",
+    kind: ParamKind::Choice(TARGETS),
+    default: "nearest",
+    hint: "Every one gives a route for each pair, as many as From times To",
+};
+pub(super) const P_COST: ParamSpec = ParamSpec { key: "cost", label: "By", kind: ParamKind::Choice(COSTS), default: "length", hint: "" };
+pub(super) const P_SPEED: ParamSpec = ParamSpec {
+    key: "speed",
+    label: "Speed in km/h",
+    kind: ParamKind::Expression("Network"),
+    default: "",
+    hint: "Along the line as it is drawn, for the quickest route: an attribute such as F_Hogst_225 in NVDB, or a number",
+};
+pub(super) const P_SPEED_AGAINST: ParamSpec = ParamSpec {
+    key: "speed_against",
+    label: "Speed against the line",
+    kind: ParamKind::Expression("Network"),
+    default: "",
+    hint: "Against the way the line is drawn, such as B_Hogst_225 in NVDB. Empty uses the speed along it",
+};
+pub(super) const P_DEFAULT_SPEED: ParamSpec = ParamSpec {
+    key: "default_speed",
+    label: "Speed where none is given",
+    kind: ParamKind::Text,
+    default: "50",
+    hint: "In km/h, where the speed is empty or 0",
+};
+pub(super) const P_ALONG: ParamSpec = ParamSpec {
+    key: "along",
+    label: "May be travelled along the line when",
+    kind: ParamKind::Expression("Network"),
+    default: "",
+    hint: "A condition for one-way roads, such as F_ForbjudenFardriktning is null. Empty: always",
+};
+pub(super) const P_AGAINST: ParamSpec = ParamSpec {
+    key: "against",
+    label: "May be travelled against the line when",
+    kind: ParamKind::Expression("Network"),
+    default: "",
+    hint: "Such as B_ForbjudenFardriktning is null. Empty: always",
+};
+pub(super) const P_SNAP: ParamSpec = ParamSpec {
+    key: "snap",
+    label: "Farthest from the network, in metres",
+    kind: ParamKind::Text,
+    default: "500",
+    hint: "A point is put on the nearest place of the nearest line. One farther away than this is not reached",
+};
+pub(super) const P_TOLERANCE: ParamSpec = ParamSpec {
+    key: "tolerance",
+    label: "Line ends that meet, within",
+    kind: ParamKind::Text,
+    default: "0.01",
+    hint: "In metres. Lines are joined where their ends are this close, not where they only cross, as at a bridge",
+};
+
+pub(super) const ROUTE_PARAMS: &[ParamSpec] = &[P_TO, P_COST, P_SPEED, P_SPEED_AGAINST, P_DEFAULT_SPEED, P_ALONG, P_AGAINST, P_SNAP, P_TOLERANCE];
 
 /// The point a feature stands at: a point, the first of several, or the middle of a line
 /// or an area.
@@ -90,28 +90,10 @@ pub(super) fn lines_of(g: &Geometry<f64>) -> Vec<geo::LineString<f64>> {
     }
 }
 
-pub(super) fn run_route(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let net_t = input(inp, "Network");
-    if net_t.is_empty() {
-        return err("Nothing came in on Network. Connect the roads, such as NVDB, to Network.");
-    }
-    let crs = net_t.crs.ok_or_else(|| GbError("The network has no coordinate system. Set it on the input.".into()))?;
-    if ctx.geographic(Some(crs)) == Some(true) {
-        return err(format!("The network is in {}, in degrees. Reproject it to metres first, such as to SWEREF 99 TM (EPSG:3006).", crs_label(Some(crs))));
-    }
-    // From and To in the system of the network.
-    let in_crs = |t: &Table, what: &str| -> Result<Table> {
-        match t.crs {
-            Some(c) if c != crs => reproject(t, crs, ctx.backend),
-            None if !t.is_empty() => err(format!("{} has no coordinate system. Set it on the input.", what)),
-            _ => Ok(t.clone()),
-        }
-    };
-    let from_t = in_crs(input(inp, "From"), "From")?;
-    let to_t = in_crs(input(inp, "To"), "To")?;
-    if to_t.is_empty() {
-        return err("Nothing came in on To. Connect the places to go to, such as the hospitals.");
-    }
+/// The network of the lines on a table, with the cost of each piece: its length, or the
+/// minutes at its speed, and the ways it may be travelled, as the settings of the cost, the
+/// speeds, along, against and the tolerance say. Gives it, and whether the cost is time.
+pub(super) fn network_from(p: &P, net_t: &Table, ctx: &mut NodeCtx) -> Result<(Network, bool)> {
     let names = net_t.field_names();
     let compile = |key: &str, what: &str| -> Result<Option<expr::Compiled>> {
         match p.get(key).filter(|v| !v.trim().is_empty()) {
@@ -131,7 +113,6 @@ pub(super) fn run_route(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
     if default_speed <= 0.0 {
         return err("The speed where none is given must be more than 0.");
     }
-    let snap = number_param(p, "snap", "The farthest from the network")?.unwrap_or(500.0).max(0.0);
     let tolerance = number_param(p, "tolerance", "The tolerance")?.unwrap_or(0.01).max(1e-6);
 
     // The cost of a metre: 1 for the length, or minutes at the speed.
@@ -175,6 +156,42 @@ pub(super) fn run_route(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
         return err("The network has no lines to travel along.");
     }
 
+    Ok((net, time))
+}
+
+/// The coordinate system of a network, which must be in metres.
+pub(super) fn network_crs(net_t: &Table, ctx: &NodeCtx) -> Result<u32> {
+    let crs = net_t.crs.ok_or_else(|| GbError("The network has no coordinate system. Set it on the input.".into()))?;
+    if ctx.geographic(Some(crs)) == Some(true) {
+        return err(format!("The network is in {}, in degrees. Reproject it to metres first, such as to SWEREF 99 TM (EPSG:3006).", crs_label(Some(crs))));
+    }
+    Ok(crs)
+}
+
+pub(super) fn run_route(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+    let net_t = input(inp, "Network");
+    if net_t.is_empty() {
+        return err("Nothing came in on Network. Connect the roads, such as NVDB, to Network.");
+    }
+    let crs = net_t.crs.ok_or_else(|| GbError("The network has no coordinate system. Set it on the input.".into()))?;
+    if ctx.geographic(Some(crs)) == Some(true) {
+        return err(format!("The network is in {}, in degrees. Reproject it to metres first, such as to SWEREF 99 TM (EPSG:3006).", crs_label(Some(crs))));
+    }
+    // From and To in the system of the network.
+    let in_crs = |t: &Table, what: &str| -> Result<Table> {
+        match t.crs {
+            Some(c) if c != crs => reproject(t, crs, ctx.backend),
+            None if !t.is_empty() => err(format!("{} has no coordinate system. Set it on the input.", what)),
+            _ => Ok(t.clone()),
+        }
+    };
+    let from_t = in_crs(input(inp, "From"), "From")?;
+    let to_t = in_crs(input(inp, "To"), "To")?;
+    if to_t.is_empty() {
+        return err("Nothing came in on To. Connect the places to go to, such as the hospitals.");
+    }
+    let (net, time) = network_from(p, net_t, ctx)?;
+    let snap = number_param(p, "snap", "The farthest from the network")?.unwrap_or(500.0).max(0.0);
     // The destinations on the network.
     let mut targets: Vec<(Place, usize)> = Vec::new();
     let mut far = 0usize;

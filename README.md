@@ -32,18 +32,20 @@ og run examples/skaraborg.ographis            the same model from the command li
 - **Reads and writes** GeoPackage, Shapefile, GeoJSON, FlatGeobuf, GeoParquet, CSV, Excel,
   LibreOffice Calc, DXF, GeoTIFF, CityGML, CityJSON, IFC, OBJ, glTF and 3D Tiles, PostGIS
   and SQL Server, files on the web, WFS, OGC API Features, ArcGIS FeatureServer, STAC,
-  OpenStreetMap, Overture Maps and vector tiles (MBTiles, PMTiles). DWG drawings and LAS/LAZ
-  point clouds too. The whole list is in [docs/FORMATS.html](docs/FORMATS.html).
+  OpenStreetMap, Overture Maps and vector tiles (MBTiles, PMTiles, which it also writes). DWG
+  drawings, GPX, geotagged photos and LAS/LAZ point clouds too. The whole list is in [docs/FORMATS.html](docs/FORMATS.html).
 - **Over a hundred tools** for attributes, geometry, joins by attribute and by location,
   overlays, rasters and terrain, web APIs with paging, keys and OAuth2, charts, maps and
-  3D scenes, terrain and point clouds, and toy landscapes ("dioramas") made from land cover. See
+  3D scenes, terrain and point clouds, LoD2 buildings and terrain models for Blender, road
+  networks with service areas, and toy landscapes ("dioramas") made from land cover. See
   [docs/TOOLS.md](docs/TOOLS.md).
 - **Outputs** to files and databases, maps and charts as pictures, PDF with layers,
   interactive HTML charts, and PowerPoint and Impress slides.
 - **A canvas** where you see the data of each step in a table, on a map and in 3D as the
   model runs, with undo, groups, comments and a recovery of unsaved work.
-- **The command line** `og` runs the same models on a schedule, with variables, a history
-  of runs and exit codes. See [docs/GUIDE.md](docs/GUIDE.md).
+- **The command line** `og` runs the same models on a schedule (Model → Schedule sets it up
+  in the Task Scheduler), with variables, a history and lineage of runs and exit codes.
+  See [docs/GUIDE.md](docs/GUIDE.md).
 - **For AI assistants**: a reference of every tool as JSON, a schema of the model format and
   `og check`, which tells an assistant what is wrong in a model it wrote. See
   [AGENTS.md](AGENTS.md).

@@ -37,6 +37,27 @@ struct Prepared {
     image_grid: Option<Vec<[f64; 2]>>,
     /// For a grid of heights: grey shaded relief to show for it.
     preview: Option<Arc<og_engine::model::RasterImage>>,
+    /// The colour of each feature, by its row, when the stream carries colours of its own,
+    /// as a CAD drawing does in its attribute colour.
+    colours: Option<Arc<Vec<Option<[u8; 3]>>>>,
+}
+
+/// The colours a stream carries in an attribute colour (or color) as #rrggbb, when most of
+/// its features have one. White and near white, as CAD draws on black, are made dark grey,
+/// so that they show on a light map.
+fn own_colours(t: &Table) -> Option<Vec<Option<[u8; 3]>>> {
+    let at = t.field_index("colour").or_else(|| t.field_index("color"))?;
+    let colours: Vec<Option<[u8; 3]>> = t
+        .features
+        .iter()
+        .map(|f| match og_engine::mapdraw::parse_color(&f.attrs[at].to_text()) {
+            Ok(Some(c)) if (c[0] as u32 + c[1] as u32 + c[2] as u32) > 700 => Some([60, 60, 60]),
+            Ok(Some(c)) => Some([c[0], c[1], c[2]]),
+            _ => None,
+        })
+        .collect();
+    let have = colours.iter().filter(|c| c.is_some()).count();
+    (have * 2 > colours.len().max(1)).then_some(colours)
 }
 
 /// The image is placed by a grid of this many cells on a side.
@@ -324,7 +345,8 @@ fn prepare(table: Arc<Table>, want_mercator: bool, backend: &dyn Backend, progre
     };
     let degrees = !mercator && is_geographic(Some(backend), crs).unwrap_or(false);
     let image_grid = table.image.as_ref().or(preview.as_ref()).and_then(|img| grid_of(img, crs, if mercator { Some(WEB_MERCATOR) } else { crs }, backend));
-    Some(Prepared { table, mercator, store: Arc::new(store), degrees, fallback, image_grid, preview })
+    let colours = own_colours(&table).map(Arc::new);
+    Some(Prepared { table, mercator, store: Arc::new(store), degrees, fallback, image_grid, preview, colours })
 }
 
 fn nice(x: f64) -> f64 {
@@ -687,7 +709,8 @@ impl MapView {
                 self.in_view = Some((list.len(), false));
                 self.generation.fetch_add(1, Ordering::Relaxed);
                 self.drawing = None;
-                self.draw_shapes(&painter, rect, &pal, &store, list, *selected);
+                let colours = prep.colours.clone();
+                self.draw_shapes(&painter, rect, &pal, &store, list, *selected, colours.as_deref().map(|c| c.as_slice()));
                 self.draw_labels(&painter, rect, &pal, &store, list, table);
             }
             InView::Many(n) => {
@@ -697,7 +720,7 @@ impl MapView {
                 if selected.is_some() || !self.also.is_empty() {
                     let on: std::collections::HashSet<usize> = self.also.iter().copied().chain(*selected).collect();
                     let mine: Vec<u32> = store.feats.iter().enumerate().filter(|(_, f)| on.contains(&(f.row as usize))).map(|(i, _)| i as u32).collect();
-                    self.draw_shapes(&painter, rect, &pal, &store, &mine, *selected);
+                    self.draw_shapes(&painter, rect, &pal, &store, &mine, *selected, None);
                 }
             }
         }
@@ -920,7 +943,17 @@ impl MapView {
     }
 
     /// Draws features as shapes: areas filled and outlined, lines, and points.
-    fn draw_shapes(&mut self, painter: &egui::Painter, rect: Rect, pal: &Palette, store: &Store, list: &[u32], selected: Option<usize>) {
+    #[allow(clippy::too_many_arguments)]
+    fn draw_shapes(
+        &mut self,
+        painter: &egui::Painter,
+        rect: Rect,
+        pal: &Palette,
+        store: &Store,
+        list: &[u32],
+        selected: Option<usize>,
+        colours: Option<&[Option<[u8; 3]>]>,
+    ) {
         let o = store.origin;
         // Store coordinates to the screen, without holding on to self.
         let (cx, cy, sx, sy) = (self.center[0], self.center[1], self.kx * self.scale, self.scale);
@@ -929,7 +962,7 @@ impl MapView {
         let stroke_color = pal.xform;
         let mut fills = Mesh::default();
         let mut outlines: Vec<Shape> = Vec::new();
-        let mut points: Vec<(Pos2, bool)> = Vec::new();
+        let mut points: Vec<(Pos2, bool, Option<Color32>)> = Vec::new();
         let many = list.len() > 4_000;
         let also: std::collections::HashSet<usize> = self.also.iter().copied().collect();
         // The triangles are kept between frames. Too many kept are let go.
@@ -939,10 +972,15 @@ impl MapView {
         for &i in list {
             let f = &store.feats[i as usize];
             let on = selected == Some(f.row as usize) || also.contains(&(f.row as usize));
-            let color = if on { pal.accent } else { stroke_color };
+            let own = colours.and_then(|c| c.get(f.row as usize).copied().flatten()).map(|c| Color32::from_rgb(c[0], c[1], c[2]));
+            let color = if on { pal.accent } else { own.unwrap_or(stroke_color) };
             match f.kind {
                 Kind::Area => {
-                    let fill = if on { Color32::from_rgba_unmultiplied(pal.accent.r(), pal.accent.g(), pal.accent.b(), 80) } else { pal.map_fill() };
+                    let fill = match (on, own) {
+                        (true, _) => Color32::from_rgba_unmultiplied(pal.accent.r(), pal.accent.g(), pal.accent.b(), 80),
+                        (false, Some(c)) => Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 60),
+                        (false, None) => pal.map_fill(),
+                    };
                     let (verts, tris) = self.triangles.entry(i).or_insert_with(|| store.triangles(f));
                     let base = fills.vertices.len() as u32;
                     for v in verts.iter() {
@@ -966,7 +1004,7 @@ impl MapView {
                 }
                 Kind::Point => {
                     for p in f.first..f.end {
-                        points.extend(store.part(p as usize).iter().map(|c| (at(*c), on)));
+                        points.extend(store.part(p as usize).iter().map(|c| (at(*c), on, own)));
                     }
                 }
             }
@@ -975,16 +1013,17 @@ impl MapView {
             painter.add(Shape::mesh(fills));
         }
         painter.extend(outlines);
-        for (p, on) in &points {
+        for (p, on, own) in &points {
             if !rect.expand(8.0).contains(*p) {
                 continue;
             }
+            let c = own.unwrap_or(stroke_color);
             if *on {
                 painter.circle(*p, 6.5, pal.accent, Stroke::new(1.5, pal.surface));
             } else if many {
-                painter.circle_filled(*p, 2.5, stroke_color);
+                painter.circle_filled(*p, 2.5, c);
             } else {
-                painter.circle(*p, 4.5, stroke_color, Stroke::new(1.5, pal.surface));
+                painter.circle(*p, 4.5, c, Stroke::new(1.5, pal.surface));
             }
         }
     }

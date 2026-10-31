@@ -2528,6 +2528,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kamadak-exif"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1130d80c7374efad55a117d715a3af9368f0fa7a2c54573afc15a188cd984837"
+dependencies = [
+ "mutate_once",
+]
+
+[[package]]
 name = "keyring"
 version = "3.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2848,6 +2857,12 @@ name = "multiversion_no_op"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
+
+[[package]]
+name = "mutate_once"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13d2233c9842d08cfe13f9eac96e207ca6a2ea10b80259ebe8ad0268be27d2af"
 
 [[package]]
 name = "naga"
@@ -3329,7 +3344,7 @@ dependencies = [
 
 [[package]]
 name = "og-cli"
-version = "0.90.0"
+version = "0.91.1"
 dependencies = [
  "chrono",
  "og-engine",
@@ -3339,7 +3354,7 @@ dependencies = [
 
 [[package]]
 name = "og-engine"
-version = "0.90.0"
+version = "0.91.1"
 dependencies = [
  "ab_glyph",
  "acadrust",
@@ -3349,6 +3364,7 @@ dependencies = [
  "flate2",
  "geo",
  "image",
+ "kamadak-exif",
  "keyring",
  "las",
  "meshopt",
@@ -3368,7 +3384,7 @@ dependencies = [
 
 [[package]]
 name = "og-gdal"
-version = "0.90.0"
+version = "0.91.1"
 dependencies = [
  "flate2",
  "gdal",
@@ -3385,7 +3401,7 @@ dependencies = [
 
 [[package]]
 name = "og-gui"
-version = "0.90.0"
+version = "0.91.1"
 dependencies = [
  "arboard",
  "chrono",

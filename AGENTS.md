@@ -77,6 +77,7 @@ The program draws it on a canvas, and `og run model.ographis` runs it from the c
 | Charts | `examples/chart.ographis` |
 | Terrain, rasters and 3D | `examples/terrain.ographis`, `examples/raster_tools.ographis`, `examples/extrude_tin.ographis`, `examples/house.ographis` |
 | Point clouds: ground, terrain models, buildings | `examples/point_cloud.ographis` |
+| 3D models for Blender: terrain with a picture, buildings grouped and named | `examples/blender.ographis` |
 | A folder of files read as one | `examples/stops.ographis` |
 
 Every example passes `og check`; a test makes sure of it.

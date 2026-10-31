@@ -248,7 +248,21 @@ pub fn prepare(table: &Table, style: &LayerStyle, spec: &ThemeSpec) -> Result<Th
     if let Some(i) = color_at {
         let numeric = table.fields[i].ty != crate::model::FieldType::Text && spec.ramp != "categories";
         let mut keys = Vec::new();
-        let colors: Vec<Option<[u8; 3]>> = if numeric {
+        let colors: Vec<Option<[u8; 3]>> = if spec.ramp == "as_written" {
+            // The colours the attribute holds, such as the colours of a CAD drawing.
+            let cs: Vec<Option<[u8; 3]>> =
+                table.features.iter().map(|f| crate::mapdraw::parse_color(&f.attrs[i].to_text()).ok().flatten().map(|c| [c[0], c[1], c[2]])).collect();
+            let mut seen: Vec<[u8; 3]> = Vec::new();
+            for c in cs.iter().flatten() {
+                if !seen.contains(c) && seen.len() < 12 {
+                    seen.push(*c);
+                }
+            }
+            for c in seen {
+                keys.push((c, format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])));
+            }
+            cs
+        } else if numeric {
             let vals: Vec<Option<f64>> = table.features.iter().map(|f| number(&f.attrs[i])).collect();
             let mut sorted: Vec<f64> = vals.iter().flatten().copied().collect();
             sorted.sort_by(f64::total_cmp);
@@ -324,9 +338,16 @@ pub fn prepare(table: &Table, style: &LayerStyle, spec: &ThemeSpec) -> Result<Th
         };
         let lines = table.features.iter().all(|f| matches!(f.geom, Some(geo::Geometry::LineString(_) | geo::Geometry::MultiLineString(_)) | None));
         let alpha = style.fill.map_or(255, |c| c[3]).max(if lines { 255 } else { 0 });
+        let written = spec.ramp == "as_written";
         let apply = |look: &mut Look, c: Option<[u8; 3]>| {
             let c = c.unwrap_or(NO_VALUE);
-            if lines {
+            if written {
+                // Lines, points and the edges of areas all in their own colour, as drawn in CAD.
+                look.stroke = Some([c[0], c[1], c[2], style.stroke.map_or(255, |s| s[3])]);
+                if look.fill.is_some() {
+                    look.fill = Some([c[0], c[1], c[2], alpha.max(1)]);
+                }
+            } else if lines {
                 look.stroke = Some([c[0], c[1], c[2], style.stroke.map_or(255, |s| s[3])]);
             } else {
                 look.fill = Some([c[0], c[1], c[2], alpha.max(1)]);

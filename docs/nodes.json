@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.90.0",
+  "version": "0.91.1",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a name that is shown, x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -1412,6 +1412,10 @@
               "label": "PNG image (.png)"
             },
             {
+              "value": "pmtiles",
+              "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
               "value": "postgis",
               "label": "PostGIS table"
             },
@@ -1677,6 +1681,109 @@
           ],
           "default": "",
           "hint": "The top row filled, and every second row tinted to make the rows easier to follow"
+        },
+        {
+          "key": "gltf_name",
+          "label": "Object names",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Input",
+          "default": "",
+          "hint": "glTF: the name of each object in Blender, such as the attribute name or address. Empty: as the model has them"
+        },
+        {
+          "key": "gltf_group",
+          "label": "Group by",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Input",
+          "default": "",
+          "hint": "glTF: the objects of each value under a parent of its own, such as the kind of building, to show and hide together in Blender"
+        },
+        {
+          "key": "gltf_material",
+          "label": "Materials by",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Input",
+          "default": "",
+          "hint": "glTF: a material named after each value, such as the material of the roof, to give them all a new look at once in Blender"
+        },
+        {
+          "key": "gltf_origin",
+          "label": "Origin",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "glTF: x, y and z the model is written around, the same for files that are to fit together in Blender, such as 418300, 6472550, 0. Empty: near its middle"
+        },
+        {
+          "key": "gltf_georef",
+          "label": "Where it lies",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "true",
+              "label": "Kept for BlenderGIS: the coordinate system and the origin"
+            },
+            {
+              "value": "false",
+              "label": "Not kept"
+            }
+          ],
+          "default": "true",
+          "hint": "glTF: BlenderGIS can then add maps and terrain in their place"
+        },
+        {
+          "key": "gltf_sun",
+          "label": "Sun and camera",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "None"
+            },
+            {
+              "value": "sun",
+              "label": "A sun"
+            },
+            {
+              "value": "both",
+              "label": "A sun and a camera"
+            },
+            {
+              "value": "camera",
+              "label": "A camera"
+            }
+          ],
+          "default": "none",
+          "hint": "glTF: a sun where it stands at the time below, and a camera looking from the south-west"
+        },
+        {
+          "key": "gltf_when",
+          "label": "Time of the sun",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Swedish time, such as 2026-06-21 15:00. Empty: midsummer at three in the afternoon"
+        },
+        {
+          "key": "pm_min",
+          "label": "From zoom level",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "PMTiles: the smallest zoom level with tiles. 0 is the whole world in one tile"
+        },
+        {
+          "key": "pm_max",
+          "label": "To zoom level",
+          "kind": "text",
+          "shape": "a string",
+          "default": "14",
+          "hint": "PMTiles: the largest, at most 16. 14 has tiles of about 2 km, and maps zoom in beyond it"
         },
         {
           "key": "pdf_size",
@@ -1945,6 +2052,10 @@
               "label": "PNG image (.png)"
             },
             {
+              "value": "pmtiles",
+              "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
               "value": "postgis",
               "label": "PostGIS table"
             },
@@ -2122,6 +2233,10 @@
             {
               "value": "png",
               "label": "PNG image (.png)"
+            },
+            {
+              "value": "pmtiles",
+              "label": "PMTiles vector tiles (.pmtiles)"
             },
             {
               "value": "postgis",
@@ -2584,6 +2699,10 @@
               "label": "PNG image (.png)"
             },
             {
+              "value": "pmtiles",
+              "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
               "value": "postgis",
               "label": "PostGIS table"
             },
@@ -2678,11 +2797,40 @@
               "label": "Replace the table"
             },
             {
+              "value": "empty",
+              "label": "Empty it and fill it again: it keeps its indexes, rights and the views on it"
+            },
+            {
               "value": "append",
               "label": "Add to the table"
             }
           ],
           "default": "replace"
+        },
+        {
+          "key": "commit",
+          "label": "Transaction",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "all",
+              "label": "All or nothing: one transaction"
+            },
+            {
+              "value": "every",
+              "label": "In parts: commit every so many rows"
+            }
+          ],
+          "default": "all",
+          "hint": "All or nothing leaves the table as it was if anything goes wrong. In parts suits very large writes"
+        },
+        {
+          "key": "commit_rows",
+          "label": "Rows in each part",
+          "kind": "text",
+          "shape": "a string",
+          "default": "10000"
         },
         {
           "key": "geometry",
@@ -4392,7 +4540,7 @@
       "title": "Buffer",
       "group": "tool",
       "category": "Geometry",
-      "description": "Replaces each geometry with the area within a distance of it. Points become discs, lines corridors, and areas grow, or shrink with a negative distance. Works in metres.",
+      "description": "Replaces each geometry with the area within a distance of it. Points become discs, lines corridors, and areas grow, or shrink with a negative distance. Lines can be buffered on one side only, left or right as they are drawn, and with flat ends. Works in metres.",
       "inputs": [
         "Input"
       ],
@@ -4410,6 +4558,71 @@
           "port": "Input",
           "default": "100",
           "hint": "In metres. A number, or an expression such as width / 2. Negative shrinks areas"
+        },
+        {
+          "key": "side",
+          "label": "Side",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "both",
+              "label": "Both"
+            },
+            {
+              "value": "left",
+              "label": "Left of the line"
+            },
+            {
+              "value": "right",
+              "label": "Right of the line"
+            }
+          ],
+          "default": "both",
+          "hint": "Of lines: one side only, left or right as the line is drawn, such as the land along one bank of a river. Areas and points get buffers all round"
+        },
+        {
+          "key": "ends",
+          "label": "Ends of lines",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "round",
+              "label": "Round"
+            },
+            {
+              "value": "flat",
+              "label": "Flat"
+            }
+          ],
+          "default": "round",
+          "hint": "Flat ends stop where the line stops"
+        }
+      ]
+    },
+    {
+      "type": "HoleRemover",
+      "title": "Remove holes",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "Fills the holes of areas: all of them, or those smaller than a size, such as the courtyards of blocks or small clearings in a forest.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "smallest",
+          "label": "Holes smaller than",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "In square metres: holes smaller than this are filled, larger ones kept. Empty fills every hole"
         }
       ]
     },
@@ -5015,6 +5228,22 @@
             {
               "value": "polyline6",
               "label": "Encoded polyline with 6 decimals, as from Valhalla"
+            },
+            {
+              "value": "flexpolyline",
+              "label": "Flexible polyline, as routes from HERE"
+            },
+            {
+              "value": "flexpolyline_area",
+              "label": "Flexible polyline as an area, as isolines from HERE"
+            },
+            {
+              "value": "points",
+              "label": "A JSON list of points, as a route from TomTom: a line"
+            },
+            {
+              "value": "points_area",
+              "label": "A JSON list of points as an area, as a reachable range from TomTom"
             }
           ],
           "default": "auto"
@@ -6816,7 +7045,7 @@
       "title": "Draw chart",
       "group": "tool",
       "category": "Charts",
-      "description": "Draws a bar chart of the features: a bar for each name, as long as its value, such as the area of each municipality. Sorted by size or by name, with a title, an explanation and a note. The chart comes out as a picture to write to a .png or a .pdf, and can also be written as an interactive web page, where each value shows under the pointer and the bars can be sorted.",
+      "description": "Draws a bar chart of the features: a bar for each name, as long as its value, such as the area of each municipality. Or a line chart, with a line for each value of an attribute through its points along a number or a date, such as the inhabitants of each municipality year by year. Sorted by size or by name, with a title, an explanation and a note. The chart comes out as a picture to write to a .png or a .pdf, and can also be written as an interactive web page, where each value shows under the pointer and the bars can be sorted.",
       "inputs": [
         "Input"
       ],
@@ -6826,6 +7055,78 @@
       "outputs_follow_settings": false,
       "offered": true,
       "params": [
+        {
+          "key": "kind",
+          "label": "Chart",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "bars",
+              "label": "Bars"
+            },
+            {
+              "value": "lines",
+              "label": "Lines"
+            }
+          ],
+          "default": "bars",
+          "hint": "Lines show how a value changes, such as the inhabitants year by year"
+        },
+        {
+          "key": "x",
+          "label": "Along",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "For lines: the attribute along the bottom, a number such as a year, or a date"
+        },
+        {
+          "key": "series",
+          "label": "A line for each",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "For lines: an attribute whose values each get a line of their own, such as the municipality. Empty draws one line"
+        },
+        {
+          "key": "from_zero",
+          "label": "The scale starts at 0",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "no",
+              "label": "No"
+            },
+            {
+              "value": "yes",
+              "label": "Yes"
+            }
+          ],
+          "default": "no",
+          "hint": "For lines. Else it starts near the smallest value"
+        },
+        {
+          "key": "markers",
+          "label": "A dot at each point",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "no",
+              "label": "No"
+            },
+            {
+              "value": "yes",
+              "label": "Yes"
+            }
+          ],
+          "default": "no",
+          "hint": "For lines"
+        },
         {
           "key": "category",
           "label": "Names",
@@ -8522,6 +8823,790 @@
       ]
     },
     {
+      "type": "RasterCreator",
+      "title": "Create raster",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Makes a raster over a rectangle, or the extent of what comes in on Extent, with cells of a size: every cell one value, or the value of an expression of the middle of the cell (x and y), its row and its column. A start for Raster calculator, a cost raster or a grid to count with.",
+      "inputs": [
+        "Extent"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "bbox",
+          "label": "Rectangle",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "West, south, east, north in the coordinate system below. Not needed when something comes in on Extent, whose extent is used"
+        },
+        {
+          "key": "crs",
+          "label": "Coordinate system",
+          "kind": "crs",
+          "shape": "a coordinate system, such as \"EPSG:3006\"",
+          "default": "EPSG:3006",
+          "hint": "Of the rectangle. With something on Extent, its own"
+        },
+        {
+          "key": "cell",
+          "label": "Cell size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "10",
+          "hint": "In the units of the coordinate system, such as metres"
+        },
+        {
+          "key": "value",
+          "label": "Value",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Of each cell: a number, or an expression with x and y, the middle of the cell, and row and column, such as rand() * 10 or sqrt((x - 319000)^2 + (y - 6400000)^2)"
+        }
+      ]
+    },
+    {
+      "type": "FocalStatistics",
+      "title": "Focal statistics",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Gives each cell a statistic of the cells around it, in a square or a circle: the mean to smooth, the largest or smallest, the spread, the most common value to clean up classes, or how many have a value.",
+      "inputs": [
+        "Raster"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "stat",
+          "label": "Each cell gets",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "mean",
+              "label": "Mean"
+            },
+            {
+              "value": "min",
+              "label": "Smallest"
+            },
+            {
+              "value": "max",
+              "label": "Largest"
+            },
+            {
+              "value": "sum",
+              "label": "Sum"
+            },
+            {
+              "value": "median",
+              "label": "Median"
+            },
+            {
+              "value": "std",
+              "label": "Spread (standard deviation)"
+            },
+            {
+              "value": "range",
+              "label": "Range: largest less smallest"
+            },
+            {
+              "value": "majority",
+              "label": "Most common value"
+            },
+            {
+              "value": "count",
+              "label": "How many cells have a value"
+            }
+          ],
+          "default": "mean",
+          "hint": "Of the cells around it, itself included"
+        },
+        {
+          "key": "radius",
+          "label": "Cells around",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "How many cells out: 1 is a window of 3 × 3, 2 of 5 × 5"
+        },
+        {
+          "key": "shape",
+          "label": "Window",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "square",
+              "label": "Square"
+            },
+            {
+              "value": "circle",
+              "label": "Circle"
+            }
+          ],
+          "default": "square"
+        }
+      ]
+    },
+    {
+      "type": "CostDistance",
+      "title": "Cost distance",
+      "group": "tool",
+      "category": "Raster",
+      "description": "The least cost of getting from the places on From to every cell, over a raster of what it costs to cross each cell, such as minutes per metre through forest, bog and fields. Empty cells cannot be crossed. Where there are no roads, how far one comes on foot or in a forest machine.",
+      "inputs": [
+        "Cost",
+        "From"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "reach",
+          "label": "As far as",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The largest cost: cells that cost more to reach are left empty. Empty: no limit"
+        }
+      ]
+    },
+    {
+      "type": "PointThinner",
+      "title": "Thin point cloud",
+      "group": "tool",
+      "category": "Point clouds",
+      "description": "Makes a point cloud evenly thinner: one point in each cube of a size, the one nearest its middle, or no two points closer than a distance. Each class on its own if asked, so that few points of one class are kept among many of another.",
+      "inputs": [
+        "Points"
+      ],
+      "outputs": [
+        "Points"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "method",
+          "label": "Thin by",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "voxel",
+              "label": "One point in each cube: the nearest to its middle"
+            },
+            {
+              "value": "distance",
+              "label": "No two points closer than the distance"
+            }
+          ],
+          "default": "voxel",
+          "hint": "Both keep the cloud even, where every n-th point keeps its patches dense"
+        },
+        {
+          "key": "size",
+          "label": "Size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "In metres: the side of the cubes, or the least distance between points"
+        },
+        {
+          "key": "per_class",
+          "label": "Each class on its own",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "yes",
+              "label": "Yes"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ],
+          "default": "yes",
+          "hint": "So that a few points of a building are not lost among the ground points"
+        }
+      ]
+    },
+    {
+      "type": "PictureStylizer",
+      "title": "Stylize picture",
+      "group": "tool",
+      "category": "Maps",
+      "description": "Draws a picture again in a style: as on a Commodore 64, in big pixels with its 16 colours, as a mosaic of LEGO plates in the colours one can buy, with a list of the plates of each colour to build it, or in big pixels of its own colours. For maps from Draw map, terrain, orthophotos and charts.",
+      "inputs": [
+        "Picture"
+      ],
+      "outputs": [
+        "Picture",
+        "Parts"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "style",
+          "label": "Style",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "c64",
+              "label": "Commodore 64: big pixels in its 16 colours"
+            },
+            {
+              "value": "lego",
+              "label": "LEGO: a mosaic of round plates"
+            },
+            {
+              "value": "lego_square",
+              "label": "LEGO: a mosaic of square plates with studs"
+            },
+            {
+              "value": "pixels",
+              "label": "Big pixels in the colours of the picture"
+            }
+          ],
+          "default": "c64"
+        },
+        {
+          "key": "across",
+          "label": "Pixels or plates across",
+          "kind": "text",
+          "shape": "a string",
+          "default": "160",
+          "hint": "The Commodore 64 had 160 wide pixels across in colour; a LEGO base plate has 48 studs"
+        },
+        {
+          "key": "dither",
+          "label": "Dithering",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "no",
+              "label": "No"
+            },
+            {
+              "value": "yes",
+              "label": "Yes, as games of the time did"
+            }
+          ],
+          "default": "no",
+          "hint": "Mixes the colours of the palette into patterns, for colours it does not have"
+        },
+        {
+          "key": "scale",
+          "label": "Each pixel as",
+          "kind": "text",
+          "shape": "a string",
+          "default": "8",
+          "hint": "How many pixels of the picture each pixel or plate becomes"
+        }
+      ]
+    },
+    {
+      "type": "NetworkBuilder",
+      "title": "Build network",
+      "group": "tool",
+      "category": "Network",
+      "description": "Makes lines into a network that routes can follow: ends close together become one junction, an end that stops just short of a line is joined to it, lines are split where they cross or meet on the same level (a bridge passes over a road on another level), and lines that lie twice are taken away. Each piece gets the part of the network it belongs to; loose ends close to a line and parts not joined to the rest come out on Problems. For OpenStreetMap and Overture roads before Shortest route, Service areas and Allocate to nearest.",
+      "inputs": [
+        "Lines"
+      ],
+      "outputs": [
+        "Network",
+        "Problems"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "tolerance",
+          "label": "Join ends within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0.5",
+          "hint": "In metres: ends this close become one junction, and an end this close to another line is joined to it there"
+        },
+        {
+          "key": "split",
+          "label": "Lines that cross",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "yes",
+              "label": "Are split and joined where they cross"
+            },
+            {
+              "value": "no",
+              "label": "Are joined only at their ends"
+            }
+          ],
+          "default": "yes",
+          "hint": "OpenStreetMap and Overture need splitting; NVDB is joined at its ends already"
+        },
+        {
+          "key": "level",
+          "label": "Level",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Lines",
+          "default": "",
+          "hint": "Lines of different levels cross without being joined, as a bridge over a road: such as layer in OpenStreetMap. Empty: all on one level"
+        },
+        {
+          "key": "near",
+          "label": "Report loose ends within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "2",
+          "hint": "In metres: an end that is this close to another line, but not joined to it, is reported on Problems"
+        }
+      ]
+    },
+    {
+      "type": "ServiceAreas",
+      "title": "Service areas",
+      "group": "tool",
+      "category": "Network",
+      "description": "What can be reached along the network from the facilities, or to them, within some minutes or metres: an area for each limit, around the roads reached, and the roads themselves. For all the facilities together, or each on its own: how many live within ten minutes of a store, where a new one would reach the most.",
+      "inputs": [
+        "Network",
+        "Facilities"
+      ],
+      "outputs": [
+        "Areas",
+        "Roads"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "breaks",
+          "label": "Within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "5, 10, 15",
+          "hint": "Minutes for the quickest, metres for the shortest, separated by commas: an area for each"
+        },
+        {
+          "key": "direction",
+          "label": "Direction",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "to",
+              "label": "Travelling to the facilities, as customers do"
+            },
+            {
+              "value": "from",
+              "label": "Travelling from the facilities, as an ambulance does"
+            }
+          ],
+          "default": "to",
+          "hint": "Matters where there are one-way roads"
+        },
+        {
+          "key": "each",
+          "label": "Areas",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "together",
+              "label": "Of all the facilities together"
+            },
+            {
+              "value": "each",
+              "label": "Of each facility on its own"
+            }
+          ],
+          "default": "together"
+        },
+        {
+          "key": "width",
+          "label": "Area around the roads",
+          "kind": "text",
+          "shape": "a string",
+          "default": "100",
+          "hint": "In metres: how far from the roads reached the area reaches, for the houses and land along them"
+        },
+        {
+          "key": "cost",
+          "label": "By",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "length",
+              "label": "Shortest: the length"
+            },
+            {
+              "value": "time",
+              "label": "Quickest: the time, by the speed"
+            }
+          ],
+          "default": "length"
+        },
+        {
+          "key": "speed",
+          "label": "Speed in km/h",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Network",
+          "default": "",
+          "hint": "Along the line as it is drawn, for the quickest route: an attribute such as F_Hogst_225 in NVDB, or a number"
+        },
+        {
+          "key": "speed_against",
+          "label": "Speed against the line",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Network",
+          "default": "",
+          "hint": "Against the way the line is drawn, such as B_Hogst_225 in NVDB. Empty uses the speed along it"
+        },
+        {
+          "key": "default_speed",
+          "label": "Speed where none is given",
+          "kind": "text",
+          "shape": "a string",
+          "default": "50",
+          "hint": "In km/h, where the speed is empty or 0"
+        },
+        {
+          "key": "along",
+          "label": "May be travelled along the line when",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Network",
+          "default": "",
+          "hint": "A condition for one-way roads, such as F_ForbjudenFardriktning is null. Empty: always"
+        },
+        {
+          "key": "against",
+          "label": "May be travelled against the line when",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Network",
+          "default": "",
+          "hint": "Such as B_ForbjudenFardriktning is null. Empty: always"
+        },
+        {
+          "key": "snap",
+          "label": "Farthest from the network, in metres",
+          "kind": "text",
+          "shape": "a string",
+          "default": "500",
+          "hint": "A point is put on the nearest place of the nearest line. One farther away than this is not reached"
+        },
+        {
+          "key": "tolerance",
+          "label": "Line ends that meet, within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0.01",
+          "hint": "In metres. Lines are joined where their ends are this close, not where they only cross, as at a bridge"
+        }
+      ]
+    },
+    {
+      "type": "NetworkAllocation",
+      "title": "Allocate to nearest",
+      "group": "tool",
+      "category": "Network",
+      "description": "Gives each piece of the network, and each feature on Demand such as the addresses or the people of a population grid, the facility nearest along the network, with the time or distance to it. With the areas of each facility around its roads: the catchment of each store, school or health centre, to count the customers of each with Statistics.",
+      "inputs": [
+        "Network",
+        "Facilities",
+        "Demand"
+      ],
+      "outputs": [
+        "Demand",
+        "Roads",
+        "Areas"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "direction",
+          "label": "Direction",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "to",
+              "label": "Travelling to the facilities, as customers do"
+            },
+            {
+              "value": "from",
+              "label": "Travelling from the facilities, as an ambulance does"
+            }
+          ],
+          "default": "to",
+          "hint": "Matters where there are one-way roads"
+        },
+        {
+          "key": "reach",
+          "label": "At most",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Minutes or metres: farther than this belongs to no facility. Empty: no limit"
+        },
+        {
+          "key": "width",
+          "label": "Area around the roads",
+          "kind": "text",
+          "shape": "a string",
+          "default": "100",
+          "hint": "In metres: how far from the roads reached the area reaches, for the houses and land along them"
+        },
+        {
+          "key": "cost",
+          "label": "By",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "length",
+              "label": "Shortest: the length"
+            },
+            {
+              "value": "time",
+              "label": "Quickest: the time, by the speed"
+            }
+          ],
+          "default": "length"
+        },
+        {
+          "key": "speed",
+          "label": "Speed in km/h",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Network",
+          "default": "",
+          "hint": "Along the line as it is drawn, for the quickest route: an attribute such as F_Hogst_225 in NVDB, or a number"
+        },
+        {
+          "key": "speed_against",
+          "label": "Speed against the line",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Network",
+          "default": "",
+          "hint": "Against the way the line is drawn, such as B_Hogst_225 in NVDB. Empty uses the speed along it"
+        },
+        {
+          "key": "default_speed",
+          "label": "Speed where none is given",
+          "kind": "text",
+          "shape": "a string",
+          "default": "50",
+          "hint": "In km/h, where the speed is empty or 0"
+        },
+        {
+          "key": "along",
+          "label": "May be travelled along the line when",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Network",
+          "default": "",
+          "hint": "A condition for one-way roads, such as F_ForbjudenFardriktning is null. Empty: always"
+        },
+        {
+          "key": "against",
+          "label": "May be travelled against the line when",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Network",
+          "default": "",
+          "hint": "Such as B_ForbjudenFardriktning is null. Empty: always"
+        },
+        {
+          "key": "snap",
+          "label": "Farthest from the network, in metres",
+          "kind": "text",
+          "shape": "a string",
+          "default": "500",
+          "hint": "A point is put on the nearest place of the nearest line. One farther away than this is not reached"
+        },
+        {
+          "key": "tolerance",
+          "label": "Line ends that meet, within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0.01",
+          "hint": "In metres. Lines are joined where their ends are this close, not where they only cross, as at a bridge"
+        }
+      ]
+    },
+    {
+      "type": "Lod2Builder",
+      "title": "LoD2 buildings from points",
+      "group": "tool",
+      "category": "Point clouds",
+      "description": "3D models of the buildings on Buildings with the shapes of their roofs, fitted to the points of the cloud on Points that lie on them: flat, shed, gable or hipped, whichever fits best, with walls from the ground up to the edge of the roof. As the buildings of LoD2 in CityGML, for the 3D view, Render 3D scene and glTF for Blender. Each gets its ground, height, the shape of its roof and how far the points lie from it (roof_fit, in metres: large for roofs of other shapes).",
+      "inputs": [
+        "Buildings",
+        "Points",
+        "Ground"
+      ],
+      "outputs": [
+        "Buildings"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "classes",
+          "label": "Roof points",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The classes of the points on the roofs, such as 6 for buildings. Empty takes every point on the footprint that is not ground"
+        },
+        {
+          "key": "ground_classes",
+          "label": "Ground points",
+          "kind": "text",
+          "shape": "a string",
+          "default": "2",
+          "hint": "Without a terrain model on Ground, the ground is taken from the points of these classes around the building"
+        },
+        {
+          "key": "inset",
+          "label": "Leave out the edge",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0.5",
+          "hint": "Metres inside the footprint, so that walls, eaves and trees at the edge do not count"
+        },
+        {
+          "key": "shapes",
+          "label": "Roofs",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "fitted",
+              "label": "The shape that fits the points best: flat, shed, gable or hipped"
+            },
+            {
+              "value": "flat",
+              "label": "All flat, at the height of the roof"
+            }
+          ],
+          "default": "fitted"
+        },
+        {
+          "key": "wall_colour",
+          "label": "Walls",
+          "kind": "text",
+          "shape": "a string",
+          "default": "#e8e0d0",
+          "hint": "A colour, such as #e8e0d0"
+        },
+        {
+          "key": "roof_colour",
+          "label": "Roofs coloured",
+          "kind": "text",
+          "shape": "a string",
+          "default": "#9a4b3c",
+          "hint": "A colour, such as #9a4b3c for tiles or #555555 for felt"
+        }
+      ]
+    },
+    {
+      "type": "TerrainModel",
+      "title": "Terrain to 3D model",
+      "group": "tool",
+      "category": "3D models and views",
+      "description": "Makes the heights of a raster on Heights into a 3D model of the terrain: a surface of triangles, with a picture on Picture, such as an orthophoto or a map from Draw map, draped over it. With a block under it if you like, to print or to set on a table. For glTF and Blender, the 3D view and Render 3D scene.",
+      "inputs": [
+        "Heights",
+        "Picture"
+      ],
+      "outputs": [
+        "Model"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "most",
+          "label": "Points along a side",
+          "kind": "text",
+          "shape": "a string",
+          "default": "500",
+          "hint": "At most this many points of height along the longer side: more is finer and larger. Cells are skipped to keep to it"
+        },
+        {
+          "key": "exaggerate",
+          "label": "Heights times",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "Such as 2 to make hills twice as high"
+        },
+        {
+          "key": "base",
+          "label": "Base",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "None: only the surface"
+            },
+            {
+              "value": "block",
+              "label": "A block under it, with sides and a bottom, to print or set on a table"
+            }
+          ],
+          "default": "none"
+        },
+        {
+          "key": "depth",
+          "label": "Block below the lowest",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "In metres. Empty: a tenth of the height of the terrain, at least 1"
+        },
+        {
+          "key": "texture_most",
+          "label": "Largest picture",
+          "kind": "text",
+          "shape": "a string",
+          "default": "4096",
+          "hint": "Pixels along a side of the picture draped over the terrain; larger is made smaller"
+        }
+      ]
+    },
+    {
       "type": "OvertureDownloader",
       "title": "Overture Maps download",
       "group": "tool",
@@ -8539,8 +9624,8 @@
         {
           "key": "kind",
           "label": "What",
-          "kind": "choice",
-          "shape": "one of the values in choices, as a string",
+          "kind": "picks",
+          "shape": "some of the values in choices: a list of strings, or one string separated by commas",
           "choices": [
             {
               "value": "buildings/building",
@@ -8603,7 +9688,8 @@
               "label": "Borders"
             }
           ],
-          "default": "buildings/building"
+          "default": "buildings/building",
+          "hint": "Tick one or more. Each feature gets the attribute kind, such as buildings/building"
         },
         {
           "key": "bbox",
@@ -8620,6 +9706,24 @@
           "shape": "a string",
           "default": "25",
           "hint": "A larger rectangle is made smaller around its middle to this size. The files are large, and each part of one that reaches into the rectangle is fetched"
+        },
+        {
+          "key": "cut",
+          "label": "Large features",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "cut",
+              "label": "Cut at the edge of the area"
+            },
+            {
+              "value": "whole",
+              "label": "Whole, when they reach into the area"
+            }
+          ],
+          "default": "cut",
+          "hint": "Land cover, land use, water and borders can be very large: cut, only the part within the area comes along"
         },
         {
           "key": "crs",
@@ -9707,8 +10811,8 @@
         {
           "key": "what",
           "label": "What",
-          "kind": "choice",
-          "shape": "one of the values in choices, as a string",
+          "kind": "picks",
+          "shape": "some of the values in choices: a list of strings, or one string separated by commas",
           "choices": [
             {
               "value": "buildings",
@@ -9743,7 +10847,8 @@
               "label": "A filter of your own"
             }
           ],
-          "default": "buildings"
+          "default": "buildings",
+          "hint": "Tick one or more. Each feature gets the attribute kind, which says what it was fetched as"
         },
         {
           "key": "filter",
@@ -9768,6 +10873,24 @@
           "shape": "a string",
           "default": "25",
           "hint": "A larger rectangle is made smaller around its middle to this size, so that the server is not asked for too much"
+        },
+        {
+          "key": "cut",
+          "label": "Large features",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "cut",
+              "label": "Cut at the edge of the area"
+            },
+            {
+              "value": "whole",
+              "label": "Whole, when they reach into the area"
+            }
+          ],
+          "default": "cut",
+          "hint": "Land cover, lakes and borders can be very large: cut, only the part within the area comes along"
         },
         {
           "key": "crs",

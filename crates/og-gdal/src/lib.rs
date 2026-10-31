@@ -428,7 +428,8 @@ pub(crate) fn zip_member(path: &Path, asked: Option<&str>, notes: &mut Notes) ->
     }
     let root = format!("/vsizip/{}", path.to_string_lossy().replace('\\', "/"));
     let entries: Vec<String> = gdal::vsi::read_dir(&root, true).unwrap_or_default().iter().map(|e| e.to_string_lossy().replace('\\', "/")).collect();
-    const DATA: [&str; 16] = ["shp", "gpkg", "geojson", "json", "gml", "kml", "tab", "xlsx", "ods", "csv", "fgb", "sqlite", "tif", "parquet", "dxf", "dwg"];
+    const DATA: [&str; 17] =
+        ["shp", "gpkg", "geojson", "json", "gml", "kml", "tab", "xlsx", "ods", "csv", "fgb", "sqlite", "tif", "parquet", "dxf", "dwg", "gpx"];
     let data: Vec<&String> = entries.iter().filter(|e| DATA.contains(&ext_of(Path::new(e)).as_str())).collect();
     let name_of = |e: &str| e.rsplit('/').next().unwrap_or(e).to_string();
     match asked {
@@ -659,6 +660,35 @@ impl Backend for GdalBackend {
             let t = dxf::read(path, opts, notes, progress);
             drain_messages(notes);
             return t;
+        }
+        // A GPX file without a layer chosen: its tracks, or else its routes or waypoints,
+        // without the many columns of GPX that nothing is written in.
+        if ext == "gpx" && opts.layer.is_none() {
+            use gdal::vector::LayerAccess;
+            let ds = open(path, false, &[])?;
+            let mut chosen = None;
+            for name in ["tracks", "routes", "waypoints"] {
+                if let Ok(mut l) = ds.layer_by_name(name) {
+                    if l.features().next().is_some() {
+                        chosen = Some(name.to_string());
+                        break;
+                    }
+                }
+            }
+            drop(ds);
+            let Some(name) = chosen else {
+                return Err(GbError(format!("{} has no tracks, routes or waypoints.", path.display())));
+            };
+            notes.info(format!("the {} of the GPX file; choose another layer, such as track_points, in the input", name));
+            let mut t = self.read_with(path, &ReadOpts { layer: Some(name), ..opts.clone() }, notes, progress)?;
+            let empty: Vec<usize> = (0..t.fields.len()).filter(|k| t.features.iter().all(|f| f.attrs[*k].is_null())).collect();
+            for k in empty.into_iter().rev() {
+                t.fields.remove(k);
+                for f in t.features.iter_mut() {
+                    f.attrs.remove(k);
+                }
+            }
+            return Ok(t);
         }
         // A DWG is made a DXF by acadrust, and read as one.
         if ext == "dwg" {
@@ -1123,6 +1153,33 @@ fn http_send(method: &str, url: &str, headers: &[(String, String)], body: Option
     Ok(HttpAnswer { status, body: String::from_utf8_lossy(&bytes).into_owned(), headers })
 }
 
+/// A web address as it may be sent: letters beyond ASCII, such as å, ä and ö, and spaces as
+/// %-codes, in UTF-8, and in the query also the brackets and other signs that some servers
+/// and libraries do not take as they are, such as range[type] of HERE. What is %-coded
+/// already is left as it is.
+pub fn escape_url(url: &str) -> String {
+    let mut out = String::with_capacity(url.len() + 16);
+    let mut in_query = false;
+    for c in url.chars() {
+        if c == '?' {
+            in_query = true;
+        }
+        if c == '#' {
+            in_query = false;
+        }
+        let odd = c == ' ' || !c.is_ascii() || (in_query && "[]{}|\"<>\\^`".contains(c));
+        if odd {
+            let mut b = [0u8; 4];
+            for byte in c.encode_utf8(&mut b).as_bytes() {
+                out.push_str(&format!("%{:02X}", byte));
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// An answer: the status, the body as bytes and the headers.
 type Answer = (u16, Vec<u8>, Vec<(String, String)>);
 
@@ -1141,6 +1198,7 @@ fn http_bytes(method: &str, url: &str, headers: &[(String, String)], body: Optio
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err(GbError(format!("\"{}\" is not a web address. It should start with http:// or https://.", url)));
     }
+    let url = &escape_url(url);
     let timeout = Some(std::time::Duration::from_secs(timeout_s));
     let sent = match method {
         "POST" | "PUT" | "PATCH" => {
@@ -2049,4 +2107,16 @@ pub fn crs_list() -> &'static [og_engine::io::CrsEntry] {
         out.dedup_by_key(|c| c.code);
         out
     })
+}
+
+#[cfg(test)]
+mod url_tests {
+    #[test]
+    fn letters_spaces_and_brackets_of_an_address_are_escaped() {
+        assert_eq!(
+            super::escape_url("https://x.se/v8/isolines?q=Borås torg&range[type]=time&a=%C3%A5"),
+            "https://x.se/v8/isolines?q=Bor%C3%A5s%20torg&range%5Btype%5D=time&a=%C3%A5"
+        );
+        assert_eq!(super::escape_url("https://x.se/a/b?c=1#frag[1]"), "https://x.se/a/b?c=1#frag[1]");
+    }
 }

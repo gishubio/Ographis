@@ -1,0 +1,667 @@
+{
+  "format": "ographis/1",
+  "name": "To Drottningtorget by public transport",
+  "description": "A hundred start points around Göteborg routed with OpenTripPlanner to Drottningtorget by walking and public transport, leaving on a Wednesday at 07:30: the travel time from each, every leg of the trips, and a map of the routes coloured by mode. Needs an OpenTripPlanner of your own; set the variable otp.",
+  "variables": [
+    {
+      "name": "otp",
+      "value": "http://localhost:8080"
+    },
+    {
+      "name": "departure",
+      "value": "2026-11-04T07:30:00+01:00"
+    },
+    {
+      "name": "to_lat",
+      "value": "57.7069"
+    },
+    {
+      "name": "to_lon",
+      "value": "11.9698"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "starts",
+      "type": "Reader",
+      "name": "Start points",
+      "x": 20,
+      "y": 20,
+      "comment": "A hundred made-up start points around Göteborg, made by a script: put your own table here, with lat and lon in WGS 84",
+      "params": {
+        "path": "gothenburg_starts.csv",
+        "x": "lon",
+        "y": "lat",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "ask",
+      "type": "HttpCaller",
+      "name": "Ask OpenTripPlanner",
+      "x": 280,
+      "y": 20,
+      "comment": "The GraphQL API of OpenTripPlanner 2.5 or later (planConnection), on a server of your own with the GTFS of Västtrafik and OpenStreetMap: set the variable otp to its address. Walking and all kinds of public transport, the first itinerary that leaves at or after the time. Four at a time, and the answers are kept in http-cache beside the model, so a second run does not ask again",
+      "params": {
+        "url": "'$(otp)/otp/gtfs/v1'",
+        "method": "POST",
+        "body": "'{\"query\": \"query($fromLat: CoordinateValue!, $fromLon: CoordinateValue!, $toLat: CoordinateValue!, $toLon: CoordinateValue!, $when: OffsetDateTime!) { planConnection(origin: {location: {coordinate: {latitude: $fromLat, longitude: $fromLon}}}, destination: {location: {coordinate: {latitude: $toLat, longitude: $toLon}}}, dateTime: {earliestDeparture: $when}, first: 1) { edges { node { start end duration numberOfTransfers legs { mode duration distance route { shortName } from { name } to { name } start { scheduledTime } end { scheduledTime } legGeometry { points } } } } } }\", \"variables\": {\"fromLat\": ' || lat || ', \"fromLon\": ' || lon || ', \"toLat\": $(to_lat), \"toLon\": $(to_lon), \"when\": \"$(departure)\"}}'",
+        "parallel": "4",
+        "cache": "disk",
+        "timeout": "60"
+      }
+    },
+    {
+      "id": "trip",
+      "type": "JsonExtractor",
+      "name": "The whole trip",
+      "x": 540,
+      "y": 20,
+      "params": {
+        "attribute": "_response",
+        "paths": [
+          [
+            "data.planConnection.edges[0].node.duration",
+            "seconds"
+          ],
+          [
+            "data.planConnection.edges[0].node.numberOfTransfers",
+            "transfers"
+          ],
+          [
+            "data.planConnection.edges[0].node.start",
+            "leaves"
+          ],
+          [
+            "data.planConnection.edges[0].node.end",
+            "arrives"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "found",
+      "type": "Tester",
+      "name": "A trip was found",
+      "x": 800,
+      "y": 20,
+      "comment": "A start point far from any street or stop gets no trip: those go to Failed",
+      "params": {
+        "test": "seconds IS NOT NULL"
+      }
+    },
+    {
+      "id": "trip_times",
+      "type": "AttributeManager",
+      "name": "Minutes and times",
+      "x": 1060,
+      "y": 20,
+      "params": {
+        "attributes": [],
+        "create": [
+          {
+            "name": "minutes",
+            "value": "round(seconds / 60)"
+          },
+          {
+            "name": "leaves_at",
+            "value": "substr(leaves, 12, 5)"
+          },
+          {
+            "name": "arrives_at",
+            "value": "substr(arrives, 12, 5)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "trip_keep",
+      "type": "AttributeKeeper",
+      "name": "The useful attributes",
+      "x": 1320,
+      "y": 20,
+      "params": {
+        "keep": "id, area, minutes, transfers, leaves_at, arrives_at"
+      }
+    },
+    {
+      "id": "starts_out_prep",
+      "type": "Reprojector",
+      "name": "To SWEREF 99 TM",
+      "x": 1580,
+      "y": 20,
+      "params": {
+        "crs": "EPSG:3006"
+      }
+    },
+    {
+      "id": "starts_out",
+      "type": "Writer",
+      "name": "Travel time from each",
+      "x": 1840,
+      "y": 20,
+      "params": {
+        "path": "out/otp_drottningtorget.gpkg",
+        "layer": "start_points"
+      }
+    },
+    {
+      "id": "legs",
+      "type": "JsonExploder",
+      "name": "A feature per leg",
+      "x": 1060,
+      "y": 240,
+      "params": {
+        "attribute": "_response",
+        "path": "data.planConnection.edges[0].node.legs",
+        "prefix": "leg",
+        "index_attr": "leg_no"
+      }
+    },
+    {
+      "id": "leg_geom",
+      "type": "GeometryFromText",
+      "name": "Leg as a line",
+      "x": 1320,
+      "y": 240,
+      "params": {
+        "attribute": "leg.legGeometry.points",
+        "kind": "polyline",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "leg_attrs",
+      "type": "AttributeManager",
+      "name": "Mode, line and times",
+      "x": 1580,
+      "y": 240,
+      "params": {
+        "attributes": [],
+        "create": [
+          {
+            "name": "mode",
+            "value": "\"leg.mode\""
+          },
+          {
+            "name": "line",
+            "value": "coalesce(\"leg.route.shortName\", '')"
+          },
+          {
+            "name": "from_stop",
+            "value": "\"leg.from.name\""
+          },
+          {
+            "name": "to_stop",
+            "value": "\"leg.to.name\""
+          },
+          {
+            "name": "leg_leaves",
+            "value": "substr(\"leg.start.scheduledTime\", 12, 5)"
+          },
+          {
+            "name": "leg_minutes",
+            "value": "round(\"leg.duration\" / 60, 1)"
+          },
+          {
+            "name": "metres",
+            "value": "round(\"leg.distance\")"
+          }
+        ]
+      }
+    },
+    {
+      "id": "leg_keep",
+      "type": "AttributeKeeper",
+      "name": "The useful attributes",
+      "x": 1840,
+      "y": 240,
+      "params": {
+        "keep": "id, area, leg_no, mode, line, from_stop, to_stop, leg_leaves, leg_minutes, metres, minutes"
+      }
+    },
+    {
+      "id": "leg_3006",
+      "type": "Reprojector",
+      "name": "To SWEREF 99 TM",
+      "x": 2100,
+      "y": 240,
+      "params": {
+        "crs": "EPSG:3006"
+      }
+    },
+    {
+      "id": "legs_out",
+      "type": "Writer",
+      "name": "All the legs",
+      "x": 2360,
+      "y": 160,
+      "params": {
+        "path": "out/otp_drottningtorget.gpkg",
+        "layer": "legs"
+      }
+    },
+    {
+      "id": "by_mode",
+      "type": "ValueFilter",
+      "name": "By mode",
+      "x": 2360,
+      "y": 320,
+      "comment": "An output for each mode, to draw each in its own colour with its name in the legend",
+      "params": {
+        "attribute": "mode",
+        "values": [
+          "WALK",
+          "BUS",
+          "TRAM",
+          "RAIL",
+          "FERRY"
+        ]
+      }
+    },
+    {
+      "id": "dest",
+      "type": "FeatureCreator",
+      "name": "Drottningtorget",
+      "x": 20,
+      "y": 460,
+      "params": {
+        "kind": "point",
+        "coordinates": "$(to_lon) $(to_lat)",
+        "crs": "EPSG:4326",
+        "name": "Drottningtorget"
+      }
+    },
+    {
+      "id": "dest_3006",
+      "type": "Reprojector",
+      "name": "To SWEREF 99 TM",
+      "x": 280,
+      "y": 460,
+      "params": {
+        "crs": "EPSG:3006"
+      }
+    },
+    {
+      "id": "water",
+      "type": "OsmDownloader",
+      "name": "Water from OpenStreetMap",
+      "x": 280,
+      "y": 620,
+      "comment": "Only for the background of the map: the sea, the river and lakes around the start points. Needs the internet; disable it to draw without",
+      "params": {
+        "what": [
+          "water"
+        ],
+        "max_km2": "600",
+        "cut": "cut",
+        "crs": "EPSG:3006"
+      }
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "name": "Map of the routes",
+      "x": 2620,
+      "y": 320,
+      "comment": "The top row in the list of layers is drawn on top",
+      "params": {
+        "width": "2000",
+        "crs": "EPSG:3006",
+        "background": "#f4f1ea",
+        "legend": "bottom-right",
+        "legend_title": "To Drottningtorget, Wednesday 07:30",
+        "layers": [
+          {
+            "from": "dest_3006:Reprojected",
+            "name": "Drottningtorget",
+            "fill": "#ffd200",
+            "stroke": "#000000",
+            "width": 2.0,
+            "size": 16
+          },
+          {
+            "from": "starts_out_prep:Reprojected",
+            "name": "Start points",
+            "fill": "#ffffff",
+            "stroke": "#202020",
+            "width": 1.0,
+            "size": 7,
+            "color_by": "minutes",
+            "ramp": "heat",
+            "classes": 5,
+            "method": "equal"
+          },
+          {
+            "from": "by_mode:FERRY",
+            "name": "Ferry",
+            "fill": "none",
+            "stroke": "#00a0b0",
+            "width": 2.6,
+            "size": 4
+          },
+          {
+            "from": "by_mode:RAIL",
+            "name": "Train",
+            "fill": "none",
+            "stroke": "#6a3d9a",
+            "width": 3.0,
+            "size": 4
+          },
+          {
+            "from": "by_mode:TRAM",
+            "name": "Tram",
+            "fill": "none",
+            "stroke": "#d7191c",
+            "width": 2.6,
+            "size": 4
+          },
+          {
+            "from": "by_mode:BUS",
+            "name": "Bus",
+            "fill": "none",
+            "stroke": "#1f6fd1",
+            "width": 2.2,
+            "size": 4
+          },
+          {
+            "from": "by_mode:WALK",
+            "name": "Walking",
+            "fill": "none",
+            "stroke": "#8a8a8a",
+            "width": 1.2,
+            "size": 4
+          },
+          {
+            "from": "by_mode:Other",
+            "name": "Other",
+            "fill": "none",
+            "stroke": "#ff7f00",
+            "width": 2.0,
+            "size": 4
+          },
+          {
+            "from": "water:Output",
+            "name": "Water",
+            "fill": "#cfe3f2",
+            "stroke": "none",
+            "width": 0.0,
+            "size": 4
+          }
+        ]
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "name": "Map as PNG",
+      "x": 2880,
+      "y": 320,
+      "params": {
+        "path": "out/otp_drottningtorget.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "starts",
+        "Output"
+      ],
+      "to": [
+        "ask",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "ask",
+        "Output"
+      ],
+      "to": [
+        "trip",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "trip",
+        "Output"
+      ],
+      "to": [
+        "found",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "found",
+        "Passed"
+      ],
+      "to": [
+        "trip_times",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "trip_times",
+        "Output"
+      ],
+      "to": [
+        "trip_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "trip_keep",
+        "Output"
+      ],
+      "to": [
+        "starts_out_prep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "starts_out_prep",
+        "Reprojected"
+      ],
+      "to": [
+        "starts_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "trip_times",
+        "Output"
+      ],
+      "to": [
+        "legs",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "legs",
+        "Exploded"
+      ],
+      "to": [
+        "leg_geom",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "leg_geom",
+        "Output"
+      ],
+      "to": [
+        "leg_attrs",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "leg_attrs",
+        "Output"
+      ],
+      "to": [
+        "leg_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "leg_keep",
+        "Output"
+      ],
+      "to": [
+        "leg_3006",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "leg_3006",
+        "Reprojected"
+      ],
+      "to": [
+        "legs_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "leg_3006",
+        "Reprojected"
+      ],
+      "to": [
+        "by_mode",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "dest",
+        "Output"
+      ],
+      "to": [
+        "dest_3006",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "starts",
+        "Output"
+      ],
+      "to": [
+        "water",
+        "Extent"
+      ]
+    },
+    {
+      "from": [
+        "dest_3006",
+        "Reprojected"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "starts_out_prep",
+        "Reprojected"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "by_mode",
+        "WALK"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "by_mode",
+        "BUS"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "by_mode",
+        "TRAM"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "by_mode",
+        "RAIL"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "by_mode",
+        "FERRY"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "by_mode",
+        "Other"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "water",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    }
+  ]
+}

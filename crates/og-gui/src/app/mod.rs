@@ -29,6 +29,7 @@ mod form;
 mod frame;
 mod groups;
 mod help;
+mod keyboard;
 mod navigator;
 mod palette;
 mod run;
@@ -114,6 +115,19 @@ struct GroupDrag {
 
 /// Files that belong to a Shapefile or a layer and are never data sources of their own.
 const SIDECARS: &[&str] = &["shx", "prj", "cpg", "qpj", "qmd", "qix", "fix", "sbn", "sbx"];
+
+/// The form of Model → Schedule: when the model is to run by itself.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScheduleForm {
+    pub name: String,
+    pub every: og_engine::schedule::Every,
+    pub time: String,
+    pub day: String,
+    pub hours: u32,
+    pub date: u32,
+    /// What came of the last try, and whether it went well.
+    pub answer: Option<(bool, String)>,
+}
 
 pub struct App {
     pub snarl: Snarl<GNode>,
@@ -236,6 +250,20 @@ pub struct App {
     pub about: bool,
     /// Whether the window with the history of the runs is open.
     pub history_open: bool,
+    /// The form of Model → Schedule, while it is open.
+    pub schedule: Option<ScheduleForm>,
+    /// The list of Ctrl+F and Ctrl+L, while it is open.
+    pub picker: Option<keyboard::Picker>,
+    /// Enter on the canvas: the form gets the keyboard, over two frames.
+    focus_form: u8,
+    /// Frames in which a focus that egui gave on Tab is let go of.
+    tab_surrender: u8,
+    /// Whether the small map of the model is shown in a corner of the canvas.
+    pub show_minimap: bool,
+    /// The size of everything last set, to tell when Ctrl and + or − has changed it.
+    applied_zoom: f32,
+    /// What to tell when a long run has finished, at the next frame.
+    notice: Option<String>,
     /// The lock of the model while it runs, and when the run started.
     run_lock: Option<og_engine::history::Lock>,
     /// The number of features of a trial run that is about to start.
@@ -419,6 +447,13 @@ impl App {
             layer_choices: VecDeque::new(),
             about: false,
             history_open: false,
+            schedule: None,
+            picker: None,
+            focus_form: 0,
+            tab_surrender: 0,
+            show_minimap: true,
+            applied_zoom: 0.0,
+            notice: None,
             run_lock: None,
             trial: None,
             quick_add: None,

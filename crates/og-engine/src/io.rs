@@ -127,6 +127,12 @@ pub struct DbWrite {
     pub append: bool,
     /// The primary key of a new table. None: a new column ogc_fid.
     pub key: Option<PrimaryKey>,
+    /// Empty the table that is there and fill it again, in the same transaction: it keeps
+    /// its columns, indexes, rights and the views on it.
+    pub empty_first: bool,
+    /// Commit after every so many rows, so that a long write is not undone from the start
+    /// when it fails. None: all or nothing, in one transaction.
+    pub commit_every: Option<usize>,
 }
 
 /// One layer of a PDF with layers: features, or a picture, with how they look.

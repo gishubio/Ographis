@@ -154,15 +154,21 @@ Why Ographis works as it does, and what it does not do yet.
 
 ## Known limitations
 
-- GeoParquet: only geometry in WKB is read, not the native GeoArrow encoding, and the whole
-  file is read before a rectangle is applied, not only the row groups within it. Writing
-  GeoParquet is not there yet.
-- DXF: drawings in DXF only, not DWG. Solids from ACIS (3DSOLID, REGION, BODY) are not read,
-  nor the header of a binary DXF; dimensions become their lines and texts. Colours are those
-  GDAL gives. Hatches become areas.
+- GeoParquet: only geometry in WKB is read, not the native GeoArrow encoding. Within a
+  rectangle only the row groups whose box statistics reach into it are read (and from the web
+  only fetched); a file without a box column (the covering of GeoParquet 1.1, or `bbox`) is
+  read whole. Ographis writes the rows in the order they come, so its own files are only as
+  quick to read in parts as that order is close in space.
+- DXF: solids from ACIS (3DSOLID, REGION, BODY) are not read, nor the header of a binary
+  DXF; dimensions become their lines and texts. Colours are those GDAL gives, with ByLayer
+  taken from the layer; the map under the canvas draws a drawing in them, and Draw map can
+  (*The colours written in it*). Hatches become areas.
 - Vector tiles: Mapbox Vector Tiles are read, not yet the newer MapLibre Tile format (MLT).
   The Rust library for it needs a newer compiler than Ographis is built with, and changes
-  from week to week; it will come when it has settled. Tiles are not written. Features are
+  from week to week; it will come when it has settled. Tiles are written as PMTiles, one
+  layer to a file, without simplifying beyond the grid of the tiles and without dropping
+  features at low zoom levels: start from a zoom level where the features are not too many,
+  or generalize them first. Features are
   only as exact as the tiles at the zoom level read, and a feature cut by the tiles is put
   together by its id and attributes, so two features alike in both become one.
 - Rasters: the tools that measure from cells take a cell as inside an area when its middle
@@ -174,7 +180,19 @@ Why Ographis works as it does, and what it does not do yet.
   Classify ground points is a simple morphological filter: it finds most of the ground on
   ordinary land, but steep slopes need a larger slope, and the largest object must be larger
   than the largest building. Building heights tells flat, shed and gable roofs; hipped roofs
-  and roofs with dormers or many planes are told as other.
+  and roofs with dormers or many planes are told as other. LoD2 buildings fit one of flat,
+  shed, gable (along or across) or hipped to the whole roof of a building, on its smallest
+  rotated rectangle: an L-shaped house or a roof with dormers gets the one that fits best,
+  and *roof_fit* says how well.
+- Networks: Build network joins ends and splits lines within a tolerance; it does not know
+  turns that are forbidden or tunnels without a level attribute. Service areas are drawn
+  around the roads reached, as wide as asked, not as a hull of the points reached.
+  Allocate to nearest gives a piece of road to the facility nearest its middle.
+- Schedule uses the Task Scheduler as the user who makes the task, running while that user
+  is logged in. A run at night with no one logged in needs the task changed in the Task
+  Scheduler to *Run whether user is logged on or not*, which asks for the password there.
+- The lineage fingerprints files of up to 200 MB (FNV-1a, quick and not cryptographic):
+  it tells that a file has changed, not that it has not been tampered with.
 - DWG is read through acadrust, a young library that is held at one version. It writes the
   drawing as DXF, which is then read as DXF is; what acadrust cannot read is left out with a
   warning, or the drawing cannot be read. Writing DWG is not offered.

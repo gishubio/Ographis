@@ -1065,7 +1065,44 @@ impl SnarlViewer<GNode> for Viewer<'_> {
             ui.allocate_exact_size(egui::vec2(10.0, 4.0), egui::Sense::hover());
             return;
         }
-        ui.label(RichText::new(&n.name).font(theme::strong(14.0)).color(if n.disabled { self.pal.muted } else { self.pal.ink }));
+        let title = ui.label(RichText::new(&n.name).font(theme::strong(14.0)).color(if n.disabled { self.pal.muted } else { self.pal.ink }));
+        // What a screen reader says of the node: its name, its tool, how it went and what it
+        // is connected to, since the wires are only drawn.
+        {
+            let name_of = |id: NodeId| snarl.get_node(id).map_or(String::from("?"), |g| g.name.clone());
+            let port_in = |id: NodeId, k: usize| snarl.get_node(id).and_then(|g| g.inputs().get(k).cloned()).unwrap_or_default();
+            let port_out = |id: NodeId, k: usize| snarl.get_node(id).and_then(|g| g.outputs().get(k).cloned()).unwrap_or_default();
+            let from: Vec<String> = snarl
+                .wires()
+                .filter(|(_, i)| i.node == node)
+                .map(|(o, i)| format!("{} {} into {}", name_of(o.node), port_out(o.node, o.output), port_in(node, i.input)))
+                .collect();
+            let to: Vec<String> = snarl
+                .wires()
+                .filter(|(o, _)| o.node == node)
+                .map(|(o, i)| format!("{} to {} {}", port_out(node, o.output), name_of(i.node), port_in(i.node, i.input)))
+                .collect();
+            let status = match self.status(n) {
+                Some(Status::Error) => ", failed",
+                Some(Status::Warn) => ", finished with warnings",
+                Some(Status::Ok) => ", finished",
+                _ => "",
+            };
+            let mut said = format!("{}, {}{}", n.name, n.ty().map_or(n.kind.as_str(), |t| t.title), status);
+            if n.disabled {
+                said += ", disabled";
+            }
+            if !from.is_empty() {
+                said += &format!(". From {}", from.join("; "));
+            }
+            if !to.is_empty() {
+                said += &format!(". Gives {}", to.join("; "));
+            }
+            // On a response of its own over the name, which only listens for the pointer, so
+            // that the name itself is still found by its text.
+            let r = ui.interact(title.rect, ui.id().with(("node-said", node)), egui::Sense::hover());
+            r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, said.clone()));
+        }
         if n.disabled {
             ui.label(RichText::new("disabled").font(theme::mono(10.5)).color(self.pal.muted)).on_hover_text("Right-click the node to enable it");
             return;
@@ -1083,10 +1120,11 @@ impl SnarlViewer<GNode> for Viewer<'_> {
             ui.label(RichText::new("running").font(theme::mono(10.5)).color(self.pal.xform));
             return;
         }
+        // A sign as well as a colour, for those who do not tell the colours apart.
         let badge = match self.status(n) {
-            Some(Status::Error) => Some(("error", self.pal.err)),
-            Some(Status::Warn) => Some(("warning", self.pal.warn)),
-            Some(Status::Skipped) => Some(("skipped", self.pal.warn)),
+            Some(Status::Error) => Some(("✖ error", self.pal.err)),
+            Some(Status::Warn) => Some(("▲ warning", self.pal.warn)),
+            Some(Status::Skipped) => Some(("– skipped", self.pal.warn)),
             _ => None,
         };
         if let Some((text, color)) = badge {

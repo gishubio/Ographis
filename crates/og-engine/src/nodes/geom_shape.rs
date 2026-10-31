@@ -9,13 +9,56 @@ use rstar::RTree;
 
 // ---------- Buffer (Bufferer) ----------
 
-pub(super) const BUFFERER_PARAMS: &[ParamSpec] = &[ParamSpec {
-    key: "distance",
-    label: "Distance",
-    kind: ParamKind::Expression("Input"),
-    default: "100",
-    hint: "In metres. A number, or an expression such as width / 2. Negative shrinks areas",
+const BUFFER_SIDES: &[(&str, &str)] = &[("both", "Both"), ("left", "Left of the line"), ("right", "Right of the line")];
+const BUFFER_ENDS: &[(&str, &str)] = &[("round", "Round"), ("flat", "Flat")];
+
+pub(super) const BUFFERER_PARAMS: &[ParamSpec] = &[
+    ParamSpec {
+        key: "distance",
+        label: "Distance",
+        kind: ParamKind::Expression("Input"),
+        default: "100",
+        hint: "In metres. A number, or an expression such as width / 2. Negative shrinks areas",
+    },
+    ParamSpec {
+        key: "side",
+        label: "Side",
+        kind: ParamKind::Choice(BUFFER_SIDES),
+        default: "both",
+        hint: "Of lines: one side only, left or right as the line is drawn, such as the land along one bank of a river. Areas and points get buffers all round",
+    },
+    ParamSpec { key: "ends", label: "Ends of lines", kind: ParamKind::Choice(BUFFER_ENDS), default: "round", hint: "Flat ends stop where the line stops" },
+];
+
+// ---------- Remove holes (HoleRemover) ----------
+
+pub(super) const HOLE_PARAMS: &[ParamSpec] = &[ParamSpec {
+    key: "smallest",
+    label: "Holes smaller than",
+    kind: ParamKind::Text,
+    default: "",
+    hint: "In square metres: holes smaller than this are filled, larger ones kept. Empty fills every hole",
 }];
+
+pub(super) fn run_holes(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+    let table = input(inp, "Input");
+    let smallest = number_param(p, "smallest", "Holes smaller than")?;
+    let geographic = ctx.geographic(table.crs).unwrap_or(false);
+    let mut out = table.clone();
+    let mut removed = 0usize;
+    for f in out.features.iter_mut() {
+        if let Some(g) = &f.geom {
+            let (g, n) = geom::remove_holes(g, smallest, geographic);
+            if n > 0 {
+                removed += n;
+                f.geom = Some(g);
+                f.z = None;
+            }
+        }
+    }
+    ctx.notes.info(format!("{} holes filled", fmt_count(removed as u64)));
+    Ok(vec![("Output".into(), out)])
+}
 
 /// Fails with a clear message if the stream is in degrees, where a distance in metres means nothing.
 pub(super) fn need_metres(ctx: &NodeCtx, table: &Table, what: &str) -> Result<()> {
@@ -82,6 +125,12 @@ pub(super) fn run_bufferer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Out
         need_metres(ctx, table, "Buffer")?;
     }
     let geographic = ctx.geographic(table.crs);
+    let side = match p.get("side").as_deref() {
+        Some("left") => geom::Side::Left,
+        Some("right") => geom::Side::Right,
+        _ => geom::Side::Both,
+    };
+    let flat = p.get("ends").as_deref() == Some("flat");
     let mut out = table.like();
     let (mut no_distance, mut vanished) = (0usize, 0usize);
     for (i, f) in table.features.iter().enumerate() {
@@ -97,7 +146,7 @@ pub(super) fn run_bufferer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Out
                 continue;
             }
         };
-        match geom::buffer(g, d) {
+        match geom::buffer_with(g, d, flat, side) {
             Some(b) => out.features.push(Feature { z: None, attrs: f.attrs.clone(), geom: Some(b) }),
             None => vanished += 1,
         }
@@ -465,13 +514,34 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Geometry",
-        desc: "Replaces each geometry with the area within a distance of it. Points become discs, lines corridors, and areas grow, or shrink with a negative distance. Works in metres.",
+        desc: "Replaces each geometry with the area within a distance of it. Points become discs, lines corridors, and areas grow, or shrink with a negative distance. Lines can be buffered on one side only, left or right as they are drawn, and with flat ends. Works in metres.",
         inputs: &["Input"],
         outputs: &["Buffered"],
         ports: None,
         params: BUFFERER_PARAMS,
         run: run_bufferer,
-        summary: |p| format!("{} m", p.get("distance").unwrap_or_default()),
+        summary: |p| {
+            let side = match p.get("side").as_deref() {
+                Some("left") => ", left",
+                Some("right") => ", right",
+                _ => "",
+            };
+            format!("{} m{}", p.get("distance").unwrap_or_default(), side)
+        },
+    },
+    NodeType {
+        name: "HoleRemover",
+        title: "Remove holes",
+        hidden: false,
+        group: Group::Transformer,
+        category: "Geometry",
+        desc: "Fills the holes of areas: all of them, or those smaller than a size, such as the courtyards of blocks or small clearings in a forest.",
+        inputs: &["Input"],
+        outputs: &["Output"],
+        ports: None,
+        params: HOLE_PARAMS,
+        run: run_holes,
+        summary: |p| p.get("smallest").filter(|s| !s.is_empty()).map(|s| format!("smaller than {} m²", s)).unwrap_or_else(|| "all".into()),
     },
     NodeType {
         name: "ShapeRounder",
@@ -516,3 +586,46 @@ pub(super) const TYPES: &[NodeType] = &[
         summary: |p| format!("tolerance {}{}", p.get("tolerance").unwrap_or_default(), if p.flag("topology") { " · neighbours kept together" } else { "" }),
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use geo::{line_string, Area, BoundingRect};
+
+    fn one(g: Geometry<f64>) -> Table {
+        Table { fields: vec![], crs: Some(3006), features: vec![Feature::new(vec![], Some(g))], ..Default::default() }
+    }
+
+    #[test]
+    fn a_line_is_buffered_on_one_side_and_holes_are_filled() {
+        // A line drawn east: left is north.
+        let line = Geometry::LineString(line_string![(x: 0.0, y: 0.0), (x: 100.0, y: 0.0)]);
+        let (out, _) = run_for_test("Bufferer", &[("distance", "10"), ("side", "left")], vec![("Input", one(line.clone()))]).unwrap();
+        let g = out[0].1.features[0].geom.clone().unwrap();
+        let r = g.bounding_rect().unwrap();
+        assert!(r.min().y > -0.01 && (r.max().y - 10.0).abs() < 0.01, "{:?}", r);
+        assert!((g.unsigned_area() - 1000.0).abs() < 1.0, "{}", g.unsigned_area());
+        let (out, _) = run_for_test("Bufferer", &[("distance", "10"), ("side", "right")], vec![("Input", one(line.clone()))]).unwrap();
+        let r = out[0].1.features[0].geom.clone().unwrap().bounding_rect().unwrap();
+        assert!(r.max().y < 0.01 && (r.min().y + 10.0).abs() < 0.01, "{:?}", r);
+        // Flat ends, both sides: a rectangle.
+        let (out, _) = run_for_test("Bufferer", &[("distance", "10"), ("ends", "flat")], vec![("Input", one(line))]).unwrap();
+        let g = out[0].1.features[0].geom.clone().unwrap();
+        assert!((g.unsigned_area() - 2000.0).abs() < 1.0, "{}", g.unsigned_area());
+        // A block with a courtyard of 100 m² and one of 2500 m².
+        let block = Geometry::Polygon(geo::Polygon::new(
+            line_string![(x: 0.0, y: 0.0), (x: 200.0, y: 0.0), (x: 200.0, y: 100.0), (x: 0.0, y: 100.0), (x: 0.0, y: 0.0)],
+            vec![
+                line_string![(x: 10.0, y: 10.0), (x: 20.0, y: 10.0), (x: 20.0, y: 20.0), (x: 10.0, y: 20.0), (x: 10.0, y: 10.0)],
+                line_string![(x: 100.0, y: 10.0), (x: 150.0, y: 10.0), (x: 150.0, y: 60.0), (x: 100.0, y: 60.0), (x: 100.0, y: 10.0)],
+            ],
+        ));
+        let (out, _) = run_for_test("HoleRemover", &[("smallest", "1000")], vec![("Input", one(block.clone()))]).unwrap();
+        match &out[0].1.features[0].geom {
+            Some(Geometry::Polygon(p)) => assert_eq!(p.interiors().len(), 1),
+            g => panic!("{:?}", g),
+        }
+        let (out, _) = run_for_test("HoleRemover", &[], vec![("Input", one(block))]).unwrap();
+        assert!(matches!(&out[0].1.features[0].geom, Some(Geometry::Polygon(p)) if p.interiors().is_empty()));
+    }
+}

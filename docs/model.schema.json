@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.90.0. Written by og schema.",
+  "description": "A model of Ographis 0.91.1. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -122,6 +122,7 @@
             "LineExtender",
             "Snapper",
             "Bufferer",
+            "HoleRemover",
             "ShapeRounder",
             "CenterPointReplacer",
             "Generalizer",
@@ -178,6 +179,16 @@
             "LineEndsExtractor",
             "RandomNumber",
             "Duplicator",
+            "RasterCreator",
+            "FocalStatistics",
+            "CostDistance",
+            "PointThinner",
+            "PictureStylizer",
+            "NetworkBuilder",
+            "ServiceAreas",
+            "NetworkAllocation",
+            "Lod2Builder",
+            "TerrainModel",
             "OvertureDownloader",
             "RasterSampler",
             "ZonalStatistics",
@@ -916,6 +927,7 @@
                           "obj",
                           "pdf",
                           "png",
+                          "pmtiles",
                           "postgis",
                           "pptx",
                           "odp",
@@ -1111,6 +1123,72 @@
                       }
                     ]
                   },
+                  "gltf_name": {
+                    "title": "Object names",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". glTF: the name of each object in Blender, such as the attribute name or address. Empty: as the model has them"
+                  },
+                  "gltf_group": {
+                    "title": "Group by",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". glTF: the objects of each value under a parent of its own, such as the kind of building, to show and hide together in Blender"
+                  },
+                  "gltf_material": {
+                    "title": "Materials by",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". glTF: a material named after each value, such as the material of the roof, to give them all a new look at once in Blender"
+                  },
+                  "gltf_origin": {
+                    "title": "Origin",
+                    "description": "a string. glTF: x, y and z the model is written around, the same for files that are to fit together in Blender, such as 418300, 6472550, 0. Empty: near its middle"
+                  },
+                  "gltf_georef": {
+                    "title": "Where it lies",
+                    "description": "one of the values in choices, as a string. glTF: BlenderGIS can then add maps and terrain in their place",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "true",
+                          "false"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
+                  },
+                  "gltf_sun": {
+                    "title": "Sun and camera",
+                    "description": "one of the values in choices, as a string. glTF: a sun where it stands at the time below, and a camera looking from the south-west",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "sun",
+                          "both",
+                          "camera"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "none"
+                  },
+                  "gltf_when": {
+                    "title": "Time of the sun",
+                    "description": "a string. Swedish time, such as 2026-06-21 15:00. Empty: midsummer at three in the afternoon"
+                  },
+                  "pm_min": {
+                    "title": "From zoom level",
+                    "description": "a string. PMTiles: the smallest zoom level with tiles. 0 is the whole world in one tile",
+                    "default": "0"
+                  },
+                  "pm_max": {
+                    "title": "To zoom level",
+                    "description": "a string. PMTiles: the largest, at most 16. 14 has tiles of about 2 km, and maps zoom in beyond it",
+                    "default": "14"
+                  },
                   "pdf_size": {
                     "title": "Page size",
                     "description": "one of the values in choices, as a string.",
@@ -1268,6 +1346,7 @@
                           "obj",
                           "pdf",
                           "png",
+                          "pmtiles",
                           "postgis",
                           "pptx",
                           "odp",
@@ -1373,6 +1452,7 @@
                           "obj",
                           "pdf",
                           "png",
+                          "pmtiles",
                           "postgis",
                           "pptx",
                           "odp",
@@ -1655,6 +1735,7 @@
                           "obj",
                           "pdf",
                           "png",
+                          "pmtiles",
                           "postgis",
                           "pptx",
                           "odp",
@@ -1711,6 +1792,7 @@
                       {
                         "enum": [
                           "replace",
+                          "empty",
                           "append"
                         ]
                       },
@@ -1720,6 +1802,28 @@
                       }
                     ],
                     "default": "replace"
+                  },
+                  "commit": {
+                    "title": "Transaction",
+                    "description": "one of the values in choices, as a string. All or nothing leaves the table as it was if anything goes wrong. In parts suits very large writes",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "all",
+                          "every"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "all"
+                  },
+                  "commit_rows": {
+                    "title": "Rows in each part",
+                    "description": "a string.",
+                    "default": "10000"
                   },
                   "geometry": {
                     "title": "Geometry type",
@@ -3051,6 +3155,63 @@
                     "title": "Distance",
                     "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". In metres. A number, or an expression such as width / 2. Negative shrinks areas",
                     "default": "100"
+                  },
+                  "side": {
+                    "title": "Side",
+                    "description": "one of the values in choices, as a string. Of lines: one side only, left or right as the line is drawn, such as the land along one bank of a river. Areas and points get buffers all round",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "both",
+                          "left",
+                          "right"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "both"
+                  },
+                  "ends": {
+                    "title": "Ends of lines",
+                    "description": "one of the values in choices, as a string. Flat ends stop where the line stops",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "round",
+                          "flat"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "round"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "HoleRemover"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "smallest": {
+                    "title": "Holes smaller than",
+                    "description": "a string. In square metres: holes smaller than this are filled, larger ones kept. Empty fills every hole"
                   }
                 }
               }
@@ -3550,7 +3711,11 @@
                           "geojson",
                           "esri",
                           "polyline",
-                          "polyline6"
+                          "polyline6",
+                          "flexpolyline",
+                          "flexpolyline_area",
+                          "points",
+                          "points_area"
                         ]
                       },
                       {
@@ -5038,6 +5203,65 @@
               "params": {
                 "type": "object",
                 "properties": {
+                  "kind": {
+                    "title": "Chart",
+                    "description": "one of the values in choices, as a string. Lines show how a value changes, such as the inhabitants year by year",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "bars",
+                          "lines"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "bars"
+                  },
+                  "x": {
+                    "title": "Along",
+                    "description": "the name of one attribute of the stream on the port. For lines: the attribute along the bottom, a number such as a year, or a date"
+                  },
+                  "series": {
+                    "title": "A line for each",
+                    "description": "the name of one attribute of the stream on the port. For lines: an attribute whose values each get a line of their own, such as the municipality. Empty draws one line"
+                  },
+                  "from_zero": {
+                    "title": "The scale starts at 0",
+                    "description": "one of the values in choices, as a string. For lines. Else it starts near the smallest value",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "no",
+                          "yes"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "no"
+                  },
+                  "markers": {
+                    "title": "A dot at each point",
+                    "description": "one of the values in choices, as a string. For lines",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "no",
+                          "yes"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "no"
+                  },
                   "category": {
                     "title": "Names",
                     "description": "the name of one attribute of the stream on the port. The attribute that names each bar, such as the name of the municipality"
@@ -6273,6 +6497,614 @@
           "if": {
             "properties": {
               "type": {
+                "const": "RasterCreator"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "bbox": {
+                    "title": "Rectangle",
+                    "description": "a string. West, south, east, north in the coordinate system below. Not needed when something comes in on Extent, whose extent is used"
+                  },
+                  "crs": {
+                    "title": "Coordinate system",
+                    "description": "a coordinate system, such as \"EPSG:3006\". Of the rectangle. With something on Extent, its own",
+                    "default": "EPSG:3006"
+                  },
+                  "cell": {
+                    "title": "Cell size",
+                    "description": "a string. In the units of the coordinate system, such as metres",
+                    "default": "10"
+                  },
+                  "value": {
+                    "title": "Value",
+                    "description": "a string. Of each cell: a number, or an expression with x and y, the middle of the cell, and row and column, such as rand() * 10 or sqrt((x - 319000)^2 + (y - 6400000)^2)",
+                    "default": "0"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "FocalStatistics"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "stat": {
+                    "title": "Each cell gets",
+                    "description": "one of the values in choices, as a string. Of the cells around it, itself included",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "mean",
+                          "min",
+                          "max",
+                          "sum",
+                          "median",
+                          "std",
+                          "range",
+                          "majority",
+                          "count"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "mean"
+                  },
+                  "radius": {
+                    "title": "Cells around",
+                    "description": "a string. How many cells out: 1 is a window of 3 × 3, 2 of 5 × 5",
+                    "default": "1"
+                  },
+                  "shape": {
+                    "title": "Window",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "square",
+                          "circle"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "square"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "CostDistance"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "reach": {
+                    "title": "As far as",
+                    "description": "a string. The largest cost: cells that cost more to reach are left empty. Empty: no limit"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "PointThinner"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "title": "Thin by",
+                    "description": "one of the values in choices, as a string. Both keep the cloud even, where every n-th point keeps its patches dense",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "voxel",
+                          "distance"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "voxel"
+                  },
+                  "size": {
+                    "title": "Size",
+                    "description": "a string. In metres: the side of the cubes, or the least distance between points",
+                    "default": "1"
+                  },
+                  "per_class": {
+                    "title": "Each class on its own",
+                    "description": "one of the values in choices, as a string. So that a few points of a building are not lost among the ground points",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "yes",
+                          "no"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "yes"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "PictureStylizer"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "style": {
+                    "title": "Style",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "c64",
+                          "lego",
+                          "lego_square",
+                          "pixels"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "c64"
+                  },
+                  "across": {
+                    "title": "Pixels or plates across",
+                    "description": "a string. The Commodore 64 had 160 wide pixels across in colour; a LEGO base plate has 48 studs",
+                    "default": "160"
+                  },
+                  "dither": {
+                    "title": "Dithering",
+                    "description": "one of the values in choices, as a string. Mixes the colours of the palette into patterns, for colours it does not have",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "no",
+                          "yes"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "no"
+                  },
+                  "scale": {
+                    "title": "Each pixel as",
+                    "description": "a string. How many pixels of the picture each pixel or plate becomes",
+                    "default": "8"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "NetworkBuilder"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "tolerance": {
+                    "title": "Join ends within",
+                    "description": "a string. In metres: ends this close become one junction, and an end this close to another line is joined to it there",
+                    "default": "0.5"
+                  },
+                  "split": {
+                    "title": "Lines that cross",
+                    "description": "one of the values in choices, as a string. OpenStreetMap and Overture need splitting; NVDB is joined at its ends already",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "yes",
+                          "no"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "yes"
+                  },
+                  "level": {
+                    "title": "Level",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". Lines of different levels cross without being joined, as a bridge over a road: such as layer in OpenStreetMap. Empty: all on one level"
+                  },
+                  "near": {
+                    "title": "Report loose ends within",
+                    "description": "a string. In metres: an end that is this close to another line, but not joined to it, is reported on Problems",
+                    "default": "2"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ServiceAreas"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "breaks": {
+                    "title": "Within",
+                    "description": "a string. Minutes for the quickest, metres for the shortest, separated by commas: an area for each",
+                    "default": "5, 10, 15"
+                  },
+                  "direction": {
+                    "title": "Direction",
+                    "description": "one of the values in choices, as a string. Matters where there are one-way roads",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "to",
+                          "from"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "to"
+                  },
+                  "each": {
+                    "title": "Areas",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "together",
+                          "each"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "together"
+                  },
+                  "width": {
+                    "title": "Area around the roads",
+                    "description": "a string. In metres: how far from the roads reached the area reaches, for the houses and land along them",
+                    "default": "100"
+                  },
+                  "cost": {
+                    "title": "By",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "length",
+                          "time"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "length"
+                  },
+                  "speed": {
+                    "title": "Speed in km/h",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". Along the line as it is drawn, for the quickest route: an attribute such as F_Hogst_225 in NVDB, or a number"
+                  },
+                  "speed_against": {
+                    "title": "Speed against the line",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". Against the way the line is drawn, such as B_Hogst_225 in NVDB. Empty uses the speed along it"
+                  },
+                  "default_speed": {
+                    "title": "Speed where none is given",
+                    "description": "a string. In km/h, where the speed is empty or 0",
+                    "default": "50"
+                  },
+                  "along": {
+                    "title": "May be travelled along the line when",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". A condition for one-way roads, such as F_ForbjudenFardriktning is null. Empty: always"
+                  },
+                  "against": {
+                    "title": "May be travelled against the line when",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". Such as B_ForbjudenFardriktning is null. Empty: always"
+                  },
+                  "snap": {
+                    "title": "Farthest from the network, in metres",
+                    "description": "a string. A point is put on the nearest place of the nearest line. One farther away than this is not reached",
+                    "default": "500"
+                  },
+                  "tolerance": {
+                    "title": "Line ends that meet, within",
+                    "description": "a string. In metres. Lines are joined where their ends are this close, not where they only cross, as at a bridge",
+                    "default": "0.01"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "NetworkAllocation"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "direction": {
+                    "title": "Direction",
+                    "description": "one of the values in choices, as a string. Matters where there are one-way roads",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "to",
+                          "from"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "to"
+                  },
+                  "reach": {
+                    "title": "At most",
+                    "description": "a string. Minutes or metres: farther than this belongs to no facility. Empty: no limit"
+                  },
+                  "width": {
+                    "title": "Area around the roads",
+                    "description": "a string. In metres: how far from the roads reached the area reaches, for the houses and land along them",
+                    "default": "100"
+                  },
+                  "cost": {
+                    "title": "By",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "length",
+                          "time"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "length"
+                  },
+                  "speed": {
+                    "title": "Speed in km/h",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". Along the line as it is drawn, for the quickest route: an attribute such as F_Hogst_225 in NVDB, or a number"
+                  },
+                  "speed_against": {
+                    "title": "Speed against the line",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". Against the way the line is drawn, such as B_Hogst_225 in NVDB. Empty uses the speed along it"
+                  },
+                  "default_speed": {
+                    "title": "Speed where none is given",
+                    "description": "a string. In km/h, where the speed is empty or 0",
+                    "default": "50"
+                  },
+                  "along": {
+                    "title": "May be travelled along the line when",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". A condition for one-way roads, such as F_ForbjudenFardriktning is null. Empty: always"
+                  },
+                  "against": {
+                    "title": "May be travelled against the line when",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". Such as B_ForbjudenFardriktning is null. Empty: always"
+                  },
+                  "snap": {
+                    "title": "Farthest from the network, in metres",
+                    "description": "a string. A point is put on the nearest place of the nearest line. One farther away than this is not reached",
+                    "default": "500"
+                  },
+                  "tolerance": {
+                    "title": "Line ends that meet, within",
+                    "description": "a string. In metres. Lines are joined where their ends are this close, not where they only cross, as at a bridge",
+                    "default": "0.01"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Lod2Builder"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "classes": {
+                    "title": "Roof points",
+                    "description": "a string. The classes of the points on the roofs, such as 6 for buildings. Empty takes every point on the footprint that is not ground"
+                  },
+                  "ground_classes": {
+                    "title": "Ground points",
+                    "description": "a string. Without a terrain model on Ground, the ground is taken from the points of these classes around the building",
+                    "default": "2"
+                  },
+                  "inset": {
+                    "title": "Leave out the edge",
+                    "description": "a string. Metres inside the footprint, so that walls, eaves and trees at the edge do not count",
+                    "default": "0.5"
+                  },
+                  "shapes": {
+                    "title": "Roofs",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "fitted",
+                          "flat"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "fitted"
+                  },
+                  "wall_colour": {
+                    "title": "Walls",
+                    "description": "a string. A colour, such as #e8e0d0",
+                    "default": "#e8e0d0"
+                  },
+                  "roof_colour": {
+                    "title": "Roofs coloured",
+                    "description": "a string. A colour, such as #9a4b3c for tiles or #555555 for felt",
+                    "default": "#9a4b3c"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "TerrainModel"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "most": {
+                    "title": "Points along a side",
+                    "description": "a string. At most this many points of height along the longer side: more is finer and larger. Cells are skipped to keep to it",
+                    "default": "500"
+                  },
+                  "exaggerate": {
+                    "title": "Heights times",
+                    "description": "a string. Such as 2 to make hills twice as high",
+                    "default": "1"
+                  },
+                  "base": {
+                    "title": "Base",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "block"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "none"
+                  },
+                  "depth": {
+                    "title": "Block below the lowest",
+                    "description": "a string. In metres. Empty: a tenth of the height of the terrain, at least 1"
+                  },
+                  "texture_most": {
+                    "title": "Largest picture",
+                    "description": "a string. Pixels along a side of the picture draped over the terrain; larger is made smaller",
+                    "default": "4096"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "OvertureDownloader"
               }
             }
@@ -6284,32 +7116,7 @@
                 "properties": {
                   "kind": {
                     "title": "What",
-                    "description": "one of the values in choices, as a string.",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "buildings/building",
-                          "buildings/building_part",
-                          "places/place",
-                          "addresses/address",
-                          "transportation/segment",
-                          "transportation/connector",
-                          "base/land_use",
-                          "base/land_cover",
-                          "base/land",
-                          "base/water",
-                          "base/infrastructure",
-                          "base/bathymetry",
-                          "divisions/division_area",
-                          "divisions/division",
-                          "divisions/division_boundary"
-                        ]
-                      },
-                      {
-                        "type": "string",
-                        "pattern": "\\$\\("
-                      }
-                    ],
+                    "description": "some of the values in choices: a list of strings, or one string separated by commas. Tick one or more. Each feature gets the attribute kind, such as buildings/building",
                     "default": "buildings/building"
                   },
                   "bbox": {
@@ -6320,6 +7127,23 @@
                     "title": "Largest area in km²",
                     "description": "a string. A larger rectangle is made smaller around its middle to this size. The files are large, and each part of one that reaches into the rectangle is fetched",
                     "default": "25"
+                  },
+                  "cut": {
+                    "title": "Large features",
+                    "description": "one of the values in choices, as a string. Land cover, land use, water and borders can be very large: cut, only the part within the area comes along",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "cut",
+                          "whole"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "cut"
                   },
                   "crs": {
                     "title": "Coordinate system",
@@ -7192,25 +8016,7 @@
                 "properties": {
                   "what": {
                     "title": "What",
-                    "description": "one of the values in choices, as a string.",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "buildings",
-                          "roads",
-                          "water",
-                          "landuse",
-                          "pois",
-                          "railways",
-                          "all",
-                          "custom"
-                        ]
-                      },
-                      {
-                        "type": "string",
-                        "pattern": "\\$\\("
-                      }
-                    ],
+                    "description": "some of the values in choices: a list of strings, or one string separated by commas. Tick one or more. Each feature gets the attribute kind, which says what it was fetched as",
                     "default": "buildings"
                   },
                   "filter": {
@@ -7225,6 +8031,23 @@
                     "title": "Largest area in km²",
                     "description": "a string. A larger rectangle is made smaller around its middle to this size, so that the server is not asked for too much",
                     "default": "25"
+                  },
+                  "cut": {
+                    "title": "Large features",
+                    "description": "one of the values in choices, as a string. Land cover, lakes and borders can be very large: cut, only the part within the area comes along",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "cut",
+                          "whole"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "cut"
                   },
                   "crs": {
                     "title": "Coordinate system",

@@ -250,6 +250,15 @@ On Windows 11, by the first user:
 
 Not yet checked on Windows:
 
+- Version 0.91, all built and tested only on Linux: Model → *Schedule…* making, finding and
+  removing a task with `schtasks`, and the scheduled run starting `scheduled run.cmd` (with
+  OSGeo4W's GDAL found through og.cmd); the notice of Windows when a long run ends (a toast
+  through PowerShell, which some organisations turn off; the taskbar flashes either way);
+  Ctrl and + or − on a screen with scaling; the screen reader of Windows (Narrator) reading
+  the nodes and what they are connected to; a PMTiles file written by Ographis on a web server
+  in MapLibre, and opened in QGIS; glTF with groups, materials, sun and camera imported into
+  Blender 4 and 5, and BlenderGIS reading where it lies; GPX from a GPS and photos from a
+  phone; PostGIS *Empty it and fill it again* against a table with views on it.
 - Version 0.90: that the build compiles acadrust; DWG drawings of the workplace from AutoCAD,
   compared with the same drawing saved as DXF; Overture Maps download against the real
   catalog through the proxy, and how many megabytes a small rectangle of buildings fetches;

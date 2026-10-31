@@ -501,6 +501,214 @@ pub fn draw(c: &Chart) -> Result<RasterImage> {
     Ok(RasterImage { width: pm.width() as usize, height: pm.height() as usize, rgba, geotransform: [0.0, 1.0, 0.0, pm.height() as f64, 0.0, -1.0] })
 }
 
+/// A line chart: one line per series through its points, x a number or a date.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LineChart {
+    /// Each series: its name and its points, ordered by x.
+    pub series: Vec<(String, Vec<(f64, f64)>)>,
+    /// x is a date, as days since 1970-01-01.
+    pub dates: bool,
+    pub title: String,
+    pub subtitle: String,
+    pub note: String,
+    pub unit: String,
+    pub decimals: usize,
+    pub swedish: bool,
+    /// The scale of y starts at 0, rather than near the smallest value.
+    pub from_zero: bool,
+    /// A dot at each point.
+    pub markers: bool,
+    /// The colour of the first line; the others follow in the order of COLOURS.
+    pub colour: [u8; 3],
+    pub width: u32,
+    pub height: Option<u32>,
+    pub background: Option<[u8; 3]>,
+}
+
+/// A date from days since 1970-01-01, as 2026-10-30.
+fn date_text(days: f64, step_days: f64) -> String {
+    let d = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("a date") + chrono::Duration::days(days.round() as i64);
+    if step_days >= 360.0 {
+        d.format("%Y").to_string()
+    } else if step_days >= 28.0 {
+        d.format("%Y-%m").to_string()
+    } else {
+        d.format("%Y-%m-%d").to_string()
+    }
+}
+
+/// Draws a line chart. The names of the lines are written at their ends, where they can be
+/// read without a legend.
+pub fn draw_lines(c: &LineChart) -> Result<RasterImage> {
+    let points: Vec<(f64, f64)> = c.series.iter().flat_map(|s| s.1.iter().copied()).collect();
+    if points.is_empty() {
+        return Err(GbError("There are no points to draw lines through.".into()));
+    }
+    let text = Text::new()?;
+    let k = (c.width as f32 / 1200.0).clamp(0.4, 6.0);
+    let (title_size, sub_size, tick_size, label_size, note_size) = (24.0 * k, 15.0 * k, 13.0 * k, 13.5 * k, 12.0 * k);
+    let pad = 28.0 * k;
+    let w = c.width as f32;
+    let h = c.height.map_or(w * 0.56, |h| h as f32);
+    let mut pm = Pixmap::new(c.width, h.round() as u32).ok_or_else(|| GbError("There is not memory enough for a chart that large.".into()))?;
+    if let Some(bg) = c.background {
+        pm.fill(Color::from_rgba8(bg[0], bg[1], bg[2], 255));
+    }
+    let mut top = pad;
+    if !c.title.is_empty() {
+        top += title_size * 1.3;
+    }
+    if !c.subtitle.is_empty() {
+        top += sub_size * 1.5;
+    }
+    top += 14.0 * k;
+    let foot = pad + if c.note.is_empty() { 0.0 } else { note_size * 2.0 };
+    // The scales.
+    let (mut xlo, mut xhi) = points.iter().fold((f64::MAX, f64::MIN), |a, p| (a.0.min(p.0), a.1.max(p.0)));
+    if xhi <= xlo {
+        xlo -= 1.0;
+        xhi += 1.0;
+    }
+    let (mut ylo, mut yhi) = points.iter().fold((f64::MAX, f64::MIN), |a, p| (a.0.min(p.1), a.1.max(p.1)));
+    if c.from_zero {
+        ylo = ylo.min(0.0);
+        yhi = yhi.max(0.0);
+    }
+    if yhi <= ylo {
+        ylo -= 1.0;
+        yhi += 1.0;
+    }
+    let ystep = nice_step(yhi - ylo, 5.0);
+    let (y0, y1) = ((ylo / ystep).floor() * ystep, (yhi / ystep).ceil() * ystep);
+    let ytick = |v: f64| {
+        let d = if ystep < 1.0 { (-ystep.log10()).ceil() as usize } else { 0 };
+        format!("{}{}", number(v, d, c.swedish), if c.unit.is_empty() { String::new() } else { format!(" {}", c.unit) })
+    };
+    // Room at the right for the names at the ends of the lines.
+    let name_w =
+        if c.series.len() > 1 { c.series.iter().map(|s| text.width(&s.0, label_size, true)).fold(0.0f32, f32::max).min(w * 0.25) + 10.0 * k } else { 0.0 };
+    let tick_w = [y0, y1].iter().map(|v| text.width(&ytick(*v), tick_size, false)).fold(0.0f32, f32::max) + 12.0 * k;
+    let (x0p, x1p) = (pad + tick_w, w - pad - name_w);
+    let (ytop, ybot) = (top + label_size, h - foot - tick_size * 2.4);
+    let at_x = |x: f64| x0p + ((x - xlo) / (xhi - xlo)) as f32 * (x1p - x0p);
+    let at_y = |y: f64| ybot - ((y - y0) / (y1 - y0)) as f32 * (ybot - ytop);
+    // Grid lines across, with their numbers.
+    let mut v = y0;
+    while v <= y1 + ystep * 1e-9 {
+        let y = at_y(v).round() + 0.5;
+        rect(&mut pm, x0p, y - 0.5, x1p - x0p, 1.0 * k.max(1.0), if v == 0.0 { BASELINE } else { GRID });
+        text.draw(&mut pm, &ytick(v), x0p - 8.0 * k, y + tick_size * 0.35, tick_size, false, MUTED, 1.0);
+        v += ystep;
+    }
+    // Ticks along x: round numbers, or years, months or days.
+    let span = xhi - xlo;
+    let xstep = if c.dates {
+        [1.0, 7.0, 30.4375, 91.3125, 365.25, 730.5, 1826.25, 3652.5].into_iter().find(|s| span / s <= 8.0).unwrap_or(3652.5)
+    } else {
+        nice_step(span, 6.0)
+    };
+    let mut v = if c.dates && xstep >= 365.0 {
+        // The first of January after the start.
+        let d = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("a date") + chrono::Duration::days(xlo.ceil() as i64);
+        let y = if d.ordinal() == 1 { d.year() } else { d.year() + 1 };
+        (chrono::NaiveDate::from_ymd_opt(y, 1, 1).expect("a date") - chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("a date")).num_days() as f64
+    } else {
+        (xlo / xstep).ceil() * xstep
+    };
+    use chrono::Datelike;
+    while v <= xhi + xstep * 1e-9 {
+        let x = at_x(v);
+        rect(&mut pm, x - 0.5, ybot, 1.0 * k.max(1.0), 5.0 * k, BASELINE);
+        let label = if c.dates {
+            date_text(v, xstep)
+        } else {
+            number(v, if xstep < 1.0 { (-xstep.log10()).ceil() as usize } else { 0 }, c.swedish)
+                .replace('\u{a0}', if v.abs() >= 10000.0 { "\u{a0}" } else { "" })
+        };
+        text.draw(&mut pm, &label, x, ybot + tick_size * 1.6, tick_size, false, MUTED, 0.5);
+        if c.dates && xstep >= 365.0 {
+            // Whole years, also in leap years.
+            let d = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("a date") + chrono::Duration::days(v as i64);
+            let years = (xstep / 365.25).round() as i32;
+            let next = chrono::NaiveDate::from_ymd_opt(d.year() + years.max(1), 1, 1).expect("a date");
+            v = (next - chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("a date")).num_days() as f64;
+        } else {
+            v += xstep;
+        }
+    }
+    // The lines, the first in the colour chosen, then the others in turn.
+    let mut palette: Vec<[u8; 3]> = vec![c.colour];
+    palette.extend(COLOURS.iter().map(|x| x.2).filter(|x| *x != c.colour));
+    let stroke = tiny_skia::Stroke { width: 2.5 * k, line_join: tiny_skia::LineJoin::Round, line_cap: tiny_skia::LineCap::Round, ..Default::default() };
+    let mut ends: Vec<(f32, String, [u8; 3])> = Vec::new();
+    for (i, (name, pts)) in c.series.iter().enumerate() {
+        let rgb = palette[i % palette.len()];
+        let mut pb = PathBuilder::new();
+        for (j, (x, y)) in pts.iter().enumerate() {
+            if j == 0 {
+                pb.move_to(at_x(*x), at_y(*y));
+            } else {
+                pb.line_to(at_x(*x), at_y(*y));
+            }
+        }
+        if pts.len() == 1 {
+            pb.push_circle(at_x(pts[0].0), at_y(pts[0].1), 3.0 * k);
+        }
+        if let Some(path) = pb.finish() {
+            pm.stroke_path(&path, &paint(rgb), &stroke, Transform::identity(), None);
+        }
+        if c.markers {
+            let mut dots = PathBuilder::new();
+            for (x, y) in pts {
+                dots.push_circle(at_x(*x), at_y(*y), 3.2 * k);
+            }
+            if let Some(path) = dots.finish() {
+                pm.fill_path(&path, &paint(rgb), FillRule::Winding, Transform::identity(), None);
+            }
+        }
+        if let Some((_, y)) = pts.last() {
+            ends.push((at_y(*y), name.clone(), rgb));
+        }
+    }
+    // The names at the ends, moved apart so that they do not overlap.
+    if c.series.len() > 1 {
+        ends.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let gap = label_size * 1.15;
+        for i in 1..ends.len() {
+            if ends[i].0 - ends[i - 1].0 < gap {
+                ends[i].0 = ends[i - 1].0 + gap;
+            }
+        }
+        for (y, name, rgb) in &ends {
+            let shown = text.fit(name, label_size, true, name_w - 10.0 * k);
+            text.draw(&mut pm, &shown, x1p + 8.0 * k, y + label_size * 0.35, label_size, true, *rgb, 0.0);
+        }
+    }
+    let mut y = pad + title_size * 0.95;
+    if !c.title.is_empty() {
+        let t = text.fit(&c.title, title_size, true, w - 2.0 * pad);
+        text.draw(&mut pm, &t, pad, y, title_size, true, INK, 0.0);
+        y += sub_size * 1.6;
+    } else {
+        y = pad + sub_size;
+    }
+    if !c.subtitle.is_empty() {
+        let t = text.fit(&c.subtitle, sub_size, false, w - 2.0 * pad);
+        text.draw(&mut pm, &t, pad, y, sub_size, false, SECONDARY, 0.0);
+    }
+    if !c.note.is_empty() {
+        let t = text.fit(&c.note, note_size, false, w - 2.0 * pad);
+        text.draw(&mut pm, &t, pad, h - pad * 0.7, note_size, false, MUTED, 0.0);
+    }
+    let _ = c.decimals;
+    let mut rgba = Vec::with_capacity((pm.width() * pm.height() * 4) as usize);
+    for p in pm.pixels() {
+        let c = p.demultiply();
+        rgba.extend_from_slice(&[c.red(), c.green(), c.blue(), c.alpha()]);
+    }
+    Ok(RasterImage { width: pm.width() as usize, height: pm.height() as usize, rgba, geotransform: [0.0, 1.0, 0.0, pm.height() as f64, 0.0, -1.0] })
+}
+
 /// The colour of the surface under a chart that has one.
 pub const PAPER: [u8; 3] = SURFACE;
 

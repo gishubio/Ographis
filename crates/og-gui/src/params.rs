@@ -135,6 +135,7 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("SceneRenderer", "water_level" | "waves") => param("water").is_some_and(|w| w != "none"),
             ("PostgisWriter", "key_name") => param("key").as_deref() != Some("attribute"),
             ("PostgisWriter", "key_attribute") => param("key").as_deref() == Some("attribute"),
+            ("PostgisWriter", "commit_rows") => param("commit").as_deref() == Some("every"),
             ("LayeredPdfWriter", "pdf_width" | "pdf_height") => param("pdf_size").as_deref() == Some("custom"),
             ("SceneRenderer", "focus") => param("blur").is_some_and(|b| b.trim().parse::<f64>().is_ok_and(|v| v > 0.0)),
             ("HttpCaller", "folder") => param("answer_as").as_deref() == Some("file"),
@@ -209,6 +210,9 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         "pdf_width" | "pdf_height" => writer && ext == "pdf" && node.params.get("pdf_size").and_then(|v| v.as_str()) == Some("custom"),
         "pdf_dpi" => writer && ext == "pdf" && node.params.get("pdf_size").and_then(|v| v.as_str()) == Some("fit"),
         "pdf_quality" => writer && ext == "pdf" && node.params.get("pdf_compress").and_then(|v| v.as_str()) == Some("jpeg"),
+        "pm_min" | "pm_max" => writer && ext == "pmtiles",
+        "gltf_name" | "gltf_group" | "gltf_material" | "gltf_origin" | "gltf_georef" | "gltf_sun" => writer && ext == "glb",
+        "gltf_when" => writer && ext == "glb" && matches!(node.params.get("gltf_sun").and_then(|v| v.as_str()), Some("sun" | "both")),
         "key" => writer && ext == "gpkg",
         "key_name" => writer && ext == "gpkg" && node.params.get("key").and_then(|v| v.as_str()) != Some("attribute"),
         "key_attribute" => writer && ext == "gpkg" && node.params.get("key").and_then(|v| v.as_str()) == Some("attribute"),
@@ -238,7 +242,7 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         // A file on the web may say what it is only when it has been fetched.
         "json_records" | "json_nested" => reader && (matches!(ext.as_str(), "json" | "ndjson" | "jsonl") || web),
         "cell_size" => reader && og_engine::io::is_raster(&ext) && node.params.get("raster_as").and_then(|v| v.as_str()) == Some("grid"),
-        "layer" => layered,
+        "layer" => layered || (writer && ext == "pmtiles"),
         "layer_attr" => layered,
         "header" => sheets,
         "encoding" => text || ext == "shp",
@@ -559,6 +563,32 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                     ui.label(RichText::new(format!("Spaces shown as dots: {}", value.replace(' ', "·"))).font(theme::mono(11.0)).color(cx.pal.muted));
                 }
             }
+            ParamKind::Picks(list) => {
+                // A tick for each choice, kept as a list of the values ticked.
+                let mut chosen = list_of(node, spec.key);
+                if chosen.is_empty() && !spec.default.is_empty() && !node.params.contains_key(spec.key) {
+                    chosen = split_list(spec.default);
+                }
+                let mut changed_here = false;
+                for (v, label) in list {
+                    let mut on = chosen.iter().any(|c| c == v);
+                    if ui.checkbox(&mut on, *label).changed() {
+                        changed_here = true;
+                        if on {
+                            chosen.push(v.to_string());
+                        } else {
+                            chosen.retain(|c| c != v);
+                        }
+                    }
+                }
+                if changed_here {
+                    // In the order of the list.
+                    let ordered: Vec<Json> = list.iter().filter(|(v, _)| chosen.iter().any(|c| c == v)).map(|(v, _)| Json::String(v.to_string())).collect();
+                    node.params.insert(spec.key.to_string(), Json::Array(ordered));
+                    changed = true;
+                }
+                value = before.clone();
+            }
             ParamKind::Layers => {
                 if layers.is_empty() {
                     ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY).font(theme::mono(12.5)));
@@ -597,8 +627,8 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                             .add_filter(
                                 "Spatial data and tables",
                                 &[
-                                    "gpkg", "shp", "geojson", "json", "fgb", "parquet", "sqlite", "db", "dxf", "dwg", "gml", "xlsx", "ods", "csv", "txt",
-                                    "png", "jpg", "tif", "pbf", "zip",
+                                    "gpkg", "shp", "geojson", "json", "fgb", "parquet", "sqlite", "db", "dxf", "dwg", "gpx", "gml", "xlsx", "ods", "csv",
+                                    "txt", "png", "jpg", "tif", "pbf", "zip",
                                 ],
                             )
                             .add_filter("3D models, IFC and 3D Tiles", &["obj", "gltf", "glb", "ifc", "json", "b3dm"])
@@ -760,7 +790,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
             ParamKind::Expression(port) => {
                 let fields = (cx.fields)(port);
                 let id = ui.make_persistent_id(("expression", node.id.as_str(), spec.key));
-                crate::suggest::expression_field(ui, &cx.pal, &mut value, &fields, cx.suggest, id, &quoted_field);
+                crate::suggest::expression_field(ui, &cx.pal, &mut value, &fields, cx.suggest, id, &quoted_field, &|a| (cx.values)(port, a));
                 if let Some(name) = chips(ui, &cx.pal, &fields, |_| false) {
                     if !value.is_empty() && !value.ends_with(' ') && !value.ends_with('(') {
                         value.push(' ');
@@ -1911,11 +1941,13 @@ fn theme_rows(ui: &mut Ui, t: &mut og_engine::thematic::ThemeSpec, from: &str, f
                 pick(ui, "color-by", &mut t.color_by, false);
             });
             if !t.color_by.is_empty() {
-                let numeric = fields.iter().find(|f| f.0 == t.color_by).is_none_or(|f| f.1) && t.ramp != "categories";
+                let numeric = fields.iter().find(|f| f.0 == t.color_by).is_none_or(|f| f.1) && t.ramp != "categories" && t.ramp != "as_written";
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     let shown = if t.ramp == "categories" {
                         "A colour per value"
+                    } else if t.ramp == "as_written" {
+                        "The colours written in it"
                     } else {
                         og_engine::thematic::RAMPS.iter().find(|r| r.0 == t.ramp).map_or("Blues", |r| r.1)
                     };
@@ -1924,6 +1956,8 @@ fn theme_rows(ui: &mut Ui, t: &mut og_engine::thematic::ThemeSpec, from: &str, f
                             ui.selectable_value(&mut t.ramp, v.to_string(), *l);
                         }
                         ui.selectable_value(&mut t.ramp, "categories".to_string(), "A colour per value");
+                        ui.selectable_value(&mut t.ramp, "as_written".to_string(), "The colours written in it")
+                            .on_hover_text("For an attribute that holds colours as #rrggbb, such as colour in a CAD drawing");
                     });
                     if numeric {
                         ui.add(egui::DragValue::new(&mut t.classes).range(1..=12).speed(0.1)).on_hover_text("The number of classes");

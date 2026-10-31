@@ -2,7 +2,50 @@
 
 use super::*;
 
+/// Tells that a long run has finished: the button in the taskbar flashes, and Windows shows a
+/// notice. Elsewhere only the flash.
+fn tell_finished(ctx: &egui::Context, text: &str) {
+    ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Informational));
+    #[cfg(not(windows))]
+    let _ = text;
+    #[cfg(windows)]
+    {
+        // A toast through PowerShell, which every Windows 10 and 11 has: no installer needed.
+        let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('\'', "&apos;").replace('"', "&quot;");
+        let xml = format!("<toast><visual><binding template='ToastGeneric'><text>Ographis</text><text>{}</text></binding></visual></toast>", esc(text));
+        let script = format!(
+            "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; \
+             [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null; \
+             $x = New-Object Windows.Data.Xml.Dom.XmlDocument; $x.LoadXml('{}'); \
+             $t = [Windows.UI.Notifications.ToastNotification]::new($x); \
+             [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}}\\WindowsPowerShell\\v1.0\\powershell.exe').Show($t)",
+            xml
+        );
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("powershell").args(["-NoProfile", "-NonInteractive", "-Command", &script]).creation_flags(0x0800_0000).spawn();
+    }
+}
+
 impl App {
+    /// The size of everything: as the settings say, and kept in them when Ctrl and + or −
+    /// change it.
+    fn keep_zoom(&mut self, ctx: &egui::Context) {
+        let want = crate::settings::ui_scale(&self.settings);
+        let now = ctx.zoom_factor();
+        if self.applied_zoom > 0.0 && (now - self.applied_zoom).abs() > 1e-3 {
+            // Changed by the keys.
+            self.applied_zoom = now;
+            self.settings.other.insert("ui_scale".into(), serde_json::json!((now as f64 * 100.0).round() / 100.0));
+            let _ = self.settings.save();
+            self.say(format!("Everything is shown at {} %. Ctrl+0 for 100 %.", (now * 100.0).round()));
+        } else if (want - now).abs() > 1e-3 {
+            ctx.set_zoom_factor(want);
+            self.applied_zoom = want;
+        } else {
+            self.applied_zoom = now;
+        }
+    }
+
     // ---------- The user interface ----------
 
     pub fn ui(&mut self, ui: &mut Ui) {
@@ -12,6 +55,14 @@ impl App {
             return;
         }
         let pal = Palette::from_ui(ui);
+        self.keep_zoom(&ctx);
+        let calm = crate::settings::reduce_motion(&self.settings);
+        if calm != (ctx.global_style().animation_time == 0.0) {
+            ctx.all_styles_mut(|s| s.animation_time = if calm { 0.0 } else { 1.0 / 12.0 });
+        }
+        if let Some(text) = self.notice.take() {
+            tell_finished(&ctx, &text);
+        }
         // How long each part of the frame took, told in the log when a frame is slow, so
         // that a window that stops answering says why.
         let mut clock = Phases::start();
@@ -82,6 +133,8 @@ impl App {
         self.layer_dialog(&ctx, &pal);
         self.about_dialog(&ctx, &pal);
         self.history_dialog(&ctx, &pal);
+        self.schedule_dialog(&ctx, &pal);
+        self.picker_dialog(&ctx, &pal);
         self.tips_dialog(&ctx, &pal);
         self.update_dialog(&ctx, &pal);
         self.report_dialog(&ctx, &pal);
@@ -189,6 +242,8 @@ impl App {
         let asking = self.pending.is_some()
             || self.about
             || self.history_open
+            || self.schedule.is_some()
+            || self.picker.is_some()
             || self.tips
             || self.variables_open
             || self.db_dialog.is_some()
@@ -198,12 +253,14 @@ impl App {
             if none && self.pending.is_none() {
                 self.about = false;
                 self.history_open = false;
+                self.schedule = None;
                 self.tips = false;
                 self.variables_open = false;
                 self.layer_choices.pop_front();
             }
             return;
         }
+        self.canvas_keys(ctx);
         if run {
             self.run(ctx);
         }
