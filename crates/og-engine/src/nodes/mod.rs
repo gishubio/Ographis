@@ -201,6 +201,8 @@ pub fn keeps_apart(kind: &str, port: &str) -> bool {
             | ("RasterMosaicker", "Rasters")
             | ("RasterCalculator", "Rasters")
             | ("LayeredPdfWriter", "Layers")
+            | ("QgisProjectWriter", "Layers")
+            | ("ReportWriter", "Sections")
             | ("SlideWriter", "Pictures")
             | ("Viewer", "Input")
             | ("SceneRenderer", "Models")
@@ -601,8 +603,8 @@ pub use chart::alphabetical;
 pub use database::{connection as postgis_connection, named_connection, sql_literal, SqlTemplate};
 pub use geom_inspect::geometry_problem;
 pub use input::{
-    is_plain_json, is_service, is_tileset, is_url, osm_tags, reader_sources, service_name, source_ext, wildcard_match, Sources, DEFAULT_PATTERN, READ_FORMATS,
-    SERVICE_PREFIXES, WEB_SERVICES,
+    is_gtfs_folder, is_plain_json, is_service, is_tileset, is_url, osm_tags, reader_sources, service_name, source_ext, wildcard_match, Sources,
+    DEFAULT_PATTERN, READ_FORMATS, SERVICE_PREFIXES, WEB_SERVICES,
 };
 pub use json::{geojson, json_paths_of, name_of_path};
 pub use map::{arrange_layers, map_layers, map_layers_json, MapLayer};

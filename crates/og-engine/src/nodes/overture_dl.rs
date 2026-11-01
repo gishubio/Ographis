@@ -2,7 +2,7 @@
 //! Overture Maps Foundation, only within a rectangle, read from its files on the web.
 
 use super::geom_transform::number_param;
-use super::osm::{limit_bbox, rect_in_degrees, within_area, CUTS};
+use super::osm::{kind_ports, limit_bbox, rect_in_degrees, split_by_kind, within_area, CUTS};
 use super::*;
 use crate::model::{err, fmt_count};
 
@@ -129,7 +129,20 @@ fn run_overture(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             table.crs = Some(to);
         }
     }
-    Ok(vec![("Output".into(), table)])
+    Ok(split_by_kind(table, &kinds, &port_name))
+}
+
+/// The port of a kind: its type, such as building for buildings/building.
+fn port_name(kind: &str) -> String {
+    kind.rsplit('/').next().unwrap_or(kind).to_string()
+}
+
+fn overture_ports(p: &P) -> Vec<String> {
+    let mut kinds = p.list("kind");
+    if kinds.is_empty() {
+        kinds.push("buildings/building".into());
+    }
+    kind_ports(&kinds, &port_name)
 }
 
 pub(super) const TYPES: &[NodeType] = &[NodeType {
@@ -141,7 +154,7 @@ pub(super) const TYPES: &[NodeType] = &[NodeType {
     desc: "Fetches open map data from Overture Maps: buildings with their heights, places such as shops and schools with their categories, addresses, roads and paths, land use, water, and the borders of countries and municipalities. Only what reaches into a rectangle, or the extent of what comes in on Extent, is fetched, by reading only the parts of the large files on the web that hold it. Needs the internet.",
     inputs: &["Extent"],
     outputs: &["Output"],
-    ports: None,
+    ports: Some(overture_ports),
     params: OVERTURE_PARAMS,
     run: run_overture,
     summary: |p| {

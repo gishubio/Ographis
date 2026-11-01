@@ -204,6 +204,48 @@ pub struct Request<'a> {
     /// Space around the features, as a part of the larger side of the extent.
     pub margin: f64,
     pub background: Option<[u8; 4]>,
+    /// A picture under the layers, as large as the map: a background map or a picture.
+    pub backdrop: Option<RasterImage>,
+    /// Who the background map is from, written small in the lower right corner.
+    pub attribution: Option<String>,
+}
+
+/// Where a map lies and how large it is: west, south, east and north, the size of a pixel
+/// and the picture in pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Frame {
+    pub b: [f64; 4],
+    pub px: f64,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Frame {
+    /// The west and north edge, as the geotransform of a picture has them.
+    pub fn geotransform(&self) -> [f64; 6] {
+        [self.b[0], self.px, 0.0, self.b[1] + self.height as f64 * self.px, 0.0, -self.px]
+    }
+}
+
+/// The frame of a map of these layers, as wide as asked, with the margin around them.
+pub fn frame(layers: &[(&Table, LayerStyle)], width: u32, margin: f64) -> Result<Frame> {
+    let Some(mut b) = extent(layers) else {
+        return Err(GbError("There is nothing to draw: the layers have no geometry.".into()));
+    };
+    // A single point, or features in a line, still get a picture with some room.
+    let side = (b[2] - b[0]).max(b[3] - b[1]);
+    let pad = if side > 0.0 { side * margin.max(0.0) } else { 100.0 };
+    b = [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad];
+    let width = width.clamp(1, MAX_SIDE);
+    let px = (b[2] - b[0]) / width as f64;
+    let height = ((b[3] - b[1]) / px).ceil().max(1.0);
+    if height > MAX_SIDE as f64 {
+        return Err(GbError(format!(
+            "The picture would be {} pixels high, and at most {} are allowed. Make it narrower, or draw a smaller area.",
+            height as u64, MAX_SIDE
+        )));
+    }
+    Ok(Frame { b, px, width, height: height as u32 })
 }
 
 /// What a legend shows, and where.
@@ -340,28 +382,23 @@ fn draw_raster(pixmap: &mut Pixmap, table: &Table, r: &crate::rasterlook::Prepar
 /// Draws the layers. `going` is asked now and then whether to go on, and the drawing ends
 /// with an error when it answers false.
 pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
-    let Some(mut b) = extent(&req.layers) else {
-        return Err(GbError("There is nothing to draw: the layers have no geometry.".into()));
-    };
-    // A single point, or features in a line, still get a picture with some room.
-    let side = (b[2] - b[0]).max(b[3] - b[1]);
-    let pad = if side > 0.0 { side * req.margin.max(0.0) } else { 100.0 };
-    b = [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad];
-    let width = req.width.clamp(1, MAX_SIDE);
-    let px = (b[2] - b[0]) / width as f64;
-    let height = ((b[3] - b[1]) / px).ceil().max(1.0);
-    if height > MAX_SIDE as f64 {
-        return Err(GbError(format!(
-            "The picture would be {} pixels high, and at most {} are allowed. Make it narrower, or draw a smaller area.",
-            height as u64, MAX_SIDE
-        )));
-    }
-    let height = height as u32;
+    let Frame { b, px, width, height } = frame(&req.layers, req.width, req.margin)?;
     // The extent is made as high as the whole number of rows.
     let top = b[1] + height as f64 * px;
     let mut pixmap = Pixmap::new(width, height).ok_or_else(|| GbError("There is not memory enough for a picture that large.".into()))?;
     if let Some(c) = req.background {
         pixmap.fill(Color::from_rgba8(c[0], c[1], c[2], c[3]));
+    }
+    if let Some(bd) = req.backdrop.as_ref().filter(|bd| bd.width == width as usize && bd.height == height as usize) {
+        // Premultiplied, as tiny-skia keeps its pixels.
+        let mut data = Vec::with_capacity(bd.rgba.len());
+        for p in bd.rgba.chunks_exact(4) {
+            let a = p[3] as u16;
+            data.extend_from_slice(&[(p[0] as u16 * a / 255) as u8, (p[1] as u16 * a / 255) as u8, (p[2] as u16 * a / 255) as u8, p[3]]);
+        }
+        if let Some(under) = tiny_skia::IntSize::from_wh(width, height).and_then(|size| Pixmap::from_vec(data, size)) {
+            pixmap.draw_pixmap(0, 0, under.as_ref(), &tiny_skia::PixmapPaint::default(), Transform::identity(), None);
+        }
     }
     let to_px = |x: f64, y: f64| (((x - b[0]) / px) as f32, ((top - y) / px) as f32);
     let ring = |pb: &mut PathBuilder, ls: &geo::LineString<f64>, close: bool| {
@@ -520,6 +557,9 @@ pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
     }
     if let Some(legend) = &req.legend {
         draw_legend(&mut pixmap, legend)?;
+    }
+    if let Some(a) = req.attribution.as_ref().filter(|a| !a.trim().is_empty()) {
+        draw_attribution(&mut pixmap, a)?;
     }
     // tiny-skia keeps the colours premultiplied by their opacity. Files want them plain.
     let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
@@ -878,6 +918,22 @@ fn draw_one(pm: &mut Pixmap, text: &crate::chart::Text, item: &LabelItem, spec: 
     }
 }
 
+/// Writes who a background map is from in the lower right corner, small, on a pale band.
+fn draw_attribution(pixmap: &mut Pixmap, text: &str) -> Result<()> {
+    let t = crate::chart::Text::new()?;
+    let size = (pixmap.width() as f32 / 140.0).clamp(10.0, 18.0);
+    let w = t.width(text, size, false);
+    let (pw, ph) = (pixmap.width() as f32, pixmap.height() as f32);
+    let (x, y) = (pw - w - size * 0.6, ph - size * 0.45);
+    if let Some(r) = tiny_skia::Rect::from_xywh(x - size * 0.4, y - size * 1.05, w + size * 0.8, size * 1.45) {
+        pixmap.fill_rect(r, &paint([255, 255, 255, 190]), Transform::identity(), None);
+    }
+    if let Some(path) = t.path(text, size, false) {
+        pixmap.fill_path(&path, &paint([60, 60, 60, 255]), FillRule::Winding, Transform::from_translate(x, y), None);
+    }
+    Ok(())
+}
+
 /// Draws the legend in a box in its corner.
 fn draw_legend(pixmap: &mut Pixmap, legend: &Legend) -> Result<()> {
     let text = crate::chart::Text::new()?;
@@ -1048,6 +1104,8 @@ mod tests {
             width: 100,
             margin: 0.0,
             background: Some([255, 255, 255, 255]),
+            backdrop: None,
+            attribution: None,
             themes: vec![],
             labels: vec![],
             icons: vec![],
@@ -1068,6 +1126,8 @@ mod tests {
             width: 120,
             margin: 0.1,
             background: Some([255, 255, 255, 255]),
+            backdrop: None,
+            attribution: None,
             themes: vec![],
             labels: vec![],
             icons: vec![],
@@ -1083,6 +1143,8 @@ mod tests {
             width: 120,
             margin: 0.1,
             background: None,
+            backdrop: None,
+            attribution: None,
             themes: vec![],
             labels: vec![],
             icons: vec![],
@@ -1100,6 +1162,8 @@ mod tests {
                 width: 10,
                 margin: 0.0,
                 background: None,
+                backdrop: None,
+                attribution: None,
                 themes: vec![],
                 labels: vec![],
                 icons: vec![],
@@ -1116,6 +1180,8 @@ mod tests {
                 width: 2000,
                 margin: 0.0,
                 background: None,
+                backdrop: None,
+                attribution: None,
                 themes: vec![],
                 labels: vec![],
                 icons: vec![],
@@ -1154,6 +1220,8 @@ mod tests {
                 width: 400,
                 margin: 0.1,
                 background: None,
+                backdrop: None,
+                attribution: None,
                 themes: vec![],
                 labels: vec![Some(labels)],
                 icons: vec![],
@@ -1188,6 +1256,8 @@ mod tests {
             width: 300,
             margin: 0.0,
             background: Some([255, 255, 255, 255]),
+            backdrop: None,
+            attribution: None,
             themes: vec![],
             labels: vec![Some(Labels {
                 spec: LabelSpec { size: 20.0, halo: None, ..LabelSpec::default() },
@@ -1215,6 +1285,8 @@ mod tests {
             width: 200,
             margin: 0.2,
             background: Some([255, 255, 255, 255]),
+            backdrop: None,
+            attribution: None,
             themes: vec![],
             labels: vec![],
             icons: vec![Some(Icons { style: "circle".into(), names: vec![Some("hospital"), None] })],

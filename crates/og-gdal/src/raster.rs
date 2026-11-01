@@ -36,7 +36,7 @@ fn square(gt: &[f64; 6], col: f64, row: f64, w: f64, h: f64) -> Polygon<f64> {
 fn band_names(ds: &Dataset) -> Vec<String> {
     let n = ds.raster_count();
     let described: Vec<String> = (1..=n)
-        .map(|i| ds.rasterband(i).ok().map(|b| b.description().unwrap_or_default()).unwrap_or_default())
+        .map(|i| crate::cube::band_label(ds, i).or_else(|| ds.rasterband(i).ok().and_then(|b| b.description().ok())).unwrap_or_default())
         .map(|d| d.trim().chars().map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' }).collect::<String>())
         .collect();
     (0..n)
@@ -107,6 +107,11 @@ fn window(
 }
 
 pub fn read(path: &Path, opts: &ReadOpts, notes: &mut Notes) -> Result<Table> {
+    // A data cube: the variable asked for, through GDAL as a raster of its own.
+    if crate::cube::is_cube(path) {
+        let var = crate::cube::choose(path, opts.layer.as_deref(), notes)?;
+        return read(&var, &ReadOpts { layer: None, ..opts.clone() }, notes);
+    }
     let ds = open(path)?;
     let gt = georeferencing(&ds, path)?;
     let (w, h) = ds.raster_size();
@@ -130,11 +135,22 @@ pub fn read(path: &Path, opts: &ReadOpts, notes: &mut Notes) -> Result<Table> {
         if let Some((_, _, pw, ph)) = part {
             notes.info(format!("read within the rectangle: {} × {} of {} × {} cells", pw, ph, w, h));
         }
-        return if opts.raster == RasterMode::Image {
-            read_image(&ds, gt, crs, part, path, notes)
+        let band = crate::cube::step_band(&ds, opts.step.as_deref())?;
+        if bands > 1 {
+            if let Some(label) = crate::cube::band_label(&ds, band) {
+                notes.info(format!("the step {} of {}: {}; choose another as the time step", band, bands, label));
+            }
+        }
+        let mut t = if opts.raster == RasterMode::Image {
+            read_image(&ds, gt, crs, part, band, path, notes)
         } else {
-            read_grid(&ds, gt, crs, opts.cell_size, part, path, notes)
-        };
+            read_grid(&ds, gt, crs, opts.cell_size, part, band, path, notes)
+        }?;
+        // Rows from south to north, as in many cubes, are turned to run from the north.
+        if gt[5] > 0.0 && gt[2] == 0.0 && gt[4] == 0.0 {
+            flip_rows(&mut t);
+        }
+        return Ok(t);
     }
     if opts.raster == RasterMode::Extent {
         let fields = vec![
@@ -235,8 +251,50 @@ pub fn read(path: &Path, opts: &ReadOpts, notes: &mut Notes) -> Result<Table> {
     Ok(Table { mesh: None, fields, crs, features, raster: true, image: None, grid: None })
 }
 
-/// The raster as one layer, for the list of layers and for `og info`.
+/// The values of a picture or a grid turned upside down, with their place, so that the first
+/// row is the northernmost.
+fn flip_rows(t: &mut Table) {
+    fn flip<T: Clone>(v: &mut [T], w: usize, h: usize, per: usize) {
+        for r in 0..h / 2 {
+            let (a, b) = (r * w * per, (h - 1 - r) * w * per);
+            for k in 0..w * per {
+                v.swap(a + k, b + k);
+            }
+        }
+    }
+    let turn = |gt: &mut [f64; 6], h: usize| {
+        gt[3] += gt[5] * h as f64;
+        gt[5] = -gt[5];
+    };
+    if let Some(img) = t.image.as_mut() {
+        let img = std::sync::Arc::make_mut(img);
+        flip(&mut img.rgba, img.width, img.height, 4);
+        turn(&mut img.geotransform, img.height);
+    }
+    if let Some(g) = t.grid.as_mut() {
+        let g = std::sync::Arc::make_mut(g);
+        flip(&mut g.values, g.width, g.height, 1);
+        for b in g.bands.iter_mut() {
+            flip(b, g.width, g.height, 1);
+        }
+        turn(&mut g.geotransform, g.height);
+    }
+}
+
+/// The raster as one layer, for the list of layers and for `og info`. A cube has a layer
+/// for each variable.
 pub fn layers(path: &Path) -> Result<Vec<LayerInfo>> {
+    if crate::cube::is_cube(path) {
+        let mut out = Vec::new();
+        for (name, gdal_name) in crate::cube::variables(path)? {
+            let mut l = layers(Path::new(&gdal_name))?;
+            for x in l.iter_mut() {
+                x.name = name.clone();
+            }
+            out.extend(l);
+        }
+        return Ok(out);
+    }
     let ds = open(path)?;
     let (w, h) = ds.raster_size();
     let srs = ds.spatial_ref().ok().filter(|s| !s.is_local());
@@ -268,6 +326,7 @@ fn read_grid(
     crs: Option<u32>,
     cell_size: Option<f64>,
     part: Option<(usize, usize, usize, usize)>,
+    which: usize,
     path: &Path,
     notes: &mut Notes,
 ) -> Result<Table> {
@@ -291,7 +350,7 @@ fn read_grid(
         ));
     }
     let (gw, gh) = (((w as f64 / factor).round() as usize).max(1), ((h as f64 / factor).round() as usize).max(1));
-    let band = ds.rasterband(1).map_err(|e| GbError(format!("Cannot read the first band: {}", e)))?;
+    let band = ds.rasterband(which).map_err(|e| GbError(format!("Cannot read band {}: {}", which, e)))?;
     let nodata = band.no_data_value();
     let resample = if gw < w { Some(gdal::raster::ResampleAlg::Average) } else { None };
     let buf =
@@ -320,7 +379,16 @@ pub const MAX_PIXELS: usize = 60_000_000;
 /// A raster as a picture. Three or four bands of bytes are its colours. Anything else is
 /// shown in grey from the first band, from its lowest value to its highest. Cells without a
 /// value are see-through.
-fn read_image(ds: &Dataset, gt: [f64; 6], crs: Option<u32>, part: Option<(usize, usize, usize, usize)>, _path: &Path, notes: &mut Notes) -> Result<Table> {
+#[allow(clippy::too_many_arguments)]
+fn read_image(
+    ds: &Dataset,
+    gt: [f64; 6],
+    crs: Option<u32>,
+    part: Option<(usize, usize, usize, usize)>,
+    which: usize,
+    _path: &Path,
+    notes: &mut Notes,
+) -> Result<Table> {
     let (x0, y0, full_w, full_h) = part.unwrap_or((0, 0, ds.raster_size().0, ds.raster_size().1));
     let gt = [gt[0] + x0 as f64 * gt[1], gt[1], gt[2], gt[3] + y0 as f64 * gt[5], gt[4], gt[5]];
     // A large raster is read smaller, as GDAL makes it from its overviews or by averaging,
@@ -345,7 +413,9 @@ fn read_image(ds: &Dataset, gt: [f64; 6], crs: Option<u32>, part: Option<(usize,
     };
     let mut rgba = vec![0u8; w * h * 4];
     let first = read(1)?;
-    let colours = bands >= 3 && first.2 == GdalDataType::UInt8;
+    let colours = bands >= 3 && first.2 == GdalDataType::UInt8 && which == 1 && crate::cube::band_label(ds, 1).is_none();
+    // A step of a cube other than the first is shown in grey, and its values go first.
+    let first = if which != 1 && !colours { read(which)? } else { first };
     let to_f32 = |b: &(Vec<f64>, Option<f64>, GdalDataType)| -> Vec<f32> {
         b.0.iter().map(|v| if v.is_nan() || b.1.is_some_and(|n| *v == n) { f32::NAN } else { *v as f32 }).collect()
     };
@@ -382,7 +452,7 @@ fn read_image(ds: &Dataset, gt: [f64; 6], crs: Option<u32>, part: Option<(usize,
         }
         if lo.is_finite() {
             let others = if bands > 1 { format!("; a click on the map gives the values of all {} bands", keep_bands.max(1)) } else { String::new() };
-            notes.info(format!("band 1 shown in grey from {} to {}{}", og_engine::model::fmt_real(lo), og_engine::model::fmt_real(hi), others));
+            notes.info(format!("band {} shown in grey from {} to {}{}", which, og_engine::model::fmt_real(lo), og_engine::model::fmt_real(hi), others));
         }
         if keep_bands > 0 {
             kept.push(to_f32(&first));

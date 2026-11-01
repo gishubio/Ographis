@@ -288,6 +288,41 @@ fn url_encode(s: &str) -> String {
 
 /// The rectangle to fetch, in degrees: the extent of what comes in on Extent, or the one
 /// written in the setting bbox.
+/// The outputs of a download: Output with all of it, and a port for each kind ticked.
+pub(super) fn kind_ports(kinds: &[String], name: &dyn Fn(&str) -> String) -> Vec<String> {
+    let mut v = vec!["Output".to_string()];
+    for k in kinds {
+        let n = name(k);
+        if !v.contains(&n) {
+            v.push(n);
+        }
+    }
+    v
+}
+
+/// What a download gives: all of it on Output, and on the port of each kind its own
+/// features, with only the attributes that kind has.
+pub(super) fn split_by_kind(table: Table, kinds: &[String], name: &dyn Fn(&str) -> String) -> Outputs {
+    let mut out: Outputs = Vec::new();
+    let at = table.field_index("kind");
+    for k in kinds {
+        let mut part = table.like();
+        part.fields = table.fields.clone();
+        part.features = table.features.iter().filter(|f| at.is_some_and(|i| f.attrs[i].to_text() == *k)).cloned().collect();
+        // The attributes no feature of this kind has are left out.
+        let used: Vec<usize> = (0..part.fields.len()).filter(|i| part.features.iter().any(|f| !f.attrs[*i].is_null())).collect();
+        if used.len() < part.fields.len() && !part.features.is_empty() {
+            part.fields = used.iter().map(|i| part.fields[*i].clone()).collect();
+            for f in part.features.iter_mut() {
+                f.attrs = used.iter().map(|i| f.attrs[*i].clone()).collect();
+            }
+        }
+        out.push((name(k).into(), part));
+    }
+    out.insert(0, ("Output".into(), table));
+    out
+}
+
 pub(super) const CUTS: &[(&str, &str)] = &[("cut", "Cut at the edge of the area"), ("whole", "Whole, when they reach into the area")];
 
 /// The area to fetch within, in degrees: the areas that come in on Extent, or the rectangle
@@ -457,7 +492,15 @@ fn run_osm(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         table = reproject(&table, to, Some(b))?;
     }
     ctx.notes.info(format!("{} features within {}", fmt_count(n as u64), rect));
-    Ok(vec![("Output".into(), table)])
+    Ok(split_by_kind(table, &kinds, &|k| k.to_string()))
+}
+
+fn osm_ports(p: &P) -> Vec<String> {
+    let mut kinds = p.list("what");
+    if kinds.is_empty() {
+        kinds.push("buildings".into());
+    }
+    kind_ports(&kinds, &|k| k.to_string())
 }
 
 pub(super) const TYPES: &[NodeType] = &[NodeType {
@@ -469,7 +512,7 @@ pub(super) const TYPES: &[NodeType] = &[NodeType {
     desc: "Fetches a small piece of OpenStreetMap from an Overpass server: buildings, roads, water, land use, places of interest, railways, everything, or a filter of your own. Within a rectangle you write, or the extent of what comes in on Extent, such as a municipality; a rectangle larger than a size you give is made smaller around its middle, so that the server is not asked for too much. Points, lines and areas, with the common tags as attributes and the rest in other_tags. Needs the internet; the data is © OpenStreetMap contributors, ODbL.",
     inputs: &["Extent"],
     outputs: &["Output"],
-    ports: None,
+    ports: Some(osm_ports),
     params: OSM_PARAMS,
     run: run_osm,
     summary: |p| {
@@ -482,6 +525,28 @@ pub(super) const TYPES: &[NodeType] = &[NodeType {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_kind_gets_a_port_of_its_own_with_its_own_attributes() {
+        use crate::model::{Field, FieldType, Value};
+        let mut params = super::super::Params::new();
+        params.insert("what".into(), serde_json::json!(["buildings", "roads"]));
+        assert_eq!(TYPES[0].outputs_for(&params), ["Output", "buildings", "roads"]);
+        let t = Table {
+            fields: vec![Field::new("kind", FieldType::Text), Field::new("building", FieldType::Text), Field::new("highway", FieldType::Text)],
+            features: vec![
+                Feature::new(vec![Value::Text("buildings".into()), Value::Text("yes".into()), Value::Null], None),
+                Feature::new(vec![Value::Text("roads".into()), Value::Null, Value::Text("primary".into())], None),
+            ],
+            ..Default::default()
+        };
+        let out = split_by_kind(t, &["buildings".into(), "roads".into()], &|k| k.to_string());
+        let names: Vec<&str> = out.iter().map(|(n, _)| n.as_ref()).collect();
+        assert_eq!(names, ["Output", "buildings", "roads"]);
+        assert_eq!(out[0].1.len(), 2);
+        assert_eq!(out[1].1.field_names(), ["kind", "building"]);
+        assert_eq!(out[2].1.field_names(), ["kind", "highway"]);
+    }
 
     #[test]
     fn features_only_their_rectangles_reach_in_are_left_out_and_large_ones_cut() {

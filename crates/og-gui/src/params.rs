@@ -62,6 +62,8 @@ pub struct Edited {
     pub postgis: bool,
     /// The settings are to open, to add or change a database connection.
     pub open_settings: bool,
+    /// The rectangle of a download is to be chosen on the map.
+    pub pick_area: bool,
 }
 
 /// The file extensions of formats that keep their data in sheets.
@@ -132,11 +134,17 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("SceneRenderer", "sun_azimuth" | "sun_altitude") => !matches!(param("sun").as_deref(), Some("date" | "study")),
             ("SceneRenderer", "study_dates" | "study_from" | "study_to" | "study_every" | "study_folder") => param("sun").as_deref() == Some("study"),
             ("SceneRenderer", "background_colour") => param("background").as_deref() == Some("colour"),
+            ("MapRenderer", "background_colour") => param("background").as_deref() == Some("colour"),
+            ("MapRenderer", "basemap") => param("background").as_deref() == Some("map"),
+            ("MapRenderer", "basemap_own") => param("background").as_deref() == Some("map") && param("basemap").as_deref() == Some("own"),
+            ("MapRenderer", "background_picture" | "background_crs") => param("background").as_deref() == Some("picture"),
+            ("MapRenderer", "background_fade") => matches!(param("background").as_deref(), Some("map" | "picture")),
             ("SceneRenderer", "water_level" | "waves") => param("water").is_some_and(|w| w != "none"),
             ("PostgisWriter", "key_name") => param("key").as_deref() != Some("attribute"),
             ("PostgisWriter", "key_attribute") => param("key").as_deref() == Some("attribute"),
             ("PostgisWriter", "commit_rows") => param("commit").as_deref() == Some("every"),
             ("LayeredPdfWriter", "pdf_width" | "pdf_height") => param("pdf_size").as_deref() == Some("custom"),
+            ("QgisProjectWriter", "basemap_own") => param("basemap").as_deref() == Some("own"),
             ("SceneRenderer", "focus") => param("blur").is_some_and(|b| b.trim().parse::<f64>().is_ok_and(|v| v > 0.0)),
             ("HttpCaller", "folder") => param("answer_as").as_deref() == Some("file"),
             ("SpatialJoiner", "distance") => param("relation").as_deref() == Some("near"),
@@ -205,12 +213,14 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
     match spec.key {
         "vt_zoom" | "vt_pieces" => reader && tiles_file,
         "zip_file" => reader && (path.to_lowercase().ends_with(".zip") || og_engine::nodes::source_ext(path) == "zip"),
-        "mode" | "fields" => !image && !matches!(ext.as_str(), "obj" | "glb"),
+        "mode" | "fields" => !image && !matches!(ext.as_str(), "obj" | "glb" | "gml") && node.params.get("format").and_then(|v| v.as_str()) != Some("3dtiles"),
         "pdf_size" | "pdf_orientation" | "pdf_margin" | "pdf_title" | "pdf_compress" => writer && ext == "pdf",
         "pdf_width" | "pdf_height" => writer && ext == "pdf" && node.params.get("pdf_size").and_then(|v| v.as_str()) == Some("custom"),
         "pdf_dpi" => writer && ext == "pdf" && node.params.get("pdf_size").and_then(|v| v.as_str()) == Some("fit"),
         "pdf_quality" => writer && ext == "pdf" && node.params.get("pdf_compress").and_then(|v| v.as_str()) == Some("jpeg"),
         "pm_min" | "pm_max" => writer && ext == "pmtiles",
+        "t3_most" | "t3_dz" => writer && node.params.get("format").and_then(|v| v.as_str()) == Some("3dtiles"),
+        "citygml_lod" => writer && ext == "gml",
         "gltf_name" | "gltf_group" | "gltf_material" | "gltf_origin" | "gltf_georef" | "gltf_sun" => writer && ext == "glb",
         "gltf_when" => writer && ext == "glb" && matches!(node.params.get("gltf_sun").and_then(|v| v.as_str()), Some("sun" | "both")),
         "key" => writer && ext == "gpkg",
@@ -242,7 +252,8 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         // A file on the web may say what it is only when it has been fetched.
         "json_records" | "json_nested" => reader && (matches!(ext.as_str(), "json" | "ndjson" | "jsonl") || web),
         "cell_size" => reader && og_engine::io::is_raster(&ext) && node.params.get("raster_as").and_then(|v| v.as_str()) == Some("grid"),
-        "layer" => layered || (writer && ext == "pmtiles"),
+        "step" => reader && og_engine::io::is_cube(&ext) && matches!(node.params.get("raster_as").and_then(|v| v.as_str()), Some("grid" | "image")),
+        "layer" => layered || (writer && ext == "pmtiles") || (reader && og_engine::io::is_cube(&ext)),
         "layer_attr" => layered,
         "header" => sheets,
         "encoding" => text || ext == "shp",
@@ -439,6 +450,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
     let mut noted = false;
     let mut postgis = false;
     let mut open_settings = false;
+    let mut pick_area = false;
     ui.label(RichText::new("Name").small().color(cx.pal.muted));
     noted |= ui.add(TextEdit::singleline(&mut node.name).desired_width(f32::INFINITY)).changed();
     if node.name.trim().is_empty() {
@@ -553,6 +565,13 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                     ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY).hint_text(spec.default));
                 });
             }
+            ParamKind::Text if spec.key == "bbox" && matches!(node.kind.as_str(), "OsmDownloader" | "OvertureDownloader") => {
+                ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
+                pick_area |= ui
+                    .button("Choose on the map")
+                    .on_hover_text("Click two corners on the map under the canvas, and Enter. Nothing needs to be connected to Extent")
+                    .clicked();
+            }
             ParamKind::Text => {
                 ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
             }
@@ -627,8 +646,30 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                             .add_filter(
                                 "Spatial data and tables",
                                 &[
-                                    "gpkg", "shp", "geojson", "json", "fgb", "parquet", "sqlite", "db", "dxf", "dwg", "gpx", "gml", "xlsx", "ods", "csv",
-                                    "txt", "png", "jpg", "tif", "pbf", "zip",
+                                    "gpkg",
+                                    "shp",
+                                    "geojson",
+                                    "json",
+                                    "fgb",
+                                    "parquet",
+                                    "sqlite",
+                                    "db",
+                                    "dxf",
+                                    "dwg",
+                                    "gpx",
+                                    "gml",
+                                    "xlsx",
+                                    "ods",
+                                    "csv",
+                                    "txt",
+                                    "png",
+                                    "jpg",
+                                    "tif",
+                                    "pbf",
+                                    "zip",
+                                    "nc",
+                                    "zgroup",
+                                    "zmetadata",
                                 ],
                             )
                             .add_filter("3D models, IFC and 3D Tiles", &["obj", "gltf", "glb", "ifc", "json", "b3dm"])
@@ -675,7 +716,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                 // What an empty choice means depends on the tool.
                 let as_is = match node.kind.as_str() {
                     "PostgisWriter" => "As the stream is",
-                    "LayeredPdfWriter" => "As the first layer",
+                    "LayeredPdfWriter" | "QgisProjectWriter" => "As the first layer",
                     "PostgisReader" => "As stated in the table",
                     _ => "As stated in the file",
                 };
@@ -951,7 +992,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
             changed = true;
         }
     }
-    Edited { any: changed || noted, run: changed, postgis, open_settings }
+    Edited { any: changed || noted, run: changed, postgis, open_settings, pick_area }
 }
 
 /// The type and size of single attributes, as a row for each attribute that comes in.
@@ -1641,7 +1682,9 @@ fn map_layer_rows(
         return false;
     }
     let keys: Vec<String> = connected.iter().map(|c| c.0.clone()).collect();
-    let named = node.kind == "LayeredPdfWriter";
+    let named = matches!(node.kind.as_str(), "LayeredPdfWriter" | "QgisProjectWriter");
+    let qgis = node.kind == "QgisProjectWriter";
+    let place = if qgis { "QGIS" } else { "the PDF" };
     let stored = map_layers(&node.params);
     let mut rows = arrange_layers(&stored, &keys);
     let before = rows.clone();
@@ -1677,10 +1720,10 @@ fn map_layer_rows(
                     moved = Some((i, i + 1));
                 }
                 ui.add_space(4.0);
-                ui.checkbox(&mut row.show, "").on_hover_text(if named { "On or off when the PDF is opened" } else { "Drawn or not" });
+                ui.checkbox(&mut row.show, "").on_hover_text(if named { format!("On or off when {} opens it", place) } else { "Drawn or not".to_string() });
                 // The name of the layer: in the PDF, or in the legend of the map. The name of
                 // the stream until another is given.
-                let what = if named { "The name of the layer in the PDF" } else { "The name of the layer in the legend" };
+                let what = if named { format!("The name of the layer in {}", place) } else { "The name of the layer in the legend".to_string() };
                 let colour = if row.show { pal.ink } else { pal.muted };
                 ui.add(TextEdit::singleline(&mut row.name).id_salt(("layer-name", i)).hint_text(label).text_color(colour).desired_width(ui.available_width()))
                     .on_hover_text(format!("{}. Empty gives {}", what, label))
@@ -1748,12 +1791,15 @@ fn map_layer_rows(
                 ui.add(egui::DragValue::new(&mut row.style.size).range(0.0..=100.0).speed(0.2).max_decimals(1))
                     .on_hover_text("The diameter of a point, in pixels");
             });
-            // Drawing by the values of an attribute: Draw map only, not the PDF.
-            if !named {
+            // Drawing by the values of an attribute: Draw map and QGIS, not the PDF. Icons
+            // only in Draw map.
+            if !named || qgis {
                 let fields = stream_fields(&row.from);
                 theme_rows(ui, &mut row.theme, &row.from, &fields, pal);
                 label_rows(ui, &mut row.labels, &row.from, &fields, pal);
-                icon_rows(ui, &mut row.icon, &row.from, &fields, pal);
+                if !named {
+                    icon_rows(ui, &mut row.icon, &row.from, &fields, pal);
+                }
             }
         });
         // A layer dragged over this one: a line shows where it goes, above or below.
@@ -2143,8 +2189,14 @@ fn value_rows(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec, attr: &str, found
     };
     let before = values.clone();
     let mut remove = None;
+    // The rows ticked, to remove or keep several at once: kept by their place in the list
+    // while the form is open.
+    let ticked_id = egui::Id::new(("values-ticked", node.id.clone(), spec.key));
+    let mut ticked: Vec<bool> = ui.data_mut(|d| d.get_temp::<Vec<bool>>(ticked_id)).unwrap_or_default();
+    ticked.resize(values.len(), false);
     for (i, v) in values.iter_mut().enumerate() {
         ui.horizontal(|ui| {
+            ui.checkbox(&mut ticked[i], "").on_hover_text("Tick several to remove them, or to keep only them, at once");
             ui.add(TextEdit::singleline(v).desired_width((ui.available_width() - 26.0).max(60.0)).hint_text("value"));
             if symbol(ui, "×", true, "Remove this value and its output") {
                 remove = Some(i);
@@ -2153,6 +2205,34 @@ fn value_rows(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec, attr: &str, found
     }
     if let Some(i) = remove {
         values.remove(i);
+        ticked.remove(i);
+    }
+    let n_ticked = ticked.iter().filter(|t| **t).count();
+    if values.len() > 1 {
+        ui.horizontal_wrapped(|ui| {
+            if ui.add(egui::Button::new("Tick all").small()).clicked() {
+                ticked.iter_mut().for_each(|t| *t = true);
+            }
+            if ui.add_enabled(n_ticked > 0, egui::Button::new("None").small()).clicked() {
+                ticked.iter_mut().for_each(|t| *t = false);
+            }
+            if ui.add_enabled(n_ticked > 0, egui::Button::new(format!("Remove the {} ticked", n_ticked)).small()).clicked() {
+                let mut k = 0;
+                values.retain(|_| {
+                    k += 1;
+                    !ticked[k - 1]
+                });
+                ticked = vec![false; values.len()];
+            }
+            if ui.add_enabled(n_ticked > 0 && n_ticked < values.len(), egui::Button::new("Keep only the ticked").small()).clicked() {
+                let mut k = 0;
+                values.retain(|_| {
+                    k += 1;
+                    ticked[k - 1]
+                });
+                ticked = vec![false; values.len()];
+            }
+        });
     }
     ui.horizontal(|ui| {
         if ui.add(egui::Button::new("Add value").small()).clicked() {
@@ -2162,8 +2242,11 @@ fn value_rows(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec, attr: &str, found
         let why_not = if attr.is_empty() { "Choose the attribute first" } else { "Run the model, and the values that come in can be taken from there" };
         if button.on_hover_text(format!("Lists the {} values of {} in the latest run", found.len(), attr)).on_disabled_hover_text(why_not).clicked() {
             values = found.to_vec();
+            ticked = vec![false; values.len()];
         }
     });
+    ticked.resize(values.len(), false);
+    ui.data_mut(|d| d.insert_temp(ticked_id, ticked));
     if found.len() >= 100 {
         ui.label(RichText::new("The data has more values than that. The first hundred are taken.").small().color(pal.muted));
     }

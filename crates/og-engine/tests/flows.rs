@@ -1375,7 +1375,7 @@ fn tools_have_names_that_say_what_they_do() {
     // GeoSpatial PDF are reached from Input and Output instead of the list.
     let mut hidden: Vec<&str> = NODE_TYPES.iter().filter(|t| t.hidden).map(|t| t.name).collect();
     hidden.sort();
-    assert_eq!(hidden, ["LayeredPdfWriter", "PointOnAreaOverlayer", "PostgisReader", "PostgisWriter"]);
+    assert_eq!(hidden, ["LayeredPdfWriter", "PointOnAreaOverlayer", "PostgisReader", "PostgisWriter", "QgisProjectWriter"]);
 
     // A workspace saved before the change has the old names on the nodes the user did not
     // name. They are read as the new ones, and a name the user chose is left alone.

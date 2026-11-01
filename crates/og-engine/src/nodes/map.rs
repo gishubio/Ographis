@@ -1,10 +1,29 @@
 //! Draw map: the streams as layers of a picture, with a legend and values shown by colour and size.
 
+use super::geom_transform::number_param;
 use super::*;
 
 // ---------- Draw map (MapRenderer) ----------
 
-pub(super) const MAP_BACKGROUNDS: &[(&str, &str)] = &[("#ffffff", "White"), ("none", "See-through"), ("#f4f1ea", "Paper"), ("#1e2326", "Dark")];
+pub(super) const MAP_BACKGROUNDS: &[(&str, &str)] = &[
+    ("#ffffff", "White"),
+    ("none", "See-through"),
+    ("#f4f1ea", "Paper"),
+    ("#1e2326", "Dark"),
+    ("colour", "A colour of my own"),
+    ("map", "A background map, such as OpenStreetMap"),
+    ("picture", "A picture"),
+];
+
+/// The background maps to choose from: those built in, and the user's own by their names
+/// written in the field.
+pub(super) const BASEMAPS: &[(&str, &str)] = &[
+    ("osm", "OpenStreetMap"),
+    ("carto_light", "Light grey (CARTO Positron)"),
+    ("carto_voyager", "Soft colours (CARTO Voyager)"),
+    ("carto_dark", "Dark (CARTO Dark Matter)"),
+    ("own", "One of my own, or an address"),
+];
 
 pub(super) const LEGEND_PLACES: &[(&str, &str)] =
     &[("none", "None"), ("bottom-left", "Lower left"), ("bottom-right", "Lower right"), ("top-left", "Upper left"), ("top-right", "Upper right")];
@@ -20,6 +39,42 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
     ParamSpec { key: "width", label: "Width in pixels", kind: ParamKind::Text, default: "1600", hint: "The height follows from the area that is drawn" },
     ParamSpec { key: "margin", label: "Margin in %", kind: ParamKind::Text, default: "5", hint: "Room around the features, as a share of the larger side" },
     ParamSpec { key: "background", label: "Background", kind: ParamKind::Choice(MAP_BACKGROUNDS), default: "#ffffff", hint: "" },
+    ParamSpec { key: "background_colour", label: "Colour", kind: ParamKind::Text, default: "#e8eef2", hint: "Such as #e8eef2, or with opacity as #e8eef280" },
+    ParamSpec {
+        key: "basemap",
+        label: "Background map",
+        kind: ParamKind::Choice(BASEMAPS),
+        default: "osm",
+        hint: "Fetched from the web as tiles, and kept for a month",
+    },
+    ParamSpec {
+        key: "basemap_own",
+        label: "Name or address",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "The name of one of your background maps under Settings, or an address with {z}, {x} and {y}",
+    },
+    ParamSpec {
+        key: "background_picture",
+        label: "Picture",
+        kind: ParamKind::FileOpen,
+        default: "",
+        hint: "PNG or JPG. With a world file beside it (.pgw, .jgw) it lies in its place; otherwise it covers the whole map",
+    },
+    ParamSpec {
+        key: "background_crs",
+        label: "Picture in",
+        kind: ParamKind::Crs,
+        default: "",
+        hint: "The coordinate system of the world file. Empty: that of the map",
+    },
+    ParamSpec {
+        key: "background_fade",
+        label: "Paler by %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "Makes the background map or picture paler, so that the layers stand out: 30 to 50 suits most maps",
+    },
     ParamSpec {
         key: "legend",
         label: "Legend",
@@ -310,7 +365,14 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
             _ => return err(format!("The margin must be a share in percent from 0 to 100, not \"{}\".", t)),
         },
     };
-    let background = crate::mapdraw::parse_color(&p.get("background").unwrap_or_else(|| "#ffffff".into())).map_err(GbError)?;
+    let chosen = p.get("background").unwrap_or_else(|| "#ffffff".into());
+    let background = match chosen.as_str() {
+        "colour" => crate::mapdraw::parse_color(&p.get("background_colour").unwrap_or_else(|| "#e8eef2".into()))
+            .map_err(|e| GbError(format!("The colour of the background: {}", e)))?,
+        // Under a map or a picture: white where they do not reach.
+        "map" | "picture" => Some([255, 255, 255, 255]),
+        c => crate::mapdraw::parse_color(c).map_err(GbError)?,
+    };
     // The coordinate system of the map: given, or that of the bottom layer that has one.
     let crs = match p.crs("crs")? {
         Some(c) => c,
@@ -413,11 +475,59 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
     };
     let count: usize = tables.iter().map(|(t, _)| t.len()).sum();
     let placed = labels.iter().flatten().map(|l| l.items.len()).sum::<usize>();
+    // Under the layers: a background map or a picture, made as large as the map.
+    let (backdrop, attribution) = match chosen.as_str() {
+        "map" | "picture" => {
+            let layers: Vec<(&Table, crate::mapdraw::LayerStyle)> = tables.iter().map(|(t, s)| (t.as_ref(), s.clone())).collect();
+            let frame = crate::mapdraw::frame(&layers, width, margin)?;
+            let fade = (number_param(p, "background_fade", "Paler by %")?.unwrap_or(0.0).clamp(0.0, 100.0) / 100.0) as f32;
+            if chosen == "map" {
+                let which = p.get("basemap").unwrap_or_else(|| "osm".into());
+                let name = if which == "own" {
+                    p.need("basemap_own", "Write the name of one of your background maps, or an address with {z}, {x} and {y}.")?
+                } else {
+                    which
+                };
+                let map = crate::basemap::find(&name)?;
+                let b = ctx.backend("A background map")?;
+                let gate = ctx.gate;
+                match crate::basemap::tiles(&map, &frame, crs, b, fade, &|| gate.going()) {
+                    Ok((img, n, missing)) => {
+                        ctx.notes.info(format!("{} tiles of {} under the layers", n, map.name));
+                        if missing > 0 {
+                            ctx.notes.warn(format!("{} tiles of {} could not be fetched, and are left empty.", missing, map.name));
+                        }
+                        let credit = if map.attribution.trim().is_empty() { None } else { Some(map.attribution.clone()) };
+                        (Some(img), credit)
+                    }
+                    Err(e) if e.0 != crate::model::STOPPED => {
+                        // Without the internet the map is drawn all the same, without its background.
+                        ctx.notes.warn(format!("{}{} The map is drawn without it.", e.0, if e.0.ends_with('.') { "" } else { "." }));
+                        (None, None)
+                    }
+                    Err(e) => return Err(e),
+                }
+            } else {
+                let file = p.need("background_picture", "Choose the picture to have under the layers.")?;
+                let path = ctx.resolve(&file);
+                let (img, placed) = crate::basemap::picture(&path, &frame, crs, p.crs("background_crs")?, ctx.backend, fade)?;
+                ctx.notes.info(if placed {
+                    "the picture lies under the layers where its world file says"
+                } else {
+                    "the picture covers the map; with a world file it would lie in its place"
+                });
+                (Some(img), None)
+            }
+        }
+        _ => (None, None),
+    };
     let req = crate::mapdraw::Request {
         layers: tables.iter().map(|(t, s)| (t.as_ref(), s.clone())).collect(),
         width,
         margin,
         background,
+        backdrop,
+        attribution,
         themes,
         labels,
         icons,

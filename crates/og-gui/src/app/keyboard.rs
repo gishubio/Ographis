@@ -22,6 +22,48 @@ struct Entry {
 }
 
 impl App {
+    /// Starts choosing the rectangle of a download on the map under the canvas.
+    pub fn start_area_pick(&mut self, id: &str) {
+        self.area_for = Some(id.to_string());
+        self.map.osm = true;
+        self.map.three_d = false;
+        self.map.measuring = Some(crate::maptools::Measuring { what: crate::maptools::Measure::Rectangle, points: Vec::new() });
+        self.say("Click two opposite corners on the map, and press Enter. Escape stops.".to_string());
+    }
+
+    /// While a rectangle is chosen: the rectangle the download has, or Sweden, to show on the
+    /// map when there is nothing else to show.
+    pub(super) fn area_table(&self) -> Option<Arc<og_engine::Table>> {
+        let id = self.area_for.as_ref()?;
+        let node = self.snarl.nodes().find(|n| &n.id == id)?;
+        let given: Vec<f64> =
+            node.params.get("bbox").and_then(|v| v.as_str()).unwrap_or("").split([',', ';', ' ']).filter_map(|t| t.trim().parse().ok()).collect();
+        let r =
+            if given.len() == 4 && given[0] < given[2] && given[1] < given[3] { [given[0], given[1], given[2], given[3]] } else { [10.5, 55.2, 24.2, 69.1] };
+        let poly = geo::Rect::new(geo::coord! { x: r[0], y: r[1] }, geo::coord! { x: r[2], y: r[3] }).to_polygon();
+        Some(Arc::new(og_engine::Table {
+            crs: Some(4326),
+            features: vec![og_engine::Feature::new(vec![], Some(geo::Geometry::Polygon(poly)))],
+            ..Default::default()
+        }))
+    }
+
+    /// Takes a rectangle chosen on the map into the download that asked for it.
+    pub(super) fn take_picked_area(&mut self) {
+        let Some(r) = self.map.picked_area.take() else {
+            if self.area_for.is_some() && self.map.measuring.as_ref().is_none_or(|m| m.what != crate::maptools::Measure::Rectangle) {
+                self.area_for = None;
+            }
+            return;
+        };
+        let Some(id) = self.area_for.take() else { return };
+        let Some(nid) = self.snarl.nodes_ids_data().find(|(_, n)| n.value.id == id).map(|(k, _)| k) else { return };
+        let text = format!("{:.5}, {:.5}, {:.5}, {:.5}", r[0], r[1], r[2], r[3]);
+        self.snarl[nid].params.insert("bbox".into(), serde_json::Value::String(text.clone()));
+        self.changed(true);
+        self.say(format!("The rectangle {} is set.", text));
+    }
+
     /// The nodes in reading order: by rows from the top, then from the left.
     fn reading_order(&self) -> Vec<NodeId> {
         let mut v: Vec<(NodeId, egui::Pos2)> = self.snarl.nodes_pos_ids().map(|(id, p, _)| (id, p)).collect();

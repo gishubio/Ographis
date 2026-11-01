@@ -284,6 +284,9 @@ impl App {
         } else {
             together.as_ref().map(|t| t.table.clone()).or_else(|| filtered.as_ref().map(|f| f.table.clone())).or_else(|| table.clone())
         };
+        // While the rectangle of a download is chosen, a map to choose it on.
+        let has_place = map_table.as_ref().is_some_and(|t| t.crs.is_some());
+        let map_table = if has_place || self.area_for.is_none() { map_table } else { self.area_table().or(map_table) };
         let to_map = |i: usize| -> Option<usize> { shown_rows.as_ref().map_or(Some(i), |r| r.binary_search(&i).ok()) };
         let from_map = |i: usize| -> Option<usize> { shown_rows.as_ref().map_or(Some(i), |r| r.get(i).copied()) };
         let skip = together.as_ref().map(|t| t.models);
@@ -314,6 +317,7 @@ impl App {
                 let was = picked;
                 self.map.shapes_over_picture = together.is_some();
                 self.map.show(ui, map_table.as_ref(), &mut picked, &backend);
+                self.take_picked_area();
                 if let Some((hit, _)) = self.map.multi_click.take() {
                     // Ctrl or Shift and a click on a feature adds it to those picked, or
                     // takes it away.

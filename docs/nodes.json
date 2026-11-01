@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.91.1",
+  "version": "0.92.0",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a name that is shown, x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -1118,6 +1118,14 @@
           "hint": "An address inside a record becomes adress.gata and adress.ort, or stays as JSON text for Flatten JSON"
         },
         {
+          "key": "step",
+          "label": "Time step",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "NetCDF and Zarr: the time read as a grid or a picture, by its number from 1 or its date, such as 2026-07. Empty: the first. As points or squares, each time is an attribute"
+        },
+        {
           "key": "cell_size",
           "label": "Cell size",
           "kind": "text",
@@ -1380,8 +1388,20 @@
               "label": "GeoTIFF image (.tif)"
             },
             {
+              "value": "cog",
+              "label": "Cloud Optimized GeoTIFF (.tif)"
+            },
+            {
+              "value": "citygml",
+              "label": "CityGML 2.0 buildings (.gml)"
+            },
+            {
               "value": "glb",
               "label": "glTF 3D model (.glb)"
+            },
+            {
+              "value": "3dtiles",
+              "label": "3D Tiles 1.1 (a folder with tileset.json)"
             },
             {
               "value": "jpg",
@@ -1418,6 +1438,10 @@
             {
               "value": "postgis",
               "label": "PostGIS table"
+            },
+            {
+              "value": "qgis",
+              "label": "QGIS project with its layers (.qgz)"
             },
             {
               "value": "pptx",
@@ -1770,6 +1794,40 @@
           "hint": "Swedish time, such as 2026-06-21 15:00. Empty: midsummer at three in the afternoon"
         },
         {
+          "key": "t3_most",
+          "label": "Triangles in a tile",
+          "kind": "text",
+          "shape": "a string",
+          "default": "100000",
+          "hint": "3D Tiles: the objects are split into tiles of at most this many triangles, which load quickly"
+        },
+        {
+          "key": "t3_dz",
+          "label": "Height added",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "3D Tiles: metres added to every height. The globe has heights above the ellipsoid: in Sweden add about 20 to 40 m to heights above the sea"
+        },
+        {
+          "key": "citygml_lod",
+          "label": "Level of detail",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "2",
+              "label": "LoD2: ground, walls and roofs"
+            },
+            {
+              "value": "1",
+              "label": "LoD1: one solid"
+            }
+          ],
+          "default": "2",
+          "hint": "CityGML: LoD1 is each building as one solid, LoD2 its ground, walls and roofs"
+        },
+        {
           "key": "pm_min",
           "label": "From zoom level",
           "kind": "text",
@@ -2020,8 +2078,20 @@
               "label": "GeoTIFF image (.tif)"
             },
             {
+              "value": "cog",
+              "label": "Cloud Optimized GeoTIFF (.tif)"
+            },
+            {
+              "value": "citygml",
+              "label": "CityGML 2.0 buildings (.gml)"
+            },
+            {
               "value": "glb",
               "label": "glTF 3D model (.glb)"
+            },
+            {
+              "value": "3dtiles",
+              "label": "3D Tiles 1.1 (a folder with tileset.json)"
             },
             {
               "value": "jpg",
@@ -2058,6 +2128,10 @@
             {
               "value": "postgis",
               "label": "PostGIS table"
+            },
+            {
+              "value": "qgis",
+              "label": "QGIS project with its layers (.qgz)"
             },
             {
               "value": "pptx",
@@ -2203,8 +2277,20 @@
               "label": "GeoTIFF image (.tif)"
             },
             {
+              "value": "cog",
+              "label": "Cloud Optimized GeoTIFF (.tif)"
+            },
+            {
+              "value": "citygml",
+              "label": "CityGML 2.0 buildings (.gml)"
+            },
+            {
               "value": "glb",
               "label": "glTF 3D model (.glb)"
+            },
+            {
+              "value": "3dtiles",
+              "label": "3D Tiles 1.1 (a folder with tileset.json)"
             },
             {
               "value": "jpg",
@@ -2241,6 +2327,10 @@
             {
               "value": "postgis",
               "label": "PostGIS table"
+            },
+            {
+              "value": "qgis",
+              "label": "QGIS project with its layers (.qgz)"
             },
             {
               "value": "pptx",
@@ -2409,6 +2499,305 @@
             }
           ],
           "default": "left"
+        }
+      ]
+    },
+    {
+      "type": "ReportWriter",
+      "title": "Report",
+      "group": "output",
+      "category": "",
+      "description": "Writes a report of what the model made, as a web page with the pictures in it or as a PDF of A4 pages: a title, a text first and last of your own, and a section for each stream connected to Sections, in the order they were connected, under the name of the tool it comes from. Maps, charts and 3D scenes are shown as pictures; other streams as tables of their attributes.",
+      "inputs": [
+        "Sections"
+      ],
+      "outputs": [],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "path",
+          "label": "File",
+          "kind": "path",
+          "shape": "a file to write; relative paths start at the folder of the model",
+          "default": "",
+          "hint": "A web page (.html) with the pictures in it, or a PDF. {now('%Y-%m-%d')} puts the date in the name"
+        },
+        {
+          "key": "format",
+          "label": "Format",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "html",
+              "label": "A web page (.html)"
+            },
+            {
+              "value": "pdf",
+              "label": "PDF of A4 pages (.pdf)"
+            }
+          ],
+          "default": "html"
+        },
+        {
+          "key": "title",
+          "label": "Title",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Empty: the name of the file"
+        },
+        {
+          "key": "subtitle",
+          "label": "Under the title",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Such as who made it. Empty: the date and time of the run"
+        },
+        {
+          "key": "intro",
+          "label": "Text first",
+          "kind": "code",
+          "shape": "text over several lines, such as SQL, with {attribute} put in from the stream on the port",
+          "port": "",
+          "default": "",
+          "hint": "A blank line between paragraphs, # at the start of a line for a heading and - for a point in a list"
+        },
+        {
+          "key": "closing",
+          "label": "Text last",
+          "kind": "code",
+          "shape": "text over several lines, such as SQL, with {attribute} put in from the stream on the port",
+          "port": "",
+          "default": "",
+          "hint": "As the text first"
+        },
+        {
+          "key": "rows",
+          "label": "Rows of a table",
+          "kind": "text",
+          "shape": "a string",
+          "default": "100",
+          "hint": "A stream without a picture is a table of its attributes, with at most this many rows"
+        },
+        {
+          "key": "headings",
+          "label": "Headings",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "true",
+          "hint": "Each section under the name of the tool it comes from: name the tools as the sections should be called"
+        }
+      ]
+    },
+    {
+      "type": "QgisProjectWriter",
+      "title": "QGIS project output",
+      "group": "output",
+      "category": "",
+      "description": "Writes the streams connected to Layers as a QGIS project (.qgz), with the features in a GeoPackage beside it and pictures as GeoTIFF: each a layer with the look it has in the form, as in Draw map, with its classes of colour, sizes after a number and labels, and a background map if asked. To open in QGIS and go on from there.",
+      "inputs": [
+        "Layers"
+      ],
+      "outputs": [],
+      "outputs_follow_settings": false,
+      "offered": false,
+      "params": [
+        {
+          "key": "path",
+          "label": "File",
+          "kind": "path",
+          "shape": "a file to write; relative paths start at the folder of the model",
+          "default": "",
+          "hint": "A .qgz project. The features go in a GeoPackage of the same name beside it, and pictures in GeoTIFFs"
+        },
+        {
+          "key": "format",
+          "label": "Format",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "",
+              "label": "From the file name"
+            },
+            {
+              "value": "csv",
+              "label": "CSV (.csv)"
+            },
+            {
+              "value": "xlsx",
+              "label": "Excel (.xlsx)"
+            },
+            {
+              "value": "fgb",
+              "label": "FlatGeobuf (.fgb)"
+            },
+            {
+              "value": "geojson",
+              "label": "GeoJSON (.geojson)"
+            },
+            {
+              "value": "parquet",
+              "label": "GeoParquet (.parquet)"
+            },
+            {
+              "value": "gpkg",
+              "label": "GeoPackage (.gpkg)"
+            },
+            {
+              "value": "geopdf",
+              "label": "GeoSpatial PDF with layers (.pdf)"
+            },
+            {
+              "value": "tif",
+              "label": "GeoTIFF image (.tif)"
+            },
+            {
+              "value": "cog",
+              "label": "Cloud Optimized GeoTIFF (.tif)"
+            },
+            {
+              "value": "citygml",
+              "label": "CityGML 2.0 buildings (.gml)"
+            },
+            {
+              "value": "glb",
+              "label": "glTF 3D model (.glb)"
+            },
+            {
+              "value": "3dtiles",
+              "label": "3D Tiles 1.1 (a folder with tileset.json)"
+            },
+            {
+              "value": "jpg",
+              "label": "JPEG image (.jpg)"
+            },
+            {
+              "value": "las",
+              "label": "LAS point cloud (.las)"
+            },
+            {
+              "value": "laz",
+              "label": "LAZ point cloud (.laz)"
+            },
+            {
+              "value": "ods",
+              "label": "LibreOffice Calc (.ods)"
+            },
+            {
+              "value": "obj",
+              "label": "OBJ 3D model (.obj)"
+            },
+            {
+              "value": "pdf",
+              "label": "PDF (.pdf)"
+            },
+            {
+              "value": "png",
+              "label": "PNG image (.png)"
+            },
+            {
+              "value": "pmtiles",
+              "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
+              "value": "postgis",
+              "label": "PostGIS table"
+            },
+            {
+              "value": "qgis",
+              "label": "QGIS project with its layers (.qgz)"
+            },
+            {
+              "value": "pptx",
+              "label": "PowerPoint slides (.pptx)"
+            },
+            {
+              "value": "odp",
+              "label": "LibreOffice Impress slides (.odp)"
+            },
+            {
+              "value": "shp",
+              "label": "Shapefile (.shp)"
+            },
+            {
+              "value": "txt",
+              "label": "Text (.txt)"
+            }
+          ],
+          "default": "qgis"
+        },
+        {
+          "key": "layers",
+          "label": "Layers",
+          "kind": "list",
+          "shape": "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}",
+          "port": "Layers",
+          "default": "",
+          "hint": "The top row is on top in QGIS. A layer that is not ticked is in the project, but turned off"
+        },
+        {
+          "key": "crs",
+          "label": "Coordinate system",
+          "kind": "crs",
+          "shape": "a coordinate system, such as \"EPSG:3006\"",
+          "default": "",
+          "hint": "Of the project. Empty uses that of the first layer. The others are reprojected to it"
+        },
+        {
+          "key": "basemap",
+          "label": "Background map",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "None"
+            },
+            {
+              "value": "osm",
+              "label": "OpenStreetMap"
+            },
+            {
+              "value": "carto_light",
+              "label": "Light grey (CARTO Positron)"
+            },
+            {
+              "value": "carto_voyager",
+              "label": "Soft colours (CARTO Voyager)"
+            },
+            {
+              "value": "carto_dark",
+              "label": "Dark (CARTO Dark Matter)"
+            },
+            {
+              "value": "own",
+              "label": "One of my own, or an address"
+            }
+          ],
+          "default": "none",
+          "hint": "Tiles from the web under the layers"
+        },
+        {
+          "key": "basemap_own",
+          "label": "Name or address",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The name of one of your background maps of tiles under Settings, or an address with {z}, {x} and {y}"
         }
       ]
     },
@@ -2667,8 +3056,20 @@
               "label": "GeoTIFF image (.tif)"
             },
             {
+              "value": "cog",
+              "label": "Cloud Optimized GeoTIFF (.tif)"
+            },
+            {
+              "value": "citygml",
+              "label": "CityGML 2.0 buildings (.gml)"
+            },
+            {
               "value": "glb",
               "label": "glTF 3D model (.glb)"
+            },
+            {
+              "value": "3dtiles",
+              "label": "3D Tiles 1.1 (a folder with tileset.json)"
             },
             {
               "value": "jpg",
@@ -2705,6 +3106,10 @@
             {
               "value": "postgis",
               "label": "PostGIS table"
+            },
+            {
+              "value": "qgis",
+              "label": "QGIS project with its layers (.qgz)"
             },
             {
               "value": "pptx",
@@ -6989,9 +7394,91 @@
             {
               "value": "#1e2326",
               "label": "Dark"
+            },
+            {
+              "value": "colour",
+              "label": "A colour of my own"
+            },
+            {
+              "value": "map",
+              "label": "A background map, such as OpenStreetMap"
+            },
+            {
+              "value": "picture",
+              "label": "A picture"
             }
           ],
           "default": "#ffffff"
+        },
+        {
+          "key": "background_colour",
+          "label": "Colour",
+          "kind": "text",
+          "shape": "a string",
+          "default": "#e8eef2",
+          "hint": "Such as #e8eef2, or with opacity as #e8eef280"
+        },
+        {
+          "key": "basemap",
+          "label": "Background map",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "osm",
+              "label": "OpenStreetMap"
+            },
+            {
+              "value": "carto_light",
+              "label": "Light grey (CARTO Positron)"
+            },
+            {
+              "value": "carto_voyager",
+              "label": "Soft colours (CARTO Voyager)"
+            },
+            {
+              "value": "carto_dark",
+              "label": "Dark (CARTO Dark Matter)"
+            },
+            {
+              "value": "own",
+              "label": "One of my own, or an address"
+            }
+          ],
+          "default": "osm",
+          "hint": "Fetched from the web as tiles, and kept for a month"
+        },
+        {
+          "key": "basemap_own",
+          "label": "Name or address",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The name of one of your background maps under Settings, or an address with {z}, {x} and {y}"
+        },
+        {
+          "key": "background_picture",
+          "label": "Picture",
+          "kind": "path",
+          "shape": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model",
+          "default": "",
+          "hint": "PNG or JPG. With a world file beside it (.pgw, .jgw) it lies in its place; otherwise it covers the whole map"
+        },
+        {
+          "key": "background_crs",
+          "label": "Picture in",
+          "kind": "crs",
+          "shape": "a coordinate system, such as \"EPSG:3006\"",
+          "default": "",
+          "hint": "The coordinate system of the world file. Empty: that of the map"
+        },
+        {
+          "key": "background_fade",
+          "label": "Paler by %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Makes the background map or picture paler, so that the layers stand out: 30 to 50 suits most maps"
         },
         {
           "key": "legend",
@@ -9618,7 +10105,7 @@
       "outputs": [
         "Output"
       ],
-      "outputs_follow_settings": false,
+      "outputs_follow_settings": true,
       "offered": true,
       "params": [
         {
@@ -10805,7 +11292,7 @@
       "outputs": [
         "Output"
       ],
-      "outputs_follow_settings": false,
+      "outputs_follow_settings": true,
       "offered": true,
       "params": [
         {

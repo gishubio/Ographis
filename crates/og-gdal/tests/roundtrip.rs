@@ -2829,3 +2829,395 @@ fn a_gpx_file_gives_its_tracks() {
     assert_eq!(pts.len(), 2);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Buildings from Extrude written as 3D Tiles placed on the globe and as CityGML that reads
+/// back with its walls, roofs and attributes.
+#[test]
+fn buildings_are_written_as_3d_tiles_and_citygml() {
+    let b = GdalBackend::new();
+    let dir = tmp("tiles3d");
+    std::fs::write(
+        dir.join("houses.csv"),
+        "name;floors;wkt\nA;2;POLYGON((319000 6399000,319010 6399000,319010 6399010,319000 6399010,319000 6399000))\nB;4;POLYGON((319020 6399000,319030 6399000,319030 6399008,319020 6399008,319020 6399000))\n",
+    )
+    .unwrap();
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "houses", "type": "Reader", "params": {"path": "houses.csv", "wkt": "wkt", "crs": "EPSG:3006"}},
+        {"id": "up", "type": "Extruder", "params": {"height": "floors * 3"}},
+        {"id": "tiles", "type": "Writer", "params": {"path": "out/houses", "format": "3dtiles", "t3_dz": "30"}},
+        {"id": "gml", "type": "Writer", "params": {"path": "out/houses", "format": "citygml"}},
+        {"id": "gml1", "type": "Writer", "params": {"path": "out/houses_lod1.gml", "citygml_lod": "1"}}],
+      "edges": [
+        {"from": ["houses", "Output"], "to": ["up", "Input"]},
+        {"from": ["up", "Output"], "to": ["tiles", "Input"]},
+        {"from": ["up", "Output"], "to": ["gml", "Input"]},
+        {"from": ["up", "Output"], "to": ["gml1", "Input"]}]}"#,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    for id in ["tiles", "gml", "gml1"] {
+        assert!(matches!(r.nodes[id].status, Status::Ok | Status::Warn), "{} {:?}", id, r.log);
+    }
+    // The tileset: version 1.1, a tile with a glTF model, placed in Göteborg.
+    let set: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("out/houses/tileset.json")).unwrap()).unwrap();
+    assert_eq!(set["asset"]["version"], "1.1");
+    let tf: Vec<f64> = set["root"]["transform"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+    let (x, y, z) = (tf[12], tf[13], tf[14]);
+    let r_earth = (x * x + y * y + z * z).sqrt();
+    let (lat, lon) = ((z / r_earth).asin().to_degrees(), y.atan2(x).to_degrees());
+    assert!((lon - 11.97).abs() < 0.3 && (lat - 57.7).abs() < 0.3, "{} {}", lon, lat);
+    let uri = set["root"]["children"][0]["content"]["uri"].as_str().unwrap();
+    let glb = std::fs::read(dir.join("out/houses").join(uri)).unwrap();
+    assert_eq!(&glb[..4], b"glTF");
+    // CityGML read back by Ographis: two buildings with their floors, and roofs among their surfaces.
+    let text = std::fs::read_to_string(dir.join("out/houses.gml")).unwrap();
+    assert!(text.contains("bldg:RoofSurface") && text.contains("bldg:WallSurface") && text.contains("EPSG:3006"));
+    assert!(std::fs::read_to_string(dir.join("out/houses_lod1.gml")).unwrap().contains("lod1Solid"));
+    let r2 = run(
+        &Workspace::from_json(r#"{"nodes": [{"id": "back", "type": "Reader", "params": {"path": "out/houses.gml"}}], "edges": []}"#).unwrap(),
+        Some(&b),
+        &dir,
+    );
+    let back = r2.output("back", "Output").unwrap_or_else(|| panic!("{:?}", r2.log));
+    assert_eq!(back.len(), 2, "{:?}", r2.log);
+    assert_eq!(back.crs, Some(3006));
+    let floors = col(back, "floors");
+    assert!(floors.iter().any(|v| v.as_f64() == Some(4.0)), "{:?} {:?}", back.field_names(), floors);
+    let (lo, hi) = back.mesh.as_deref().unwrap().bounds().unwrap();
+    assert_eq!((lo[2], hi[2]), (0.0, 12.0));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// GTFS timetables, as a zip or a folder: the stops by default, and the other tables as
+/// layers.
+#[test]
+fn gtfs_timetables_are_read() {
+    let b = GdalBackend::new();
+    let dir = tmp("gtfs");
+    let feed = dir.join("feed");
+    std::fs::create_dir_all(&feed).unwrap();
+    let files = [
+        ("agency.txt", "agency_id,agency_name,agency_url,agency_timezone\nvt,Västtrafik,https://example.com,Europe/Stockholm\n"),
+        ("stops.txt", "stop_id,stop_name,stop_lat,stop_lon\n1,Drottningtorget,57.7069,11.9701\n2,Brunnsparken,57.7067,11.9681\n"),
+        ("routes.txt", "route_id,agency_id,route_short_name,route_type\nr1,vt,6,0\n"),
+        ("trips.txt", "route_id,service_id,trip_id\nr1,s1,t1\n"),
+        ("stop_times.txt", "trip_id,arrival_time,departure_time,stop_id,stop_sequence\nt1,07:30:00,07:30:00,1,1\nt1,07:32:00,07:32:00,2,2\n"),
+        ("calendar.txt", "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\ns1,1,1,1,1,1,0,0,20260101,20261231\n"),
+    ];
+    let zip = std::fs::File::create(dir.join("feed.zip")).unwrap();
+    let mut z = zip::ZipWriter::new(zip);
+    for (name, text) in files {
+        std::fs::write(feed.join(name), text).unwrap();
+        z.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+        std::io::Write::write_all(&mut z, text.as_bytes()).unwrap();
+    }
+    z.finish().unwrap();
+    let mut notes = Notes::default();
+    for path in [dir.join("feed.zip"), feed.clone()] {
+        let t = b.read(&path, &ReadOpts::default(), &mut notes).unwrap();
+        assert_eq!((t.len(), t.crs), (2, Some(4326)), "{}", path.display());
+        assert!(col(&t, "stop_name").contains(&text("Drottningtorget")));
+    }
+    let times = b.read(&dir.join("feed.zip"), &ReadOpts { layer: Some("stop_times".into()), ..Default::default() }, &mut notes).unwrap();
+    assert_eq!(times.len(), 2);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A PNG of one colour, as the bytes of the file.
+fn flat_png(dir: &std::path::Path, name: &str, size: usize, rgb: [u8; 3]) -> Vec<u8> {
+    use gdal::raster::Buffer;
+    let mem = gdal::DriverManager::get_driver_by_name("MEM").unwrap();
+    let ds = mem.create_with_band_type::<u8, _>("", size, size, 3).unwrap();
+    for (b, v) in rgb.iter().enumerate() {
+        let mut buf = Buffer::new((size, size), vec![*v; size * size]);
+        ds.rasterband(b + 1).unwrap().write((0, 0), (size, size), &mut buf).unwrap();
+    }
+    let path = dir.join(name);
+    ds.create_copy(&gdal::DriverManager::get_driver_by_name("PNG").unwrap(), &path, &gdal::cpl::CslStringList::new()).unwrap();
+    let _ = std::fs::remove_file(path.with_extension("png.aux.xml"));
+    std::fs::read(&path).unwrap()
+}
+
+/// Draw map with a background map of tiles from a server of its own, and with a picture
+/// placed by its world file.
+#[test]
+fn maps_are_drawn_on_a_background_map_or_a_picture() {
+    use std::io::{Read, Write};
+    let b = GdalBackend::new();
+    let dir = tmp("basemap");
+    let tile = flat_png(&dir, "tile.png", 256, [200, 30, 30]);
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = hits.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let (mut buf, mut n) = ([0u8; 4096], 0);
+            while n < buf.len() && !buf[..n].windows(4).any(|w| w == b"\r\n\r\n") {
+                match stream.read(&mut buf[n..]) {
+                    Ok(0) | Err(_) => break,
+                    Ok(k) => n += k,
+                }
+            }
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let head = format!("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", tile.len());
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(&tile);
+        }
+    });
+    // A green picture with a world file, over the left half of the area.
+    flat_png(&dir, "photo.png", 100, [30, 200, 30]);
+    std::fs::write(dir.join("photo.pgw"), "5\n0\n0\n-5\n400002.5\n6400997.5\n").unwrap();
+    std::fs::write(dir.join("areas.csv"), "name;wkt\nA;LINESTRING (400000 6400000, 401000 6401000)\n").unwrap();
+    let ws = Workspace::from_json(&format!(
+        r##"{{
+      "nodes": [
+        {{"id": "areas", "type": "Reader", "params": {{"path": "areas.csv", "crs": "EPSG:3006"}}}},
+        {{"id": "tiles", "type": "MapRenderer", "params": {{"width": "200", "margin": "0", "background": "map", "basemap": "own",
+          "basemap_own": "http://127.0.0.1:{port}/{{z}}/{{x}}/{{y}}.png?test={stamp}",
+          "layers": [{{"from": "areas:Output", "stroke": "#000000", "width": 1}}]}}}},
+        {{"id": "photo", "type": "MapRenderer", "params": {{"width": "200", "margin": "0", "background": "picture", "background_picture": "photo.png",
+          "background_crs": "EPSG:3006", "layers": [{{"from": "areas:Output", "stroke": "#000000", "width": 1}}]}}}},
+        {{"id": "colour", "type": "MapRenderer", "params": {{"width": "200", "margin": "0", "background": "colour", "background_colour": "#123456",
+          "layers": [{{"from": "areas:Output", "stroke": "#000000", "width": 1}}]}}}}
+      ],
+      "edges": [
+        {{"from": ["areas", "Output"], "to": ["tiles", "Layers"]}},
+        {{"from": ["areas", "Output"], "to": ["photo", "Layers"]}},
+        {{"from": ["areas", "Output"], "to": ["colour", "Layers"]}}
+      ]
+    }}"##,
+        port = port,
+        stamp = std::process::id()
+    ))
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    assert_eq!(r.errors, 0);
+    let pixel = |id: &str, x: usize, y: usize| -> [u8; 4] {
+        let img = r.output(id, "Map").unwrap().image.clone().unwrap();
+        let at = (y * img.width + x) * 4;
+        [img.rgba[at], img.rgba[at + 1], img.rgba[at + 2], img.rgba[at + 3]]
+    };
+    assert!(hits.load(std::sync::atomic::Ordering::SeqCst) > 0, "tiles were fetched");
+    assert_eq!(pixel("tiles", 10, 190), [200, 30, 30, 255], "the tiles lie under the line");
+    assert_eq!(pixel("photo", 10, 100), [30, 200, 30, 255], "the picture lies on the left half");
+    assert_ne!(pixel("photo", 190, 100), [30, 200, 30, 255], "and not on the right");
+    assert_eq!(pixel("colour", 190, 10), [0x12, 0x34, 0x56, 255]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A Zarr store as xarray writes it, without compression: temperatures over two times on a
+/// grid of 4 × 3 whose rows run from south to north, and a variable of one dimension.
+fn make_zarr(root: &std::path::Path) {
+    let array = |name: &str, shape: &[usize], dtype: &str, dims: &[&str], extra: serde_json::Value, bytes: Vec<u8>| {
+        let d = root.join(name);
+        std::fs::create_dir_all(&d).unwrap();
+        let zarray = serde_json::json!({"zarr_format": 2, "shape": shape, "chunks": shape, "dtype": dtype, "compressor": null,
+            "fill_value": "NaN", "order": "C", "filters": null});
+        std::fs::write(d.join(".zarray"), zarray.to_string()).unwrap();
+        let mut attrs = extra;
+        attrs["_ARRAY_DIMENSIONS"] = serde_json::json!(dims);
+        std::fs::write(d.join(".zattrs"), attrs.to_string()).unwrap();
+        let chunk = vec!["0"; shape.len()].join(".");
+        std::fs::write(d.join(chunk), bytes).unwrap();
+    };
+    std::fs::create_dir_all(root).unwrap();
+    std::fs::write(root.join(".zgroup"), r#"{"zarr_format": 2}"#).unwrap();
+    let f8 = |v: &[f64]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+    array("lon", &[4], "<f8", &["lon"], serde_json::json!({"units": "degrees_east", "standard_name": "longitude"}), f8(&[11.0, 11.5, 12.0, 12.5]));
+    array("lat", &[3], "<f8", &["lat"], serde_json::json!({"units": "degrees_north", "standard_name": "latitude"}), f8(&[57.0, 57.5, 58.0]));
+    array("time", &[2], "<f8", &["time"], serde_json::json!({"units": "days since 2026-01-01", "calendar": "standard"}), f8(&[0.0, 181.0]));
+    let temp: Vec<u8> =
+        (0..2).flat_map(|t| (0..3).flat_map(move |r| (0..4).map(move |c| (t * 100 + r * 10 + c) as f32))).flat_map(|v| v.to_le_bytes()).collect();
+    array("temp", &[2, 3, 4], "<f4", &["time", "lat", "lon"], serde_json::json!({"units": "K"}), temp);
+    array("station", &[4], "<f8", &["lon"], serde_json::json!({}), f8(&[1.0, 2.0, 3.0, 4.0]));
+}
+
+/// NetCDF and Zarr: each variable a layer, the times as attributes named after their dates,
+/// and one time as a grid or a picture, with its rows from the north.
+#[test]
+fn netcdf_and_zarr_cubes_are_read_with_their_times() {
+    let b = GdalBackend::new();
+    let dir = tmp("cube");
+    let zarr = dir.join("weather.zarr");
+    make_zarr(&zarr);
+    let mut notes = Notes::default();
+    let layers = b.layers(&zarr).unwrap();
+    assert_eq!(layers.iter().map(|l| l.name.as_str()).collect::<Vec<_>>(), ["temp"]);
+    let opts = ReadOpts { crs: Some(4326), ..Default::default() };
+    let points = b.read(&zarr, &opts, &mut notes).unwrap();
+    assert_eq!(points.len(), 12);
+    assert_eq!(points.field_names(), ["col", "row", "time_2026_01_01", "time_2026_07_01"]);
+    // The point in the south-west has the first values.
+    let sw = points.features.iter().find(|f| f.attrs[2] == Value::Real(0.0)).unwrap();
+    let p = match sw.geom.as_ref().unwrap() {
+        Geometry::Point(p) => *p,
+        g => panic!("{:?}", g),
+    };
+    assert!((p.x() - 11.0).abs() < 1e-9 && (p.y() - 57.0).abs() < 1e-9, "{:?}", p);
+    assert_eq!(sw.attrs[3], Value::Real(100.0));
+    // The second time as a grid, by its date: the first row is the north.
+    let grid = b.read(&zarr, &ReadOpts { raster: og_engine::io::RasterMode::Grid, step: Some("2026-07".into()), ..opts.clone() }, &mut notes).unwrap();
+    let g = grid.grid.as_ref().unwrap();
+    assert_eq!((g.width, g.height), (4, 3));
+    assert_eq!(&g.values[..4], &[120.0, 121.0, 122.0, 123.0]);
+    assert!(g.geotransform[5] < 0.0 && (g.geotransform[3] - 58.25).abs() < 1e-9, "{:?}", g.geotransform);
+    let e = b.read(&zarr, &ReadOpts { raster: og_engine::io::RasterMode::Grid, step: Some("2027".into()), ..opts.clone() }, &mut notes).unwrap_err();
+    assert!(e.0.contains("2026_01_01"), "{}", e.0);
+    // NetCDF of the same, written by GDAL with its time dimension.
+    let mem = gdal::DriverManager::get_driver_by_name("MEM").unwrap();
+    let mut ds = mem.create_with_band_type::<f32, _>("", 4, 3, 2).unwrap();
+    ds.set_geo_transform(&[10.75, 0.5, 0.0, 58.25, 0.0, -0.5]).unwrap();
+    ds.set_spatial_ref(&gdal::spatial_ref::SpatialRef::from_epsg(4326).unwrap()).unwrap();
+    for t in 0..2 {
+        let v: Vec<f32> = (0..3).flat_map(|r| (0..4).map(move |c| (t * 100 + (2 - r) * 10 + c) as f32)).collect();
+        ds.rasterband(t as usize + 1).unwrap().write((0, 0), (4, 3), &mut gdal::raster::Buffer::new((4, 3), v)).unwrap();
+    }
+    use gdal::Metadata;
+    for (k, v) in
+        [("NETCDF_DIM_EXTRA", "{time}"), ("NETCDF_DIM_time_DEF", "{2,6}"), ("NETCDF_DIM_time_VALUES", "{0,181}"), ("time#units", "days since 2026-01-01")]
+    {
+        ds.set_metadata_item(k, v, "").unwrap();
+    }
+    let nc = dir.join("weather.nc");
+    ds.create_copy(&gdal::DriverManager::get_driver_by_name("netCDF").unwrap(), &nc, &gdal::cpl::CslStringList::new()).unwrap();
+    drop(ds);
+    let back = b.read(&nc, &ReadOpts::default(), &mut notes).unwrap();
+    assert_eq!((back.len(), back.crs), (12, Some(4326)));
+    assert_eq!(back.field_names(), ["col", "row", "time_2026_01_01", "time_2026_07_01"]);
+    let pic = b.read(&nc, &ReadOpts { raster: og_engine::io::RasterMode::Image, step: Some("2".into()), ..Default::default() }, &mut notes).unwrap();
+    let g = pic.grid.as_ref().unwrap();
+    assert_eq!(&g.values[..4], &[120.0, 121.0, 122.0, 123.0]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A QGIS project of three layers: areas in classes of a number, points coloured by a text
+/// with labels and sizes, and a picture; the features in a GeoPackage beside it.
+#[test]
+fn a_qgis_project_is_written_with_its_layers_and_looks() {
+    let b = GdalBackend::new();
+    let dir = tmp("qgis");
+    std::fs::write(
+        dir.join("areas.csv"),
+        "name;people;wkt\nA;10;POLYGON ((400000 6400000, 401000 6400000, 401000 6401000, 400000 6401000, 400000 6400000))\nB;90;POLYGON ((401000 6400000, 402000 6400000, 402000 6401000, 401000 6401000, 401000 6400000))\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("places.csv"), "name;kind;x;y\nOne;school;400500;6400500\nTwo;shop;401500;6400500\n").unwrap();
+    std::fs::write(dir.join("mixed.csv"), "id;wkt\n1;POINT (400100 6400100)\n2;LINESTRING (400000 6400000, 402000 6401000)\n").unwrap();
+    let ws = Workspace::from_json(
+        r##"{
+      "nodes": [
+        {"id": "areas", "type": "Reader", "params": {"path": "areas.csv", "crs": "EPSG:3006"}},
+        {"id": "places", "type": "Reader", "params": {"path": "places.csv", "x": "x", "y": "y", "crs": "EPSG:3006"}},
+        {"id": "mixed", "type": "Reader", "params": {"path": "mixed.csv", "crs": "EPSG:3006"}},
+        {"id": "map", "type": "MapRenderer", "params": {"width": "100", "layers": [{"from": "areas:Output"}]}},
+        {"id": "qgis", "type": "QgisProjectWriter", "params": {"path": "out/project", "format": "qgis", "basemap": "osm",
+          "layers": [
+            {"from": "places:Output", "name": "Places", "color_by": "kind", "label": "name", "fill": "#ff0000"},
+            {"from": "mixed:Output", "name": "mixed", "show": false},
+            {"from": "areas:Output", "name": "areas", "color_by": "people", "ramp": "reds", "classes": 2},
+            {"from": "map:Map", "name": "Picture"}
+          ]}}
+      ],
+      "edges": [
+        {"from": ["areas", "Output"], "to": ["map", "Layers"]},
+        {"from": ["places", "Output"], "to": ["qgis", "Layers"]},
+        {"from": ["mixed", "Output"], "to": ["qgis", "Layers"]},
+        {"from": ["areas", "Output"], "to": ["qgis", "Layers"]},
+        {"from": ["map", "Map"], "to": ["qgis", "Layers"]}
+      ]
+    }"##,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    assert_eq!(r.errors, 0);
+    let out = dir.join("out");
+    let qgz = std::fs::File::open(out.join("project.qgz")).unwrap();
+    let mut z = zip::ZipArchive::new(qgz).unwrap();
+    let mut xml = String::new();
+    std::io::Read::read_to_string(&mut z.by_name("project.qgs").unwrap(), &mut xml).unwrap();
+    std::fs::write(out.join("project.qgs"), &xml).unwrap();
+    for want in [
+        "<authid>EPSG:3006</authid>",
+        "./project.gpkg|layername=Places",
+        "type=\"categorizedSymbol\" attr=\"kind\"",
+        "type=\"graduatedSymbol\" attr=\"people\"",
+        "fieldName=\"name\"",
+        "labelsEnabled=\"1\"",
+        "name=\"mixed (lines)\"",
+        "checked=\"Qt::Unchecked\"",
+        "./project_Picture.tif",
+        "type=xyz&amp;url=https://tile.openstreetmap.org/%7Bz%7D/%7Bx%7D/%7By%7D.png",
+    ] {
+        assert!(xml.contains(want), "{} not in\n{}", want, xml);
+    }
+    // The places first: on top in QGIS.
+    assert!(xml.find("layername=Places").unwrap() < xml.find("layername=areas").unwrap());
+    let mut notes = Notes::default();
+    let names: Vec<String> = b.layers(&out.join("project.gpkg")).unwrap().into_iter().map(|l| l.name).collect();
+    for n in ["Places", "mixed_points", "mixed_lines", "areas"] {
+        assert!(names.contains(&n.to_string()), "{:?}", names);
+    }
+    let places = b.read(&out.join("project.gpkg"), &ReadOpts { layer: Some("Places".into()), ..Default::default() }, &mut notes).unwrap();
+    assert_eq!(places.len(), 2);
+    assert!(out.join("project_Picture.tif").is_file());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A report as a web page and as a PDF: the text, a map as a picture and a stream as a table.
+#[test]
+fn a_report_is_written_as_a_web_page_and_a_pdf() {
+    let b = GdalBackend::new();
+    let dir = tmp("report");
+    std::fs::write(dir.join("places.csv"), "name;kind;x;y\nÅby;school;400500;6400500\nTwo;shop;401500;6400800\n").unwrap();
+    let ws = Workspace::from_json(
+        r##"{
+      "nodes": [
+        {"id": "places", "name": "Platser", "type": "Reader", "params": {"path": "places.csv", "x": "x", "y": "y", "crs": "EPSG:3006"}},
+        {"id": "map", "name": "Karta", "type": "MapRenderer", "params": {"width": "300", "layers": [{"from": "places:Output"}]}},
+        {"id": "html", "type": "ReportWriter", "params": {"path": "out/rapport_{now('%Y')}", "title": "Rapport", "intro": "# Om\nText (med parentes).\n\n- en punkt"}},
+        {"id": "pdf", "type": "ReportWriter", "params": {"path": "out/rapport.pdf", "title": "Rapport", "subtitle": "Göteborg", "rows": "1"}}
+      ],
+      "edges": [
+        {"from": ["places", "Output"], "to": ["map", "Layers"]},
+        {"from": ["map", "Map"], "to": ["html", "Sections"]},
+        {"from": ["places", "Output"], "to": ["html", "Sections"]},
+        {"from": ["map", "Map"], "to": ["pdf", "Sections"]},
+        {"from": ["places", "Output"], "to": ["pdf", "Sections"]}
+      ]
+    }"##,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    assert_eq!(r.errors, 0);
+    let html_file = r.nodes["html"].files[0].clone();
+    assert!(html_file.file_name().unwrap().to_string_lossy().starts_with("rapport_20"), "{}", html_file.display());
+    let html = std::fs::read_to_string(&html_file).unwrap();
+    for want in
+        ["<h1>Rapport</h1>", "<h2>Karta</h2>", "<h2>Platser</h2>", "data:image/png;base64,", "<td>Åby</td>", "<li>en punkt</li>", "<h3>Om</h3>", "2 rows"]
+    {
+        assert!(html.contains(want), "{} not in the page", want);
+    }
+    let pdf = std::fs::read(dir.join("out/rapport.pdf")).unwrap();
+    assert!(pdf.starts_with(b"%PDF-1.4") && pdf.ends_with(b"%%EOF\n"));
+    let text = String::from_utf8_lossy(&pdf);
+    assert!(text.contains("(Platser)") && text.contains("/DCTDecode") && text.contains("(G\\366teborg)"));
+    assert!(text.contains("The first 1 of 2 rows"));
+    // GDAL reads it as a PDF.
+    assert!(gdal::Dataset::open(dir.join("out/rapport.pdf")).is_ok());
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -318,6 +318,10 @@ impl App {
             if edited.open_settings {
                 self.open_settings();
             }
+            if edited.pick_area {
+                let id = self.snarl[node_id].id.clone();
+                self.start_area_pick(&id);
+            }
             let format_now = self.snarl[node_id].params.get("format").and_then(|v| v.as_str()).unwrap_or("").to_string();
             if group == Some(Group::Writer) && format_now != format_before {
                 let want = og_engine::nodes::output_kind(&format_now);

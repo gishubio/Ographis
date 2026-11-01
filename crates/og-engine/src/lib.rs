@@ -4,7 +4,9 @@
 //! The engine knows nothing about GDAL: file formats and coordinate systems are reached
 //! through [`io::Backend`]. CSV and txt are read and written by the engine itself.
 
+pub mod basemap;
 pub mod chart;
+pub mod citygml_write;
 pub mod citymodel;
 pub mod crash;
 pub mod csv_io;
@@ -33,9 +35,11 @@ pub mod parquet_io;
 pub mod photos;
 pub mod pmtiles_write;
 pub mod pointcloud;
+pub mod qgis_project;
 pub mod rasterlook;
 pub mod reference;
 pub mod render3d;
+pub mod report;
 pub mod run;
 pub mod schedule;
 pub mod settings;
@@ -45,6 +49,7 @@ pub mod tanaka;
 pub mod terrain;
 pub mod thematic;
 pub mod tiles3d;
+pub mod tiles3d_write;
 pub mod web;
 
 pub use io::{Backend, Notes};

@@ -987,6 +987,10 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
                     let layers = parts.iter().filter(|x| x.port == "Layers").count();
                     wrote = match input {
                         _ if ty.inputs == ["Layers"] => format!("{} {}", layers, if layers == 1 { "layer" } else { "layers" }),
+                        _ if ty.inputs == ["Sections"] => {
+                            let n = parts.iter().filter(|x| x.port == "Sections").count();
+                            format!("{} {}", n, if n == 1 { "section" } else { "sections" })
+                        }
                         _ if ty.inputs == ["Pictures"] => {
                             let n = parts.iter().filter(|x| x.port == "Pictures" && x.table.image.is_some()).count();
                             format!("{} {}", n, if n == 1 { "picture" } else { "pictures" })

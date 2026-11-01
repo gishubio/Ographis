@@ -195,7 +195,25 @@ Why Ographis works as it does, and what it does not do yet.
   it tells that a file has changed, not that it has not been tampered with.
 - DWG is read through acadrust, a young library that is held at one version. It writes the
   drawing as DXF, which is then read as DXF is; what acadrust cannot read is left out with a
-  warning, or the drawing cannot be read. Writing DWG is not offered.
+  warning, or the drawing cannot be read. Writing DWG is not offered. acadrust 0.6.8 reads the
+  angles of clockwise arcs in hatch boundaries mirrored and writes them mirrored again, which
+  drew large circles; Ographis turns them back before the DXF is written, and this has to be
+  taken away when acadrust mends it. The DXF it writes is read as UTF-8, whatever code page the
+  drawing was made in.
+- GTFS, NetCDF and Zarr are read through GDAL. A cube is read through the classic rasters of
+  GDAL, where the steps along the other dimensions (time, height) are bands; a variable of
+  four dimensions has a band for each combination. Only variables on a regular grid can be
+  read: curvilinear grids, with latitude and longitude in arrays of their own, are not placed.
+  Calendars other than the usual one (360 days, no leap years) are named as if they were it.
+- The QGIS project is written as QGIS 3.34 writes one, and has been opened and drawn with that version. Icons, clusters and the order of
+  drawing are not carried over, and an expression of Ographis in a label is handed to QGIS as
+  it is, which reads most of them the same.
+- The PDF of Report is set in Helvetica, which every PDF reader has, so it is small and needs
+  no font in it; letters outside Windows-1252 become question marks there. The web page has
+  them all.
+- 3D Tiles are placed on the globe by a frame at the middle of the model, turned as the grid
+  of its coordinate system: over tens of kilometres the curve of the earth is not followed.
+  The tiles are all at one level of detail, split by how many triangles they hold.
 - Overture Maps: the catalog and the files are read as Overture lays them out. When it changes
   that, the tool may need to follow. A part (row group) of a file holds tens of thousands of
   features, so even a small rectangle fetches some megabytes. A release is kept by Overture

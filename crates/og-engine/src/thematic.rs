@@ -66,9 +66,26 @@ pub struct Key {
     pub text: String,
 }
 
+/// What a class of colours holds, for other programs to draw it by, such as QGIS.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClassKey {
+    /// Numbers from and to, the first class from its lowest.
+    Range(f64, f64),
+    /// One text.
+    Value(String),
+    /// The texts that did not get colours of their own.
+    Other,
+    /// Features without a value.
+    NoValue,
+    /// A colour as written in the attribute.
+    Written,
+}
+
 /// A layer made ready to draw its values.
 #[derive(Debug, Clone, Default)]
 pub struct Theme {
+    /// The classes of the colours, with the look of each, in the order of the keys.
+    pub classes: Vec<(ClassKey, Look)>,
     /// A look per feature, by its place in the stream. None draws all in the look of the layer.
     pub looks: Option<Vec<Look>>,
     /// The order to draw in. None keeps the order of the stream.
@@ -248,6 +265,7 @@ pub fn prepare(table: &Table, style: &LayerStyle, spec: &ThemeSpec) -> Result<Th
     if let Some(i) = color_at {
         let numeric = table.fields[i].ty != crate::model::FieldType::Text && spec.ramp != "categories";
         let mut keys = Vec::new();
+        let mut class_keys: Vec<ClassKey> = Vec::new();
         let colors: Vec<Option<[u8; 3]>> = if spec.ramp == "as_written" {
             // The colours the attribute holds, such as the colours of a CAD drawing.
             let cs: Vec<Option<[u8; 3]>> =
@@ -260,6 +278,7 @@ pub fn prepare(table: &Table, style: &LayerStyle, spec: &ThemeSpec) -> Result<Th
             }
             for c in seen {
                 keys.push((c, format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])));
+                class_keys.push(ClassKey::Written);
             }
             cs
         } else if numeric {
@@ -291,10 +310,12 @@ pub fn prepare(table: &Table, style: &LayerStyle, spec: &ThemeSpec) -> Result<Th
                 if breaks.len() >= 2 {
                     let text = if breaks[c] == breaks[c + 1] { short(breaks[c]) } else { format!("{} – {}", short(breaks[c]), short(breaks[c + 1])) };
                     keys.push((color_of_class(c), text));
+                    class_keys.push(ClassKey::Range(breaks[c], breaks[c + 1]));
                 }
             }
             if breaks.len() == 1 {
                 keys.push((color_of_class(0), short(breaks[0])));
+                class_keys.push(ClassKey::Range(breaks[0], breaks[0]));
             }
             vals.iter().map(|v| v.map(|v| color_of_class(if breaks.len() >= 2 { class_of(v) } else { 0 }))).collect()
         } else {
@@ -319,9 +340,11 @@ pub fn prepare(table: &Table, style: &LayerStyle, spec: &ThemeSpec) -> Result<Th
             let color_of = |t: &str| chosen.iter().position(|c| c == t).map(|k| CATEGORIES[k]);
             for n in &named {
                 keys.push((color_of(n).unwrap_or(OTHER), n.clone()));
+                class_keys.push(ClassKey::Value(n.clone()));
             }
             if counts.len() > chosen.len() {
                 keys.push((OTHER, "Other".to_string()));
+                class_keys.push(ClassKey::Other);
             }
             table
                 .features
@@ -358,6 +381,7 @@ pub fn prepare(table: &Table, style: &LayerStyle, spec: &ThemeSpec) -> Result<Th
         }
         if colors.iter().any(|c| c.is_none()) {
             keys.push((NO_VALUE, "No value".to_string()));
+            class_keys.push(ClassKey::NoValue);
         }
         let base = Look { fill: style.fill, stroke: style.stroke, size: if size_at.is_some() { 12.0 } else { style.size.max(10.0) } };
         // With both, the sizes get keys of their own.
@@ -378,6 +402,7 @@ pub fn prepare(table: &Table, style: &LayerStyle, spec: &ThemeSpec) -> Result<Th
                 Key { look, text }
             })
             .collect();
+        theme.classes = class_keys.into_iter().zip(theme.keys.iter().map(|k| k.look)).collect();
     }
 
     // Order: the largest first, so that they lie under, or the smallest first.

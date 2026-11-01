@@ -319,6 +319,8 @@ mod tests {
             width: 100,
             margin: 0.0,
             background: Some([255, 255, 255, 255]),
+            backdrop: None,
+            attribution: None,
         };
         let img = crate::mapdraw::draw(&req, &|| true).unwrap();
         let at = |x: usize, y: usize| img.rgba[(y * img.width + x) * 4..][..3].to_vec();

@@ -172,6 +172,9 @@ pub struct MapView {
     tiles_map: Option<og_engine::settings::BackgroundMap>,
     /// A distance or an area being measured, by clicks on the map.
     pub measuring: Option<crate::maptools::Measuring>,
+    /// A rectangle chosen on the map, in degrees: west, south, east and north. Taken by the
+    /// one who asked for it.
+    pub picked_area: Option<[f64; 4]>,
     /// Where the menu of the secondary button was opened, in the system of the map.
     menu_at: Option<[f64; 2]>,
     /// The latest coordinates copied from the menu.
@@ -229,6 +232,7 @@ impl Default for MapView {
             background: None,
             tiles_map: None,
             measuring: None,
+            picked_area: None,
             menu_at: None,
             copied: None,
             label_by: None,
@@ -750,6 +754,12 @@ impl MapView {
             let ink = Color32::from_rgb(214, 40, 110);
             if pts.len() >= 2 {
                 let mut line = pts.clone();
+                if m.what == crate::maptools::Measure::Rectangle {
+                    let (a, b) = (pts[0], pts[1]);
+                    line = vec![a, Pos2::new(b.x, a.y), b, Pos2::new(a.x, b.y), a];
+                    let fill = Color32::from_rgba_unmultiplied(214, 40, 110, 40);
+                    painter.rect_filled(Rect::from_two_pos(a, b), 0.0, fill);
+                }
                 if m.what == crate::maptools::Measure::Area && pts.len() >= 3 {
                     line.push(pts[0]);
                     let fill = Color32::from_rgba_unmultiplied(214, 40, 110, 40);
@@ -765,7 +775,10 @@ impl MapView {
             let r = Rect::from_min_size(rect.left_top() + Vec2::new(8.0, 8.0), galley.size() + Vec2::new(14.0, 8.0));
             painter.rect(r, 3.0, pal.surface, Stroke::new(1.0, ink), egui::StrokeKind::Inside);
             painter.galley(r.min + Vec2::new(7.0, 4.0), galley, pal.ink);
-            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if m.what == crate::maptools::Measure::Rectangle && m.points.len() == 2 && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                self.picked_area = crate::maptools::rectangle(m, shown_crs, &**backend);
+                self.measuring = None;
+            } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 self.measuring = None;
             }
         }
@@ -876,6 +889,10 @@ impl MapView {
         // While measuring, a click is a point of what is measured.
         let measured = match (&mut self.measuring, resp.clicked(), resp.interact_pointer_pos()) {
             (Some(m), true, Some(pos)) => {
+                // A rectangle has two corners: a third click starts it again.
+                if m.what == crate::maptools::Measure::Rectangle && m.points.len() >= 2 {
+                    m.points.clear();
+                }
                 let at = [
                     self.center[0] + (pos.x - rect.center().x) as f64 / (self.kx * self.scale),
                     self.center[1] - (pos.y - rect.center().y) as f64 / self.scale,

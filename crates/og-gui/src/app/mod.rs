@@ -252,6 +252,8 @@ pub struct App {
     pub history_open: bool,
     /// The form of Model → Schedule, while it is open.
     pub schedule: Option<ScheduleForm>,
+    /// The download whose rectangle is being chosen on the map, by its id.
+    pub area_for: Option<String>,
     /// The list of Ctrl+F and Ctrl+L, while it is open.
     pub picker: Option<keyboard::Picker>,
     /// Enter on the canvas: the form gets the keyboard, over two frames.
@@ -449,6 +451,7 @@ impl App {
             history_open: false,
             schedule: None,
             picker: None,
+            area_for: None,
             focus_form: 0,
             tab_surrender: 0,
             show_minimap: true,

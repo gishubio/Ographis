@@ -3,6 +3,52 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.92
+
+Maps
+
+- **Draw map on a background**: a colour of one's own, a **picture** (PNG or JPG, placed by
+  its world file or covering the map), or a **background map** of tiles such as
+  OpenStreetMap, CARTO Positron, Voyager and Dark Matter, or one's own from the settings. The
+  tiles are kept for a month, can be made paler so the layers stand out, and the map says
+  who made them in a corner.
+- **OpenStreetMap and Overture download** give each kind on a port of its own, such as
+  *buildings* and *roads*, with only the attributes that kind has, and all of it on *Output*
+  as before. *Choose on the map* draws the rectangle to fetch within on the map.
+
+Formats
+
+- **QGIS project** as a format of Output (*QGIS project with its layers*): the layers, in their
+  order and on or off, with the look they have in the form — colours, widths, classes of a
+  number or a colour for each text, sizes after a number and labels — the features in a
+  GeoPackage beside the project and pictures as GeoTIFF, and a background map if asked.
+- **3D Tiles 1.1** are written: a folder with tileset.json and glTF tiles, placed on the globe
+  for Cesium, deck.gl and the 3D views of QGIS and ArcGIS, with a height to add for the
+  geoid.
+- **CityGML 2.0** is written: buildings from Extrude in LoD1, or LoD2 with ground, walls and
+  roofs, with their attributes.
+- **Cloud Optimized GeoTIFF** is written, for pictures and grids.
+- **GTFS** timetables are read, from a zip or a folder: stops, routes, trips as lines,
+  shapes, stop times and calendars.
+- **NetCDF and Zarr** data cubes are read, such as climate and weather data: each variable a
+  layer, the steps of time as attributes named after their dates (`time_2026_07_01`), or one
+  step as a grid or a picture by its number or its date.
+
+Tools
+
+- **Report**: a web page or a PDF of A4 pages with a title, a text of one's own first and
+  last, and a section for each stream connected: maps, charts and 3D scenes as pictures, the
+  rest as tables.
+- **Filter by value**: tick values in the list and remove them all at once, or keep only
+  those.
+
+Fixed
+
+- DWG: arcs in the hatches of some drawings, such as the old centre of Krasnoyarsk, were
+  drawn as large circles across the drawing. The layer names of drawings in Cyrillic and
+  other code pages came out garbled.
+- A time of day in a file, as in GTFS, could not be read.
+
 ## 0.91.1
 
 - **Geometry from text** reads HERE's flexible polyline, as a line or an area, and JSON

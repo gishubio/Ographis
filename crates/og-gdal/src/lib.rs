@@ -1,6 +1,7 @@
 //! GDAL backend: reads everything GDAL can open as vector data, writes GeoPackage,
 //! Shapefile, GeoJSON and spreadsheets, and reprojects between coordinate systems with PROJ.
 
+mod cube;
 mod db;
 mod dxf;
 mod pdf;
@@ -184,7 +185,7 @@ impl Default for GdalBackend {
     }
 }
 
-fn ext_of(path: &Path) -> String {
+pub(crate) fn ext_of(path: &Path) -> String {
     path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default()
 }
 
@@ -397,9 +398,26 @@ pub(crate) fn to_geo(g: &OgrGeometry, stats: &mut GeomStats) -> Option<geo::Geom
     }
 }
 
+/// Whether a zip file or a folder is GTFS, the timetables of public transport: stops.txt
+/// and trips.txt at its top.
+pub fn is_gtfs(path: &Path) -> bool {
+    if og_engine::nodes::is_gtfs_folder(path) {
+        return true;
+    }
+    if ext_of(path) != "zip" || !path.is_file() {
+        return false;
+    }
+    let root = format!("/vsizip/{}", path.to_string_lossy().replace('\\', "/"));
+    let names: Vec<String> = gdal::vsi::read_dir(&root, false).unwrap_or_default().iter().map(|e| e.to_string_lossy().to_lowercase()).collect();
+    names.iter().any(|n| n == "stops.txt") && names.iter().any(|n| n == "trips.txt")
+}
+
 /// The name GDAL opens the file by. A zip file is opened without unpacking: the folder in
-/// it that holds the Shapefiles, or else the first data file in it.
+/// it that holds the Shapefiles, or else the first data file in it. GTFS by its driver.
 pub(crate) fn gdal_path(path: &Path) -> PathBuf {
+    if is_gtfs(path) {
+        return PathBuf::from(format!("GTFS:{}", path.to_string_lossy()));
+    }
     if ext_of(path) != "zip" || !path.is_file() {
         return path.to_path_buf();
     }
@@ -423,7 +441,7 @@ pub(crate) fn gdal_path(path: &Path) -> PathBuf {
 /// The file in a zip file to read: the one asked for by name, path or pattern. Without one,
 /// as gdal_path chooses, with a note when the zip holds more data files to choose from.
 pub(crate) fn zip_member(path: &Path, asked: Option<&str>, notes: &mut Notes) -> Result<Option<PathBuf>> {
-    if ext_of(path) != "zip" || !path.is_file() {
+    if ext_of(path) != "zip" || !path.is_file() || (asked.is_none() && is_gtfs(path)) {
         return Ok(None);
     }
     let root = format!("/vsizip/{}", path.to_string_lossy().replace('\\', "/"));
@@ -578,11 +596,24 @@ pub(crate) fn read_layer<L: LayerAccess>(layer: &mut L, opts: &ReadOpts, notes: 
             attrs.push(f.fid().map_or(Value::Null, |v| Value::Int(v as i64)));
         }
         let shift = own_key as usize;
-        for (i, (_, _)) in defs.iter().enumerate() {
+        for i in 0..defs.len() {
             // Some formats, Excel among them, leave an empty value unset instead of null.
             // The binding only looks for null, and would hand back 0 or an empty text.
             let set = unsafe { gdal_sys::OGR_F_IsFieldSetAndNotNull(f.c_feature(), i as std::ffi::c_int) } != 0;
-            let v = match if set { f.field(i).map_err(|e| gerr("Cannot read an attribute value", e))? } else { None } {
+            // A time of day, as in GTFS, and the lists the binding has no value for are read
+            // as the text GDAL gives them.
+            let as_text = matches!(
+                defs[i].1,
+                OGRFieldType::OFTTime | OGRFieldType::OFTIntegerList | OGRFieldType::OFTInteger64List | OGRFieldType::OFTRealList | OGRFieldType::OFTStringList
+            );
+            let read = if !set {
+                None
+            } else if as_text {
+                f.field_as_string(i).ok().flatten().map(FieldValue::StringValue)
+            } else {
+                f.field(i).map_err(|e| gerr("Cannot read an attribute value", e))?
+            };
+            let v = match read {
                 None => Value::Null,
                 Some(FieldValue::IntegerValue(v)) => Value::Int(v as i64),
                 Some(FieldValue::Integer64Value(v)) => Value::Int(v),
@@ -661,6 +692,17 @@ impl Backend for GdalBackend {
             drain_messages(notes);
             return t;
         }
+        // GTFS without a layer chosen: its stops, and a note of the others.
+        if opts.layer.is_none() && is_gtfs(path) {
+            notes.info(
+                "GTFS: the stops; choose another layer in the input: routes, trips (each trip as a line), shapes_geom (the lines the vehicles follow), stop_times, calendar, calendar_dates or agency",
+            );
+            return self.read_with(path, &ReadOpts { layer: Some("stops".into()), ..opts.clone() }, notes, progress);
+        }
+        // GTFS is always in WGS 84, but GDAL does not say so.
+        if opts.crs.is_none() && is_gtfs(path) {
+            return self.read_with(path, &ReadOpts { crs: Some(4326), ..opts.clone() }, notes, progress);
+        }
         // A GPX file without a layer chosen: its tracks, or else its routes or waypoints,
         // without the many columns of GPX that nothing is written in.
         if ext == "gpx" && opts.layer.is_none() {
@@ -694,7 +736,12 @@ impl Backend for GdalBackend {
         if ext == "dwg" {
             let (dxf_path, _) = og_engine::dwg::to_dxf(path)?;
             notes.info("A DWG drawing, made DXF by acadrust and read as one");
+            // acadrust writes the text in UTF-8, as DXF of AutoCAD 2007 and later is, but
+            // keeps the code page of the drawing in the header, such as ANSI_1251, which
+            // GDAL would read the names of layers and the texts by.
+            let _ = gdal::config::set_thread_local_config_option("DXF_ENCODING", "UTF-8");
             let t = dxf::read(&dxf_path, opts, notes, progress);
+            let _ = gdal::config::clear_thread_local_config_option("DXF_ENCODING");
             drain_messages(notes);
             let _ = std::fs::remove_file(&dxf_path);
             return t;
@@ -828,12 +875,12 @@ impl Backend for GdalBackend {
         let files = match ext.as_str() {
             // Values on a grid with no picture, such as from Raster calculator: a GeoTIFF of
             // decimal numbers.
-            "tif" | "tiff" if table.image.is_none() && table.grid.is_some() => write_grid(table.grid.as_deref().expect("checked"), path, notes)?,
+            "tif" | "tiff" if table.image.is_none() && table.grid.is_some() => write_grid(table.grid.as_deref().expect("checked"), path, opts.cog, notes)?,
             "png" | "jpg" | "jpeg" | "tif" | "tiff" | "pdf" => {
                 let Some(image) = table.image.as_ref() else {
                     return Err(GbError(format!("There is no image in the stream to write as .{}.", ext)));
                 };
-                write_image(image, table.crs, path, &ext, &opts.pdf, notes)?
+                write_image(image, table.crs, path, &ext, &opts.pdf, opts.cog, notes)?
             }
             "gpkg" => {
                 let layer = opts.layer.clone().filter(|l| !l.trim().is_empty()).unwrap_or(stem);
@@ -1487,6 +1534,7 @@ pub(crate) fn write_image(
     path: &Path,
     ext: &str,
     page: &og_engine::io::PdfPage,
+    cog: bool,
     notes: &mut Notes,
 ) -> Result<Vec<PathBuf>> {
     use gdal::raster::{Buffer, ColorInterpretation};
@@ -1606,6 +1654,8 @@ pub(crate) fn write_image(
     };
     let (driver, options): (&str, Vec<&str>) = if pdf {
         ("PDF", pdf_options.iter().map(|s| s.as_str()).collect())
+    } else if tiff && cog {
+        ("COG", vec!["COMPRESS=DEFLATE", "OVERVIEWS=AUTO", "BLOCKSIZE=512"])
     } else if tiff {
         ("GTiff", vec!["COMPRESS=DEFLATE", "PHOTOMETRIC=RGB", "ALPHA=YES", "TILED=YES"])
     } else if jpeg {
@@ -1646,7 +1696,7 @@ pub(crate) fn write_image(
 
 /// Values on a grid as a GeoTIFF of 32-bit decimal numbers, a band for each band, with
 /// -9999 where there is no value.
-pub(crate) fn write_grid(grid: &og_engine::model::Grid, path: &Path, notes: &mut Notes) -> Result<Vec<PathBuf>> {
+pub(crate) fn write_grid(grid: &og_engine::model::Grid, path: &Path, cog: bool, notes: &mut Notes) -> Result<Vec<PathBuf>> {
     use gdal::raster::Buffer;
     const NODATA: f32 = -9999.0;
     let (w, h) = (grid.width, grid.height);
@@ -1672,8 +1722,13 @@ pub(crate) fn write_grid(grid: &og_engine::model::Grid, path: &Path, notes: &mut
             std::fs::remove_file(&old).map_err(|e| GbError(format!("Cannot write over {}: {}. Is it open in another program?", old.display(), e)))?;
         }
     }
-    let target = DriverManager::get_driver_by_name("GTiff").map_err(|e| gerr("GDAL has no GeoTIFF support", e))?;
-    let opts: gdal::raster::RasterCreationOptions = ["COMPRESS=DEFLATE", "PREDICTOR=3", "TILED=YES"].iter().map(|s| s.to_string()).collect();
+    let (driver, options): (&str, &[&str]) = if cog {
+        ("COG", &["COMPRESS=DEFLATE", "PREDICTOR=YES", "OVERVIEWS=AUTO", "BLOCKSIZE=512", "RESAMPLING=AVERAGE"])
+    } else {
+        ("GTiff", &["COMPRESS=DEFLATE", "PREDICTOR=3", "TILED=YES"])
+    };
+    let target = DriverManager::get_driver_by_name(driver).map_err(|e| gerr(format!("GDAL has no {} support", driver), e))?;
+    let opts: gdal::raster::RasterCreationOptions = options.iter().map(|s| s.to_string()).collect();
     let out = ds.create_copy(&target, path, &opts).map_err(|e| gerr(format!("Cannot write {}", path.display()), e))?;
     out.close().map_err(|e| gerr("Cannot close the raster", e))?;
     drain_messages(notes);

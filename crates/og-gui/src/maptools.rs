@@ -8,6 +8,8 @@ use og_engine::io::Backend;
 pub enum Measure {
     Distance,
     Area,
+    /// A rectangle by two corners, to fetch data within.
+    Rectangle,
 }
 
 /// Points clicked out on the map, in the system the map is drawn in.
@@ -62,6 +64,7 @@ pub fn result(m: &Measuring, crs: Option<u32>, backend: &dyn Backend) -> String 
         return match m.what {
             Measure::Distance => "Click the points of the distance on the map".into(),
             Measure::Area => "Click the corners of the area on the map".into(),
+            Measure::Rectangle => "Click two opposite corners of the rectangle on the map".into(),
         };
     }
     let deg = to_degrees(pts, crs, backend);
@@ -88,6 +91,10 @@ pub fn result(m: &Measuring, crs: Option<u32>, backend: &dyn Backend) -> String 
                 format!("Distance {} · the last part {}", length_text(total, metres), length_text(last, metres))
             }
         }
+        Measure::Rectangle => match rectangle(m, crs, backend) {
+            Some(r) => format!("{:.5}, {:.5}, {:.5}, {:.5}  ·  Enter takes it, a click starts again", r[0], r[1], r[2], r[3]),
+            None => "The rectangle cannot be told in degrees".into(),
+        },
         Measure::Area => {
             if pts.len() < 3 {
                 return "Click one more corner".into();
@@ -113,6 +120,19 @@ pub fn result(m: &Measuring, crs: Option<u32>, backend: &dyn Backend) -> String 
             format!("Area {} · perimeter {}", area_text(area, metres), length_text(perimeter, metres))
         }
     }
+}
+
+/// The rectangle of two corners, as west, south, east and north in degrees.
+pub fn rectangle(m: &Measuring, crs: Option<u32>, backend: &dyn Backend) -> Option<[f64; 4]> {
+    if m.points.len() < 2 {
+        return None;
+    }
+    let (a, b) = (m.points[0], m.points[1]);
+    // The four corners, since a rectangle in one system is not one in another.
+    let corners = [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]];
+    let d = to_degrees(&corners, crs, backend)?;
+    let f = |i: usize, max: bool| d.iter().map(|p| p[i]).fold(if max { f64::NEG_INFINITY } else { f64::INFINITY }, if max { f64::max } else { f64::min });
+    Some([f(0, false), f(1, false), f(0, true), f(1, true)])
 }
 
 /// A point as text to copy: in the system of the data, and in degrees as latitude,

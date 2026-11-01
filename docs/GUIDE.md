@@ -99,6 +99,11 @@ five models.
 | Copy from the log | Mark text in the Log tab with the mouse, also across lines, and copy it with Ctrl+C. *Copy log* copies all of it. A click on a line about a node selects the node |
 | Pick attributes in a new tool | Connect it after a tool that has run: its attributes can be picked at once, without running again |
 | Name a layer in the legend | Write the name in the row of the layer in Draw map. Empty gives the name of the stream |
+| Put OpenStreetMap under a map | Set *Background* of Draw map to *A background map*, and choose which. *Paler by %* at 30 to 50 lets the layers stand out. A picture of one's own goes under it in the same way, in its place when it has a world file |
+| Go on in QGIS | Choose *QGIS project with its layers* as the format of an Output, and connect the streams to *Layers*. The project opens in QGIS with the layers in the order and with the colours, classes and labels of the form, and the data in a GeoPackage beside it |
+| Write a report | Connect maps, charts and tables to *Sections* of *Report*, in the order they are to come, and name the tools as the sections should be called. Write a text first and last, and choose a web page or a PDF |
+| Choose where to fetch OpenStreetMap or Overture | Click *Choose on the map* beside the rectangle, click two corners on the map and press Enter |
+| Remove several values | In *Filter by value*, tick them in the list and click *Remove the ticked*, or *Keep only the ticked* |
 | Follow a long run | The Log tab fills in while the model runs. A large file is reported every tenth read, and so is a status line at the top right |
 | See what was written | Each output says in the log how many features it wrote, to which file, and the end of the log lists them all again |
 | Write a file, layer or sheet for each value | Put an attribute or an expression in braces in the file name or the layer of an output: `out/{municipality}.gpkg` writes a GeoPackage per municipality, the layer `{municipality}` a table or a sheet for each in one file, and `stops_{now('%Y-%m-%d')}.xlsx` the date of the run in the name. Characters a file name cannot have become `_`, and an empty value is called `empty` |

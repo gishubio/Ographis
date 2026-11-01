@@ -64,6 +64,9 @@ pub struct ReadOpts {
     /// The file to read inside a zip file: a name, a path in it, or a pattern such as
     /// *.gpkg. None takes the Shapefiles, or else the first data file.
     pub zip_member: Option<String>,
+    /// For rasters with time or another dimension as bands, such as NetCDF and Zarr: the band
+    /// read as a grid or a picture, by its number from 1 or by its time, such as 2026-07.
+    pub step: Option<String>,
 }
 
 /// How a raster, such as a GeoTIFF, is read into features.
@@ -85,7 +88,13 @@ pub enum RasterMode {
 
 /// The file extensions that are read as rasters.
 pub fn is_raster(ext: &str) -> bool {
-    matches!(ext, "tif" | "tiff" | "asc" | "img" | "vrt" | "jp2" | "png" | "jpg" | "jpeg")
+    matches!(ext, "tif" | "tiff" | "asc" | "img" | "vrt" | "jp2" | "png" | "jpg" | "jpeg") || is_cube(ext)
+}
+
+/// The file extensions of data cubes: variables over a grid, with time or other dimensions,
+/// such as climate and weather data.
+pub fn is_cube(ext: &str) -> bool {
+    matches!(ext, "nc" | "nc4" | "cdf" | "netcdf" | "zarr")
 }
 
 /// The primary key of a table that is written to a database or a GeoPackage.
@@ -111,6 +120,9 @@ pub struct WriteOpts {
     pub pdf: PdfPage,
     /// The primary key, for a GeoPackage. None: a new column fid.
     pub key: Option<PrimaryKey>,
+    /// A GeoTIFF as a Cloud Optimized GeoTIFF: tiled, with overviews, in the order that
+    /// lets a map on the web read only the parts it shows.
+    pub cog: bool,
 }
 
 /// Where and how a stream is written to a table in a PostgreSQL database with PostGIS.

@@ -209,6 +209,13 @@ pub(super) const READER_PARAMS: &[ParamSpec] = &[
         hint: "An address inside a record becomes adress.gata and adress.ort, or stays as JSON text for Flatten JSON",
     },
     ParamSpec {
+        key: "step",
+        label: "Time step",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "NetCDF and Zarr: the time read as a grid or a picture, by its number from 1 or its date, such as 2026-07. Empty: the first. As points or squares, each time is an attribute",
+    },
+    ParamSpec {
         key: "cell_size",
         label: "Cell size",
         kind: ParamKind::Text,
@@ -268,7 +275,12 @@ pub(super) fn has_wildcard(s: &str) -> bool {
 
 /// A folder that is one dataset in itself, not a collection of files.
 pub(super) fn is_dataset_folder(path: &Path) -> bool {
-    ext_of(path) == "gdb" || super::vector_tiles::is_tile_folder(path)
+    matches!(ext_of(path).as_str(), "gdb" | "zarr") || super::vector_tiles::is_tile_folder(path) || is_gtfs_folder(path)
+}
+
+/// A folder of GTFS: the timetables of public transport, with stops.txt and trips.txt.
+pub fn is_gtfs_folder(path: &Path) -> bool {
+    path.is_dir() && path.join("stops.txt").is_file() && path.join("trips.txt").is_file()
 }
 
 /// What a reader's path stands for: one file, or the files of a folder that match a filter.
@@ -794,6 +806,7 @@ pub(super) fn run_reader(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
                     dxf_areas: p.get("dxf_closed").as_deref() != Some("lines"),
                     open_options: if super::vector_tiles::is_vector_tiles(file) { super::vector_tiles::zoom_options(p)? } else { Vec::new() },
                     zip_member: p.get("zip_file").filter(|z| !z.trim().is_empty()).map(|z| z.trim().to_string()),
+                    step: p.get("step").filter(|s| !s.trim().is_empty()).map(|s| s.trim().to_string()),
                 };
                 let (progress, gate) = (ctx.progress, ctx.gate);
                 let going = |done, total| {
@@ -1022,6 +1035,8 @@ pub const READ_FORMATS: &[&str] = &[
     "IFC building models (.ifc)",
     "CAD drawings (.dxf, .dwg)",
     "GPS tracks and waypoints (.gpx)",
+    "GTFS timetables of public transport (.zip or a folder)",
+    "NetCDF and Zarr data cubes, such as climate and weather (.nc, .zarr)",
     "Photos with their places (.jpg)",
     "CityGML and CityJSON (.gml, .city.json)",
     "CSV and text (.csv, .txt)",

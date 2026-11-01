@@ -496,7 +496,7 @@ fn a_writer_is_told_the_format_and_the_fields() {
     h.run_steps(2);
     h.event(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
-        delta: egui::vec2(0.0, -300.0),
+        delta: egui::vec2(0.0, -600.0),
         phase: egui::TouchPhase::Move,
         modifiers: Default::default(),
     });
@@ -993,6 +993,17 @@ fn postgis_is_reached_from_input_and_output() {
     h.run_steps(3);
     // The list opens where the chosen format is, with the slides and Shapefile below it.
     shot(&mut h, "223-formats-list");
+    // Shapefile is below the end of the list as it opens: scrolled to.
+    let over = h.get_by_label("PNG image (.png)").rect().center();
+    h.event(egui::Event::PointerMoved(over));
+    h.run_steps(2);
+    h.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -300.0),
+        phase: egui::TouchPhase::Move,
+        modifiers: Default::default(),
+    });
+    h.run_steps(6);
     h.get_by_label("Shapefile (.shp)").click();
     h.run_steps(3);
     assert_eq!(h.state().snarl[writer].kind, "Writer");

@@ -1,0 +1,45 @@
+{
+  "format": "ographis/1",
+  "name": "Share: a map on OpenStreetMap, a report, a QGIS project and 3D for the web",
+  "nodes": [
+    { "id": "places", "type": "Reader", "name": "Places in Skövde", "x": 20, "y": 20, "comment": "Made up", "params": { "path": "places.geojson" } },
+    { "id": "blocks", "type": "Reader", "name": "Footprints", "x": 20, "y": 300, "comment": "Made-up buildings with the number of floors", "params": { "path": "blocks.geojson" } },
+    {
+      "id": "map", "type": "MapRenderer", "name": "Places on OpenStreetMap", "x": 300, "y": 20,
+      "comment": "Needs the internet for the tiles",
+      "params": {
+        "width": "1200", "margin": "15", "background": "map", "basemap": "osm", "background_fade": "35", "legend": "bottom-left",
+        "layers": [ { "from": "places:Output", "fill": "#e31a1c", "stroke": "#ffffff", "width": 1.5, "size": 10,
+          "color_by": "amenity", "ramp": "categories", "label": "name", "label_halo": "#ffffff" } ]
+      }
+    },
+    {
+      "id": "report", "type": "ReportWriter", "name": "Report", "x": 600, "y": 20,
+      "params": {
+        "path": "out/places_report.html", "format": "html", "title": "Places in Skövde",
+        "intro": "# About\nThe places are made up, in the shape of real ones.\n\n- The map is drawn on OpenStreetMap\n- The table has all the places",
+        "closing": "Map data © OpenStreetMap contributors."
+      }
+    },
+    {
+      "id": "qgis", "type": "QgisProjectWriter", "name": "QGIS project", "x": 600, "y": 160,
+      "params": {
+        "path": "out/places.qgz", "format": "qgis", "basemap": "osm",
+        "layers": [ { "from": "places:Output", "name": "Places", "fill": "#e31a1c", "stroke": "#ffffff", "width": 1, "size": 8,
+          "color_by": "amenity", "ramp": "categories", "size_by": "visitors", "size_min": 6, "size_max": 24, "label": "name", "label_halo": "#ffffff" } ]
+      }
+    },
+    { "id": "extrude", "type": "Extruder", "name": "Blocks in 3D", "x": 300, "y": 300, "params": { "height": "floors * 3.2", "name": "id" } },
+    { "id": "tiles", "type": "Writer", "name": "3D Tiles for Cesium", "x": 600, "y": 300, "params": { "path": "out/blocks_3dtiles", "format": "3dtiles", "t3_dz": "30" } },
+    { "id": "citygml", "type": "Writer", "name": "CityGML LoD2", "x": 600, "y": 420, "params": { "path": "out/blocks.gml", "format": "citygml" } }
+  ],
+  "edges": [
+    { "from": ["places", "Output"], "to": ["map", "Layers"] },
+    { "from": ["map", "Map"], "to": ["report", "Sections"] },
+    { "from": ["places", "Output"], "to": ["report", "Sections"] },
+    { "from": ["places", "Output"], "to": ["qgis", "Layers"] },
+    { "from": ["blocks", "Output"], "to": ["extrude", "Input"] },
+    { "from": ["extrude", "Output"], "to": ["tiles", "Input"] },
+    { "from": ["extrude", "Output"], "to": ["citygml", "Input"] }
+  ]
+}

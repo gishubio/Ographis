@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.91.1. Written by og schema.",
+  "description": "A model of Ographis 0.92.0. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -86,6 +86,8 @@
             "Writer",
             "SlideWriter",
             "LayeredPdfWriter",
+            "ReportWriter",
+            "QgisProjectWriter",
             "PostgisReader",
             "SqlExecutor",
             "PostgisWriter",
@@ -733,6 +735,10 @@
                     ],
                     "default": "flatten"
                   },
+                  "step": {
+                    "title": "Time step",
+                    "description": "a string. NetCDF and Zarr: the time read as a grid or a picture, by its number from 1 or its date, such as 2026-07. Empty: the first. As points or squares, each time is an attribute"
+                  },
                   "cell_size": {
                     "title": "Cell size",
                     "description": "a string. Reads the grid at coarser cells, such as 10 for 10 metres, which saves memory. Empty reads it as it is, or coarser when it is very large"
@@ -919,7 +925,10 @@
                           "gpkg",
                           "geopdf",
                           "tif",
+                          "cog",
+                          "citygml",
                           "glb",
+                          "3dtiles",
                           "jpg",
                           "las",
                           "laz",
@@ -929,6 +938,7 @@
                           "png",
                           "pmtiles",
                           "postgis",
+                          "qgis",
                           "pptx",
                           "odp",
                           "shp",
@@ -1179,6 +1189,33 @@
                     "title": "Time of the sun",
                     "description": "a string. Swedish time, such as 2026-06-21 15:00. Empty: midsummer at three in the afternoon"
                   },
+                  "t3_most": {
+                    "title": "Triangles in a tile",
+                    "description": "a string. 3D Tiles: the objects are split into tiles of at most this many triangles, which load quickly",
+                    "default": "100000"
+                  },
+                  "t3_dz": {
+                    "title": "Height added",
+                    "description": "a string. 3D Tiles: metres added to every height. The globe has heights above the ellipsoid: in Sweden add about 20 to 40 m to heights above the sea",
+                    "default": "0"
+                  },
+                  "citygml_lod": {
+                    "title": "Level of detail",
+                    "description": "one of the values in choices, as a string. CityGML: LoD1 is each building as one solid, LoD2 its ground, walls and roofs",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "2",
+                          "1"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "2"
+                  },
                   "pm_min": {
                     "title": "From zoom level",
                     "description": "a string. PMTiles: the smallest zoom level with tiles. 0 is the whole world in one tile",
@@ -1338,7 +1375,10 @@
                           "gpkg",
                           "geopdf",
                           "tif",
+                          "cog",
+                          "citygml",
                           "glb",
+                          "3dtiles",
                           "jpg",
                           "las",
                           "laz",
@@ -1348,6 +1388,7 @@
                           "png",
                           "pmtiles",
                           "postgis",
+                          "qgis",
                           "pptx",
                           "odp",
                           "shp",
@@ -1444,7 +1485,10 @@
                           "gpkg",
                           "geopdf",
                           "tif",
+                          "cog",
+                          "citygml",
                           "glb",
+                          "3dtiles",
                           "jpg",
                           "las",
                           "laz",
@@ -1454,6 +1498,7 @@
                           "png",
                           "pmtiles",
                           "postgis",
+                          "qgis",
                           "pptx",
                           "odp",
                           "shp",
@@ -1560,6 +1605,180 @@
                       }
                     ],
                     "default": "left"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ReportWriter"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "title": "File",
+                    "description": "a file to write; relative paths start at the folder of the model. A web page (.html) with the pictures in it, or a PDF. {now('%Y-%m-%d')} puts the date in the name"
+                  },
+                  "format": {
+                    "title": "Format",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "html",
+                          "pdf"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "html"
+                  },
+                  "title": {
+                    "title": "Title",
+                    "description": "a string. Empty: the name of the file"
+                  },
+                  "subtitle": {
+                    "title": "Under the title",
+                    "description": "a string. Such as who made it. Empty: the date and time of the run"
+                  },
+                  "intro": {
+                    "title": "Text first",
+                    "description": "text over several lines, such as SQL, with {attribute} put in from the stream on the port. A blank line between paragraphs, # at the start of a line for a heading and - for a point in a list"
+                  },
+                  "closing": {
+                    "title": "Text last",
+                    "description": "text over several lines, such as SQL, with {attribute} put in from the stream on the port. As the text first"
+                  },
+                  "rows": {
+                    "title": "Rows of a table",
+                    "description": "a string. A stream without a picture is a table of its attributes, with at most this many rows",
+                    "default": "100"
+                  },
+                  "headings": {
+                    "title": "Headings",
+                    "description": "one of the values in choices, as a string. Each section under the name of the tool it comes from: name the tools as the sections should be called",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "QgisProjectWriter"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "title": "File",
+                    "description": "a file to write; relative paths start at the folder of the model. A .qgz project. The features go in a GeoPackage of the same name beside it, and pictures in GeoTIFFs"
+                  },
+                  "format": {
+                    "title": "Format",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "",
+                          "csv",
+                          "xlsx",
+                          "fgb",
+                          "geojson",
+                          "parquet",
+                          "gpkg",
+                          "geopdf",
+                          "tif",
+                          "cog",
+                          "citygml",
+                          "glb",
+                          "3dtiles",
+                          "jpg",
+                          "las",
+                          "laz",
+                          "ods",
+                          "obj",
+                          "pdf",
+                          "png",
+                          "pmtiles",
+                          "postgis",
+                          "qgis",
+                          "pptx",
+                          "odp",
+                          "shp",
+                          "txt"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "qgis"
+                  },
+                  "layers": {
+                    "title": "Layers",
+                    "description": "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}. The top row is on top in QGIS. A layer that is not ticked is in the project, but turned off"
+                  },
+                  "crs": {
+                    "title": "Coordinate system",
+                    "description": "a coordinate system, such as \"EPSG:3006\". Of the project. Empty uses that of the first layer. The others are reprojected to it"
+                  },
+                  "basemap": {
+                    "title": "Background map",
+                    "description": "one of the values in choices, as a string. Tiles from the web under the layers",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "osm",
+                          "carto_light",
+                          "carto_voyager",
+                          "carto_dark",
+                          "own"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "none"
+                  },
+                  "basemap_own": {
+                    "title": "Name or address",
+                    "description": "a string. The name of one of your background maps of tiles under Settings, or an address with {z}, {x} and {y}"
                   }
                 }
               }
@@ -1727,7 +1946,10 @@
                           "gpkg",
                           "geopdf",
                           "tif",
+                          "cog",
+                          "citygml",
                           "glb",
+                          "3dtiles",
                           "jpg",
                           "las",
                           "laz",
@@ -1737,6 +1959,7 @@
                           "png",
                           "pmtiles",
                           "postgis",
+                          "qgis",
                           "pptx",
                           "odp",
                           "shp",
@@ -5147,7 +5370,10 @@
                           "#ffffff",
                           "none",
                           "#f4f1ea",
-                          "#1e2326"
+                          "#1e2326",
+                          "colour",
+                          "map",
+                          "picture"
                         ]
                       },
                       {
@@ -5156,6 +5382,48 @@
                       }
                     ],
                     "default": "#ffffff"
+                  },
+                  "background_colour": {
+                    "title": "Colour",
+                    "description": "a string. Such as #e8eef2, or with opacity as #e8eef280",
+                    "default": "#e8eef2"
+                  },
+                  "basemap": {
+                    "title": "Background map",
+                    "description": "one of the values in choices, as a string. Fetched from the web as tiles, and kept for a month",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "osm",
+                          "carto_light",
+                          "carto_voyager",
+                          "carto_dark",
+                          "own"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "osm"
+                  },
+                  "basemap_own": {
+                    "title": "Name or address",
+                    "description": "a string. The name of one of your background maps under Settings, or an address with {z}, {x} and {y}"
+                  },
+                  "background_picture": {
+                    "title": "Picture",
+                    "description": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model. PNG or JPG. With a world file beside it (.pgw, .jgw) it lies in its place; otherwise it covers the whole map"
+                  },
+                  "background_crs": {
+                    "title": "Picture in",
+                    "description": "a coordinate system, such as \"EPSG:3006\". The coordinate system of the world file. Empty: that of the map"
+                  },
+                  "background_fade": {
+                    "title": "Paler by %",
+                    "description": "a string. Makes the background map or picture paler, so that the layers stand out: 30 to 50 suits most maps",
+                    "default": "0"
                   },
                   "legend": {
                     "title": "Legend",

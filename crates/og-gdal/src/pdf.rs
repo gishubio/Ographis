@@ -84,7 +84,7 @@ pub fn write_layered(layers: &[PdfLayer], crs: u32, page: &PdfPage, margin: f64,
         tree += &format!("    <Layer id=\"{}\" name=\"{}\" initiallyVisible=\"{}\"/>\n", id, xml(&l.name), l.visible);
         if let Some(img) = &l.table.image {
             let file = format!("/vsimem/ographis-pdf-{}-{}.tif", stamp, k);
-            write_image(img, Some(crs), Path::new(&file), "tif", page, notes)?;
+            write_image(img, Some(crs), Path::new(&file), "tif", page, false, notes)?;
             temp.push(file.clone());
             content +=
                 &format!("      <IfLayerOn layerId=\"{}\">\n        <Raster dataset=\"{}\" georeferencingId=\"map\"/>\n      </IfLayerOn>\n", id, xml(&file));

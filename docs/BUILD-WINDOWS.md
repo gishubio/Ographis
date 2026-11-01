@@ -259,6 +259,13 @@ Not yet checked on Windows:
   in MapLibre, and opened in QGIS; glTF with groups, materials, sun and camera imported into
   Blender 4 and 5, and BlenderGIS reading where it lies; GPX from a GPS and photos from a
   phone; PostGIS *Empty it and fill it again* against a table with views on it.
+- Version 0.92, all built and tested only on Linux: NetCDF and Zarr with the GDAL of OSGeo4W
+  (whether its build has both drivers; `og formats` lists them); GTFS from Västtrafik or
+  Trafiklab; a QGIS project from Ographis opened in QGIS on Windows, with the GeoPackage
+  beside it on a network drive; 3D Tiles in Cesium or the 3D view of QGIS, and where they
+  land against the terrain; CityGML in FZK Viewer and 3DCityDB; a Report PDF in Adobe Reader
+  and printed; background maps from OpenStreetMap and CARTO through the proxy; *Choose on the
+  map* for the downloads with a real mouse.
 - Version 0.90: that the build compiles acadrust; DWG drawings of the workplace from AutoCAD,
   compared with the same drawing saved as DXF; Overture Maps download against the real
   catalog through the proxy, and how many megabytes a small rectangle of buildings fetches;

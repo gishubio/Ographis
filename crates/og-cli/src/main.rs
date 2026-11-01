@@ -678,6 +678,7 @@ fn cmd_nodes() -> ExitCode {
             (true, "PostgisReader") => ", in the program the PostGIS button of Input",
             (true, "PostgisWriter") => ", in the program the PostGIS button of Output",
             (true, "LayeredPdfWriter") => ", in the program the format GeoSpatial PDF of Output",
+            (true, "QgisProjectWriter") => ", in the program the format QGIS project of Output",
             (true, _) => ", kept for older models and not offered in the program",
             _ => "",
         };

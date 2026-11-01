@@ -58,6 +58,20 @@ pub const FORMATS: &[Format] = &[
         write: OWN,
         note: "As MapLibre draws maps from, at a zoom level; the pieces of a feature that the tiles cut apart are put together again. PMTiles on the web are read where they are. PMTiles are written, one layer for the zoom levels asked. Not yet the newer MapLibre Tile (MLT)",
     },
+    Format {
+        name: "GTFS timetables",
+        files: ".zip, a folder with stops.txt",
+        read: GDAL,
+        write: "",
+        note: "Stops, routes, trips as lines, the shapes, stop times and calendars as layers",
+    },
+    Format {
+        name: "NetCDF and Zarr data cubes",
+        files: ".nc, .zarr",
+        read: GDAL,
+        write: "",
+        note: "Each variable a layer; the steps of time as attributes named after their dates, or one step as a grid or a picture",
+    },
     Format { name: "GPS tracks (GPX)", files: ".gpx", read: GDAL, write: "", note: "Tracks, routes and waypoints from a GPS: the first that the file has, or the layer chosen" },
     Format {
         name: "Photos with their places",
@@ -103,7 +117,7 @@ pub const FORMATS: &[Format] = &[
         files: ".tif, .jp2, .asc and others",
         read: GDAL,
         write: GDAL,
-        note: "Cloud Optimized GeoTIFF over the web; grids of values and pictures",
+        note: "Cloud Optimized GeoTIFF read over the web and written; grids of values and pictures",
     },
     Format {
         name: "PNG and JPEG pictures",
@@ -111,6 +125,20 @@ pub const FORMATS: &[Format] = &[
         read: GDAL,
         write: GDAL,
         note: "Maps, charts and 3D scenes, with a world file when they have coordinates",
+    },
+    Format {
+        name: "QGIS projects",
+        files: ".qgz, .qgs",
+        read: "",
+        write: OWN,
+        note: "The layers with their look, the features in a GeoPackage beside it and pictures as GeoTIFF",
+    },
+    Format {
+        name: "Reports",
+        files: ".html, .pdf",
+        read: "",
+        write: OWN,
+        note: "From Report: a title, texts of one's own, pictures and tables",
     },
     Format { name: "PDF", files: ".pdf", read: "", write: GDAL, note: "A map on a page of a size, or a GeoSpatial PDF with layers" },
     Format {
@@ -124,12 +152,18 @@ pub const FORMATS: &[Format] = &[
         name: "CityGML and CityJSON",
         files: ".gml, .city.json, .jsonl",
         read: OWN,
-        write: "",
-        note: "Buildings and other city objects in their levels of detail",
+        write: OWN,
+        note: "Buildings and other city objects in their levels of detail. Buildings are written as CityGML 2.0 in LoD1, or LoD2 with ground, walls and roofs",
     },
     Format { name: "OBJ", files: ".obj", read: OWN, write: OWN, note: "With materials and textures" },
     Format { name: "glTF", files: ".gltf, .glb", read: OWN, write: OWN, note: "Written as .glb around an origin kept in the file" },
-    Format { name: "3D Tiles", files: "tileset.json", read: OWN, write: "", note: "Batched and instanced models, from a folder or the web" },
+    Format {
+        name: "3D Tiles",
+        files: "tileset.json",
+        read: OWN,
+        write: OWN,
+        note: "Batched and instanced models, from a folder or the web. Written as 3D Tiles 1.1 with glTF tiles, placed on the globe",
+    },
     Format { name: "Point clouds", files: ".las, .laz, .copc.laz", read: "Ographis (las, laz-rs)", write: "Ographis (las, laz-rs)", note: "COPC read from the web part by part. Written as LAS 1.4 with classes, intensity, returns and colours" },
     Format {
         name: "Charts as web pages",
@@ -253,7 +287,10 @@ mod tests {
         let listed = |ext: &str| FORMATS.iter().any(|f| f.files.split(", ").any(|x| x.trim_start_matches('.') == ext) && !f.write.is_empty());
         for (ext, _) in crate::nodes::WRITER_FORMATS.iter().chain(crate::nodes::OUTPUT_FORMATS) {
             match *ext {
-                "" | "geopdf" | "postgis" | "tif" => {}
+                "" | "geopdf" | "postgis" | "tif" | "cog" => {}
+                "citygml" => assert!(listed("gml")),
+                "3dtiles" => assert!(listed("tileset.json")),
+                "qgis" => assert!(listed("qgz")),
                 e => assert!(listed(e), "{} is not on the page", e),
             }
         }
