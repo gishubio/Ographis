@@ -259,6 +259,12 @@ Not yet checked on Windows:
   in MapLibre, and opened in QGIS; glTF with groups, materials, sun and camera imported into
   Blender 4 and 5, and BlenderGIS reading where it lies; GPX from a GPS and photos from a
   phone; PostGIS *Empty it and fill it again* against a table with views on it.
+- Version 0.93, all built and tested only on Linux: a whole tile of Lantmäteriet's Laserdata
+  read with every point, and how much memory it takes on Windows; Read satellite bands and
+  the example `apis/sentinel_ndvi.ographis` against Element 84 and Copernicus through the
+  proxy (the catalogues could not be reached from where it was built); DWG from AutoCAD with
+  meshes and solids, as in issue #34, written as glTF and opened in Blender; the settings
+  window on a screen with scaling.
 - Version 0.92, all built and tested only on Linux: NetCDF and Zarr with the GDAL of OSGeo4W
   (whether its build has both drivers; `og formats` lists them); GTFS from Västtrafik or
   Trafiklab; a QGIS project from Ographis opened in QGIS on Windows, with the GeoPackage

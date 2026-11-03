@@ -57,6 +57,33 @@ pub(crate) fn clear_messages() {
     GDAL_MESSAGES.with(|m| m.borrow_mut().clear());
 }
 
+/// A drawing with its 3D bodies added as a 3D model, and a note of what they are.
+fn with_bodies(t: Table, bodies: Vec<og_engine::dwg::Body>, report: og_engine::dwg::BodyReport, notes: &mut Notes) -> Table {
+    if bodies.is_empty() && report.curved_faces == 0 && report.unread_solids == 0 {
+        return t;
+    }
+    let n = bodies.len();
+    let tris: usize = bodies.iter().map(|b| b.tris.len()).sum();
+    let t = og_engine::dwg::add_bodies(t, bodies);
+    // The meshes that GDAL could not read are now in the 3D model.
+    if n > 0 {
+        notes.warnings.retain(|w| !w.contains("have a geometry type that is not supported"));
+    }
+    if n > 0 {
+        notes.info(format!("{} 3D faces, meshes and solids as a 3D model of {} triangles", n, og_engine::model::fmt_count(tris as u64)));
+    }
+    if report.curved_faces > 0 {
+        notes.warn(format!(
+            "{} curved faces of 3D solids, such as cylinders and spheres, are not made into triangles yet and are left out; the flat faces are there.",
+            report.curved_faces
+        ));
+    }
+    if report.unread_solids > 0 {
+        notes.warn(format!("{} 3D solids could not be read and are left out.", report.unread_solids));
+    }
+    t
+}
+
 pub struct GdalBackend;
 
 /// One step of the self-test: what was tried and how it went.
@@ -656,7 +683,7 @@ pub(crate) fn read_layer<L: LayerAccess>(layer: &mut L, opts: &ReadOpts, notes: 
     }
     progress(features.len() as u64, total);
     drain_messages(notes);
-    Ok(Table { mesh: None, fields, crs, features, raster: false, image: None, grid: None })
+    Ok(Table { mesh: None, points: None, series: None, fields, crs, features, raster: false, image: None, grid: None })
 }
 
 fn srs_from_epsg(code: u32) -> Result<SpatialRef> {
@@ -690,6 +717,12 @@ impl Backend for GdalBackend {
         if ext == "dxf" {
             let t = dxf::read(path, opts, notes, progress);
             drain_messages(notes);
+            // 3D faces, meshes and solids as a 3D model, as acadrust reads them.
+            if opts.layer.is_none() && og_engine::dwg::may_have_bodies(path) {
+                if let (Ok(t), Ok((bodies, report))) = (&t, og_engine::dwg::bodies(path)) {
+                    return Ok(with_bodies(t.clone(), bodies, report, notes));
+                }
+            }
             return t;
         }
         // GTFS without a layer chosen: its stops, and a note of the others.
@@ -734,7 +767,7 @@ impl Backend for GdalBackend {
         }
         // A DWG is made a DXF by acadrust, and read as one.
         if ext == "dwg" {
-            let (dxf_path, _) = og_engine::dwg::to_dxf(path)?;
+            let (dxf_path, _, bodies, report) = og_engine::dwg::to_dxf(path)?;
             notes.info("A DWG drawing, made DXF by acadrust and read as one");
             // acadrust writes the text in UTF-8, as DXF of AutoCAD 2007 and later is, but
             // keeps the code page of the drawing in the header, such as ANSI_1251, which
@@ -744,7 +777,7 @@ impl Backend for GdalBackend {
             let _ = gdal::config::clear_thread_local_config_option("DXF_ENCODING");
             drain_messages(notes);
             let _ = std::fs::remove_file(&dxf_path);
-            return t;
+            return t.map(|t| if opts.layer.is_none() { with_bodies(t, bodies, report, notes) } else { t });
         }
         let mut open_opts = opts.open_options.clone();
         // A folder of vector tiles is opened by the driver of the tiles.
@@ -1030,6 +1063,13 @@ impl Backend for GdalBackend {
 
     fn warp_grid(&self, grid: &og_engine::model::Grid, to: u32) -> Result<og_engine::model::Grid> {
         raster::warp_grid(grid, to)
+    }
+
+    fn read_onto(&self, source: &str, geotransform: [f64; 6], width: usize, height: usize, crs: u32, nearest: bool) -> Result<Vec<f32>> {
+        clear_messages();
+        let r = raster::read_onto(source, geotransform, width, height, crs, nearest);
+        clear_messages();
+        r
     }
 
     fn warp_image(&self, image: &og_engine::model::RasterImage, from: u32, to: u32) -> Result<og_engine::model::RasterImage> {
@@ -1713,6 +1753,10 @@ pub(crate) fn write_grid(grid: &og_engine::model::Grid, path: &Path, cog: bool, 
         let data: Vec<f32> = values.iter().map(|v| if v.is_nan() { NODATA } else { *v }).collect();
         let mut band = ds.rasterband(b + 1).map_err(|e| gerr("Cannot write the raster", e))?;
         band.set_no_data_value(Some(NODATA as f64)).map_err(|e| gerr("Cannot write the raster", e))?;
+        // The name of the band, such as ndvi or nir, as QGIS shows it.
+        if let Some(name) = grid.meta.names.get(b) {
+            let _ = gdal::Metadata::set_description(&mut band, name);
+        }
         let mut buf = Buffer::new((w, h), data);
         band.write((0, 0), (w, h), &mut buf).map_err(|e| gerr("Cannot write the raster", e))?;
     }
@@ -1729,6 +1773,9 @@ pub(crate) fn write_grid(grid: &og_engine::model::Grid, path: &Path, cog: bool, 
     };
     let target = DriverManager::get_driver_by_name(driver).map_err(|e| gerr(format!("GDAL has no {} support", driver), e))?;
     let opts: gdal::raster::RasterCreationOptions = options.iter().map(|s| s.to_string()).collect();
+    if let Some(t) = &grid.meta.time {
+        let _ = gdal::Metadata::set_metadata_item(&mut ds, "TIFFTAG_DATETIME", t, "");
+    }
     let out = ds.create_copy(&target, path, &opts).map_err(|e| gerr(format!("Cannot write {}", path.display()), e))?;
     out.close().map_err(|e| gerr("Cannot close the raster", e))?;
     drain_messages(notes);

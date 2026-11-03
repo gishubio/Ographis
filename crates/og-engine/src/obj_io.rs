@@ -389,7 +389,7 @@ pub(crate) fn model_table(mesh: Mesh, parts: Vec<Vec<(Vec<[f64; 3]>, u32)>>, fac
         mesh.materials.len(),
         if textured > 0 { format!(", {} with textures", textured) } else { String::new() }
     ));
-    Table { fields, crs, features, raster: false, image: None, grid: None, mesh: Some(Arc::new(mesh)) }
+    Table { fields, crs, features, raster: false, image: None, grid: None, mesh: Some(Arc::new(mesh)), points: None, series: None }
 }
 
 #[cfg(test)]

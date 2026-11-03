@@ -47,10 +47,9 @@
     {
       "id": "stops_ask",
       "type": "HttpCaller",
-      "name": "All stops",
       "x": 20,
       "y": 20,
-      "comment": "The REST API of OpenTripPlanner 2.4 (/otp/routers/default/index/…). Set the variable otp to your own server. One request, as nothing comes in",
+      "comment": "All stops. The REST API of OpenTripPlanner 2.4 (/otp/routers/default/index/…). Set the variable otp to your own server. One request, as nothing comes in",
       "params": {
         "url": "'$(otp)/index/stops'",
         "timeout": "60"
@@ -59,44 +58,43 @@
     {
       "id": "stops",
       "type": "JsonExploder",
-      "name": "A feature per stop",
       "x": 280,
       "y": 20,
       "params": {
         "attribute": "_response",
         "path": ""
-      }
+      },
+      "comment": "A feature per stop"
     },
     {
       "id": "stop_points",
       "type": "PointCreator",
-      "name": "Stops as points",
       "x": 540,
       "y": 20,
       "params": {
         "x": "lon",
         "y": "lat",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "Stops as points"
     },
     {
       "id": "stops_out",
       "type": "Writer",
-      "name": "Stops",
       "x": 800,
       "y": 20,
       "params": {
         "path": "out/otp_stops.gpkg",
         "layer": "stops"
-      }
+      },
+      "comment": "Stops"
     },
     {
       "id": "plan_ask",
       "type": "HttpCaller",
-      "name": "Plan a trip",
       "x": 20,
       "y": 200,
-      "comment": "From and to are latitude,longitude. Use the coordinates of two stops to plan from stop to stop",
+      "comment": "Plan a trip. From and to are latitude,longitude. Use the coordinates of two stops to plan from stop to stop",
       "params": {
         "url": "'$(otp)/plan?fromPlace=$(from)&toPlace=$(to)&date=$(date)&time=$(time)&mode=TRANSIT,WALK&numItineraries=3'",
         "timeout": "60"
@@ -105,7 +103,6 @@
     {
       "id": "itins",
       "type": "JsonExploder",
-      "name": "A feature per itinerary",
       "x": 280,
       "y": 200,
       "params": {
@@ -113,12 +110,12 @@
         "path": "plan.itineraries",
         "prefix": "trip",
         "index_attr": "itinerary"
-      }
+      },
+      "comment": "A feature per itinerary"
     },
     {
       "id": "legs",
       "type": "JsonExploder",
-      "name": "A feature per leg",
       "x": 540,
       "y": 200,
       "params": {
@@ -126,24 +123,24 @@
         "path": "",
         "prefix": "leg",
         "index_attr": "leg"
-      }
+      },
+      "comment": "A feature per leg"
     },
     {
       "id": "leg_geom",
       "type": "GeometryFromText",
-      "name": "Leg as a line",
       "x": 1060,
       "y": 200,
       "params": {
         "attribute": "leg.legGeometry.points",
         "kind": "polyline",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "Leg as a line"
     },
     {
       "id": "leg_times",
       "type": "AttributeManager",
-      "name": "Times and minutes",
       "x": 1320,
       "y": 200,
       "params": {
@@ -166,46 +163,46 @@
             "value": "round(\"trip.duration\" / 60)"
           }
         ]
-      }
+      },
+      "comment": "Times and minutes"
     },
     {
       "id": "leg_keep",
       "type": "AttributeKeeper",
-      "name": "The useful attributes",
       "x": 1580,
       "y": 200,
       "params": {
         "keep": "itinerary, leg, leg.mode, leg.routeShortName, leaves, arrives, minutes, trip_minutes, trip.transfers, leg.distance"
-      }
+      },
+      "comment": "The useful attributes"
     },
     {
       "id": "leg_3006",
       "type": "Reprojector",
-      "name": "To SWEREF 99 TM",
       "x": 1840,
       "y": 200,
       "params": {
         "crs": "EPSG:3006"
-      }
+      },
+      "comment": "To SWEREF 99 TM"
     },
     {
       "id": "routes_out",
       "type": "Writer",
-      "name": "Routes",
       "x": 2100,
       "y": 200,
       "params": {
         "path": "out/otp_stops.gpkg",
         "layer": "routes"
-      }
+      },
+      "comment": "Routes"
     },
     {
       "id": "stop_a",
       "type": "Tester",
-      "name": "Stop A",
       "x": 540,
       "y": 420,
-      "comment": "A stop is a feature with id, name, lat and lon. Several stops can share a name, one per platform: each gets its departures",
+      "comment": "Stop A. A stop is a feature with id, name, lat and lon. Several stops can share a name, one per platform: each gets its departures",
       "params": {
         "test": "name = '$(stop_a)'"
       }
@@ -213,10 +210,9 @@
     {
       "id": "deps_ask",
       "type": "HttpCaller",
-      "name": "Departures that day",
       "x": 800,
       "y": 420,
-      "comment": "numberOfDepartures is per pattern, 2 if not given",
+      "comment": "Departures that day. numberOfDepartures is per pattern, 2 if not given",
       "params": {
         "url": "'$(otp)/index/stops/' || id || '/stoptimes?startTime=' || epoch('$(date)T00:00:00$(zone)') || '&timeRange=86400&numberOfDepartures=1000&omitNonPickups=true'",
         "timeout": "60"
@@ -225,31 +221,30 @@
     {
       "id": "patterns",
       "type": "JsonExploder",
-      "name": "A feature per pattern",
       "x": 1060,
       "y": 420,
       "params": {
         "attribute": "_response",
         "path": "",
         "prefix": "p"
-      }
+      },
+      "comment": "A feature per pattern"
     },
     {
       "id": "times",
       "type": "JsonExploder",
-      "name": "A feature per departure",
       "x": 1320,
       "y": 420,
       "params": {
         "attribute": "p.times",
         "path": "",
         "prefix": "t"
-      }
+      },
+      "comment": "A feature per departure"
     },
     {
       "id": "dep_time",
       "type": "AttributeManager",
-      "name": "Departure time",
       "x": 1580,
       "y": 420,
       "params": {
@@ -268,12 +263,12 @@
             "value": "\"t.realtimeDeparture\" - \"t.scheduledDeparture\""
           }
         ]
-      }
+      },
+      "comment": "Departure time"
     },
     {
       "id": "dep_sort",
       "type": "Sorter",
-      "name": "In time order",
       "x": 1840,
       "y": 420,
       "params": {
@@ -283,45 +278,45 @@
             "ascending"
           ]
         ]
-      }
+      },
+      "comment": "In time order"
     },
     {
       "id": "deps_keep",
       "type": "AttributeKeeper",
-      "name": "The useful attributes",
       "x": 2100,
       "y": 420,
       "params": {
         "keep": "name, departure, t.headsign, p.pattern.desc, t.tripId, delay_s, leaves_at"
-      }
+      },
+      "comment": "The useful attributes"
     },
     {
       "id": "deps_out",
       "type": "Writer",
-      "name": "Departures",
       "x": 2360,
       "y": 420,
       "params": {
         "path": "out/otp_departures.csv"
-      }
+      },
+      "comment": "Departures"
     },
     {
       "id": "window",
       "type": "Tester",
-      "name": "Between the two times",
       "x": 1840,
       "y": 640,
       "params": {
         "test": "leaves_at >= epoch('$(date)T$(from_time):00$(zone)') AND leaves_at < epoch('$(date)T$(to_time):00$(zone)')"
-      }
+      },
+      "comment": "Between the two times"
     },
     {
       "id": "trip_ask",
       "type": "HttpCaller",
-      "name": "The stops of each trip",
       "x": 2100,
       "y": 640,
-      "comment": "One request per departure, eight at a time; the answers are kept in http-cache",
+      "comment": "The stops of each trip. One request per departure, eight at a time; the answers are kept in http-cache",
       "params": {
         "url": "'$(otp)/index/trips/' || \"t.tripId\" || '/stoptimes'",
         "parallel": "8",
@@ -332,51 +327,50 @@
     {
       "id": "trip_stops",
       "type": "JsonExploder",
-      "name": "A feature per stop of the trip",
       "x": 2360,
       "y": 640,
       "params": {
         "attribute": "_response",
         "path": "",
         "prefix": "s"
-      }
+      },
+      "comment": "A feature per stop of the trip"
     },
     {
       "id": "named",
       "type": "FeatureMerger",
-      "name": "With the stop names",
       "x": 2620,
       "y": 640,
       "params": {
         "requestor_key": "s.stopId",
         "supplier_key": "id",
         "prefix": "b_"
-      }
+      },
+      "comment": "With the stop names"
     },
     {
       "id": "reaches_b",
       "type": "Tester",
-      "name": "Reaches stop B after A",
       "x": 2880,
       "y": 640,
       "params": {
         "test": "b_name = '$(stop_b)' AND \"s.stopIndex\" > \"t.stopIndex\""
-      }
+      },
+      "comment": "Reaches stop B after A"
     },
     {
       "id": "once",
       "type": "DuplicateFilter",
-      "name": "Each departure once",
       "x": 3140,
       "y": 640,
       "params": {
         "key": "t.tripId"
-      }
+      },
+      "comment": "Each departure once"
     },
     {
       "id": "ab_arrive",
       "type": "AttributeManager",
-      "name": "Arrival at B",
       "x": 3400,
       "y": 800,
       "params": {
@@ -391,45 +385,46 @@
             "value": "b_name"
           }
         ]
-      }
+      },
+      "comment": "Arrival at B"
     },
     {
       "id": "ab_keep",
       "type": "AttributeKeeper",
-      "name": "The useful attributes",
       "x": 3660,
       "y": 800,
       "params": {
         "keep": "name, departure, t.headsign, t.tripId, arrives_b, stop_b"
-      }
+      },
+      "comment": "The useful attributes"
     },
     {
       "id": "count",
       "type": "StatisticsCalculator",
-      "name": "Count",
       "x": 3400,
       "y": 640,
-      "params": {}
+      "params": {},
+      "comment": "Count"
     },
     {
       "id": "count_out",
       "type": "Writer",
-      "name": "Number of departures A to B",
       "x": 3660,
       "y": 640,
       "params": {
         "path": "out/otp_count_a_to_b.csv"
-      }
+      },
+      "comment": "Number of departures A to B"
     },
     {
       "id": "ab_out",
       "type": "Writer",
-      "name": "Departures A to B",
       "x": 3920,
       "y": 800,
       "params": {
         "path": "out/otp_departures_a_to_b.csv"
-      }
+      },
+      "comment": "Departures A to B"
     }
   ],
   "edges": [

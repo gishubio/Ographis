@@ -19,7 +19,19 @@ pub enum Tab {
 }
 
 const TABS: &[(Tab, &str)] =
-    &[(Tab::Connections, "Database connections"), (Tab::Apis, "API connections"), (Tab::Maps, "Background maps"), (Tab::General, "General")];
+    &[(Tab::General, "General"), (Tab::Connections, "Database connections"), (Tab::Apis, "API connections"), (Tab::Maps, "Background maps")];
+
+/// The background map the map under the canvas starts with: "none", "osm", or the name of one
+/// of one's own.
+pub fn default_background(s: &Settings) -> String {
+    let v = s.other.get("default_background").and_then(|v| v.as_str()).unwrap_or("osm").to_string();
+    // A map of one's own that has been taken away is OpenStreetMap again.
+    if v == "none" || v == "osm" || s.maps.iter().any(|m| m.name == v) {
+        v
+    } else {
+        "osm".into()
+    }
+}
 
 /// How many features each input reads in a trial run, from the settings.
 pub fn trial_features(s: &Settings) -> usize {
@@ -71,7 +83,7 @@ pub struct SettingsWindow {
 impl SettingsWindow {
     pub fn new(settings: &Settings) -> SettingsWindow {
         SettingsWindow {
-            tab: Tab::Connections,
+            tab: Tab::General,
             selected: if settings.connections.is_empty() { None } else { Some(0) },
             tested: None,
             testing: None,
@@ -141,11 +153,21 @@ impl SettingsWindow {
                     }
                 });
                 ui.separator();
-                ui.vertical(|ui| match self.tab {
-                    Tab::Connections => changed |= self.connections(ui, pal, settings, backend),
-                    Tab::Apis => changed |= self.apis(ui, pal, settings),
-                    Tab::Maps => changed |= self.maps(ui, pal, settings),
-                    Tab::General => changed |= self.general(ui, pal, settings),
+                // Every tab in the same room, scrolled when it holds more, so that the window
+                // keeps its size and place when another tab is chosen.
+                let room = egui::vec2(ui.available_width(), size.y);
+                ui.allocate_ui_with_layout(room, Layout::top_down(Align::Min), |ui| {
+                    ui.set_min_size(room);
+                    ui.set_max_size(room);
+                    egui::ScrollArea::vertical().id_salt(("settings-tab", self.tab as u8)).auto_shrink([false, false]).max_height(room.y).show(ui, |ui| {
+                        ui.set_width(room.x - 14.0);
+                        match self.tab {
+                            Tab::Connections => changed |= self.connections(ui, pal, settings, backend),
+                            Tab::Apis => changed |= self.apis(ui, pal, settings),
+                            Tab::Maps => changed |= self.maps(ui, pal, settings),
+                            Tab::General => changed |= self.general(ui, pal, settings),
+                        }
+                    });
                 });
             });
             ui.add_space(8.0);
@@ -209,6 +231,31 @@ impl SettingsWindow {
             }
             ui.label(RichText::new("seconds has finished").color(pal.muted));
         });
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("The map under the canvas starts with").color(pal.muted));
+            let now = default_background(settings);
+            let label = |v: &str| match v {
+                "none" => "No background".to_string(),
+                "osm" => "OpenStreetMap".to_string(),
+                other => other.to_string(),
+            };
+            let mut choices: Vec<String> = vec!["osm".into(), "none".into()];
+            choices.extend(settings.maps.iter().map(|m| m.name.clone()));
+            let mut chosen = now.clone();
+            egui::ComboBox::from_id_salt("default-background").selected_text(label(&now)).show_ui(ui, |ui| {
+                for c in &choices {
+                    ui.selectable_value(&mut chosen, c.clone(), label(c));
+                }
+            });
+            if chosen != now {
+                settings.other.insert("default_background".into(), serde_json::json!(chosen));
+                changed = true;
+            }
+        });
+        ui.label(
+            RichText::new("Maps of your own are added under Background maps. The map can be changed for the moment under the canvas.").small().color(pal.muted),
+        );
         ui.add_space(10.0);
         ui.label(RichText::new("Accessibility").font(theme::strong(13.0)).color(pal.ink));
         let mut calm = reduce_motion(settings);

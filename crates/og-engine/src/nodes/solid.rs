@@ -655,7 +655,7 @@ fn run_tin_raster(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         crate::model::fmt_real(size),
         fmt_count(filled as u64)
     ));
-    let grid = Grid { width, height, values, geotransform: [left, size, 0.0, top, 0.0, -size], crs: table.crs, bands: Vec::new() };
+    let grid = Grid { width, height, values, geotransform: [left, size, 0.0, top, 0.0, -size], crs: table.crs, bands: Vec::new(), meta: Default::default() };
     Ok(vec![("Raster".into(), grid.into_table())])
 }
 
@@ -872,7 +872,8 @@ mod tests {
         // A slope, z = x / 10, on a grid of 50 × 40 cells of 2 m.
         let (w, h) = (50usize, 40usize);
         let values: Vec<f32> = (0..w * h).map(|i| ((i % w) as f32 * 2.0 + 1.0) / 10.0).collect();
-        let g = Grid { width: w, height: h, values, geotransform: [0.0, 2.0, 0.0, 80.0, 0.0, -2.0], crs: Some(3006), bands: Vec::new() };
+        let g =
+            Grid { width: w, height: h, values, geotransform: [0.0, 2.0, 0.0, 80.0, 0.0, -2.0], crs: Some(3006), bands: Vec::new(), meta: Default::default() };
         let tin = run("TinGenerator", &[("tolerance", "0.01")], vec![("Heights", Table { grid: Some(Arc::new(g)), crs: Some(3006), ..Default::default() })]);
         let r = run("TinRasterizer", &[("cell_size", "4")], vec![("TIN", tin.clone())]);
         let grid = r.grid.as_ref().unwrap();
@@ -964,7 +965,7 @@ mod tests {
                 values.push((50.0 * (-(x * x + y * y) / (n as f64 * 3.0)).exp()) as f32);
             }
         }
-        Grid { width: n, height: n, values, geotransform: [1000.0, 2.0, 0.0, 2000.0, 0.0, -2.0], crs: Some(3006), bands: vec![] }
+        Grid { width: n, height: n, values, geotransform: [1000.0, 2.0, 0.0, 2000.0, 0.0, -2.0], crs: Some(3006), bands: vec![], meta: Default::default() }
     }
 
     #[test]

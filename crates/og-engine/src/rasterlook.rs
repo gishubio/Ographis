@@ -251,7 +251,15 @@ pub fn preview(g: &Grid, most: usize) -> RasterImage {
         }
         let t = g.geotransform;
         let k = n as f64;
-        small = Grid { width: w, height: h, values, geotransform: [t[0], t[1] * k, t[2] * k, t[3], t[4] * k, t[5] * k], crs: g.crs, bands: Vec::new() };
+        small = Grid {
+            width: w,
+            height: h,
+            values,
+            geotransform: [t[0], t[1] * k, t[2] * k, t[3], t[4] * k, t[5] * k],
+            crs: g.crs,
+            bands: Vec::new(),
+            meta: Default::default(),
+        };
         &small
     } else {
         g
@@ -282,7 +290,15 @@ mod tests {
 
     #[test]
     fn classes_ramps_and_own_colours() {
-        let g = Grid { width: 3, height: 1, values: vec![0.0, 1.0, 2.0], geotransform: [0.0, 1.0, 0.0, 1.0, 0.0, -1.0], crs: None, bands: Vec::new() };
+        let g = Grid {
+            width: 3,
+            height: 1,
+            values: vec![0.0, 1.0, 2.0],
+            geotransform: [0.0, 1.0, 0.0, 1.0, 0.0, -1.0],
+            crs: None,
+            bands: Vec::new(),
+            meta: Default::default(),
+        };
         let i = grid_info(&g);
         assert_eq!(i.classes, Some(vec![0.0, 1.0, 2.0]));
         // Seen in green, not seen not drawn at all.
@@ -305,7 +321,15 @@ mod tests {
     fn a_grid_is_drawn_on_a_map_in_its_colours() {
         // Left half seen, right half not, 10 × 10 cells of 10 m.
         let values = (0..100).map(|i| if i % 10 < 5 { 1.0 } else { 0.0 }).collect();
-        let g = Grid { width: 10, height: 10, values, geotransform: [0.0, 10.0, 0.0, 100.0, 0.0, -10.0], crs: Some(3006), bands: Vec::new() };
+        let g = Grid {
+            width: 10,
+            height: 10,
+            values,
+            geotransform: [0.0, 10.0, 0.0, 100.0, 0.0, -10.0],
+            crs: Some(3006),
+            bands: Vec::new(),
+            meta: Default::default(),
+        };
         let t = g.into_table();
         let spec = RasterSpec { colors: vec![("0".into(), "none".into(), String::new()), ("1".into(), "#22aa44".into(), String::new())], ..Default::default() };
         let r = prepare(&t, &spec).unwrap();

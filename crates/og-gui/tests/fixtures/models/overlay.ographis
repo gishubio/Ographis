@@ -1,0 +1,44 @@
+{
+  "format": "ographis/1",
+  "name": "Population and route corridors by subregion",
+  "nodes": [
+    { "id": "towns", "type": "Reader", "name": "Towns", "x": 20, "y": 20, "params": { "path": "towns.csv", "crs": "EPSG:4326" } },
+    { "id": "towns_sweref", "type": "Reprojector", "name": "Towns to SWEREF", "x": 232, "y": 20, "params": { "crs": "EPSG:3006" } },
+    { "id": "join", "type": "SpatialJoiner", "name": "Which subregion?", "x": 444, "y": 20, "params": { "attributes": "subregion", "relation": "point" } },
+    { "id": "stats", "type": "StatisticsCalculator", "name": "Population by subregion", "x": 656, "y": 20, "params": { "attributes": "population", "group_by": "subregion" } },
+    { "id": "sort", "type": "Sorter", "name": "Largest first", "x": 868, "y": 20, "params": { "sort_by": "population_sum", "order": "descending" } },
+    { "id": "out_stats", "type": "Writer", "name": "Population table", "x": 1080, "y": 20, "params": { "path": "out/population_by_subregion.csv" } },
+
+    { "id": "subregions", "type": "Reader", "name": "Subregions", "x": 20, "y": 200, "params": { "path": "subregions.gpkg" } },
+    { "id": "areas_sweref", "type": "Reprojector", "name": "Areas to SWEREF", "x": 232, "y": 200, "params": { "crs": "EPSG:3006" } },
+    { "id": "count", "type": "PointCounter", "name": "Towns per subregion", "x": 444, "y": 200, "params": { "name": "towns" } },
+    { "id": "out_areas", "type": "Writer", "name": "Subregions with town count", "x": 656, "y": 200, "params": { "path": "out/overlay.gpkg", "layer": "subregions" } },
+    { "id": "labels", "type": "CenterPointReplacer", "name": "Label points", "x": 656, "y": 330, "params": { "mode": "inside" } },
+    { "id": "out_labels", "type": "Writer", "name": "Label points", "x": 868, "y": 330, "params": { "path": "out/overlay.gpkg", "layer": "label_points" } },
+
+    { "id": "routes", "type": "Reader", "name": "Routes", "x": 20, "y": 480, "params": { "path": "routes.shp" } },
+    { "id": "buffer", "type": "Bufferer", "name": "2 km on each side", "x": 232, "y": 480, "params": { "distance": "2000" } },
+    { "id": "dissolve", "type": "Dissolver", "name": "One corridor per type", "x": 444, "y": 480, "params": { "group_by": "type" } },
+    { "id": "corridor_area", "type": "AreaCalculator", "name": "Corridor area", "x": 656, "y": 480, "params": { "name": "area_km2", "unit": "km2" } },
+    { "id": "out_corridors", "type": "Writer", "name": "Corridors", "x": 868, "y": 480, "params": { "path": "out/overlay.gpkg", "layer": "corridors" } }
+  ],
+  "edges": [
+    { "from": ["towns", "Output"], "to": ["towns_sweref", "Input"] },
+    { "from": ["towns_sweref", "Reprojected"], "to": ["join", "Features"] },
+    { "from": ["towns_sweref", "Reprojected"], "to": ["count", "Points"] },
+    { "from": ["subregions", "Output"], "to": ["areas_sweref", "Input"] },
+    { "from": ["areas_sweref", "Reprojected"], "to": ["join", "Join"] },
+    { "from": ["areas_sweref", "Reprojected"], "to": ["count", "Polygons"] },
+    { "from": ["join", "Joined"], "to": ["stats", "Input"] },
+    { "from": ["stats", "Summary"], "to": ["sort", "Input"] },
+    { "from": ["sort", "Sorted"], "to": ["out_stats", "Input"] },
+    { "from": ["count", "Polygons"], "to": ["out_areas", "Input"] },
+    { "from": ["count", "Polygons"], "to": ["labels", "Input"] },
+    { "from": ["labels", "Point"], "to": ["out_labels", "Input"] },
+
+    { "from": ["routes", "Output"], "to": ["buffer", "Input"] },
+    { "from": ["buffer", "Buffered"], "to": ["dissolve", "Input"] },
+    { "from": ["dissolve", "Dissolved"], "to": ["corridor_area", "Input"] },
+    { "from": ["corridor_area", "Output"], "to": ["out_corridors", "Input"] }
+  ]
+}

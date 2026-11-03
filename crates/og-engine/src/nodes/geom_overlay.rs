@@ -109,6 +109,8 @@ pub(super) fn run_dissolver(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Ou
     }
     let mut out = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: idx.iter().map(|i| table.fields[*i].clone()).collect(),
         crs: table.crs,
         features: Vec::new(),

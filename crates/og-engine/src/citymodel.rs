@@ -219,7 +219,7 @@ pub(crate) fn to_table(objects: Vec<CityObject>, lod: &Lod, crs: Option<u32>, no
         lods.iter().map(|(l, n)| format!("{} ({})", l, fmt_count(*n as u64))).collect::<Vec<_>>().join(", "),
         if without + flat > 0 { format!("; {} without surfaces there were left out", fmt_count((without + flat) as u64)) } else { String::new() }
     ));
-    Ok(Table { fields, crs, features, raster: false, image: None, grid: None, mesh: Some(Arc::new(mesh)) })
+    Ok(Table { fields, crs, features, raster: false, image: None, grid: None, mesh: Some(Arc::new(mesh)), points: None, series: None })
 }
 
 /// The EPSG code in a name of a coordinate system: EPSG:3006, urn:ogc:def:crs:EPSG::3006,

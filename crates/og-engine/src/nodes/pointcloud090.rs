@@ -8,17 +8,6 @@ use super::*;
 use crate::model::{err, fmt_count, fmt_real, Grid};
 use geo::Geometry;
 
-fn z_of(f: &Feature) -> Option<f64> {
-    f.heights().and_then(|z| z.first().copied())
-}
-
-fn xy_of(f: &Feature) -> Option<(f64, f64)> {
-    match &f.geom {
-        Some(Geometry::Point(p)) => Some((p.x(), p.y())),
-        _ => None,
-    }
-}
-
 /// The smallest (or largest) value within `r` cells along each row, then each column: a
 /// square window, in time that does not grow with its size.
 fn min_max_filter(values: &[f32], w: usize, h: usize, r: usize, max: bool) -> Vec<f32> {
@@ -140,32 +129,24 @@ fn run_ground(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     if ctx.geographic(t.crs) == Some(true) {
         return err("The points are in a coordinate system in degrees. Reproject them first, such as to EPSG:3006, so that sizes are in metres.");
     }
-    let pts: Vec<(f64, f64, f64)> = t.features.iter().filter_map(|f| Some((xy_of(f)?.0, xy_of(f)?.1, z_of(f)?))).collect();
+    let input_pts = crate::cloud::points_in(t);
+    let c = &input_pts.cloud;
+    let pts: Vec<(f64, f64, f64)> = (0..c.len()).filter(|i| !c.z[*i].is_nan()).map(|i| (c.x[i], c.y[i], c.z[i])).collect();
     if pts.is_empty() {
         return err("There are no points with heights. Read a point cloud (LAS or LAZ).");
     }
     let ground = ground_surface(&pts, cell, slope, window, t.crs)?;
-    let mut out = t.clone();
-    let class_at = column(&mut out, "classification", FieldType::Int);
-    let name_at = out.field_index("class");
-    let mut grounds = out.like();
-    let (mut n_ground, mut n_other) = (0usize, 0usize);
-    for f in out.features.iter_mut() {
-        let (Some((x, y)), Some(z)) = (xy_of(f), z_of(f)) else { continue };
-        let is_ground = ground.bilinear(x, y).is_some_and(|g| (z - g as f64).abs() <= threshold);
-        let class: u8 = if is_ground { 2 } else { 1 };
-        f.attrs[class_at] = Value::Int(class as i64);
-        if let Some(n) = name_at {
-            f.attrs[n] = Value::Text(crate::pointcloud::class_name(class).to_string());
-        }
-        if is_ground {
-            n_ground += 1;
-            grounds.features.push(f.clone());
-        } else {
-            n_other += 1;
-        }
-    }
-    grounds.fields = out.fields.clone();
+    drop(pts);
+    let classes: Vec<Value> = (0..c.len())
+        .map(|i| {
+            let is_ground = !c.z[i].is_nan() && ground.bilinear(c.x[i], c.y[i]).is_some_and(|g| (c.z[i] - g as f64).abs() <= threshold);
+            Value::Int(if is_ground { 2 } else { 1 })
+        })
+        .collect();
+    let n_ground = classes.iter().filter(|v| **v == Value::Int(2)).count();
+    let n_other = classes.len() - n_ground;
+    let out = input_pts.with_values("classification", FieldType::Int, &classes, None);
+    let (grounds, _) = crate::cloud::points_in(&out).split(|i| classes[i] == Value::Int(2));
     ctx.notes.info(format!(
         "{} ground points, {} others ({}% ground)",
         fmt_count(n_ground as u64),
@@ -310,11 +291,13 @@ pub(super) fn points_on_buildings(p: &P, buildings: &Table, cloud: &Table, groun
         }
     };
     let inset = number_param(p, "inset", "Leave out the edge")?.unwrap_or(0.5).max(0.0);
-    let class_at = cloud.field_index("classification");
-    if class_at.is_none() && ground_grid.is_none() {
+    let classified = cloud.points.is_some() || cloud.field_index("classification").is_some();
+    if !classified && ground_grid.is_none() {
         return err("The points have no classes to tell the ground by. Classify the ground points first, or connect a terrain model to Ground.");
     }
-    let class_of = |f: &Feature| class_at.and_then(|i| f.attrs[i].as_f64()).map(|c| c as i64);
+    let pts = crate::cloud::points_in(cloud);
+    let c = &pts.cloud;
+    let class_of = |i: usize| classified.then_some(c.class[i] as i64);
     // The footprints, made smaller by the edge left out.
     use geo::Buffer;
     let shrunk: Vec<Option<Geometry<f64>>> = buildings
@@ -334,9 +317,12 @@ pub(super) fn points_on_buildings(p: &P, buildings: &Table, cloud: &Table, groun
     let index = AreaIndex::new(shrunk.iter().map(|g| g.as_ref()));
     let mut roofs: Vec<Vec<(f64, f64, f64)>> = vec![Vec::new(); buildings.len()];
     let mut ground_pts: Vec<rstar::primitives::GeomWithData<[f64; 2], f64>> = Vec::new();
-    for f in &cloud.features {
-        let (Some((x, y)), Some(z)) = (xy_of(f), z_of(f)) else { continue };
-        let c = class_of(f);
+    for i in 0..c.len() {
+        let (x, y, z) = (c.x[i], c.y[i], c.z[i]);
+        if z.is_nan() {
+            continue;
+        }
+        let c = class_of(i);
         if c.is_some_and(|c| ground_classes.contains(&c)) {
             ground_pts.push(rstar::primitives::GeomWithData::new([x, y], z));
             continue;

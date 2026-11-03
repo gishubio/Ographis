@@ -5,7 +5,6 @@
     {
       "id": "stac",
       "type": "StacSearch",
-      "name": "Search STAC",
       "x": 20,
       "y": 40,
       "params": {
@@ -15,12 +14,12 @@
         "datetime": "2026-06-01/2026-08-31",
         "query": "eo:cloud_cover < 20",
         "max_items": "50"
-      }
+      },
+      "comment": "Search STAC"
     },
     {
       "id": "sort",
       "type": "Sorter",
-      "name": "Least cloud first",
       "x": 300,
       "y": 40,
       "params": {
@@ -30,17 +29,18 @@
             "ascending"
           ]
         ]
-      }
+      },
+      "comment": "Least cloud first"
     },
     {
       "id": "out",
       "type": "Writer",
-      "name": "Images",
       "x": 560,
       "y": 40,
       "params": {
         "path": "out/sentinel2.gpkg"
-      }
+      },
+      "comment": "Images"
     }
   ],
   "edges": [

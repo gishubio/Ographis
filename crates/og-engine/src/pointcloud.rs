@@ -1,11 +1,11 @@
 //! Point clouds: LAS and LAZ, as laser scanning from the air gives them, such as the
-//! Laserdata of Lantmäteriet. Each point becomes a feature with its height and what the
-//! scanner says about it.
+//! Laserdata of Lantmäteriet. The points are read into a cloud of columns (see cloud.rs),
+//! with their heights and what the scanner says about them.
 
+use crate::cloud::Cloud;
 use crate::io::Notes;
-use crate::model::{err, fmt_count, Feature, Field, FieldType, GbError, Result, Table, Value};
+use crate::model::{err, fmt_count, Feature, GbError, Result, Table};
 use std::path::Path;
-use std::sync::Arc;
 
 /// What to read of a point cloud.
 #[derive(Debug, Clone, Default)]
@@ -108,15 +108,13 @@ fn crs_of(header: &las::Header, opts: &LasOpts, notes: &mut Notes) -> Option<u32
     })
 }
 
-/// The points as features, as they are read: thinned, by class and within the rectangle.
+/// The points as a cloud, as they are read: thinned, by class and within the rectangle.
 struct Collector<'a> {
     opts: &'a LasOpts,
-    fields: Vec<Field>,
-    colour: bool,
     /// Colours are 16 bits in the format, but most files keep 8 bits in them: those that go
     /// above 255 are made 8 bits.
     wide_colour: Option<bool>,
-    features: Vec<Feature>,
+    cloud: Cloud,
     seen: u64,
     skipped_class: u64,
     cut_short: bool,
@@ -125,27 +123,20 @@ struct Collector<'a> {
 impl<'a> Collector<'a> {
     fn new(header: &las::Header, opts: &'a LasOpts) -> Self {
         let colour = header.point_format().has_color;
-        let mut fields = vec![
-            Field::new("classification", FieldType::Int),
-            Field::new("class", FieldType::Text),
-            Field::new("intensity", FieldType::Int),
-            Field::new("return_number", FieldType::Int),
-            Field::new("returns", FieldType::Int),
-        ];
-        if colour {
-            for c in ["red", "green", "blue"] {
-                fields.push(Field::new(c, FieldType::Int));
-            }
-        }
-        Collector { opts, fields, colour, wide_colour: None, features: Vec::new(), seen: 0, skipped_class: 0, cut_short: false }
+        let room = header.number_of_points().min(opts.most.unwrap_or(usize::MAX) as u64) / opts.every.max(1) as u64;
+        // Room for all the points at once, unless only a few classes or a part are asked for.
+        let room = if opts.classes.is_some() || opts.within.is_some() { 0 } else { room.min(500_000_000) as usize };
+        Collector { opts, wide_colour: None, cloud: Cloud::with_capacity(room, colour), seen: 0, skipped_class: 0, cut_short: false }
     }
 
     /// Takes the points it wants. False when no more may be taken.
     fn take(&mut self, points: Vec<las::Point>) -> bool {
         let every = self.opts.every.max(1) as u64;
-        if self.colour && self.wide_colour.is_none() {
+        if self.cloud.rgb.is_some() && self.wide_colour.is_none() {
             self.wide_colour = Some(points.iter().filter_map(|p| p.color).any(|c| c.red > 255 || c.green > 255 || c.blue > 255));
         }
+        let shift = if self.wide_colour == Some(true) { 8 } else { 0 };
+        let c = &mut self.cloud;
         for p in points {
             self.seen += 1;
             if !(self.seen - 1).is_multiple_of(every) {
@@ -163,40 +154,36 @@ impl<'a> Collector<'a> {
                     continue;
                 }
             }
-            if self.opts.most.is_some_and(|m| self.features.len() >= m) {
+            if self.opts.most.is_some_and(|m| c.len() >= m) {
                 self.cut_short = true;
                 return false;
             }
-            let mut attrs = vec![
-                Value::Int(class as i64),
-                Value::Text(class_name(class).to_string()),
-                Value::Int(p.intensity as i64),
-                Value::Int(p.return_number as i64),
-                Value::Int(p.number_of_returns as i64),
-            ];
-            if self.colour {
-                let c = p.color.unwrap_or_default();
-                let shift = if self.wide_colour == Some(true) { 8 } else { 0 };
-                attrs.extend([c.red, c.green, c.blue].map(|v| Value::Int((v >> shift) as i64)));
+            c.x.push(p.x);
+            c.y.push(p.y);
+            c.z.push(p.z);
+            c.class.push(class);
+            c.intensity.push(p.intensity);
+            let rets = p.number_of_returns.max(1);
+            c.rets.push(rets);
+            c.ret.push(p.return_number.clamp(1, rets));
+            if let Some(rgb) = &mut c.rgb {
+                let k = p.color.unwrap_or_default();
+                rgb.push([k.red, k.green, k.blue].map(|v| (v >> shift).min(255) as u8));
             }
-            self.features.push(Feature { z: Some(Arc::from(vec![p.z])), attrs, geom: Some(geo::Geometry::Point(geo::Point::new(p.x, p.y))) });
         }
         true
     }
 
     fn finish(self, total: u64, crs: Option<u32>, notes: &mut Notes) -> Table {
+        let n = self.cloud.len() as u64;
         if self.cut_short {
-            notes.warn(format!(
-                "Only the first {} points were read, of {} in the file. Read every n-th point, only some classes or within a rectangle, or allow more.",
-                fmt_count(self.features.len() as u64),
-                fmt_count(total)
-            ));
+            notes.warn(format!("Only the first {} points were read, of {} in the file, as many as were asked for.", fmt_count(n), fmt_count(total)));
         }
-        if self.skipped_class > 0 && self.features.is_empty() {
+        if self.skipped_class > 0 && n == 0 {
             notes.warn("No point has the classes asked for.");
         }
-        notes.info(format!("{} of {} points", fmt_count(self.features.len() as u64), fmt_count(total)));
-        Table { mesh: None, fields: self.fields, crs, features: self.features, raster: false, image: None, grid: None }
+        notes.info(format!("{} of {} points, {} MB in memory", fmt_count(n), fmt_count(total), fmt_count((self.cloud.bytes() as u64).div_ceil(1_000_000))));
+        self.cloud.into_table(crs)
     }
 }
 
@@ -339,6 +326,9 @@ pub fn read_copc_url(backend: &dyn crate::io::Backend, url: &str, headers: &[(St
 /// blue are kept when the stream has them; colours of 8 bits are made 16. `wkt` is the
 /// coordinate system. Gives how many points were written and how many had no height.
 pub fn write_las(table: &Table, path: &Path, wkt: Option<&str>) -> Result<(u64, u64)> {
+    if let Some(c) = &table.points {
+        return write_cloud(c, path, wkt).map(|n| (n, 0));
+    }
     use geo::BoundingRect;
     let at = |n: &str| table.field_index(n);
     let (class_at, intensity_at, ret_at, rets_at) =
@@ -378,23 +368,8 @@ pub fn write_las(table: &Table, path: &Path, wkt: Option<&str>) -> Result<(u64, 
     while reach / scale > 2.0e9 {
         scale *= 10.0;
     }
-    let mut b = las::Builder::from((1, 4));
-    b.point_format = las::point::Format::new(if colour_at.is_some() { 7 } else { 6 }).map_err(|e| GbError(e.to_string()))?;
-    b.transforms = las::Vector {
-        x: las::Transform { scale, offset: r.min().x.floor() },
-        y: las::Transform { scale, offset: r.min().y.floor() },
-        z: las::Transform { scale, offset: 0.0 },
-    };
-    b.generating_software = format!("Ographis {}", env!("CARGO_PKG_VERSION"));
-    let mut header = b.into_header().map_err(|e| GbError(format!("Cannot make the header of the point cloud: {}", e)))?;
-    if let Some(w) = wkt {
-        header.set_wkt_crs(w.as_bytes().to_vec()).map_err(|e| GbError(format!("Cannot write the coordinate system: {}", e)))?;
-    }
-    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-        std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
-    }
     let named = |e: las::Error| GbError(format!("Cannot write {}: {}", path.display(), e));
-    let mut w = las::Writer::from_path(path, header).map_err(named)?;
+    let mut w = las_writer(path, [r.min().x, r.min().y], scale, colour_at.is_some(), wkt)?;
     for (x, y, z, f) in &points {
         let class = int(f, class_at).clamp(0.0, 255.0) as u8;
         let color = colour_at.map(|c| {
@@ -425,6 +400,61 @@ pub fn write_las(table: &Table, path: &Path, wkt: Option<&str>) -> Result<(u64, 
     }
     w.close().map_err(named)?;
     Ok((points.len() as u64, flat))
+}
+
+/// A writer of LAS 1.4, LAZ when the name ends in .laz, with coordinates of `scale` from
+/// `origin`.
+fn las_writer(path: &Path, origin: [f64; 2], scale: f64, colour: bool, wkt: Option<&str>) -> Result<las::Writer<std::io::BufWriter<std::fs::File>>> {
+    let mut b = las::Builder::from((1, 4));
+    b.point_format = las::point::Format::new(if colour { 7 } else { 6 }).map_err(|e| GbError(e.to_string()))?;
+    b.transforms = las::Vector {
+        x: las::Transform { scale, offset: origin[0].floor() },
+        y: las::Transform { scale, offset: origin[1].floor() },
+        z: las::Transform { scale, offset: 0.0 },
+    };
+    b.generating_software = format!("Ographis {}", env!("CARGO_PKG_VERSION"));
+    let mut header = b.into_header().map_err(|e| GbError(format!("Cannot make the header of the point cloud: {}", e)))?;
+    if let Some(w) = wkt {
+        header.set_wkt_crs(w.as_bytes().to_vec()).map_err(|e| GbError(format!("Cannot write the coordinate system: {}", e)))?;
+    }
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
+    }
+    las::Writer::from_path(path, header).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))
+}
+
+/// Writes a cloud as it is, column by column.
+fn write_cloud(c: &Cloud, path: &Path, wkt: Option<&str>) -> Result<u64> {
+    if c.is_empty() {
+        return err("There are no points to write as a point cloud.");
+    }
+    let lo = |v: &[f64]| v.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = |v: &[f64]| v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let reach = (hi(&c.x) - lo(&c.x)).max(hi(&c.y) - lo(&c.y)).max(lo(&c.z).abs()).max(hi(&c.z).abs());
+    let mut scale = 0.001;
+    while reach / scale > 2.0e9 {
+        scale *= 10.0;
+    }
+    let named = |e: las::Error| GbError(format!("Cannot write {}: {}", path.display(), e));
+    let mut w = las_writer(path, [lo(&c.x), lo(&c.y)], scale, c.rgb.is_some(), wkt)?;
+    for i in 0..c.len() {
+        let rets = c.rets[i].clamp(1, 15);
+        w.write_point(las::Point {
+            x: c.x[i],
+            y: c.y[i],
+            z: c.z[i],
+            intensity: c.intensity[i],
+            return_number: c.ret[i].clamp(1, rets),
+            number_of_returns: rets,
+            classification: las::point::Classification::new(c.class[i]).unwrap_or(las::point::Classification::Unclassified),
+            color: c.rgb.as_ref().map(|v| las::Color { red: v[i][0] as u16 * 257, green: v[i][1] as u16 * 257, blue: v[i][2] as u16 * 257 }),
+            gps_time: Some(0.0),
+            ..Default::default()
+        })
+        .map_err(named)?;
+    }
+    w.close().map_err(named)?;
+    Ok(c.len() as u64)
 }
 
 #[cfg(test)]

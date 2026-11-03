@@ -15,31 +15,30 @@
     {
       "id": "munis",
       "type": "HttpCaller",
-      "name": "Municipalities in Kolada",
       "x": 20,
       "y": 40,
       "params": {
         "url": "https://api.kolada.se/v3/municipality?region_type=municipality",
         "paging": "next",
         "next_path": "next_url"
-      }
+      },
+      "comment": "Municipalities in Kolada"
     },
     {
       "id": "names",
       "type": "JsonExploder",
-      "name": "One per municipality",
       "x": 280,
       "y": 40,
       "params": {
         "attribute": "_response",
         "path": "values",
         "prefix": "m"
-      }
+      },
+      "comment": "One per municipality"
     },
     {
       "id": "data",
       "type": "HttpCaller",
-      "name": "Kolada: $(kpi) in $(year)",
       "x": 20,
       "y": 240,
       "params": {
@@ -47,23 +46,22 @@
         "paging": "next",
         "next_path": "next_url"
       },
-      "comment": "One request for the key figure of all municipalities"
+      "comment": "Kolada: $(kpi) in $(year). One request for the key figure of all municipalities"
     },
     {
       "id": "rows",
       "type": "JsonExploder",
-      "name": "A value per municipality",
       "x": 280,
       "y": 240,
       "params": {
         "attribute": "_response",
         "path": "values"
-      }
+      },
+      "comment": "A value per municipality"
     },
     {
       "id": "v",
       "type": "JsonExtractor",
-      "name": "Total for both sexes",
       "x": 540,
       "y": 240,
       "params": {
@@ -74,34 +72,33 @@
             "value"
           ]
         ]
-      }
+      },
+      "comment": "Total for both sexes"
     },
     {
       "id": "join",
       "type": "FeatureMerger",
-      "name": "With the names",
       "x": 800,
       "y": 140,
       "params": {
         "requestor_key": "municipality",
         "supplier_key": "m.id"
-      }
+      },
+      "comment": "With the names"
     },
     {
       "id": "vg",
       "type": "Tester",
-      "name": "In Västra Götaland",
       "x": 1060,
       "y": 140,
       "params": {
         "test": "left(municipality, 2) = '14'"
       },
-      "comment": "The municipality codes of Västra Götaland begin with 14"
+      "comment": "In Västra Götaland. The municipality codes of Västra Götaland begin with 14"
     },
     {
       "id": "chart",
       "type": "ChartDrawer",
-      "name": "Chart",
       "x": 1320,
       "y": 140,
       "params": {
@@ -112,17 +109,18 @@
         "title": "$(kpi) in $(year)",
         "subtitle": "The 15 highest in Västra Götaland",
         "note": "Source: Kolada (RKA)"
-      }
+      },
+      "comment": "Chart"
     },
     {
       "id": "png",
       "type": "Writer",
-      "name": "Chart",
       "x": 1580,
       "y": 140,
       "params": {
         "path": "out/kolada_$(kpi)_$(year).png"
-      }
+      },
+      "comment": "Chart"
     }
   ],
   "edges": [

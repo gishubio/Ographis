@@ -5,10 +5,9 @@
     {
       "id": "dem",
       "type": "Reader",
-      "name": "Terrain model",
       "x": 20,
       "y": 20,
-      "comment": "A made-up terrain, 12.8 × 9.6 km in cells of 20 m",
+      "comment": "Terrain model. A made-up terrain, 12.8 × 9.6 km in cells of 20 m",
       "params": {
         "path": "terrain.tif",
         "raster_as": "grid"
@@ -17,7 +16,6 @@
     {
       "id": "tanaka",
       "type": "TanakaContours",
-      "name": "Tanaka contours",
       "x": 280,
       "y": 20,
       "params": {
@@ -32,17 +30,16 @@
     {
       "id": "png",
       "type": "Writer",
-      "name": "Picture",
       "x": 540,
       "y": 20,
       "params": {
         "path": "out/tanaka.png"
-      }
+      },
+      "comment": "Picture"
     },
     {
       "id": "grey",
       "type": "TanakaContours",
-      "name": "Tanaka contours, grey",
       "x": 280,
       "y": 180,
       "params": {
@@ -50,17 +47,18 @@
         "line_width": "2",
         "tint": "grey",
         "width": "2400"
-      }
+      },
+      "comment": "Tanaka contours, grey"
     },
     {
       "id": "tif",
       "type": "Writer",
-      "name": "GeoTIFF",
       "x": 540,
       "y": 180,
       "params": {
         "path": "out/tanaka_grey.tif"
-      }
+      },
+      "comment": "GeoTIFF"
     }
   ],
   "edges": [

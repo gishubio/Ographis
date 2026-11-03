@@ -341,7 +341,7 @@ fn tidy(raw: Table, styles: &[String], areas: bool) -> Table {
             keep
         });
     }
-    Table { fields, crs: raw.crs, features, raster: false, image: None, grid: None, mesh: None }
+    Table { fields, crs: raw.crs, features, raster: false, image: None, grid: None, mesh: None, points: None, series: None }
 }
 
 trait FilterEmpty {

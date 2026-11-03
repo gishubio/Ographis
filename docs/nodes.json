@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.92.0",
+  "version": "0.93.0",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a name that is shown, x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -2184,7 +2184,7 @@
             }
           ],
           "default": "true",
-          "hint": "The name of the tool each picture comes from, such as Draw map or Render 3D scene: name the tools as the slides should be called"
+          "hint": "The name of the tool each picture comes from, or its comment when it has no name of its own"
         },
         {
           "key": "size",
@@ -2598,7 +2598,7 @@
             }
           ],
           "default": "true",
-          "hint": "Each section under the name of the tool it comes from: name the tools as the sections should be called"
+          "hint": "Each section under the name of the tool it comes from, or its comment when the tool has no name of its own"
         }
       ]
     },
@@ -9538,7 +9538,7 @@
       "title": "Stylize picture",
       "group": "tool",
       "category": "Maps",
-      "description": "Draws a picture again in a style: as on a Commodore 64, in big pixels with its 16 colours, as a mosaic of LEGO plates in the colours one can buy, with a list of the plates of each colour to build it, or in big pixels of its own colours. For maps from Draw map, terrain, orthophotos and charts.",
+      "description": "Draws a picture again in a style: an 8 bit retro style, in big wide pixels of 16 colours, as a mosaic of LEGO plates in the colours one can buy, with a list of the plates of each colour to build it, or in big pixels of its own colours. For maps from Draw map, terrain, orthophotos and charts.",
       "inputs": [
         "Picture"
       ],
@@ -9557,7 +9557,7 @@
           "choices": [
             {
               "value": "c64",
-              "label": "Commodore 64: big pixels in its 16 colours"
+              "label": "8 bit retro style: big wide pixels in 16 colours"
             },
             {
               "value": "lego",
@@ -9580,7 +9580,7 @@
           "kind": "text",
           "shape": "a string",
           "default": "160",
-          "hint": "The Commodore 64 had 160 wide pixels across in colour; a LEGO base plate has 48 studs"
+          "hint": "8 bit retro style has 160 wide pixels across; a LEGO base plate has 48 studs"
         },
         {
           "key": "dither",
@@ -10970,6 +10970,803 @@
           "shape": "a string",
           "default": "1",
           "hint": "Square kilometres: without outlets on Outlets, each area that drains to the edge of the terrain this large or larger is a catchment"
+        }
+      ]
+    },
+    {
+      "type": "SceneReader",
+      "title": "Read satellite bands",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Reads the bands of the satellite pictures that STAC search found, such as Sentinel-2 or Landsat, onto one grid over the area on Extent: a picture for each time, with the names of its bands, in the coordinate system and cell size you choose. Only the part of each file that covers the area is fetched over the web. The values are scaled to reflectance; bands of classes, such as scl, are kept as they are.",
+      "inputs": [
+        "Items",
+        "Extent"
+      ],
+      "outputs": [
+        "Rasters"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "bands",
+          "label": "Bands",
+          "kind": "text",
+          "shape": "a string",
+          "default": "red, nir, scl",
+          "hint": "The files of the items to read, by name, separated by commas: red, green, blue, nir, swir16 and scl at Element 84; B04, B08 and SCL at Copernicus"
+        },
+        {
+          "key": "cell",
+          "label": "Cell size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "10",
+          "hint": "In metres. Sentinel-2 has 10 m for red, green, blue and nir, 20 m for the others"
+        },
+        {
+          "key": "crs",
+          "label": "Coordinate system",
+          "kind": "crs",
+          "shape": "a coordinate system, such as \"EPSG:3006\"",
+          "default": "",
+          "hint": "Of the grid. Empty: that of Extent, or SWEREF 99 TM when it is in degrees"
+        },
+        {
+          "key": "bbox",
+          "label": "Area in degrees",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "West, south, east and north, when nothing is connected to Extent"
+        },
+        {
+          "key": "scale",
+          "label": "Scale",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0.0001",
+          "hint": "The values of the bands are multiplied by it, to reflectance from 0 to 1. Classes, such as scl, are not"
+        },
+        {
+          "key": "offset",
+          "label": "Offset",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Added after the scale. Sentinel-2 from 2022 at Copernicus has −0.1; Element 84 has already taken it away"
+        },
+        {
+          "key": "most",
+          "label": "At most pictures",
+          "kind": "text",
+          "shape": "a string",
+          "default": "20",
+          "hint": "The first by time; each is read over the web"
+        }
+      ]
+    },
+    {
+      "type": "CloudMasker",
+      "title": "Mask clouds",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Empties the cells of clouds, their shadows, cirrus, and if asked snow and water, in every band of satellite pictures: by the scene classes (scl) of Sentinel-2 or the bits of QA_PIXEL of Landsat. The mask can be grown at the edges of clouds, and pictures with too little left are left out. Each picture gets the share that is clear.",
+      "inputs": [
+        "Rasters"
+      ],
+      "outputs": [
+        "Rasters"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "mask",
+          "label": "Mask",
+          "kind": "picks",
+          "shape": "some of the values in choices: a list of strings, or one string separated by commas",
+          "choices": [
+            {
+              "value": "cloud",
+              "label": "Clouds"
+            },
+            {
+              "value": "shadow",
+              "label": "Cloud shadows"
+            },
+            {
+              "value": "cirrus",
+              "label": "Thin cirrus"
+            },
+            {
+              "value": "snow",
+              "label": "Snow and ice"
+            },
+            {
+              "value": "water",
+              "label": "Water"
+            }
+          ],
+          "default": "cloud, shadow, cirrus",
+          "hint": "Cells of these become empty in every band"
+        },
+        {
+          "key": "grow",
+          "label": "Grow the mask by",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Cells around each masked cell, for the edges of clouds"
+        },
+        {
+          "key": "least",
+          "label": "Least clear share",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "In percent: pictures with less of the area left are left out"
+        }
+      ]
+    },
+    {
+      "type": "SpectralIndex",
+      "title": "Spectral index",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Works out an index of the bands of each picture, such as NDVI for vegetation, NDWI for water, NDMI for moisture, NDBI for built-up land or NBR for burnt land, or an expression of your own with the names of the bands. The bands are found by their names in Sentinel-2 and Landsat alike. The index becomes the first band, and the others are kept or left out.",
+      "inputs": [
+        "Rasters"
+      ],
+      "outputs": [
+        "Rasters"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "index",
+          "label": "Index",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "ndvi",
+              "label": "NDVI: vegetation, (nir − red) / (nir + red)"
+            },
+            {
+              "value": "ndwi",
+              "label": "NDWI: water, (green − nir) / (green + nir)"
+            },
+            {
+              "value": "ndmi",
+              "label": "NDMI: moisture, (nir − swir16) / (nir + swir16)"
+            },
+            {
+              "value": "ndbi",
+              "label": "NDBI: built-up, (swir16 − nir) / (swir16 + nir)"
+            },
+            {
+              "value": "nbr",
+              "label": "NBR: burnt, (nir − swir22) / (nir + swir22)"
+            },
+            {
+              "value": "evi",
+              "label": "EVI: vegetation where it is dense"
+            },
+            {
+              "value": "savi",
+              "label": "SAVI: vegetation where the soil shows"
+            },
+            {
+              "value": "own",
+              "label": "An expression of my own"
+            }
+          ],
+          "default": "ndvi",
+          "hint": "The bands are found by their names, for Sentinel-2 and Landsat alike"
+        },
+        {
+          "key": "expression",
+          "label": "Expression",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "With the names of the bands, such as (nir - red) / (nir + red)"
+        },
+        {
+          "key": "name",
+          "label": "Name of the band",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Empty: the name of the index"
+        },
+        {
+          "key": "keep",
+          "label": "The other bands",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "keep",
+              "label": "Kept, with the index added"
+            },
+            {
+              "value": "drop",
+              "label": "Left out: only the index"
+            }
+          ],
+          "default": "keep"
+        }
+      ]
+    },
+    {
+      "type": "TemporalComposite",
+      "title": "Composite over time",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Puts satellite pictures of many times together into one, cell by cell: the median, which leaves out clouds that slipped through, the mean, the highest, the lowest, or all bands from the greenest time. For all the time at once, or a picture for each month, season or year. Count tells how many clear values each cell had.",
+      "inputs": [
+        "Rasters"
+      ],
+      "outputs": [
+        "Composite",
+        "Count"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "method",
+          "label": "Each cell gets",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "median",
+              "label": "Median: clouds and shadows that slipped through fall away"
+            },
+            {
+              "value": "mean",
+              "label": "Mean"
+            },
+            {
+              "value": "max",
+              "label": "Highest"
+            },
+            {
+              "value": "min",
+              "label": "Lowest"
+            },
+            {
+              "value": "greenest",
+              "label": "Greenest: all bands from the time with the highest NDVI"
+            }
+          ],
+          "default": "median",
+          "hint": "Of the values it has over the time"
+        },
+        {
+          "key": "period",
+          "label": "Period",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "all",
+              "label": "All of it"
+            },
+            {
+              "value": "month",
+              "label": "Each month"
+            },
+            {
+              "value": "season",
+              "label": "Each season"
+            },
+            {
+              "value": "year",
+              "label": "Each year"
+            }
+          ],
+          "default": "all",
+          "hint": "A picture for each, named by its first day"
+        }
+      ]
+    },
+    {
+      "type": "TopologyChecker",
+      "title": "Check topology",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "Finds where areas that should lie edge to edge, such as properties or zones, overlap one another, and the gaps between them. Each overlap comes out with the two areas it lies in, and each gap as an area; the areas get how many others they overlap. Overlaps and gaps smaller than a size are left out as noise, and holes larger than a size are taken to be meant.",
+      "inputs": [
+        "Areas"
+      ],
+      "outputs": [
+        "Areas",
+        "Overlaps",
+        "Gaps"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "id",
+          "label": "Name the areas by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Areas",
+          "default": "",
+          "hint": "An attribute such as a property id. Empty: their numbers from 1"
+        },
+        {
+          "key": "smallest",
+          "label": "Leave out smaller than",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Overlaps and gaps of less area than this are not reported: the noise of coordinates"
+        },
+        {
+          "key": "largest_gap",
+          "label": "Gaps up to",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Holes larger than this are taken to be meant, such as a lake. Empty: every hole is a gap"
+        }
+      ]
+    },
+    {
+      "type": "SliverEliminator",
+      "title": "Eliminate slivers",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "Merges small or thin areas, as overlays leave behind, into a neighbour: the one they share the longest border with, or the largest. The neighbour keeps its attributes. A sliver is smaller than an area, thinner than a roundness, or either. Slivers without a neighbour go to Left.",
+      "inputs": [
+        "Areas"
+      ],
+      "outputs": [
+        "Areas",
+        "Left"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "area",
+          "label": "Smaller than",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Areas of less than this are slivers, in square units of the coordinate system"
+        },
+        {
+          "key": "thin",
+          "label": "Or thinner than",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "From 0 to 1: how round an area is, 1 for a circle. A long thin strip is below 0.1"
+        },
+        {
+          "key": "into",
+          "label": "Merged into",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "border",
+              "label": "The neighbour it shares the longest border with"
+            },
+            {
+              "value": "largest",
+              "label": "The largest neighbour"
+            }
+          ],
+          "default": "border",
+          "hint": "It keeps the attributes of that one"
+        }
+      ]
+    },
+    {
+      "type": "LineMerger",
+      "title": "Merge lines",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "Merges lines that meet end to end into one line, where exactly two of them meet: the pieces of a street between crossings, or a river cut into many. Only lines with the same values of the attributes chosen are merged, and only those attributes are kept, with how many lines each is made of.",
+      "inputs": [
+        "Lines"
+      ],
+      "outputs": [
+        "Merged",
+        "Other"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "group_by",
+          "label": "Group by",
+          "kind": "attributes",
+          "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
+          "port": "Lines",
+          "default": "",
+          "hint": "Only lines with the same values are merged, such as the name of a street. Empty merges all"
+        },
+        {
+          "key": "tolerance",
+          "label": "Ends within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Ends this close count as the same point. 0: only ends that are equal"
+        }
+      ]
+    },
+    {
+      "type": "PointsAlongLines",
+      "title": "Points along lines",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "Puts points along each line at a distance from one another, from its start, and at its end if asked: stations along a road, or where to take a profile. Each point has the attributes of its line, the distance along it and the direction of the line there, clockwise from north.",
+      "inputs": [
+        "Lines"
+      ],
+      "outputs": [
+        "Points"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "distance",
+          "label": "Every",
+          "kind": "text",
+          "shape": "a string",
+          "default": "100",
+          "hint": "A point at this distance along each line, from its start"
+        },
+        {
+          "key": "start",
+          "label": "First at",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "The distance from the start of the first point"
+        },
+        {
+          "key": "end",
+          "label": "A point at the end",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "true",
+          "hint": "Also where the line ends"
+        }
+      ]
+    },
+    {
+      "type": "LineOffsetter",
+      "title": "Offset lines",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "Moves lines to the side by a distance, left of their direction or right with a negative number, keeping their shape: the edges of a road from its centre line, or two directions of traffic side by side. The distance can be an attribute or an expression.",
+      "inputs": [
+        "Lines"
+      ],
+      "outputs": [
+        "Lines",
+        "Other"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "distance",
+          "label": "Distance",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Lines",
+          "default": "5",
+          "hint": "To the left of the direction of the line; a negative number to the right. Or an attribute, such as half the width of a road"
+        }
+      ]
+    },
+    {
+      "type": "LineLocator",
+      "title": "Locate along lines",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "Linear referencing: finds for each point the nearest line within a distance, and gives it the key of that line, how far along it the point is from its start (in metres, or as a share from 0 to 1) and how far to the side, + to the left. Such as where accidents lie along roads.",
+      "inputs": [
+        "Points",
+        "Lines"
+      ],
+      "outputs": [
+        "Located",
+        "Unmatched"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "key",
+          "label": "Line key",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Lines",
+          "default": "",
+          "hint": "Such as the id of a road, which each point gets. Empty: the number of the line"
+        },
+        {
+          "key": "within",
+          "label": "Within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "50",
+          "hint": "Points further from every line are left out"
+        },
+        {
+          "key": "measure",
+          "label": "Measure as",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "metres",
+              "label": "Metres from the start"
+            },
+            {
+              "value": "share",
+              "label": "A share from 0 at the start to 1 at the end"
+            }
+          ],
+          "default": "metres"
+        }
+      ]
+    },
+    {
+      "type": "EventPlacer",
+      "title": "Place along lines",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "Linear referencing: places events that say where they are along a line, such as a speed limit from metre 120 to 860 of a road, as points or as the stretches of the line between from and to. The lines are found by a key, and the measures are metres or shares from 0 to 1, as in NVDB. They can be moved to the side.",
+      "inputs": [
+        "Events",
+        "Lines"
+      ],
+      "outputs": [
+        "Placed",
+        "Unplaced"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "event_key",
+          "label": "Line key of the events",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Events",
+          "default": "",
+          "hint": "Which line each event is on, such as a road id"
+        },
+        {
+          "key": "line_key",
+          "label": "Line key of the lines",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Lines",
+          "default": "",
+          "hint": "The same, among the attributes of the lines"
+        },
+        {
+          "key": "from",
+          "label": "From",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Events",
+          "default": "",
+          "hint": "Where the event is along the line, or where a stretch begins"
+        },
+        {
+          "key": "to",
+          "label": "To",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Events",
+          "default": "",
+          "hint": "Where a stretch ends. Empty: the events are points"
+        },
+        {
+          "key": "measure",
+          "label": "Measures are",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "metres",
+              "label": "Metres from the start"
+            },
+            {
+              "value": "share",
+              "label": "A share from 0 at the start to 1 at the end"
+            }
+          ],
+          "default": "metres"
+        },
+        {
+          "key": "offset",
+          "label": "To the side",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Moves points and stretches to the left of the line, or the right with a negative number"
+        }
+      ]
+    },
+    {
+      "type": "Pivoter",
+      "title": "Pivot",
+      "group": "tool",
+      "category": "Attributes",
+      "description": "Turns a long table wide: a row for each group, and a column for each value of an attribute, such as a column for each year with the population in it. When a group has several values for a column, the first, the sum, the mean, the lowest, the highest or how many.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "group_by",
+          "label": "A row for each",
+          "kind": "attributes",
+          "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
+          "port": "Input",
+          "default": "",
+          "hint": "Such as the municipality code"
+        },
+        {
+          "key": "names",
+          "label": "Columns from",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "Each value becomes a column, such as each year"
+        },
+        {
+          "key": "values",
+          "label": "Values from",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "What goes in the columns, such as the population"
+        },
+        {
+          "key": "how",
+          "label": "When there are several",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "first",
+              "label": "The first value"
+            },
+            {
+              "value": "sum",
+              "label": "The sum"
+            },
+            {
+              "value": "mean",
+              "label": "The mean"
+            },
+            {
+              "value": "min",
+              "label": "The lowest"
+            },
+            {
+              "value": "max",
+              "label": "The highest"
+            },
+            {
+              "value": "count",
+              "label": "How many"
+            }
+          ],
+          "default": "first"
+        },
+        {
+          "key": "prefix",
+          "label": "Before the names",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Such as y_, so that a year becomes y_2026"
+        }
+      ]
+    },
+    {
+      "type": "Unpivoter",
+      "title": "Unpivot",
+      "group": "tool",
+      "category": "Attributes",
+      "description": "Turns a wide table long: the attributes chosen become rows, each with the name of the attribute and its value, and the other attributes on every row. Such as a column for each year made into a row for each year, for a chart or a database.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "attributes",
+          "label": "Attributes to rows",
+          "kind": "attributes",
+          "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
+          "port": "Input",
+          "default": "",
+          "hint": "Each becomes a row of its own, such as one for each year"
+        },
+        {
+          "key": "name",
+          "label": "Name of the name column",
+          "kind": "text",
+          "shape": "a string",
+          "default": "name",
+          "hint": "Gets the name of the attribute"
+        },
+        {
+          "key": "value",
+          "label": "Name of the value column",
+          "kind": "text",
+          "shape": "a string",
+          "default": "value",
+          "hint": "Gets its value"
+        },
+        {
+          "key": "strip",
+          "label": "Take away from the names",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Such as y_, so that y_2026 becomes 2026"
+        },
+        {
+          "key": "empty",
+          "label": "Empty values",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "keep",
+              "label": "Kept as rows"
+            },
+            {
+              "value": "drop",
+              "label": "Left out"
+            }
+          ],
+          "default": "keep"
         }
       ]
     },

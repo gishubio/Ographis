@@ -5,10 +5,9 @@
     {
       "id": "towns",
       "type": "Reader",
-      "name": "Towns",
       "x": 20,
       "y": 20,
-      "comment": "Approximate positions and populations",
+      "comment": "Towns. Approximate positions and populations",
       "params": {
         "path": "towns.csv",
         "crs": "EPSG:4326"
@@ -17,30 +16,29 @@
     {
       "id": "subregions",
       "type": "Reader",
-      "name": "Subregions",
       "x": 20,
       "y": 200,
       "params": {
         "path": "subregions.gpkg"
-      }
+      },
+      "comment": "Subregions"
     },
     {
       "id": "sweref",
       "type": "Reprojector",
-      "name": "To SWEREF 99 TM",
       "x": 260,
       "y": 20,
       "params": {
         "crs": "EPSG:3006"
-      }
+      },
+      "comment": "To SWEREF 99 TM"
     },
     {
       "id": "raise",
       "type": "PointRaiser",
-      "name": "Raise by population",
       "x": 500,
       "y": 20,
-      "comment": "As high as the square root of the population, 100 m for every root, so that the large towns do not hide the small",
+      "comment": "Raise by population. As high as the square root of the population, 100 m for every root, so that the large towns do not hide the small",
       "params": {
         "height": "sqrt(population) * 100",
         "ball_colour": "#e0533d",
@@ -50,7 +48,6 @@
     {
       "id": "ground",
       "type": "Extruder",
-      "name": "Subregions as a floor",
       "x": 500,
       "y": 200,
       "params": {
@@ -58,12 +55,12 @@
         "base_value": "-2000",
         "wall_colour": "#b9c4b0",
         "roof_colour": "#dfe8d6"
-      }
+      },
+      "comment": "Subregions as a floor"
     },
     {
       "id": "scene",
       "type": "SceneRenderer",
-      "name": "Lollipop map",
       "x": 760,
       "y": 60,
       "params": {
@@ -81,37 +78,38 @@
         "mood": "warm",
         "title": "Inhabitants of the towns",
         "quality": "16"
-      }
+      },
+      "comment": "Lollipop map"
     },
     {
       "id": "png",
       "type": "Writer",
-      "name": "Picture",
       "x": 1020,
       "y": 60,
       "params": {
         "path": "out/lollipops.png"
-      }
+      },
+      "comment": "Picture"
     },
     {
       "id": "sticks",
       "type": "Writer",
-      "name": "Sticks with heights",
       "x": 760,
       "y": 240,
       "params": {
         "path": "out/lollipops.gpkg"
-      }
+      },
+      "comment": "Sticks with heights"
     },
     {
       "id": "sub3006",
       "type": "Reprojector",
-      "name": "Subregions to SWEREF",
       "x": 260,
       "y": 200,
       "params": {
         "crs": "EPSG:3006"
-      }
+      },
+      "comment": "Subregions to SWEREF"
     }
   ],
   "edges": [

@@ -212,6 +212,28 @@ impl App {
         }
     }
 
+    /// A stream as it is shown: a point cloud as every n-th of its points, up to as many as
+    /// the map draws quickly, made once for each cloud.
+    pub(super) fn shown(&self, t: &Arc<Table>) -> Arc<Table> {
+        let Some(c) = &t.points else { return t.clone() };
+        let key = Arc::as_ptr(c) as usize;
+        let mut views = self.cloud_views.borrow_mut();
+        if let Some(v) = views.get(&key) {
+            return v.clone();
+        }
+        // Only the clouds of the latest run are kept.
+        if views.len() > 16 {
+            views.clear();
+        }
+        let every = c.len().div_ceil(SHOWN_POINTS).max(1);
+        let v = Arc::new(c.to_features(t.crs, every));
+        views.insert(key, v.clone());
+        if every > 1 {
+            self.cloud_totals.borrow_mut().insert(Arc::as_ptr(&v) as usize, (every, c.len()));
+        }
+        v
+    }
+
     /// What there is to show for the chosen node: (port name, table) and the chosen port.
     pub(super) fn viewed(&self) -> Option<Viewed> {
         let (id, result) = (self.view.node.as_deref()?, self.result.as_ref()?);
@@ -233,11 +255,16 @@ impl App {
         if ports.is_empty() {
             return None;
         }
+        // A point cloud is shown as features: as many as the map and the table can take.
+        let ports: Vec<(String, Arc<Table>)> = ports.into_iter().map(|(k, t)| (k, self.shown(&t))).collect();
         let chosen =
             self.view.port.as_deref().and_then(|p| ports.iter().position(|x| x.0 == p)).or_else(|| ports.iter().position(|x| !x.1.is_empty())).unwrap_or(0);
         Some((ports, chosen))
     }
 }
+
+/// The most points of a cloud that are shown on the map and in the table.
+pub(crate) const SHOWN_POINTS: usize = 500_000;
 
 /// Where the pointer is in the window when files are dropped on it. While files are
 /// dragged over it, Windows sends the window no pointer movements, so there the place is

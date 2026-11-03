@@ -24,20 +24,19 @@
     {
       "id": "addr",
       "type": "Reader",
-      "name": "Addresses",
       "x": 20,
       "y": 20,
       "params": {
         "path": "addresses.csv"
-      }
+      },
+      "comment": "Addresses"
     },
     {
       "id": "geocode",
       "type": "HttpCaller",
-      "name": "Geocode with HERE",
       "x": 280,
       "y": 20,
-      "comment": "Geocoding and Search API v7: the best match for each address in Sweden. The key is under Settings → API connections as HERE, of the kind 'A key only where {{key}} is written'. Get one at platform.here.com",
+      "comment": "Geocode with HERE. Geocoding and Search API v7: the best match for each address in Sweden. The key is under Settings → API connections as HERE, of the kind 'A key only where {{key}} is written'. Get one at platform.here.com",
       "params": {
         "url": "'https://geocode.search.hereapi.com/v1/geocode?q=' || replace(address, ' ', '+') || '&in=countryCode:SWE&limit=1&lang=sv&apiKey={{key}}'",
         "connection": "HERE",
@@ -49,7 +48,6 @@
     {
       "id": "geo_take",
       "type": "JsonExtractor",
-      "name": "Place and score",
       "x": 540,
       "y": 20,
       "params": {
@@ -76,48 +74,48 @@
             "score"
           ]
         ]
-      }
+      },
+      "comment": "Place and score"
     },
     {
       "id": "geo_pts",
       "type": "PointCreator",
-      "name": "As points",
       "x": 800,
       "y": 20,
       "params": {
         "x": "lon",
         "y": "lat",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "As points"
     },
     {
       "id": "geo_keep",
       "type": "AttributeKeeper",
-      "name": "The useful attributes",
       "x": 1060,
       "y": 20,
       "params": {
         "keep": "address, found, result_type, score"
-      }
+      },
+      "comment": "The useful attributes"
     },
     {
       "id": "geo_out",
       "type": "Writer",
-      "name": "Geocoded",
       "x": 1320,
       "y": 20,
       "params": {
         "path": "out/here.gpkg",
         "layer": "geocoded"
-      }
+      },
+      "comment": "Geocoded"
     },
     {
       "id": "route",
       "type": "HttpCaller",
-      "name": "Car routes",
       "x": 20,
       "y": 220,
-      "comment": "Routing API v8: by car from Drottningtorget to Liseberg on Wednesday morning, with two alternatives, the traffic of that time and the route as a flexible polyline. One request, as nothing comes in",
+      "comment": "Car routes. Routing API v8: by car from Drottningtorget to Liseberg on Wednesday morning, with two alternatives, the traffic of that time and the route as a flexible polyline. One request, as nothing comes in",
       "params": {
         "url": "'https://router.hereapi.com/v8/routes?transportMode=car&origin=$(from)&destination=$(to)&departureTime=$(departure)&alternatives=2&return=polyline,summary&apiKey={{key}}'",
         "connection": "HERE",
@@ -128,7 +126,6 @@
     {
       "id": "routes",
       "type": "JsonExploder",
-      "name": "A feature per route",
       "x": 280,
       "y": 220,
       "params": {
@@ -136,27 +133,27 @@
         "path": "routes",
         "prefix": "route",
         "index_attr": "alternative"
-      }
+      },
+      "comment": "A feature per route"
     },
     {
       "id": "sections",
       "type": "JsonExploder",
-      "name": "A feature per section",
       "x": 540,
       "y": 220,
       "params": {
         "attribute": "route.sections",
         "path": "",
         "prefix": "sec"
-      }
+      },
+      "comment": "A feature per section"
     },
     {
       "id": "route_geom",
       "type": "GeometryFromText",
-      "name": "Section as a line",
       "x": 800,
       "y": 220,
-      "comment": "HERE writes its lines as flexible polylines",
+      "comment": "Section as a line. HERE writes its lines as flexible polylines",
       "params": {
         "attribute": "sec.polyline",
         "kind": "flexpolyline",
@@ -166,7 +163,6 @@
     {
       "id": "route_attrs",
       "type": "AttributeManager",
-      "name": "Minutes, km and delay",
       "x": 1060,
       "y": 220,
       "params": {
@@ -193,36 +189,36 @@
             "value": "\"sec.arrival.time\""
           }
         ]
-      }
+      },
+      "comment": "Minutes, km and delay"
     },
     {
       "id": "route_keep",
       "type": "AttributeKeeper",
-      "name": "The useful attributes",
       "x": 1320,
       "y": 220,
       "params": {
         "keep": "alternative, minutes, km, delay_minutes, leaves, arrives"
-      }
+      },
+      "comment": "The useful attributes"
     },
     {
       "id": "route_out",
       "type": "Writer",
-      "name": "Routes",
       "x": 1580,
       "y": 220,
       "params": {
         "path": "out/here.gpkg",
         "layer": "routes"
-      }
+      },
+      "comment": "Routes"
     },
     {
       "id": "iso",
       "type": "HttpCaller",
-      "name": "Reached by car in 10, 20 and 30 minutes",
       "x": 20,
       "y": 420,
-      "comment": "Isoline Routing API v8: the areas reached from Drottningtorget within 10, 20 and 30 minutes by car, in the traffic of Wednesday morning",
+      "comment": "Reached by car in 10, 20 and 30 minutes. Isoline Routing API v8: the areas reached from Drottningtorget within 10, 20 and 30 minutes by car, in the traffic of Wednesday morning",
       "params": {
         "url": "'https://isoline.router.hereapi.com/v8/isolines?transportMode=car&origin=$(from)&departureTime=$(departure)&range[type]=time&range[values]=600,1200,1800&apiKey={{key}}'",
         "connection": "HERE",
@@ -233,43 +229,42 @@
     {
       "id": "isolines",
       "type": "JsonExploder",
-      "name": "A feature per range",
       "x": 280,
       "y": 420,
       "params": {
         "attribute": "_response",
         "path": "isolines",
         "prefix": "iso"
-      }
+      },
+      "comment": "A feature per range"
     },
     {
       "id": "iso_polys",
       "type": "JsonExploder",
-      "name": "A feature per polygon",
       "x": 540,
       "y": 420,
       "params": {
         "attribute": "iso.polygons",
         "path": "",
         "prefix": "poly"
-      }
+      },
+      "comment": "A feature per polygon"
     },
     {
       "id": "iso_geom",
       "type": "GeometryFromText",
-      "name": "Outline as an area",
       "x": 800,
       "y": 420,
       "params": {
         "attribute": "poly.outer",
         "kind": "flexpolyline_area",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "Outline as an area"
     },
     {
       "id": "iso_attrs",
       "type": "AttributeManager",
-      "name": "Minutes",
       "x": 1060,
       "y": 420,
       "params": {
@@ -280,25 +275,25 @@
             "value": "\"iso.range.value\" / 60"
           }
         ]
-      }
+      },
+      "comment": "Minutes"
     },
     {
       "id": "iso_keep",
       "type": "AttributeKeeper",
-      "name": "The useful attributes",
       "x": 1320,
       "y": 420,
       "params": {
         "keep": "minutes"
-      }
+      },
+      "comment": "The useful attributes"
     },
     {
       "id": "iso_sort",
       "type": "Sorter",
-      "name": "Largest first",
       "x": 1580,
       "y": 420,
-      "comment": "So that the smaller areas are drawn on top",
+      "comment": "Largest first. So that the smaller areas are drawn on top",
       "params": {
         "sort_keys": [
           [
@@ -311,21 +306,20 @@
     {
       "id": "iso_out",
       "type": "Writer",
-      "name": "Isolines",
       "x": 1840,
       "y": 420,
       "params": {
         "path": "out/here.gpkg",
         "layer": "isolines"
-      }
+      },
+      "comment": "Isolines"
     },
     {
       "id": "disc",
       "type": "HttpCaller",
-      "name": "Pharmacies nearby",
       "x": 20,
       "y": 620,
-      "comment": "Discover in the Geocoding and Search API: places that match a text near a point, here pharmacies (apotek) around Drottningtorget",
+      "comment": "Pharmacies nearby. Discover in the Geocoding and Search API: places that match a text near a point, here pharmacies (apotek) around Drottningtorget",
       "params": {
         "url": "'https://discover.search.hereapi.com/v1/discover?at=$(from)&q=$(search)&limit=50&lang=sv&apiKey={{key}}'",
         "connection": "HERE",
@@ -336,52 +330,51 @@
     {
       "id": "places",
       "type": "JsonExploder",
-      "name": "A feature per place",
       "x": 280,
       "y": 620,
       "params": {
         "attribute": "_response",
         "path": "items",
         "prefix": "item"
-      }
+      },
+      "comment": "A feature per place"
     },
     {
       "id": "place_pts",
       "type": "PointCreator",
-      "name": "As points",
       "x": 540,
       "y": 620,
       "params": {
         "x": "item.position.lng",
         "y": "item.position.lat",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "As points"
     },
     {
       "id": "place_keep",
       "type": "AttributeKeeper",
-      "name": "The useful attributes",
       "x": 800,
       "y": 620,
       "params": {
         "keep": "item.title, item.address.label, item.distance, item.categories"
-      }
+      },
+      "comment": "The useful attributes"
     },
     {
       "id": "place_out",
       "type": "Writer",
-      "name": "Places",
       "x": 1060,
       "y": 620,
       "params": {
         "path": "out/here.gpkg",
         "layer": "places"
-      }
+      },
+      "comment": "Places"
     },
     {
       "id": "map",
       "type": "MapRenderer",
-      "name": "Map of it all",
       "x": 2100,
       "y": 320,
       "params": {
@@ -420,17 +413,18 @@
             "method": "quantile"
           }
         ]
-      }
+      },
+      "comment": "Map of it all"
     },
     {
       "id": "png",
       "type": "Writer",
-      "name": "Map as PNG",
       "x": 2360,
       "y": 320,
       "params": {
         "path": "out/here.png"
-      }
+      },
+      "comment": "Map as PNG"
     }
   ],
   "edges": [

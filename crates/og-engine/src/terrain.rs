@@ -109,7 +109,7 @@ pub fn resample(g: &Grid, width: usize, height: usize) -> Grid {
             })
         })
         .collect();
-    Grid { bands: Vec::new(), width, height, values, geotransform: [gt[0], sx, 0.0, gt[3], 0.0, sy], crs: g.crs }
+    Grid { bands: Vec::new(), meta: Default::default(), width, height, values, geotransform: [gt[0], sx, 0.0, gt[3], 0.0, sy], crs: g.crs }
 }
 
 /// The height at a place in the coordinates of the grid, between the middles of the cells.
@@ -766,7 +766,7 @@ pub fn trim_to_rectangle(g: &Grid) -> Grid {
     }
     let t = &g.geotransform;
     let gt = [t[0] + c0 as f64 * t[1] + r0 as f64 * t[2], t[1], t[2], t[3] + c0 as f64 * t[4] + r0 as f64 * t[5], t[4], t[5]];
-    Grid { bands: Vec::new(), width: w, height: h, values, geotransform: gt, crs: g.crs }
+    Grid { bands: Vec::new(), meta: Default::default(), width: w, height: h, values, geotransform: gt, crs: g.crs }
 }
 
 /// The grid with at most `most` cells across or down.
@@ -806,7 +806,15 @@ mod tests {
                 values.push((100.0 - d * 0.5).max(0.0) as f32);
             }
         }
-        Grid { bands: Vec::new(), width: n, height: n, values, geotransform: [0.0, 10.0, 0.0, n as f64 * 10.0, 0.0, -10.0], crs: Some(3006) }
+        Grid {
+            bands: Vec::new(),
+            meta: Default::default(),
+            width: n,
+            height: n,
+            values,
+            geotransform: [0.0, 10.0, 0.0, n as f64 * 10.0, 0.0, -10.0],
+            crs: Some(3006),
+        }
     }
 
     #[test]

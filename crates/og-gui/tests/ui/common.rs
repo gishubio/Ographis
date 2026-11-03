@@ -56,6 +56,12 @@ pub(crate) fn example_copy() -> PathBuf {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     copy_folder(&root().join("examples"), &dir);
+    // The tests click on nodes by the names these models give them, so they use their own
+    // copies rather than the shipped examples, which may be reworded between versions.
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/models");
+    for entry in std::fs::read_dir(fixtures).unwrap().flatten() {
+        std::fs::copy(entry.path(), dir.join(entry.file_name())).unwrap();
+    }
     dir
 }
 
@@ -260,6 +266,8 @@ pub(crate) fn scratch(name: &str) -> PathBuf {
 pub(crate) fn points(first: i64, n: i64) -> Table {
     Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: vec![Field::new("id", FieldType::Int), Field::new("code", FieldType::Text)],
         crs: Some(3006),
         features: (first..first + n)

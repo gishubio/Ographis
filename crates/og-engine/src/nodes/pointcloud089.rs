@@ -2,23 +2,10 @@
 //! ground, and filtering by class, return, height and area. A point cloud is points with
 //! heights, as Input reads LAS and LAZ, with classification, intensity and returns.
 
-use super::geom_inspect::column;
 use super::geom_transform::number_param;
 use super::*;
 use crate::model::{err, fmt_count, fmt_real, Grid};
 use geo::Geometry;
-
-/// The height of a point, from its z.
-fn z_of(f: &Feature) -> Option<f64> {
-    f.heights().and_then(|z| z.first().copied())
-}
-
-fn xy_of(f: &Feature) -> Option<(f64, f64)> {
-    match &f.geom {
-        Some(Geometry::Point(p)) => Some((p.x(), p.y())),
-        _ => None,
-    }
-}
 
 /// Empty cells filled from their neighbours with values, a ring at a time, at most `rings`
 /// times: holes under buildings and in water, where no ground point is.
@@ -62,9 +49,22 @@ pub fn fill_holes(g: &mut Grid, rings: usize) {
 /// many there are or how many per square unit. The raster covers the points, or `extent`
 /// as west, south, east and north when it is given.
 pub fn rasterize_points(points: &[(f64, f64, f64)], cell: f64, stat: &str, crs: Option<u32>, extent: Option<[f64; 4]>) -> Result<Grid> {
+    rasterize_with(points.len(), &|i| Some(points[i]), cell, stat, crs, extent)
+}
+
+/// As `rasterize_points`, with point `i` of `n` given by `get`, or None to leave it out:
+/// a cloud of tens of millions is rasterized without a copy of its points.
+pub fn rasterize_with(
+    n: usize,
+    get: &(dyn Fn(usize) -> Option<(f64, f64, f64)> + Sync),
+    cell: f64,
+    stat: &str,
+    crs: Option<u32>,
+    extent: Option<[f64; 4]>,
+) -> Result<Grid> {
     let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
-    for (x, y, _) in points {
-        (x0, y0, x1, y1) = (x0.min(*x), y0.min(*y), x1.max(*x), y1.max(*y));
+    for (x, y, _) in (0..n).filter_map(get) {
+        (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
     }
     if let Some(e) = extent {
         (x0, y0, x1, y1) = (x0.min(e[0]), y0.min(e[1]), x1.max(e[2]), y1.max(e[3]));
@@ -80,31 +80,31 @@ pub fn rasterize_points(points: &[(f64, f64, f64)], cell: f64, stat: &str, crs: 
         return err(format!("That would be {} × {} cells, more than a raster may have. Choose larger cells.", fmt_count(w as u64), fmt_count(h as u64)));
     }
     let mut v = vec![f32::NAN; w * h];
-    let mut n = vec![0u32; w * h];
+    let mut count = vec![0u32; w * h];
     let mut sum = if stat == "mean" { vec![0f64; w * h] } else { Vec::new() };
-    for (x, y, z) in points {
+    for (x, y, z) in (0..n).filter_map(get) {
         let c = (((x - left) / cell) as usize).min(w - 1);
         let r = (((top - y) / cell) as usize).min(h - 1);
         let i = r * w + c;
-        n[i] += 1;
+        count[i] += 1;
         let cur = &mut v[i];
         match stat {
-            "min" => *cur = if cur.is_nan() { *z as f32 } else { cur.min(*z as f32) },
+            "min" => *cur = if cur.is_nan() { z as f32 } else { cur.min(z as f32) },
             "mean" => sum[i] += z,
             "count" | "density" => {}
-            _ => *cur = if cur.is_nan() { *z as f32 } else { cur.max(*z as f32) },
+            _ => *cur = if cur.is_nan() { z as f32 } else { cur.max(z as f32) },
         }
     }
     let area = cell * cell;
     for i in 0..w * h {
         match stat {
-            "mean" if n[i] > 0 => v[i] = (sum[i] / n[i] as f64) as f32,
-            "count" if n[i] > 0 => v[i] = n[i] as f32,
-            "density" if n[i] > 0 => v[i] = (n[i] as f64 / area) as f32,
+            "mean" if count[i] > 0 => v[i] = (sum[i] / count[i] as f64) as f32,
+            "count" if count[i] > 0 => v[i] = count[i] as f32,
+            "density" if count[i] > 0 => v[i] = (count[i] as f64 / area) as f32,
             _ => {}
         }
     }
-    Ok(Grid { width: w, height: h, values: v, geotransform: [left, cell, 0.0, top, 0.0, -cell], crs, bands: Vec::new() })
+    Ok(Grid { width: w, height: h, values: v, geotransform: [left, cell, 0.0, top, 0.0, -cell], crs, bands: Vec::new(), meta: Default::default() })
 }
 
 // ---------- Point cloud to raster (PointCloudRasterizer) ----------
@@ -150,30 +150,31 @@ fn run_pc_raster(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         None => None,
     };
     let geographic = ctx.geographic(t.crs);
-    let mut points: Vec<(f64, f64, f64)> = Vec::with_capacity(t.len());
-    let (mut flat, mut not_points) = (0usize, 0usize);
-    for (i, f) in t.features.iter().enumerate() {
-        let Some((x, y)) = xy_of(f) else {
-            not_points += usize::from(f.geom.is_some());
-            continue;
-        };
-        let v = match &compiled {
-            Some(e) => match e.eval(&crate::expr::Row { feature: f, index: i, geographic })?.as_f64() {
-                Some(v) => v,
-                None => continue,
-            },
-            None if matches!(stat.as_str(), "count" | "density") => 0.0,
-            None => match z_of(f) {
-                Some(z) => z,
-                None => {
-                    flat += 1;
-                    continue;
-                }
-            },
-        };
-        points.push((x, y, v));
-    }
-    if flat > 0 && points.is_empty() {
+    let pts = crate::cloud::points_in(t);
+    let c = &pts.cloud;
+    // A value of each point: its height, a column of the cloud, or an expression of its
+    // attributes, worked out a point at a time.
+    let column = expr.as_deref().map(str::trim).and_then(|e| {
+        let name = e.trim_matches('"');
+        let fields = c.fields();
+        let i = fields.iter().position(|f| f.name == name)?;
+        (fields[i].ty != FieldType::Text).then_some(i)
+    });
+    let value = |i: usize| -> Option<f64> {
+        match (&compiled, column) {
+            (_, Some(k)) => c.number(i, k),
+            (Some(e), None) => {
+                let f = c.feature(i);
+                e.eval(&crate::expr::Row { feature: &f, index: i, geographic }).ok()?.as_f64()
+            }
+            (None, None) if matches!(stat.as_str(), "count" | "density") => Some(0.0),
+            (None, None) => (!c.z[i].is_nan()).then_some(c.z[i]),
+        }
+    };
+    let flat = if compiled.is_none() && !matches!(stat.as_str(), "count" | "density") { c.z.iter().filter(|z| z.is_nan()).count() } else { 0 };
+    let not_points = pts.left;
+    let used = (0..c.len()).filter(|i| value(*i).is_some()).count();
+    if flat > 0 && used == 0 {
         return err("The points have no heights. Read a point cloud (LAS or LAZ), or give the value as an attribute.");
     }
     if flat > 0 {
@@ -185,7 +186,7 @@ fn run_pc_raster(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     if geographic == Some(true) {
         ctx.notes.warn("The points are in degrees, so the cell size is in degrees too. Reproject them first to have cells in metres.");
     }
-    let mut g = rasterize_points(&points, cell, &stat, t.crs, None)?;
+    let mut g = rasterize_with(c.len(), &|i| Some((c.x[i], c.y[i], value(i)?)), cell, &stat, t.crs, None)?;
     let empty = g.values.iter().filter(|v| v.is_nan()).count();
     if fill > 0 {
         fill_holes(&mut g, fill);
@@ -194,7 +195,7 @@ fn run_pc_raster(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     match g.range() {
         Some((lo, hi)) => ctx.notes.info(format!(
             "{} points into {} × {} cells of {}, from {} to {}",
-            fmt_count(points.len() as u64),
+            fmt_count(used as u64),
             g.width,
             g.height,
             fmt_real(cell),
@@ -236,6 +237,7 @@ const HAG_PARAMS: &[ParamSpec] = &[
 
 fn run_hag(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let t = input(inp, "Points");
+    let pts = crate::cloud::points_in(t);
     let given = input(inp, "Ground");
     let name = p.get("name").filter(|n| !n.is_empty()).unwrap_or_else(|| "above_ground".into());
     let made;
@@ -260,20 +262,17 @@ fn run_hag(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
                 .map(|c| c.parse::<i64>().map_err(|_| GbError(format!("Ground points are given by class numbers, such as 2, not \"{}\".", c))))
                 .collect::<Result<_>>()?;
             let classes = if classes.is_empty() { vec![2] } else { classes };
-            let Some(at) = t.field_index("classification") else {
+            if t.points.is_none() && t.field_index("classification").is_none() {
                 return err("The points have no classification to find the ground by. Connect a terrain model to Ground.");
-            };
+            }
             let cell = number_param(p, "cell", "Ground cells")?.unwrap_or(1.0);
             if cell <= 0.0 {
                 return err("The ground cells must be more than 0.");
             }
-            let pts: Vec<(f64, f64, f64)> = t
-                .features
-                .iter()
-                .filter(|f| f.attrs[at].as_f64().is_some_and(|c| classes.contains(&(c as i64))))
-                .filter_map(|f| Some((xy_of(f)?.0, xy_of(f)?.1, z_of(f)?)))
-                .collect();
-            if pts.is_empty() {
+            let c = &pts.cloud;
+            let is_ground = |i: usize| classes.contains(&(c.class[i] as i64)) && !c.z[i].is_nan();
+            let n_ground = (0..c.len()).filter(|i| is_ground(*i)).count();
+            if n_ground == 0 {
                 return err(format!(
                     "No point is of the class {}, so there is no ground to measure from. Connect a terrain model to Ground, or choose other classes.",
                     classes.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(", ")
@@ -281,37 +280,39 @@ fn run_hag(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             }
             // Over all the points, so that roofs and trees beyond the ground points have ground.
             let mut all = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
-            for (x, y) in t.features.iter().filter_map(xy_of) {
-                all = [all[0].min(x), all[1].min(y), all[2].max(x), all[3].max(y)];
+            for i in 0..c.len() {
+                all = [all[0].min(c.x[i]), all[1].min(c.y[i]), all[2].max(c.x[i]), all[3].max(c.y[i])];
             }
-            let mut g = rasterize_points(&pts, cell, "min", t.crs, Some(all))?;
+            let mut g = rasterize_with(c.len(), &|i| is_ground(i).then(|| (c.x[i], c.y[i], c.z[i])), cell, "min", t.crs, Some(all))?;
             let rings = g.width.max(g.height);
             fill_holes(&mut g, rings);
-            ctx.notes.info(format!("The ground made of {} points, in cells of {}", fmt_count(pts.len() as u64), fmt_real(cell)));
+            ctx.notes.info(format!("The ground made of {} points, in cells of {}", fmt_count(n_ground as u64), fmt_real(cell)));
             made = g;
             &made
         }
     };
     let replace = p.get("replace").as_deref() == Some("heights");
-    let mut out = t.clone();
-    let slot = column(&mut out, &name, FieldType::Real);
-    let (mut done, mut outside, mut flat) = (0usize, 0usize, 0usize);
-    for f in out.features.iter_mut() {
-        let (Some((x, y)), Some(z)) = (xy_of(f), z_of(f)) else {
-            flat += usize::from(f.geom.is_some());
+    let c = &pts.cloud;
+    let (mut done, mut outside, mut flat) = (0usize, 0usize, pts.left);
+    let mut values = vec![Value::Null; c.len()];
+    let mut heights = if replace { c.z.clone() } else { Vec::new() };
+    for i in 0..c.len() {
+        if c.z[i].is_nan() {
+            flat += 1;
             continue;
-        };
-        let Some(gz) = ground.bilinear(x, y) else {
+        }
+        let Some(gz) = ground.bilinear(c.x[i], c.y[i]) else {
             outside += 1;
             continue;
         };
-        let above = ((z - gz as f64) * 1000.0).round() / 1000.0;
-        f.attrs[slot] = Value::Real(above);
+        let above = ((c.z[i] - gz as f64) * 1000.0).round() / 1000.0;
+        values[i] = Value::Real(above);
         if replace {
-            f.z = Some(Arc::from(vec![above]));
+            heights[i] = above;
         }
         done += 1;
     }
+    let out = pts.with_values(&name, FieldType::Real, &values, replace.then_some(heights.as_slice()));
     ctx.notes.info(format!("{} points measured from the ground", fmt_count(done as u64)));
     if outside > 0 {
         ctx.notes.warn(format!("{} points lie outside the ground or over empty cells, and got no height above it.", fmt_count(outside as u64)));
@@ -359,19 +360,23 @@ fn run_pc_filter(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         .iter()
         .map(|c| c.parse::<i64>().map_err(|_| GbError(format!("Classes are numbers, such as 2 or 6, not \"{}\".", c))))
         .collect::<Result<_>>()?;
-    let class_at = t.field_index("classification");
-    if !classes.is_empty() && class_at.is_none() {
+    let from_features = t.points.is_none();
+    if !classes.is_empty() && from_features && t.field_index("classification").is_none() {
         return err("The points have no classification. Read a classified point cloud, or leave Classes empty.");
     }
     let returns = p.get("returns").unwrap_or_else(|| "all".into());
-    let (ret_at, rets_at) = (t.field_index("return_number"), t.field_index("returns").or_else(|| t.field_index("number_of_returns")));
-    if returns != "all" && (ret_at.is_none() || rets_at.is_none()) {
+    if returns != "all"
+        && from_features
+        && (t.field_index("return_number").is_none() || (t.field_index("returns").is_none() && t.field_index("number_of_returns").is_none()))
+    {
         return err("The points do not say which return they are. Choose All returns.");
     }
     let zmin = number_param(p, "zmin", "Lowest height")?;
     let zmax = number_param(p, "zmax", "Highest height")?;
+    let pts = crate::cloud::points_in(t);
+    let c = &pts.cloud;
     let height_at = match p.get("height_of").filter(|h| !h.is_empty()) {
-        Some(h) => Some(t.field_index(&h).ok_or_else(|| GbError(format!("The points have no attribute {}.", h)))?),
+        Some(h) => Some(c.fields().iter().position(|f| f.name == h).ok_or_else(|| GbError(format!("The points have no attribute {}.", h)))?),
         None => None,
     };
     // The areas in the system of the points.
@@ -387,18 +392,15 @@ fn run_pc_filter(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     } else {
         None
     };
-    let num = |f: &Feature, i: Option<usize>| i.and_then(|i| f.attrs[i].as_f64());
-    let keep = |f: &Feature| -> bool {
-        if let Some(c) = class_at.filter(|_| !classes.is_empty()) {
-            if !f.attrs[c].as_f64().is_some_and(|v| classes.contains(&(v as i64))) {
-                return false;
-            }
+    let keep = |i: usize| -> bool {
+        if !classes.is_empty() && !classes.contains(&(c.class[i] as i64)) {
+            return false;
         }
-        let (r, n) = (num(f, ret_at).unwrap_or(1.0), num(f, rets_at).unwrap_or(1.0));
+        let (r, n) = (c.ret[i], c.rets[i]);
         let by_return = match returns.as_str() {
-            "first" => r == 1.0,
+            "first" => r == 1,
             "last" => r == n,
-            "single" => n == 1.0,
+            "single" => n == 1,
             _ => true,
         };
         if !by_return {
@@ -406,8 +408,8 @@ fn run_pc_filter(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         }
         if zmin.is_some() || zmax.is_some() {
             let z = match height_at {
-                Some(i) => f.attrs[i].as_f64(),
-                None => z_of(f),
+                Some(k) => c.number(i, k),
+                None => (!c.z[i].is_nan()).then_some(c.z[i]),
             };
             let Some(z) = z else { return false };
             if zmin.is_some_and(|m| z < m) || zmax.is_some_and(|m| z > m) {
@@ -415,22 +417,14 @@ fn run_pc_filter(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             }
         }
         if let Some(ix) = &index {
-            let Some((x, y)) = xy_of(f) else { return false };
-            if ix.containing(geo::Coord { x, y }).is_empty() {
+            if ix.containing(geo::Coord { x: c.x[i], y: c.y[i] }).is_empty() {
                 return false;
             }
         }
         true
     };
-    let (mut kept, mut other) = (t.like(), t.like());
-    for f in &t.features {
-        if keep(f) {
-            kept.features.push(f.clone());
-        } else {
-            other.features.push(f.clone());
-        }
-    }
-    ctx.notes.info(format!("{} of {} points kept", fmt_count(kept.len() as u64), fmt_count(t.len() as u64)));
+    let (kept, other) = pts.split(keep);
+    ctx.notes.info(format!("{} of {} points kept", fmt_count(kept.count() as u64), fmt_count(t.count() as u64)));
     Ok(vec![("Points".into(), kept), ("Other".into(), other)])
 }
 
@@ -490,6 +484,10 @@ pub(super) const TYPES: &[NodeType] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn z_of(f: &Feature) -> Option<f64> {
+        f.heights().and_then(|z| z.first().copied())
+    }
     use crate::model::{Field, Table};
     use geo::polygon;
 
@@ -569,7 +567,10 @@ mod tests {
         let mut notes = crate::io::Notes::default();
         let opts = crate::pointcloud::LasOpts { crs: Some(3006), ..Default::default() };
         let t = crate::pointcloud::read_las(&path, &opts, &mut notes, &|_, _| true).unwrap();
-        assert_eq!(t.len(), 102);
+        // Read as a cloud of columns, and as features for the tools that want them.
+        assert_eq!((t.len(), t.count()), (0, 102));
+        assert!(t.points.as_ref().unwrap().bytes() < 102 * 40);
+        let t = t.points.as_ref().unwrap().to_features(t.crs, 1);
         assert_eq!(z_of(&t.features[100]), Some(18.0));
         assert_eq!(t.features[100].attrs[0], Value::Int(5));
         assert_eq!(t.features[100].attrs[4], Value::Int(2), "two returns");

@@ -5,10 +5,9 @@
     {
       "id": "dem",
       "type": "Reader",
-      "name": "Terrain model",
       "x": 20,
       "y": 20,
-      "comment": "Only the part around the blocks",
+      "comment": "Terrain model. Only the part around the blocks",
       "params": {
         "path": "terrain.tif",
         "raster_as": "grid",
@@ -22,10 +21,9 @@
     {
       "id": "blocks",
       "type": "Reader",
-      "name": "Footprints",
       "x": 20,
       "y": 220,
-      "comment": "Made-up buildings with the number of floors",
+      "comment": "Footprints. Made-up buildings with the number of floors",
       "params": {
         "path": "blocks.geojson"
       }
@@ -33,52 +31,51 @@
     {
       "id": "lamps",
       "type": "Reader",
-      "name": "Street lamps",
       "x": 20,
       "y": 400,
       "params": {
         "path": "lamps.geojson"
-      }
+      },
+      "comment": "Street lamps"
     },
     {
       "id": "tin",
       "type": "TinGenerator",
-      "name": "TIN, 3D",
       "x": 280,
       "y": 20,
       "params": {
         "kind": "3d",
         "tolerance": "1.5",
         "most": "20000"
-      }
+      },
+      "comment": "TIN, 3D"
     },
     {
       "id": "tin2d",
       "type": "TinGenerator",
-      "name": "TIN, 2D with slope",
       "x": 280,
       "y": 120,
       "params": {
         "kind": "2d",
         "tolerance": "3"
-      }
+      },
+      "comment": "TIN, 2D with slope"
     },
     {
       "id": "extrude",
       "type": "Extruder",
-      "name": "Blocks on the terrain",
       "x": 280,
       "y": 220,
       "params": {
         "height": "floors * 3.2",
         "base": "terrain",
         "name": "id"
-      }
+      },
+      "comment": "Blocks on the terrain"
     },
     {
       "id": "scene",
       "type": "SceneRenderer",
-      "name": "Blocks on the TIN",
       "x": 540,
       "y": 120,
       "params": {
@@ -92,45 +89,45 @@
         "time": "16:00",
         "background": "sky",
         "quality": "4"
-      }
+      },
+      "comment": "Blocks on the TIN"
     },
     {
       "id": "png",
       "type": "Writer",
-      "name": "Picture",
       "x": 800,
       "y": 120,
       "params": {
         "path": "out/blocks_on_tin.png"
-      }
+      },
+      "comment": "Picture"
     },
     {
       "id": "gpkg",
       "type": "Writer",
-      "name": "Triangles",
       "x": 540,
       "y": 20,
       "params": {
         "path": "out/tin.gpkg"
-      }
+      },
+      "comment": "Triangles"
     },
     {
       "id": "glb",
       "type": "Writer",
-      "name": "Blocks as glTF",
       "x": 540,
       "y": 300,
       "params": {
         "path": "out/blocks.glb"
-      }
+      },
+      "comment": "Blocks as glTF"
     },
     {
       "id": "dusk",
       "type": "SceneRenderer",
-      "name": "At dusk",
       "x": 540,
       "y": 520,
-      "comment": "The sun just below the horizon: lit windows, street lamps and a shallow depth of field",
+      "comment": "At dusk. The sun just below the horizon: lit windows, street lamps and a shallow depth of field",
       "params": {
         "width": "1400",
         "height": "900",
@@ -150,12 +147,12 @@
     {
       "id": "duskpng",
       "type": "Writer",
-      "name": "Dusk picture",
       "x": 800,
       "y": 520,
       "params": {
         "path": "out/blocks_at_dusk.png"
-      }
+      },
+      "comment": "Dusk picture"
     }
   ],
   "edges": [

@@ -189,6 +189,9 @@ pub struct Part {
     pub from: String,
     /// The name of the node it comes from, and the port when the node has several.
     pub label: String,
+    /// A title for it in a report or on a slide: the name of the node when it has one,
+    /// otherwise its comment when that is a short line, otherwise the name of the tool.
+    pub heading: String,
     pub table: Arc<Table>,
 }
 
@@ -252,6 +255,9 @@ pub fn reproject(table: &Table, to: u32, backend: Option<&dyn Backend>) -> Resul
         return Ok(table.clone());
     }
     let b = backend.ok_or_else(|| GbError("Reprojecting between coordinate systems needs the GDAL support, which is not loaded.".into()))?;
+    if let Some(c) = &table.points {
+        return Ok(crate::cloud::reproject(c, from, to, Some(b))?.into_table(Some(to)));
+    }
     // A grid or a picture is warped into the new system, cell by cell, and the stream is its
     // new outline.
     if let Some(image) = &table.image {
@@ -307,6 +313,30 @@ pub fn merge_tables(tables: Vec<Arc<Table>>, backend: Option<&dyn Backend>, what
         };
         return Ok(Arc::new(img.into_table_with(tables[0].crs, grid)));
     }
+    // Point clouds, such as the tiles of a laser scanning, are put together into one, in the
+    // coordinate system of the first.
+    if tables.iter().all(|t| t.points.is_some()) {
+        let crs = tables[0].crs;
+        let mut all = crate::cloud::Cloud::default();
+        for (k, t) in tables.iter().enumerate() {
+            let c = t.points.as_deref().expect("a cloud");
+            let moved;
+            let c = match (t.crs, crs) {
+                (Some(from), Some(to)) if from != to => {
+                    moved = crate::cloud::reproject(c, from, to, backend)?;
+                    &moved
+                }
+                _ => c,
+            };
+            if k == 0 {
+                all = c.clone();
+            } else {
+                all.append(c);
+            }
+        }
+        notes.info(format!("{} point clouds put together, {} points", tables.len(), crate::model::fmt_count(all.len() as u64)));
+        return Ok(Arc::new(all.into_table(crs)));
+    }
     // Grids, such as the tiles of a terrain model, are put together into one grid.
     if tables.iter().all(|t| t.grid.is_some()) {
         let grids: Vec<&crate::model::Grid> = tables.iter().filter_map(|t| t.grid.as_deref()).collect();
@@ -329,6 +359,8 @@ pub fn merge_tables(tables: Vec<Arc<Table>>, backend: Option<&dyn Backend>, what
     let crs = tables.iter().find(|t| t.crs.is_some() && !t.is_empty()).or_else(|| tables.iter().find(|t| t.crs.is_some())).and_then(|t| t.crs);
     let mut out = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: Vec::new(),
         crs,
         features: Vec::new(),
@@ -639,6 +671,7 @@ mod props;
 mod raster;
 mod raster089;
 mod raster090;
+mod remote;
 mod scene;
 mod solid;
 #[cfg(test)]
@@ -647,6 +680,7 @@ mod tests086;
 mod tests087;
 mod tools088;
 mod tools091;
+mod vector093;
 pub mod vector_tiles;
 #[cfg(test)]
 pub(crate) use solid::add_block;
@@ -701,6 +735,8 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         overture_dl::TYPES,
         raster089::TYPES,
         raster090::TYPES,
+        remote::TYPES,
+        vector093::TYPES,
         pointcloud089::TYPES,
         pointcloud090::TYPES,
         osm::TYPES,
@@ -736,7 +772,7 @@ pub(crate) fn run_for_test_with(kind: &str, values: Params, given: Vec<(&'static
     let mut parts = Vec::new();
     for (port, table) in given {
         let table = Arc::new(table);
-        parts.push(Part { port, from: format!("test:{}", port), label: port.to_string(), table: table.clone() });
+        parts.push(Part { port, from: format!("test:{}", port), label: port.to_string(), heading: port.to_string(), table: table.clone() });
         inp.insert(port, table);
     }
     let (stop, pause) = (std::sync::atomic::AtomicBool::new(false), std::sync::atomic::AtomicBool::new(false));

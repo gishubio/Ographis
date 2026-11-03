@@ -1,0 +1,48 @@
+{
+  "format": "ographis/1",
+  "name": "Towns and routes in Skaraborg",
+  "nodes": [
+    { "id": "towns", "type": "Reader", "name": "Towns", "x": 20, "y": 20, "params": { "path": "towns.csv", "crs": "EPSG:4326" } },
+    { "id": "towns_sweref", "type": "Reprojector", "name": "Towns to SWEREF", "x": 232, "y": 20, "params": { "crs": "EPSG:3006" } },
+    { "id": "clip_towns", "type": "Clipper", "name": "Clip towns", "x": 656, "y": 20, "params": {} },
+    { "id": "join", "type": "FeatureMerger", "name": "Join municipality code", "x": 868, "y": 20, "params": { "requestor_key": "municipality", "supplier_key": "municipality" } },
+    { "id": "thousands", "type": "AttributeCreator", "name": "Population in thousands", "x": 1080, "y": 20, "params": { "name": "pop_thousands", "expression": "round(population / 1000, 1)" } },
+    { "id": "out_towns", "type": "Writer", "name": "Towns in Skaraborg", "x": 1292, "y": 20, "params": { "path": "out/skaraborg.gpkg", "layer": "towns" } },
+
+    { "id": "municipalities", "type": "Reader", "name": "Municipalities", "x": 656, "y": 200, "params": { "path": "municipalities.csv" } },
+    { "id": "outside", "type": "AttributeManager", "name": "Choose attributes", "x": 868, "y": 200, "params": { "attributes": [{ "name": "name", "action": "rename", "to": "town" }, { "name": "municipality" }, { "name": "population" }], "others": "remove" } },
+    { "id": "out_outside", "type": "Writer", "name": "Towns outside", "x": 1080, "y": 200, "params": { "path": "out/towns_outside.csv", "encoding": "utf-8-bom" } },
+
+    { "id": "subregions", "type": "Reader", "name": "Subregions", "x": 20, "y": 230, "params": { "path": "subregions.gpkg", "layer": "subregions" } },
+    { "id": "areas_sweref", "type": "Reprojector", "name": "Areas to SWEREF", "x": 232, "y": 230, "params": { "crs": "EPSG:3006" } },
+    { "id": "skaraborg", "type": "Tester", "name": "Only Skaraborg", "x": 444, "y": 230, "params": { "test": "subregion = 'Skaraborg'" } },
+    { "id": "area", "type": "AreaCalculator", "name": "Calculate area", "x": 656, "y": 350, "params": { "name": "area_km2", "unit": "km2" } },
+    { "id": "out_area", "type": "Writer", "name": "Skaraborg area", "x": 868, "y": 350, "params": { "path": "out/skaraborg_area.shp" } },
+
+    { "id": "routes", "type": "Reader", "name": "Routes", "x": 20, "y": 500, "params": { "path": "routes.shp" } },
+    { "id": "clip_routes", "type": "Clipper", "name": "Clip routes", "x": 656, "y": 500, "params": {} },
+    { "id": "length", "type": "LengthCalculator", "name": "Calculate length", "x": 868, "y": 500, "params": { "name": "length_km", "unit": "km" } },
+    { "id": "out_routes", "type": "Writer", "name": "Routes in Skaraborg", "x": 1080, "y": 500, "params": { "path": "out/skaraborg.gpkg", "layer": "routes" } }
+  ],
+  "edges": [
+    { "from": ["towns", "Output"], "to": ["towns_sweref", "Input"] },
+    { "from": ["towns_sweref", "Reprojected"], "to": ["clip_towns", "Clippee"] },
+    { "from": ["skaraborg", "Passed"], "to": ["clip_towns", "Clipper"] },
+    { "from": ["clip_towns", "Inside"], "to": ["join", "Requestor"] },
+    { "from": ["municipalities", "Output"], "to": ["join", "Supplier"] },
+    { "from": ["join", "Merged"], "to": ["thousands", "Input"] },
+    { "from": ["thousands", "Output"], "to": ["out_towns", "Input"] },
+    { "from": ["clip_towns", "Outside"], "to": ["outside", "Input"] },
+    { "from": ["outside", "Output"], "to": ["out_outside", "Input"] },
+
+    { "from": ["subregions", "Output"], "to": ["areas_sweref", "Input"] },
+    { "from": ["areas_sweref", "Reprojected"], "to": ["skaraborg", "Input"] },
+    { "from": ["skaraborg", "Passed"], "to": ["area", "Input"] },
+    { "from": ["area", "Output"], "to": ["out_area", "Input"] },
+
+    { "from": ["skaraborg", "Passed"], "to": ["clip_routes", "Clipper"] },
+    { "from": ["routes", "Output"], "to": ["clip_routes", "Clippee"] },
+    { "from": ["clip_routes", "Inside"], "to": ["length", "Input"] },
+    { "from": ["length", "Output"], "to": ["out_routes", "Input"] }
+  ]
+}

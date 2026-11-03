@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.92.0. Written by og schema.",
+  "description": "A model of Ographis 0.93.0. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -205,6 +205,19 @@
             "RasterResampler",
             "RasterFiller",
             "Watershed",
+            "SceneReader",
+            "CloudMasker",
+            "SpectralIndex",
+            "TemporalComposite",
+            "TopologyChecker",
+            "SliverEliminator",
+            "LineMerger",
+            "PointsAlongLines",
+            "LineOffsetter",
+            "LineLocator",
+            "EventPlacer",
+            "Pivoter",
+            "Unpivoter",
             "PointCloudRasterizer",
             "HeightAboveGround",
             "PointCloudFilter",
@@ -1412,7 +1425,7 @@
                   },
                   "titles": {
                     "title": "Titles above the pictures",
-                    "description": "one of the values in choices, as a string. The name of the tool each picture comes from, such as Draw map or Render 3D scene: name the tools as the slides should be called",
+                    "description": "one of the values in choices, as a string. The name of the tool each picture comes from, or its comment when it has no name of its own",
                     "anyOf": [
                       {
                         "enum": [
@@ -1668,7 +1681,7 @@
                   },
                   "headings": {
                     "title": "Headings",
-                    "description": "one of the values in choices, as a string. Each section under the name of the tool it comes from: name the tools as the sections should be called",
+                    "description": "one of the values in choices, as a string. Each section under the name of the tool it comes from, or its comment when the tool has no name of its own",
                     "anyOf": [
                       {
                         "enum": [
@@ -6975,7 +6988,7 @@
                   },
                   "across": {
                     "title": "Pixels or plates across",
-                    "description": "a string. The Commodore 64 had 160 wide pixels across in colour; a LEGO base plate has 48 studs",
+                    "description": "a string. 8 bit retro style has 160 wide pixels across; a LEGO base plate has 48 studs",
                     "default": "160"
                   },
                   "dither": {
@@ -8034,6 +8047,590 @@
                     "title": "Without outlets, smallest",
                     "description": "a string. Square kilometres: without outlets on Outlets, each area that drains to the edge of the terrain this large or larger is a catchment",
                     "default": "1"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "SceneReader"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "bands": {
+                    "title": "Bands",
+                    "description": "a string. The files of the items to read, by name, separated by commas: red, green, blue, nir, swir16 and scl at Element 84; B04, B08 and SCL at Copernicus",
+                    "default": "red, nir, scl"
+                  },
+                  "cell": {
+                    "title": "Cell size",
+                    "description": "a string. In metres. Sentinel-2 has 10 m for red, green, blue and nir, 20 m for the others",
+                    "default": "10"
+                  },
+                  "crs": {
+                    "title": "Coordinate system",
+                    "description": "a coordinate system, such as \"EPSG:3006\". Of the grid. Empty: that of Extent, or SWEREF 99 TM when it is in degrees"
+                  },
+                  "bbox": {
+                    "title": "Area in degrees",
+                    "description": "a string. West, south, east and north, when nothing is connected to Extent"
+                  },
+                  "scale": {
+                    "title": "Scale",
+                    "description": "a string. The values of the bands are multiplied by it, to reflectance from 0 to 1. Classes, such as scl, are not",
+                    "default": "0.0001"
+                  },
+                  "offset": {
+                    "title": "Offset",
+                    "description": "a string. Added after the scale. Sentinel-2 from 2022 at Copernicus has −0.1; Element 84 has already taken it away",
+                    "default": "0"
+                  },
+                  "most": {
+                    "title": "At most pictures",
+                    "description": "a string. The first by time; each is read over the web",
+                    "default": "20"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "CloudMasker"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "mask": {
+                    "title": "Mask",
+                    "description": "some of the values in choices: a list of strings, or one string separated by commas. Cells of these become empty in every band",
+                    "default": "cloud, shadow, cirrus"
+                  },
+                  "grow": {
+                    "title": "Grow the mask by",
+                    "description": "a string. Cells around each masked cell, for the edges of clouds",
+                    "default": "0"
+                  },
+                  "least": {
+                    "title": "Least clear share",
+                    "description": "a string. In percent: pictures with less of the area left are left out",
+                    "default": "0"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "SpectralIndex"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "index": {
+                    "title": "Index",
+                    "description": "one of the values in choices, as a string. The bands are found by their names, for Sentinel-2 and Landsat alike",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ndvi",
+                          "ndwi",
+                          "ndmi",
+                          "ndbi",
+                          "nbr",
+                          "evi",
+                          "savi",
+                          "own"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "ndvi"
+                  },
+                  "expression": {
+                    "title": "Expression",
+                    "description": "a string. With the names of the bands, such as (nir - red) / (nir + red)"
+                  },
+                  "name": {
+                    "title": "Name of the band",
+                    "description": "a string. Empty: the name of the index"
+                  },
+                  "keep": {
+                    "title": "The other bands",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "keep",
+                          "drop"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "keep"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "TemporalComposite"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "title": "Each cell gets",
+                    "description": "one of the values in choices, as a string. Of the values it has over the time",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "median",
+                          "mean",
+                          "max",
+                          "min",
+                          "greenest"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "median"
+                  },
+                  "period": {
+                    "title": "Period",
+                    "description": "one of the values in choices, as a string. A picture for each, named by its first day",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "all",
+                          "month",
+                          "season",
+                          "year"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "all"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "TopologyChecker"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "title": "Name the areas by",
+                    "description": "the name of one attribute of the stream on the port. An attribute such as a property id. Empty: their numbers from 1"
+                  },
+                  "smallest": {
+                    "title": "Leave out smaller than",
+                    "description": "a string. Overlaps and gaps of less area than this are not reported: the noise of coordinates",
+                    "default": "0"
+                  },
+                  "largest_gap": {
+                    "title": "Gaps up to",
+                    "description": "a string. Holes larger than this are taken to be meant, such as a lake. Empty: every hole is a gap"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "SliverEliminator"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "area": {
+                    "title": "Smaller than",
+                    "description": "a string. Areas of less than this are slivers, in square units of the coordinate system"
+                  },
+                  "thin": {
+                    "title": "Or thinner than",
+                    "description": "a string. From 0 to 1: how round an area is, 1 for a circle. A long thin strip is below 0.1"
+                  },
+                  "into": {
+                    "title": "Merged into",
+                    "description": "one of the values in choices, as a string. It keeps the attributes of that one",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "border",
+                          "largest"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "border"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "LineMerger"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "group_by": {
+                    "title": "Group by",
+                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. Only lines with the same values are merged, such as the name of a street. Empty merges all"
+                  },
+                  "tolerance": {
+                    "title": "Ends within",
+                    "description": "a string. Ends this close count as the same point. 0: only ends that are equal",
+                    "default": "0"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "PointsAlongLines"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "distance": {
+                    "title": "Every",
+                    "description": "a string. A point at this distance along each line, from its start",
+                    "default": "100"
+                  },
+                  "start": {
+                    "title": "First at",
+                    "description": "a string. The distance from the start of the first point",
+                    "default": "0"
+                  },
+                  "end": {
+                    "title": "A point at the end",
+                    "description": "one of the values in choices, as a string. Also where the line ends",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "LineOffsetter"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "distance": {
+                    "title": "Distance",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". To the left of the direction of the line; a negative number to the right. Or an attribute, such as half the width of a road",
+                    "default": "5"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "LineLocator"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "title": "Line key",
+                    "description": "the name of one attribute of the stream on the port. Such as the id of a road, which each point gets. Empty: the number of the line"
+                  },
+                  "within": {
+                    "title": "Within",
+                    "description": "a string. Points further from every line are left out",
+                    "default": "50"
+                  },
+                  "measure": {
+                    "title": "Measure as",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "metres",
+                          "share"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "metres"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "EventPlacer"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "event_key": {
+                    "title": "Line key of the events",
+                    "description": "the name of one attribute of the stream on the port. Which line each event is on, such as a road id"
+                  },
+                  "line_key": {
+                    "title": "Line key of the lines",
+                    "description": "the name of one attribute of the stream on the port. The same, among the attributes of the lines"
+                  },
+                  "from": {
+                    "title": "From",
+                    "description": "the name of one attribute of the stream on the port. Where the event is along the line, or where a stretch begins"
+                  },
+                  "to": {
+                    "title": "To",
+                    "description": "the name of one attribute of the stream on the port. Where a stretch ends. Empty: the events are points"
+                  },
+                  "measure": {
+                    "title": "Measures are",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "metres",
+                          "share"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "metres"
+                  },
+                  "offset": {
+                    "title": "To the side",
+                    "description": "a string. Moves points and stretches to the left of the line, or the right with a negative number",
+                    "default": "0"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Pivoter"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "group_by": {
+                    "title": "A row for each",
+                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. Such as the municipality code"
+                  },
+                  "names": {
+                    "title": "Columns from",
+                    "description": "the name of one attribute of the stream on the port. Each value becomes a column, such as each year"
+                  },
+                  "values": {
+                    "title": "Values from",
+                    "description": "the name of one attribute of the stream on the port. What goes in the columns, such as the population"
+                  },
+                  "how": {
+                    "title": "When there are several",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "first",
+                          "sum",
+                          "mean",
+                          "min",
+                          "max",
+                          "count"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "first"
+                  },
+                  "prefix": {
+                    "title": "Before the names",
+                    "description": "a string. Such as y_, so that a year becomes y_2026"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Unpivoter"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "attributes": {
+                    "title": "Attributes to rows",
+                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. Each becomes a row of its own, such as one for each year"
+                  },
+                  "name": {
+                    "title": "Name of the name column",
+                    "description": "a string. Gets the name of the attribute",
+                    "default": "name"
+                  },
+                  "value": {
+                    "title": "Name of the value column",
+                    "description": "a string. Gets its value",
+                    "default": "value"
+                  },
+                  "strip": {
+                    "title": "Take away from the names",
+                    "description": "a string. Such as y_, so that y_2026 becomes 2026"
+                  },
+                  "empty": {
+                    "title": "Empty values",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "keep",
+                          "drop"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "keep"
                   }
                 }
               }

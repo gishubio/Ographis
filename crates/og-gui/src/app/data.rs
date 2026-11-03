@@ -219,7 +219,10 @@ impl App {
                                 None => crs_label(t.crs),
                             }
                         };
-                        let meta = if kinds.is_empty() { system } else { format!("{} · {}", system, kinds) };
+                        let mut meta = if kinds.is_empty() { system } else { format!("{} · {}", system, kinds) };
+                        if let Some((every, total)) = self.cloud_totals.borrow().get(&(Arc::as_ptr(t) as usize)) {
+                            meta.push_str(&format!(" · every {}th of {} points shown", every, fmt_count(*total as u64)));
+                        }
                         ui.label(RichText::new(meta).font(theme::mono(12.0)).color(pal.muted));
                         ui.add_space(6.0);
                         if ui
@@ -251,6 +254,12 @@ impl App {
                 }
                 if self.map.maps != self.settings.maps {
                     self.map.maps = self.settings.maps.clone();
+                }
+                let want = crate::settings::default_background(&self.settings);
+                if self.map.applied_default.as_deref() != Some(want.as_str()) {
+                    self.map.osm = want != "none";
+                    self.map.background = (want != "none" && want != "osm").then(|| want.clone());
+                    self.map.applied_default = Some(want);
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| self.map.controls(ui));
             });
@@ -783,7 +792,8 @@ pub(super) fn together(ports: &[(String, Arc<Table>)], chosen: usize, keys: Vec<
     }
     // Models first, in the order they are merged, so that their faces are not drawn twice.
     tables.sort_by_key(|(i, t)| (t.mesh.is_none(), *i != chosen, *i));
-    let mut out = Table { fields: base.fields.clone(), crs, features: Vec::new(), raster: false, image: None, grid: None, mesh: None };
+    let mut out =
+        Table { fields: base.fields.clone(), crs, features: Vec::new(), raster: false, image: None, grid: None, mesh: None, points: None, series: None };
     let (mut offset, mut len, mut models) = (0, 0, 0);
     let mut meshes = Vec::new();
     for (i, t) in &tables {

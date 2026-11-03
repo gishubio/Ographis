@@ -220,6 +220,14 @@ pub struct Table {
     /// A 3D model of triangles that goes with the stream, such as a building read from an
     /// OBJ file. The features are then its objects.
     pub mesh: Option<std::sync::Arc<crate::mesh::Mesh>>,
+    /// A point cloud, kept as columns rather than a feature for each point, so that tens of
+    /// millions fit in memory. The features are then empty; the fields name its columns. The
+    /// tools for point clouds work on it, and other tools get it as features.
+    pub points: Option<std::sync::Arc<crate::cloud::Cloud>>,
+    /// Grids that follow one another in time, such as the satellite pictures of a summer,
+    /// each with its time and the names of its bands. `grid` is then the first, and there is
+    /// a feature for each: its outline, with its time.
+    pub series: Option<std::sync::Arc<Vec<Grid>>>,
 }
 
 /// Values on a regular grid, such as the heights of a terrain model.
@@ -237,6 +245,42 @@ pub struct Grid {
     /// The values of the further bands of a raster with several, band 2 first, each as
     /// `values`. Empty for one band.
     pub bands: Vec<Vec<f32>>,
+    /// What the bands are and when the picture was taken, when that is known.
+    pub meta: GridMeta,
+}
+
+/// What the bands of a grid are, such as B04 and B08 of Sentinel-2, and the time of the
+/// picture, so that a stream of grids can be a series in time.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct GridMeta {
+    /// The name of each band, the first band first. Empty when they have none.
+    pub names: Vec<String>,
+    /// When the picture was taken, as ISO 8601, such as 2026-07-01T10:30:00Z.
+    pub time: Option<String>,
+}
+
+impl Grid {
+    /// The values of a band by its number from 0.
+    pub fn band(&self, i: usize) -> Option<&Vec<f32>> {
+        if i == 0 {
+            Some(&self.values)
+        } else {
+            self.bands.get(i - 1)
+        }
+    }
+    /// How many bands the grid has.
+    pub fn band_count(&self) -> usize {
+        1 + self.bands.len()
+    }
+    /// The number of a band by its name, ignoring case, or by "band_3" or "3".
+    pub fn band_index(&self, name: &str) -> Option<usize> {
+        let n = name.trim();
+        if let Some(i) = self.meta.names.iter().position(|b| b.eq_ignore_ascii_case(n)) {
+            return Some(i);
+        }
+        let k = n.strip_prefix("band_").unwrap_or(n).parse::<usize>().ok()?;
+        (k >= 1 && k <= self.band_count()).then(|| k - 1)
+    }
 }
 
 impl Grid {
@@ -293,7 +337,7 @@ impl Grid {
 
     /// A grid with no values yet, every cell empty.
     pub fn blank(width: usize, height: usize, geotransform: [f64; 6], crs: Option<u32>) -> Grid {
-        Grid { width, height, values: vec![f32::NAN; width * height], geotransform, crs, bands: Vec::new() }
+        Grid { width, height, values: vec![f32::NAN; width * height], geotransform, crs, bands: Vec::new(), meta: Default::default() }
     }
 
     /// Whether the grid is turned, so that its rows do not run east and west.
@@ -364,7 +408,7 @@ impl Grid {
                 values[row * width + col] = grids.iter().find_map(|g| g.at(x, y)).unwrap_or(f32::NAN);
             }
         }
-        Some(Grid { bands: Vec::new(), width, height, values, geotransform: [left, size, 0.0, top, 0.0, -size], crs: first.crs })
+        Some(Grid { bands: Vec::new(), meta: Default::default(), width, height, values, geotransform: [left, size, 0.0, top, 0.0, -size], crs: first.crs })
     }
 
     /// The grid as a stream: one feature, its outline, with its size and the range of values.
@@ -386,7 +430,17 @@ impl Grid {
             range.map_or(Value::Null, |r| Value::Real((r.1 as f64 * 100.0).round() / 100.0)),
         ];
         let feature = Feature { z: None, attrs, geom: Some(geo::Geometry::Polygon(self.outline())) };
-        Table { mesh: None, fields, crs: self.crs, features: vec![feature], raster: false, image: None, grid: Some(std::sync::Arc::new(self)) }
+        Table {
+            mesh: None,
+            points: None,
+            series: None,
+            fields,
+            crs: self.crs,
+            features: vec![feature],
+            raster: false,
+            image: None,
+            grid: Some(std::sync::Arc::new(self)),
+        }
     }
 }
 
@@ -438,7 +492,17 @@ impl RasterImage {
         let g = &self.geotransform;
         let attrs = vec![Value::Int(self.width as i64), Value::Int(self.height as i64), Value::Real((g[1] * g[1] + g[4] * g[4]).sqrt())];
         let feature = Feature { z: None, attrs, geom: Some(geo::Geometry::Polygon(self.outline())) };
-        Table { mesh: None, fields, crs, features: vec![feature], raster: false, image: Some(std::sync::Arc::new(self)), grid: None }
+        Table {
+            mesh: None,
+            points: None,
+            series: None,
+            fields,
+            crs,
+            features: vec![feature],
+            raster: false,
+            image: Some(std::sync::Arc::new(self)),
+            grid: None,
+        }
     }
     /// The image with the values of its cells: a picture that is shown, and the values
     /// that a click on the map tells, and that Shade terrain and the like can use.
@@ -452,6 +516,37 @@ impl RasterImage {
 impl Table {
     pub fn len(&self) -> usize {
         self.features.len()
+    }
+    /// About how many bytes the stream takes in memory: its features, cloud, grids, picture
+    /// and 3D model. For the log, so that what fills the memory can be found.
+    pub fn approx_bytes(&self) -> usize {
+        let value = |v: &Value| std::mem::size_of::<Value>() + if let Value::Text(t) = v { t.len() } else { 0 };
+        // The size of the features from a sample of them, as large streams are many.
+        let n = self.features.len();
+        let step = (n / 2000).max(1);
+        let sample: usize = self
+            .features
+            .iter()
+            .step_by(step)
+            .map(|f| {
+                std::mem::size_of::<Feature>()
+                    + f.attrs.iter().map(value).sum::<usize>()
+                    + f.geom.as_ref().map_or(0, |g| crate::geom::coord_count(g) * 16 + 64)
+                    + f.z.as_ref().map_or(0, |z| z.len() * 8)
+            })
+            .sum();
+        let features = if n == 0 { 0 } else { sample * n / n.div_ceil(step) };
+        let grid = |g: &Grid| (g.values.len() + g.bands.iter().map(|b| b.len()).sum::<usize>()) * 4;
+        features
+            + self.points.as_ref().map_or(0, |c| c.bytes())
+            + self.grid.as_deref().map_or(0, grid)
+            + self.series.as_ref().map_or(0, |s| s.iter().skip(1).map(grid).sum())
+            + self.image.as_ref().map_or(0, |i| i.rgba.len())
+            + self.mesh.as_ref().map_or(0, |m| m.positions.len() * 24 + m.tris.len() * std::mem::size_of::<crate::mesh::Tri>())
+    }
+    /// How many rows the stream has: its features, or the points of its point cloud.
+    pub fn count(&self) -> usize {
+        self.points.as_ref().map_or(self.features.len(), |c| c.len())
     }
     pub fn is_empty(&self) -> bool {
         self.features.is_empty()
@@ -481,10 +576,20 @@ impl Table {
     }
     /// The same schema and coordinate system, but no features.
     pub fn like(&self) -> Table {
-        Table { mesh: None, fields: self.fields.clone(), crs: self.crs, features: Vec::new(), raster: self.raster, image: None, grid: None }
+        Table {
+            mesh: None,
+            points: None,
+            series: None,
+            fields: self.fields.clone(),
+            crs: self.crs,
+            features: Vec::new(),
+            raster: self.raster,
+            image: None,
+            grid: None,
+        }
     }
     pub fn has_geometry(&self) -> bool {
-        self.features.iter().any(|f| f.geom.is_some())
+        self.points.as_ref().is_some_and(|c| !c.is_empty()) || self.features.iter().any(|f| f.geom.is_some())
     }
 }
 

@@ -5,61 +5,60 @@
     {
       "id": "routes",
       "type": "Reader",
-      "name": "Routes",
       "x": 20,
       "y": 20,
       "params": {
         "path": "routes.shp"
-      }
+      },
+      "comment": "Routes"
     },
     {
       "id": "areas",
       "type": "Reader",
-      "name": "Subregions",
       "x": 20,
       "y": 200,
       "params": {
         "path": "subregions.gpkg"
-      }
+      },
+      "comment": "Subregions"
     },
     {
       "id": "towns",
       "type": "Reader",
-      "name": "Towns",
       "x": 20,
       "y": 380,
       "params": {
         "path": "towns.csv",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "Towns"
     },
     {
       "id": "routes_sweref",
       "type": "Reprojector",
-      "name": "Routes to SWEREF",
       "x": 260,
       "y": 20,
       "params": {
         "crs": "EPSG:3006"
-      }
+      },
+      "comment": "Routes to SWEREF"
     },
     {
       "id": "towns_sweref",
       "type": "Reprojector",
-      "name": "Towns to SWEREF",
       "x": 260,
       "y": 380,
       "params": {
         "crs": "EPSG:3006"
-      }
+      },
+      "comment": "Towns to SWEREF"
     },
     {
       "id": "cut",
       "type": "Intersector",
-      "name": "Routes cut by subregion",
       "x": 500,
       "y": 20,
-      "comment": "Each route in pieces, one in each subregion it runs through",
+      "comment": "Routes cut by subregion. Each route in pieces, one in each subregion it runs through",
       "params": {
         "attributes": "subregion"
       }
@@ -67,26 +66,25 @@
     {
       "id": "length",
       "type": "LengthCalculator",
-      "name": "Length of each piece",
       "x": 740,
       "y": 20,
-      "params": {}
+      "params": {},
+      "comment": "Length of each piece"
     },
     {
       "id": "km",
       "type": "StatisticsCalculator",
-      "name": "Route length per subregion",
       "x": 980,
       "y": 20,
       "params": {
         "attributes": "_length",
         "group_by": "subregion"
-      }
+      },
+      "comment": "Route length per subregion"
     },
     {
       "id": "crossing",
       "type": "SpatialJoiner",
-      "name": "Which routes cross each subregion",
       "x": 500,
       "y": 200,
       "params": {
@@ -94,53 +92,54 @@
         "mode": "summary",
         "count": "routes",
         "attributes": "name"
-      }
+      },
+      "comment": "Which routes cross each subregion"
     },
     {
       "id": "where",
       "type": "SpatialJoiner",
-      "name": "The subregion of each town",
       "x": 500,
       "y": 380,
       "params": {
         "relation": "within",
         "attributes": "subregion"
-      }
+      },
+      "comment": "The subregion of each town"
     },
     {
       "id": "hull",
       "type": "ConcaveHuller",
-      "name": "The spread of the towns",
       "x": 740,
       "y": 380,
       "params": {
         "group_by": "subregion",
         "concavity": "2"
-      }
+      },
+      "comment": "The spread of the towns"
     },
     {
       "id": "convex",
       "type": "ConvexHuller",
-      "name": "All towns",
       "x": 740,
       "y": 520,
-      "params": {}
+      "params": {},
+      "comment": "All towns"
     },
     {
       "id": "segments",
       "type": "LineExploder",
-      "name": "Segments of the routes",
       "x": 260,
       "y": 140,
-      "params": {}
+      "params": {},
+      "comment": "Segments of the routes"
     },
     {
       "id": "view",
       "type": "Viewer",
-      "name": "Look at it",
       "x": 1220,
       "y": 200,
-      "params": {}
+      "params": {},
+      "comment": "Look at it"
     }
   ],
   "edges": [

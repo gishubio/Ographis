@@ -865,7 +865,7 @@ impl Viewer<'_> {
             .and_then(|r| r.nodes.get(&n.id))
             .filter(|r| r.status == Status::Ok || r.status == Status::Warn)
             .and_then(|r| r.outputs.get(port))
-            .map(|t| t.len())
+            .map(|t| t.count())
     }
 
     /// The group boxes: drawn under the nodes, moved by the strip with the name and

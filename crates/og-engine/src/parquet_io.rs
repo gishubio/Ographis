@@ -401,7 +401,17 @@ pub fn read_parquet_from<R: parquet::file::reader::ChunkReader + 'static>(
     ));
     going(features.len() as u64, Some(total));
     // Booleans are kept as they are: true and false.
-    Ok(Table { fields, crs: if geom_col.is_some() { crs } else { None }, features, raster: false, image: None, grid: None, mesh: None })
+    Ok(Table {
+        fields,
+        crs: if geom_col.is_some() { crs } else { None },
+        features,
+        raster: false,
+        image: None,
+        grid: None,
+        mesh: None,
+        points: None,
+        series: None,
+    })
 }
 
 /// A geometry as ISO WKB, little-endian, with heights when `z` has one for each coordinate in

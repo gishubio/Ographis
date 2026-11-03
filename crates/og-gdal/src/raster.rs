@@ -174,6 +174,8 @@ pub fn read(path: &Path, opts: &ReadOpts, notes: &mut Notes) -> Result<Table> {
         let geom = square(&gt, 0.0, 0.0, w as f64, h as f64);
         return Ok(Table {
             mesh: None,
+            points: None,
+            series: None,
             fields,
             crs,
             features: vec![Feature { z: None, attrs, geom: Some(geo::Geometry::Polygon(geom)) }],
@@ -248,7 +250,7 @@ pub fn read(path: &Path, opts: &ReadOpts, notes: &mut Notes) -> Result<Table> {
     if skipped > 0 {
         notes.info(format!("{} cells without a value were left out", skipped));
     }
-    Ok(Table { mesh: None, fields, crs, features, raster: true, image: None, grid: None })
+    Ok(Table { mesh: None, points: None, series: None, fields, crs, features, raster: true, image: None, grid: None })
 }
 
 /// The values of a picture or a grid turned upside down, with their place, so that the first
@@ -366,7 +368,15 @@ fn read_grid(
     }
     let sx = gt[1] * w as f64 / gw as f64;
     let sy = gt[5] * h as f64 / gh as f64;
-    let grid = og_engine::model::Grid { bands: Vec::new(), width: gw, height: gh, values, geotransform: [gt[0], sx, 0.0, gt[3], 0.0, sy], crs };
+    let grid = og_engine::model::Grid {
+        bands: Vec::new(),
+        meta: Default::default(),
+        width: gw,
+        height: gh,
+        values,
+        geotransform: [gt[0], sx, 0.0, gt[3], 0.0, sy],
+        crs,
+    };
     if let Some((lo, hi)) = grid.range() {
         notes.info(format!("a grid of {} × {} cells of {}, values from {} to {}", gw, gh, og_engine::model::fmt_real(sx.abs()), lo, hi));
     }
@@ -468,7 +478,7 @@ fn read_image(
         None
     } else {
         let values = kept.remove(0);
-        Some(og_engine::model::Grid { width: w, height: h, values, geotransform: gt, crs, bands: kept })
+        Some(og_engine::model::Grid { width: w, height: h, values, geotransform: gt, crs, bands: kept, meta: Default::default() })
     };
     Ok(image.into_table_with(crs, grid))
 }
@@ -533,7 +543,53 @@ pub fn warp_grid(g: &og_engine::model::Grid, to: u32) -> Result<og_engine::model
         .rasterband(1)
         .and_then(|b| b.read_as::<f32>((0, 0), (w, h), (w, h), None))
         .map_err(|e| GbError(format!("Cannot read the reprojected grid: {}", e)))?;
-    Ok(og_engine::model::Grid { bands: Vec::new(), width: w, height: h, values: values.into_shape_and_vec().1, geotransform: gt, crs: Some(to) })
+    Ok(og_engine::model::Grid {
+        bands: Vec::new(),
+        meta: Default::default(),
+        width: w,
+        height: h,
+        values: values.into_shape_and_vec().1,
+        geotransform: gt,
+        crs: Some(to),
+    })
+}
+
+/// The first band of a raster, a file or a web address, drawn onto a grid in another place and
+/// coordinate system, reading only what is needed. Cells without a value are NaN.
+pub fn read_onto(source: &str, gt: [f64; 6], w: usize, h: usize, crs: u32, nearest: bool) -> Result<Vec<f32>> {
+    let name = if source.starts_with("http://") || source.starts_with("https://") {
+        format!("/vsicurl/{}", source)
+    } else if let Some(rest) = source.strip_prefix("s3://") {
+        format!("/vsis3/{}", rest)
+    } else {
+        source.to_string()
+    };
+    let src = Dataset::open_ex(&name, DatasetOptions { open_flags: GdalOpenFlags::GDAL_OF_RASTER | GdalOpenFlags::GDAL_OF_READONLY, ..Default::default() })
+        .map_err(|e| GbError(format!("Cannot open {}: {}", source, e)))?;
+    let dst = mem_dataset::<f32>(w, h, &[vec![f32::NAN; w * h]], gt, crs)?;
+    dst.rasterband(1).and_then(|mut b| b.set_no_data_value(Some(f64::NAN))).map_err(|e| GbError(format!("Cannot mark the cells without a value: {}", e)))?;
+    let alg = if nearest { gdal_sys::GDALResampleAlg::GRA_NearestNeighbour } else { gdal_sys::GDALResampleAlg::GRA_Bilinear };
+    // SAFETY: both datasets are open for the call, and the null arguments mean their own
+    // coordinate systems and no options.
+    let rv = unsafe {
+        gdal_sys::GDALReprojectImage(
+            src.c_dataset(),
+            std::ptr::null(),
+            dst.c_dataset(),
+            std::ptr::null(),
+            alg,
+            0.0,
+            0.125,
+            None,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if rv != gdal_sys::CPLErr::CE_None {
+        return Err(GbError(format!("Cannot read {} onto the grid: {}", source, crate::last_gdal_error().unwrap_or_default())));
+    }
+    let values = dst.rasterband(1).and_then(|b| b.read_as::<f32>((0, 0), (w, h), (w, h), None)).map_err(|e| GbError(format!("Cannot read the grid: {}", e)))?;
+    Ok(values.into_shape_and_vec().1)
 }
 
 /// A picture in another coordinate system. What lies outside the picture is see-through.

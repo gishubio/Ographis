@@ -17,6 +17,8 @@ pub(super) fn run_geometry_remover(_p: &P, inp: &Inputs, _ctx: &mut NodeCtx) -> 
     let table = input(inp, "Input");
     let out = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: table.fields.clone(),
         crs: None,
         features: table.features.iter().map(|f| Feature { z: None, attrs: f.attrs.clone(), geom: None }).collect(),
@@ -177,6 +179,8 @@ pub(super) fn run_aggregator(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<O
     }
     let mut out = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: idx.iter().map(|i| table.fields[*i].clone()).collect(),
         crs: table.crs,
         features: Vec::new(),
@@ -307,7 +311,8 @@ pub(super) fn run_point_creator(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Resul
             ctx.notes.info(format!("the geometry in {} was replaced by points in {}", crs_label(Some(had)), crs_label(Some(given))));
         }
     }
-    let mut points = Table { mesh: None, fields: table.fields.clone(), crs, features: Vec::new(), raster: false, image: None, grid: None };
+    let mut points =
+        Table { mesh: None, points: None, series: None, fields: table.fields.clone(), crs, features: Vec::new(), raster: false, image: None, grid: None };
     let mut failed = table.like();
     for f in &table.features {
         match (coordinate(&f.attrs[xi]), coordinate(&f.attrs[yi])) {
@@ -411,6 +416,8 @@ pub(super) fn run_box_accumulator(p: &P, inp: &Inputs, _ctx: &mut NodeCtx) -> Re
     let count_name = p.get("count").filter(|c| !c.trim().is_empty());
     let mut out = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: idx.iter().map(|i| table.fields[*i].clone()).collect(),
         crs: table.crs,
         features: Vec::new(),
@@ -1241,6 +1248,8 @@ fn run_hull(p: &P, inp: &Inputs, concave: Option<(f64, f64)>) -> Result<Outputs>
     let count_name = p.get("count").filter(|c| !c.trim().is_empty());
     let mut out = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: idx.iter().map(|i| table.fields[*i].clone()).collect(),
         crs: table.crs,
         features: Vec::new(),
@@ -1360,6 +1369,8 @@ pub(super) fn run_pair_maker(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<O
     let names: [&str; 4] = if degrees { ["from_lat", "from_lon", "to_lat", "to_lon"] } else { ["from_x", "from_y", "to_x", "to_y"] };
     let mut out = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: from.fields.clone(),
         crs: if geometry == "none" { None } else { from.crs },
         features: Vec::new(),

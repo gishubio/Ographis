@@ -130,6 +130,7 @@ fn points_are_raised_on_sticks_from_the_ground_or_the_terrain() {
         geotransform: [0.0, 10.0, 0.0, 100.0, 0.0, -10.0],
         crs: Some(3006),
         bands: vec![],
+        meta: Default::default(),
     };
     let terr = Table { grid: Some(std::sync::Arc::new(g)), crs: Some(3006), ..Default::default() };
     let (out, _) = run_for_test("PointRaiser", &[("height", "pop / 10"), ("base", "terrain")], vec![("Points", pts), ("Terrain", terr)]).unwrap();
@@ -153,7 +154,15 @@ fn a_diorama_rises_in_terraces_with_its_trees_on_them() {
             (100.0 * (-(x * x + y * y) / (2.0 * 400.0 * 400.0)).exp()) as f32
         })
         .collect();
-    let g = crate::model::Grid { width: w, height: w, values, geotransform: [0.0, cell, 0.0, 2000.0, 0.0, -cell], crs: Some(3006), bands: vec![] };
+    let g = crate::model::Grid {
+        width: w,
+        height: w,
+        values,
+        geotransform: [0.0, cell, 0.0, 2000.0, 0.0, -cell],
+        crs: Some(3006),
+        bands: vec![],
+        meta: Default::default(),
+    };
     let heights = Table { grid: Some(std::sync::Arc::new(g)), crs: Some(3006), ..Default::default() };
     let (out, notes) =
         run_for_test("DioramaMaker", &[("class", "kind"), ("steps", "3"), ("relief", "300")], vec![("Areas", island.clone()), ("Heights", heights)]).unwrap();

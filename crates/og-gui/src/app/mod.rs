@@ -254,6 +254,11 @@ pub struct App {
     pub schedule: Option<ScheduleForm>,
     /// The download whose rectangle is being chosen on the map, by its id.
     pub area_for: Option<String>,
+    /// Point clouds as the features shown on the map and in the table: every n-th point, made
+    /// once for each cloud.
+    pub cloud_views: std::cell::RefCell<std::collections::HashMap<usize, Arc<og_engine::Table>>>,
+    /// Of a cloud shown by every n-th point: n, and how many points it has.
+    pub cloud_totals: std::cell::RefCell<std::collections::HashMap<usize, (usize, usize)>>,
     /// The list of Ctrl+F and Ctrl+L, while it is open.
     pub picker: Option<keyboard::Picker>,
     /// Enter on the canvas: the form gets the keyboard, over two frames.
@@ -452,6 +457,8 @@ impl App {
             schedule: None,
             picker: None,
             area_for: None,
+            cloud_views: Default::default(),
+            cloud_totals: Default::default(),
             focus_form: 0,
             tab_surrender: 0,
             show_minimap: true,

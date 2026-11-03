@@ -1,6 +1,6 @@
 # What is tested
 
-`cargo test` runs 423 tests: expressions, CSV, geometry, whole models, reading and
+`cargo test` runs 473 tests: expressions, CSV, geometry, whole models, reading and
 writing real files, fetching from a web server on the same computer, and the user
 interface. The interface tests run the program without a window, with simulated clicks,
 drags and keys: load, run, pick a row, sort the table, drag a connection between two
@@ -19,6 +19,12 @@ every edge and corner, clear a search with its ×, order the layers of Draw map 
 the drawn map, see the run history and a run refused while the model is running, pick a building by a click in 3D, and see
 the settings of a CAD drawing and a city model. Further tests add to every format, and send web requests to a server on the
 same computer. They save screenshots in `target/screenshots`.
+
+The interface tests open copies of the example models, but find nodes by the names the
+models give them. Since 0.93 the shipped examples keep the tool names and describe each node
+in its comment instead, so the tests use their own copies of the models they open, in
+`crates/og-gui/tests/fixtures/models`, laid over a copy of `examples` with its data. The
+examples can then be reworded without breaking the tests.
 
 The tests run side by side. Once, in some thirty such runs during the work on 0.4, the
 test program itself crashed at start in native code, before any test had finished. It has

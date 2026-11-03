@@ -2990,7 +2990,7 @@ pub(crate) fn from_step(step: &Step, opts: &IfcOpts, notes: &mut Notes, going: &
         if skipped_spaces > 0 { format!(", {} spaces left out", fmt_count(skipped_spaces as u64)) } else { String::new() },
         if s.schema.is_empty() { "IFC".to_string() } else { s.schema.clone() }
     ));
-    let table = Table { fields, crs: None, features, raster: false, image: None, grid: None, mesh: Some(Arc::new(mesh)) };
+    let table = Table { fields, crs: None, features, raster: false, image: None, grid: None, mesh: Some(Arc::new(mesh)), points: None, series: None };
     Ok(IfcModel { table, georef })
 }
 

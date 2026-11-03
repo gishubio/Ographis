@@ -24,10 +24,9 @@
     {
       "id": "starts",
       "type": "Reader",
-      "name": "Start points",
       "x": 20,
       "y": 20,
-      "comment": "A hundred made-up start points around Göteborg, made by a script: put your own table here, with lat and lon in WGS 84",
+      "comment": "Start points. A hundred made-up start points around Göteborg, made by a script: put your own table here, with lat and lon in WGS 84",
       "params": {
         "path": "gothenburg_starts.csv",
         "x": "lon",
@@ -38,10 +37,9 @@
     {
       "id": "ask",
       "type": "HttpCaller",
-      "name": "Ask OpenTripPlanner",
       "x": 280,
       "y": 20,
-      "comment": "The GraphQL API of OpenTripPlanner 2.5 or later (planConnection), on a server of your own with the GTFS of Västtrafik and OpenStreetMap: set the variable otp to its address. Walking and all kinds of public transport, the first itinerary that leaves at or after the time. Four at a time, and the answers are kept in http-cache beside the model, so a second run does not ask again",
+      "comment": "Ask OpenTripPlanner. The GraphQL API of OpenTripPlanner 2.5 or later (planConnection), on a server of your own with the GTFS of Västtrafik and OpenStreetMap: set the variable otp to its address. Walking and all kinds of public transport, the first itinerary that leaves at or after the time. Four at a time, and the answers are kept in http-cache beside the model, so a second run does not ask again",
       "params": {
         "url": "'$(otp)/otp/gtfs/v1'",
         "method": "POST",
@@ -54,7 +52,6 @@
     {
       "id": "trip",
       "type": "JsonExtractor",
-      "name": "The whole trip",
       "x": 540,
       "y": 20,
       "params": {
@@ -77,15 +74,15 @@
             "arrives"
           ]
         ]
-      }
+      },
+      "comment": "The whole trip"
     },
     {
       "id": "found",
       "type": "Tester",
-      "name": "A trip was found",
       "x": 800,
       "y": 20,
-      "comment": "A start point far from any street or stop gets no trip: those go to Failed",
+      "comment": "A trip was found. A start point far from any street or stop gets no trip: those go to Failed",
       "params": {
         "test": "seconds IS NOT NULL"
       }
@@ -93,7 +90,6 @@
     {
       "id": "trip_times",
       "type": "AttributeManager",
-      "name": "Minutes and times",
       "x": 1060,
       "y": 20,
       "params": {
@@ -112,43 +108,43 @@
             "value": "substr(arrives, 12, 5)"
           }
         ]
-      }
+      },
+      "comment": "Minutes and times"
     },
     {
       "id": "trip_keep",
       "type": "AttributeKeeper",
-      "name": "The useful attributes",
       "x": 1320,
       "y": 20,
       "params": {
         "keep": "id, area, minutes, transfers, leaves_at, arrives_at"
-      }
+      },
+      "comment": "The useful attributes"
     },
     {
       "id": "starts_out_prep",
       "type": "Reprojector",
-      "name": "To SWEREF 99 TM",
       "x": 1580,
       "y": 20,
       "params": {
         "crs": "EPSG:3006"
-      }
+      },
+      "comment": "To SWEREF 99 TM"
     },
     {
       "id": "starts_out",
       "type": "Writer",
-      "name": "Travel time from each",
       "x": 1840,
       "y": 20,
       "params": {
         "path": "out/otp_drottningtorget.gpkg",
         "layer": "start_points"
-      }
+      },
+      "comment": "Travel time from each"
     },
     {
       "id": "legs",
       "type": "JsonExploder",
-      "name": "A feature per leg",
       "x": 1060,
       "y": 240,
       "params": {
@@ -156,24 +152,24 @@
         "path": "data.planConnection.edges[0].node.legs",
         "prefix": "leg",
         "index_attr": "leg_no"
-      }
+      },
+      "comment": "A feature per leg"
     },
     {
       "id": "leg_geom",
       "type": "GeometryFromText",
-      "name": "Leg as a line",
       "x": 1320,
       "y": 240,
       "params": {
         "attribute": "leg.legGeometry.points",
         "kind": "polyline",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "Leg as a line"
     },
     {
       "id": "leg_attrs",
       "type": "AttributeManager",
-      "name": "Mode, line and times",
       "x": 1580,
       "y": 240,
       "params": {
@@ -208,46 +204,46 @@
             "value": "round(\"leg.distance\")"
           }
         ]
-      }
+      },
+      "comment": "Mode, line and times"
     },
     {
       "id": "leg_keep",
       "type": "AttributeKeeper",
-      "name": "The useful attributes",
       "x": 1840,
       "y": 240,
       "params": {
         "keep": "id, area, leg_no, mode, line, from_stop, to_stop, leg_leaves, leg_minutes, metres, minutes"
-      }
+      },
+      "comment": "The useful attributes"
     },
     {
       "id": "leg_3006",
       "type": "Reprojector",
-      "name": "To SWEREF 99 TM",
       "x": 2100,
       "y": 240,
       "params": {
         "crs": "EPSG:3006"
-      }
+      },
+      "comment": "To SWEREF 99 TM"
     },
     {
       "id": "legs_out",
       "type": "Writer",
-      "name": "All the legs",
       "x": 2360,
       "y": 160,
       "params": {
         "path": "out/otp_drottningtorget.gpkg",
         "layer": "legs"
-      }
+      },
+      "comment": "All the legs"
     },
     {
       "id": "by_mode",
       "type": "ValueFilter",
-      "name": "By mode",
       "x": 2360,
       "y": 320,
-      "comment": "An output for each mode, to draw each in its own colour with its name in the legend",
+      "comment": "By mode. An output for each mode, to draw each in its own colour with its name in the legend",
       "params": {
         "attribute": "mode",
         "values": [
@@ -262,7 +258,6 @@
     {
       "id": "dest",
       "type": "FeatureCreator",
-      "name": "Drottningtorget",
       "x": 20,
       "y": 460,
       "params": {
@@ -270,25 +265,25 @@
         "coordinates": "$(to_lon) $(to_lat)",
         "crs": "EPSG:4326",
         "name": "Drottningtorget"
-      }
+      },
+      "comment": "Drottningtorget"
     },
     {
       "id": "dest_3006",
       "type": "Reprojector",
-      "name": "To SWEREF 99 TM",
       "x": 280,
       "y": 460,
       "params": {
         "crs": "EPSG:3006"
-      }
+      },
+      "comment": "To SWEREF 99 TM"
     },
     {
       "id": "water",
       "type": "OsmDownloader",
-      "name": "Water from OpenStreetMap",
       "x": 280,
       "y": 620,
-      "comment": "Only for the background of the map: the sea, the river and lakes around the start points. Needs the internet; disable it to draw without",
+      "comment": "Water from OpenStreetMap. Only for the background of the map: the sea, the river and lakes around the start points. Needs the internet; disable it to draw without",
       "params": {
         "what": [
           "water"
@@ -301,10 +296,9 @@
     {
       "id": "map",
       "type": "MapRenderer",
-      "name": "Map of the routes",
       "x": 2620,
       "y": 320,
-      "comment": "The top row in the list of layers is drawn on top",
+      "comment": "Map of the routes. The top row in the list of layers is drawn on top",
       "params": {
         "width": "2000",
         "crs": "EPSG:3006",
@@ -394,12 +388,12 @@
     {
       "id": "png",
       "type": "Writer",
-      "name": "Map as PNG",
       "x": 2880,
       "y": 320,
       "params": {
         "path": "out/otp_drottningtorget.png"
-      }
+      },
+      "comment": "Map as PNG"
     }
   ],
   "edges": [

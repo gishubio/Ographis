@@ -15,7 +15,6 @@
     {
       "id": "towns",
       "type": "Reader",
-      "name": "Towns",
       "x": 20,
       "y": 20,
       "params": {
@@ -23,25 +22,25 @@
         "x": "lon",
         "y": "lat",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "Towns"
     },
     {
       "id": "pairs",
       "type": "PairMaker",
-      "name": "Every town to every other",
       "x": 280,
       "y": 20,
       "params": {
         "coords": "EPSG:4326"
-      }
+      },
+      "comment": "Every town to every other"
     },
     {
       "id": "ask",
       "type": "HttpCaller",
-      "name": "Ask OpenTripPlanner",
       "x": 540,
       "y": 20,
-      "comment": "The GraphQL API of OpenTripPlanner 2 (GTFS schema), on a server of your own: set the variable otp to its address. Eight at a time, and the answers are kept in http-cache beside the model, so a second run does not ask again. Check the query against the version you run",
+      "comment": "Ask OpenTripPlanner. The GraphQL API of OpenTripPlanner 2 (GTFS schema), on a server of your own: set the variable otp to its address. Eight at a time, and the answers are kept in http-cache beside the model, so a second run does not ask again. Check the query against the version you run",
       "params": {
         "url": "'$(otp)/otp/gtfs/v1'",
         "method": "POST",
@@ -54,7 +53,6 @@
     {
       "id": "take",
       "type": "JsonExtractor",
-      "name": "Duration and route",
       "x": 800,
       "y": 20,
       "params": {
@@ -81,60 +79,61 @@
             "route"
           ]
         ]
-      }
+      },
+      "comment": "Duration and route"
     },
     {
       "id": "minutes",
       "type": "AttributeCreator",
-      "name": "Minutes",
       "x": 1060,
       "y": 20,
       "params": {
         "name": "minutes",
         "expression": "round(seconds / 60)"
-      }
+      },
+      "comment": "Minutes"
     },
     {
       "id": "stats",
       "type": "StatisticsCalculator",
-      "name": "From each town",
       "x": 1320,
       "y": 20,
       "params": {
         "attributes": "minutes",
         "group_by": "town",
         "percentiles": "10, 90"
-      }
+      },
+      "comment": "From each town"
     },
     {
       "id": "routes",
       "type": "GeometryFromText",
-      "name": "The first ride as a line",
       "x": 1320,
       "y": 200,
       "params": {
         "attribute": "route",
         "kind": "polyline",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "The first ride as a line"
     },
     {
       "id": "view",
       "type": "Viewer",
-      "name": "Look at it",
       "x": 1580,
       "y": 100,
-      "params": {}
+      "params": {},
+      "comment": "Look at it"
     },
     {
       "id": "out",
       "type": "Writer",
-      "name": "Travel times",
       "x": 1580,
       "y": 260,
       "params": {
         "path": "out/travel_times.xlsx"
-      }
+      },
+      "comment": "Travel times"
     }
   ],
   "edges": [

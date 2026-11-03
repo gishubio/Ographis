@@ -168,6 +168,9 @@ pub struct MapView {
     /// OpenStreetMap.
     pub maps: Vec<og_engine::settings::BackgroundMap>,
     pub background: Option<String>,
+    /// The background map of the settings that was last put in place, so that a change in
+    /// the settings is followed, and a choice under the map is kept until then.
+    pub applied_default: Option<String>,
     /// The map the tiles are fetched for now.
     tiles_map: Option<og_engine::settings::BackgroundMap>,
     /// A distance or an area being measured, by clicks on the map.
@@ -230,6 +233,7 @@ impl Default for MapView {
         MapView {
             maps: Vec::new(),
             background: None,
+            applied_default: None,
             tiles_map: None,
             measuring: None,
             picked_area: None,

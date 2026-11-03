@@ -1068,6 +1068,8 @@ mod tests {
     fn table(geoms: Vec<Geometry<f64>>) -> Table {
         Table {
             mesh: None,
+            points: None,
+            series: None,
             fields: vec![Field::new("id", FieldType::Int)],
             crs: Some(3006),
             features: geoms.into_iter().enumerate().map(|(i, g)| Feature { z: None, attrs: vec![Value::Int(i as i64)], geom: Some(g) }).collect(),

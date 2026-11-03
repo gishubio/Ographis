@@ -30,6 +30,8 @@ pub(super) fn run_keeper(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
     }
     let out = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: idx.iter().map(|i| table.fields[*i].clone()).collect(),
         crs: table.crs,
         features: table
@@ -207,6 +209,8 @@ pub(super) fn run_manager(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
     }
     let mut out = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: picked.iter().map(|(i, n)| Field::new(n.clone(), table.fields[*i].ty)).collect(),
         crs: table.crs,
         features: table
@@ -281,6 +285,8 @@ pub(super) fn run_manager_old(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<
     }
     let out = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: picked.iter().map(|(i, n)| Field::new(n.clone(), table.fields[*i].ty)).collect(),
         crs: table.crs,
         features: table
@@ -476,6 +482,8 @@ pub(super) fn run_stats(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
 
     let mut summary = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: gi.iter().map(|i| table.fields[*i].clone()).chain(stat_fields.iter().cloned()).collect(),
         crs: None,
         features: Vec::new(),

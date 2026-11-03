@@ -1,0 +1,21 @@
+{
+  "format": "ographis/1",
+  "name": "Bus stops by line",
+  "nodes": [
+    { "id": "stops", "type": "Reader", "name": "Stops", "x": 20, "y": 120, "params": { "path": "stops", "pattern": "*.csv" } },
+    { "id": "split", "type": "AttributeSplitter", "name": "One row per line", "x": 232, "y": 120, "comment": "A stop on lines 1 and 2 becomes two features", "params": { "attribute": "lines", "mode": "rows", "name": "line" } },
+    { "id": "filter", "type": "ValueFilter", "name": "By line", "x": 444, "y": 120, "params": { "attribute": "line", "values": ["1", "2", "3"] } },
+    { "id": "line1", "type": "Writer", "name": "Line 1", "x": 680, "y": 20, "params": { "path": "out/lines.xlsx", "layer": "Line 1", "colors": "blue", "geometry": "xy" } },
+    { "id": "line2", "type": "Writer", "name": "Line 2", "x": 680, "y": 130, "params": { "path": "out/lines.xlsx", "layer": "Line 2", "colors": "blue", "geometry": "xy" } },
+    { "id": "line3", "type": "Writer", "name": "Line 3", "x": 680, "y": 240, "params": { "path": "out/lines.xlsx", "layer": "Line 3", "colors": "blue", "geometry": "xy" } },
+    { "id": "other", "type": "Writer", "name": "Other lines", "x": 680, "y": 350, "params": { "path": "out/other_lines.ods", "layer": "Other lines", "colors": "sand", "geometry": "xy" } }
+  ],
+  "edges": [
+    { "from": ["stops", "Output"], "to": ["split", "Input"] },
+    { "from": ["split", "Output"], "to": ["filter", "Input"] },
+    { "from": ["filter", "1"], "to": ["line1", "Input"] },
+    { "from": ["filter", "2"], "to": ["line2", "Input"] },
+    { "from": ["filter", "3"], "to": ["line3", "Input"] },
+    { "from": ["filter", "Other"], "to": ["other", "Input"] }
+  ]
+}

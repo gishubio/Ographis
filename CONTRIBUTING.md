@@ -82,3 +82,9 @@ without warnings. A new tool or a fixed bug comes with a test.
 
 Ographis is licensed under MIT or Apache 2.0, as you choose. Unless you say otherwise, a
 contribution you send in is licensed in the same way.
+
+## Example models
+
+The nodes of the example models in `examples/` keep the names of their tools, such as
+*Draw map* or *Spatial join*, so that it is easy to see which tool each is. What a node does
+in the model goes in its `comment`, such as "Places on OpenStreetMap".

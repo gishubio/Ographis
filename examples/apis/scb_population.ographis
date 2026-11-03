@@ -5,7 +5,6 @@
     {
       "id": "scb",
       "type": "HttpCaller",
-      "name": "SCB: population",
       "x": 20,
       "y": 40,
       "params": {
@@ -14,12 +13,11 @@
         "body": "'{\"query\": [{\"code\": \"Region\", \"selection\": {\"filter\": \"vs:RegionKommun07\", \"values\": [\"1480\", \"1490\", \"1495\", \"1496\", \"1497\"]}}, {\"code\": \"ContentsCode\", \"selection\": {\"filter\": \"item\", \"values\": [\"BE0101N1\"]}}, {\"code\": \"Tid\", \"selection\": {\"filter\": \"top\", \"values\": [\"3\"]}}], \"response\": {\"format\": \"json-stat2\"}}'",
         "content_type": "application/json"
       },
-      "comment": "PxWeb: the query is sent as JSON, and the answer comes as json-stat2"
+      "comment": "SCB: population. PxWeb: the query is sent as JSON, and the answer comes as json-stat2"
     },
     {
       "id": "stat",
       "type": "JsonStatReader",
-      "name": "JSON-stat to table",
       "x": 300,
       "y": 40,
       "params": {
@@ -31,12 +29,12 @@
     {
       "id": "out",
       "type": "Writer",
-      "name": "Population",
       "x": 560,
       "y": 40,
       "params": {
         "path": "out/population.xlsx"
-      }
+      },
+      "comment": "Population"
     }
   ],
   "edges": [

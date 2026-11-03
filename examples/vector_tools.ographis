@@ -1,0 +1,299 @@
+{
+  "format": "ographis/1",
+  "name": "Vector tools of 0.93",
+  "description": "Overlaps and gaps between areas, lines merged, points along them and lines moved to the side, and a table turned wide and long again. The data is made up in its shape.",
+  "nodes": [
+    {
+      "id": "sub",
+      "type": "Reader",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "subregions.gpkg"
+      },
+      "comment": "The subregions"
+    },
+    {
+      "id": "topo",
+      "type": "TopologyChecker",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "id": "subregion"
+      },
+      "comment": "Where they overlap, and the gaps between them"
+    },
+    {
+      "id": "topo_out",
+      "type": "Writer",
+      "x": 540,
+      "y": 20,
+      "params": {
+        "path": "out/topology.gpkg",
+        "layer": "overlaps"
+      },
+      "comment": "Overlaps"
+    },
+    {
+      "id": "gaps_out",
+      "type": "Writer",
+      "x": 540,
+      "y": 120,
+      "params": {
+        "path": "out/topology.gpkg",
+        "layer": "gaps"
+      },
+      "comment": "Gaps"
+    },
+    {
+      "id": "routes",
+      "type": "Reader",
+      "x": 20,
+      "y": 260,
+      "params": {
+        "path": "routes.shp"
+      },
+      "comment": "The routes"
+    },
+    {
+      "id": "merge",
+      "type": "LineMerger",
+      "x": 280,
+      "y": 260,
+      "params": {
+        "group_by": [
+          "name"
+        ]
+      },
+      "comment": "A line for each route"
+    },
+    {
+      "id": "along",
+      "type": "PointsAlongLines",
+      "x": 540,
+      "y": 260,
+      "params": {
+        "distance": "5000"
+      },
+      "comment": "A point every 5 km"
+    },
+    {
+      "id": "side",
+      "type": "LineOffsetter",
+      "x": 540,
+      "y": 380,
+      "params": {
+        "distance": "1000"
+      },
+      "comment": "The routes moved 1 km to the left"
+    },
+    {
+      "id": "lines_out",
+      "type": "Writer",
+      "x": 800,
+      "y": 260,
+      "params": {
+        "path": "out/routes.gpkg",
+        "layer": "every_5_km"
+      },
+      "comment": "Points"
+    },
+    {
+      "id": "side_out",
+      "type": "Writer",
+      "x": 800,
+      "y": 380,
+      "params": {
+        "path": "out/routes.gpkg",
+        "layer": "moved"
+      },
+      "comment": "Moved lines"
+    },
+    {
+      "id": "pop",
+      "type": "Reader",
+      "x": 20,
+      "y": 520,
+      "params": {
+        "path": "population_years.csv"
+      },
+      "comment": "Population by year, made up"
+    },
+    {
+      "id": "wide",
+      "type": "Pivoter",
+      "x": 280,
+      "y": 520,
+      "params": {
+        "group_by": [
+          "municipality"
+        ],
+        "names": "year",
+        "values": "population",
+        "prefix": "y_"
+      },
+      "comment": "A column for each year"
+    },
+    {
+      "id": "long",
+      "type": "Unpivoter",
+      "x": 540,
+      "y": 520,
+      "params": {
+        "attributes": [
+          "y_2024",
+          "y_2025",
+          "y_2026"
+        ],
+        "name": "year",
+        "value": "population",
+        "strip": "y_"
+      },
+      "comment": "And back to a row for each year"
+    },
+    {
+      "id": "xlsx",
+      "type": "Writer",
+      "x": 800,
+      "y": 520,
+      "params": {
+        "path": "out/population.xlsx",
+        "layer": "wide"
+      },
+      "comment": "Wide"
+    },
+    {
+      "id": "xlsx2",
+      "type": "Writer",
+      "x": 800,
+      "y": 620,
+      "params": {
+        "path": "out/population.xlsx",
+        "layer": "long"
+      },
+      "comment": "Long"
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "sub",
+        "Output"
+      ],
+      "to": [
+        "topo",
+        "Areas"
+      ]
+    },
+    {
+      "from": [
+        "topo",
+        "Overlaps"
+      ],
+      "to": [
+        "topo_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "topo",
+        "Gaps"
+      ],
+      "to": [
+        "gaps_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "routes",
+        "Output"
+      ],
+      "to": [
+        "merge",
+        "Lines"
+      ]
+    },
+    {
+      "from": [
+        "merge",
+        "Merged"
+      ],
+      "to": [
+        "along",
+        "Lines"
+      ]
+    },
+    {
+      "from": [
+        "merge",
+        "Merged"
+      ],
+      "to": [
+        "side",
+        "Lines"
+      ]
+    },
+    {
+      "from": [
+        "along",
+        "Points"
+      ],
+      "to": [
+        "lines_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "side",
+        "Lines"
+      ],
+      "to": [
+        "side_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "pop",
+        "Output"
+      ],
+      "to": [
+        "wide",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "wide",
+        "Output"
+      ],
+      "to": [
+        "long",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "wide",
+        "Output"
+      ],
+      "to": [
+        "xlsx",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "long",
+        "Output"
+      ],
+      "to": [
+        "xlsx2",
+        "Input"
+      ]
+    }
+  ]
+}

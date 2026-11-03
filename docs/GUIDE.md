@@ -103,6 +103,10 @@ five models.
 | Go on in QGIS | Choose *QGIS project with its layers* as the format of an Output, and connect the streams to *Layers*. The project opens in QGIS with the layers in the order and with the colours, classes and labels of the form, and the data in a GeoPackage beside it |
 | Write a report | Connect maps, charts and tables to *Sections* of *Report*, in the order they are to come, and name the tools as the sections should be called. Write a text first and last, and choose a web page or a PDF |
 | Choose where to fetch OpenStreetMap or Overture | Click *Choose on the map* beside the rectangle, click two corners on the map and press Enter |
+| Read a large point cloud | Drop the LAS or LAZ on the window: every point is read. Filter it by class, thin it or make a raster of it before tools that are not for point clouds, which get every point as a feature |
+| Make NDVI of a summer | STAC search with the area and the months → Read satellite bands (red, nir, scl) → Mask clouds → Spectral index → Composite over time. See `examples/apis/sentinel_ndvi.ographis` |
+| Find overlaps and gaps between areas | *Check topology*, and *Eliminate slivers* for the thin bits an overlay leaves |
+| Turn a table with a column for each year into a row for each year | *Unpivot*, and *Pivot* the other way |
 | Remove several values | In *Filter by value*, tick them in the list and click *Remove the ticked*, or *Keep only the ticked* |
 | Follow a long run | The Log tab fills in while the model runs. A large file is reported every tenth read, and so is a status line at the top right |
 | See what was written | Each output says in the log how many features it wrote, to which file, and the end of the log lists them all again |

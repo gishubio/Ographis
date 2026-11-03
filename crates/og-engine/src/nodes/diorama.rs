@@ -189,6 +189,7 @@ fn terrace_grid(g: &crate::model::Grid, r: &geo::Rect<f64>) -> crate::model::Gri
         geotransform: [gt[0] + c0 as f64 * gt[1], gt[1], 0.0, gt[3] + r0 as f64 * gt[5], 0.0, gt[5]],
         crs: g.crs,
         bands: Vec::new(),
+        meta: Default::default(),
     };
     crate::terrain::at_most(&cut, 160)
 }

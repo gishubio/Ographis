@@ -1,5 +1,5 @@
 //! Tools added in 0.91: Create raster, Focal statistics and Cost distance for rasters, Thin
-//! point cloud, and Stylize picture, which draws a picture in the style of the Commodore 64 or
+//! point cloud, and Stylize picture, which draws a picture in an 8 bit retro style or
 //! as a mosaic of LEGO plates.
 
 use super::geom_inspect::column;
@@ -97,7 +97,7 @@ fn run_create(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             });
         }
     }
-    let g = Grid { width: w, height: h, values, geotransform: [left, size, 0.0, top, 0.0, -size], crs, bands: Vec::new() };
+    let g = Grid { width: w, height: h, values, geotransform: [left, size, 0.0, top, 0.0, -size], crs, bands: Vec::new(), meta: Default::default() };
     note_grid(&g, ctx);
     Ok(vec![("Raster".into(), g.into_table())])
 }
@@ -189,7 +189,7 @@ pub fn focal(g: &Grid, r: usize, stat: &str, circle: bool) -> Grid {
             }
         })
         .collect();
-    Grid { values, bands: Vec::new(), ..g.clone() }
+    Grid { values, bands: Vec::new(), meta: Default::default(), ..g.clone() }
 }
 
 fn run_focal(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
@@ -289,7 +289,7 @@ fn run_cost(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let reach = number_param(p, "reach", "As far as")?.filter(|r| *r > 0.0);
     let d = cost_distance(cost, &sources, reach);
     let values = d.into_iter().map(|x| if x.is_finite() && reach.is_none_or(|r| x <= r) { x as f32 } else { f32::NAN }).collect();
-    let out = Grid { values, bands: Vec::new(), ..cost.clone() };
+    let out = Grid { values, bands: Vec::new(), meta: Default::default(), ..cost.clone() };
     note_grid(&out, ctx);
     Ok(vec![("Raster".into(), out.into_table())])
 }
@@ -329,21 +329,22 @@ fn run_thin(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         return err("The size must be more than 0.");
     }
     let per_class = p.get("per_class").as_deref() != Some("no");
-    let class_at = t.field_index("classification").filter(|_| per_class);
-    let xyz = |f: &Feature| -> Option<[f64; 3]> {
-        let Some(Geometry::Point(pt)) = &f.geom else { return None };
-        Some([pt.x(), pt.y(), f.heights().and_then(|z| z.first().copied()).unwrap_or(0.0)])
-    };
-    let class_of = |f: &Feature| class_at.and_then(|i| f.attrs[i].as_f64()).map_or(-1, |c| c as i64);
-    let mut keep = vec![false; t.len()];
+    let pts = crate::cloud::points_in(t);
+    let c = &pts.cloud;
+    if pts.left > 0 {
+        ctx.notes.warn(format!("{} features are not points and were left out.", fmt_count(pts.left as u64)));
+    }
+    let xyz = |i: usize| -> [f64; 3] { [c.x[i], c.y[i], if c.z[i].is_nan() { 0.0 } else { c.z[i] }] };
+    let class_of = |i: usize| if per_class { c.class[i] as i64 } else { -1 };
+    let mut keep = vec![false; c.len()];
     if p.get("method").as_deref() == Some("distance") {
         // In a grid of cells as large as the distance: a point is kept when no kept point in
         // its cell or the cells around is too near.
         let mut kept: std::collections::HashMap<(i64, i64, i64, i64), Vec<[f64; 3]>> = std::collections::HashMap::new();
         let d2 = size * size;
-        for (i, f) in t.features.iter().enumerate() {
-            let Some(p3) = xyz(f) else { continue };
-            let k = class_of(f);
+        for (i, k_i) in keep.iter_mut().enumerate() {
+            let p3 = xyz(i);
+            let k = class_of(i);
             let cell = |v: f64| (v / size).floor() as i64;
             let (cx, cy, cz) = (cell(p3[0]), cell(p3[1]), cell(p3[2]));
             let mut near = false;
@@ -361,18 +362,18 @@ fn run_thin(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             }
             if !near {
                 kept.entry((k, cx, cy, cz)).or_default().push(p3);
-                keep[i] = true;
+                *k_i = true;
             }
         }
     } else {
         // The point nearest the middle of each cube.
         let mut best: std::collections::HashMap<(i64, i64, i64, i64), (f64, usize)> = std::collections::HashMap::new();
-        for (i, f) in t.features.iter().enumerate() {
-            let Some(p3) = xyz(f) else { continue };
+        for i in 0..c.len() {
+            let p3 = xyz(i);
             let cell = |v: f64| (v / size).floor();
             let (cx, cy, cz) = (cell(p3[0]), cell(p3[1]), cell(p3[2]));
             let d = (p3[0] - (cx + 0.5) * size).powi(2) + (p3[1] - (cy + 0.5) * size).powi(2) + (p3[2] - (cz + 0.5) * size).powi(2);
-            let key = (class_of(f), cx as i64, cy as i64, cz as i64);
+            let key = (class_of(i), cx as i64, cy as i64, cz as i64);
             match best.get(&key) {
                 Some((bd, _)) if *bd <= d => {}
                 _ => {
@@ -384,16 +385,15 @@ fn run_thin(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             keep[*i] = true;
         }
     }
-    let mut out = t.like();
-    out.features = t.features.iter().zip(&keep).filter(|(_, k)| **k).map(|(f, _)| f.clone()).collect();
-    ctx.notes.info(format!("{} of {} points kept", fmt_count(out.len() as u64), fmt_count(t.len() as u64)));
-    Ok(vec![("Points".into(), out)])
+    let (kept, _) = pts.split(|i| keep[i]);
+    ctx.notes.info(format!("{} of {} points kept", fmt_count(kept.count() as u64), fmt_count(c.len() as u64)));
+    Ok(vec![("Points".into(), kept)])
 }
 
 // ---------- Stylize picture (PictureStylizer) ----------
 
 const STYLES: &[(&str, &str)] = &[
-    ("c64", "Commodore 64: big pixels in its 16 colours"),
+    ("c64", "8 bit retro style: big wide pixels in 16 colours"),
     ("lego", "LEGO: a mosaic of round plates"),
     ("lego_square", "LEGO: a mosaic of square plates with studs"),
     ("pixels", "Big pixels in the colours of the picture"),
@@ -406,7 +406,7 @@ const STYLE_PARAMS: &[ParamSpec] = &[
         label: "Pixels or plates across",
         kind: ParamKind::Text,
         default: "160",
-        hint: "The Commodore 64 had 160 wide pixels across in colour; a LEGO base plate has 48 studs",
+        hint: "8 bit retro style has 160 wide pixels across; a LEGO base plate has 48 studs",
     },
     ParamSpec {
         key: "dither",
@@ -418,7 +418,7 @@ const STYLE_PARAMS: &[ParamSpec] = &[
     ParamSpec { key: "scale", label: "Each pixel as", kind: ParamKind::Text, default: "8", hint: "How many pixels of the picture each pixel or plate becomes" },
 ];
 
-/// The 16 colours of the Commodore 64 (the palette of Pepto).
+/// The 16 colours of the 8 bit retro style (the palette of Pepto).
 pub const C64: [[u8; 3]; 16] = [
     [0x00, 0x00, 0x00],
     [0xff, 0xff, 0xff],
@@ -484,7 +484,7 @@ fn nearest(c: [f32; 3], palette: &[[u8; 3]]) -> usize {
 
 /// A picture made small, as the mean colour of the pixels in each cell, and the parts that
 /// are see-through. The cells keep the shape of the pixels: twice as wide as high for the
-/// Commodore 64.
+/// 8 bit retro style.
 fn shrink(img: &RasterImage, w: usize, h: usize) -> Vec<Option<[f32; 3]>> {
     let mut out = Vec::with_capacity(w * h);
     for r in 0..h {
@@ -580,7 +580,7 @@ fn plate(pm: &mut tiny_skia::Pixmap, x: f32, y: f32, s: f32, c: [u8; 3], round: 
 pub fn stylize(img: &RasterImage, style: &str, across: usize, scale: usize, dither: bool) -> Result<(RasterImage, Vec<(String, usize)>)> {
     let across = across.clamp(4, 2000);
     let scale = scale.clamp(1, 64);
-    // The Commodore 64 has pixels twice as wide as high.
+    // The 8 bit retro style has pixels twice as wide as high.
     let wide = if style == "c64" { 2 } else { 1 };
     let cell_w = img.width as f64 / across as f64;
     let down = ((img.height as f64 / (cell_w / wide as f64)).round() as usize).max(1);
@@ -723,7 +723,7 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Maps",
-        desc: "Draws a picture again in a style: as on a Commodore 64, in big pixels with its 16 colours, as a mosaic of LEGO plates in the colours one can buy, with a list of the plates of each colour to build it, or in big pixels of its own colours. For maps from Draw map, terrain, orthophotos and charts.",
+        desc: "Draws a picture again in a style: an 8 bit retro style, in big wide pixels of 16 colours, as a mosaic of LEGO plates in the colours one can buy, with a list of the plates of each colour to build it, or in big pixels of its own colours. For maps from Draw map, terrain, orthophotos and charts.",
         inputs: &["Picture"],
         outputs: &["Picture", "Parts"],
         ports: None,
@@ -739,7 +739,7 @@ mod tests {
 
     fn ramp() -> Grid {
         let values = (0..100).map(|i| (i % 10) as f32).collect();
-        Grid { width: 10, height: 10, values, geotransform: [0.0, 1.0, 0.0, 10.0, 0.0, -1.0], crs: Some(3006), bands: Vec::new() }
+        Grid { width: 10, height: 10, values, geotransform: [0.0, 1.0, 0.0, 10.0, 0.0, -1.0], crs: Some(3006), bands: Vec::new(), meta: Default::default() }
     }
 
     #[test]

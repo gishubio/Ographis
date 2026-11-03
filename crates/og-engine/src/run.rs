@@ -847,7 +847,13 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
                             let many = source.and_then(|x| node_type(&x.kind)).is_some_and(|t| t.outputs_for(&source.expect("found").params).len() > 1);
                             let name = source.map_or(e.from.0.clone(), |x| x.label().to_string());
                             let label = if many { format!("{} · {}", name, e.from.1) } else { name };
-                            ctx.parts.push(nodes::Part { port, from: format!("{}:{}", e.from.0, e.from.1), label, table });
+                            let heading = match source {
+                                Some(x) if x.name.is_empty() && !x.comment.trim().is_empty() && !x.comment.contains('\n') && x.comment.trim().len() <= 80 => {
+                                    x.comment.trim().to_string()
+                                }
+                                _ => label.clone(),
+                            };
+                            ctx.parts.push(nodes::Part { port, from: format!("{}:{}", e.from.0, e.from.1), label, heading, table });
                             continue;
                         }
                         tables.push(table);
@@ -905,6 +911,19 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
             idle.insert(n.id.as_str());
             continue;
         }
+        // A tool that works on features gets the points of a point cloud as features.
+        if !crate::cloud::takes_clouds(&n.kind) {
+            for t in inputs.values_mut() {
+                if t.points.is_some() {
+                    *t = crate::cloud::as_features(t, &mut ctx.notes);
+                }
+            }
+            for part in ctx.parts.iter_mut() {
+                if part.table.points.is_some() {
+                    part.table = crate::cloud::as_features(&part.table, &mut ctx.notes);
+                }
+            }
+        }
         let outcome = match failure {
             Some(msg) => Err(GbError(msg)),
             None => match expand_params(&n.params, &ws.variables) {
@@ -961,8 +980,8 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
                 let parts = &ctx.parts;
                 let count = |port: &&str, map: &HashMap<String, Arc<Table>>| {
                     // A port that keeps its streams apart counts what came in on all of them.
-                    let apart: usize = parts.iter().filter(|x| x.port == *port).map(|x| x.table.len()).sum();
-                    fmt_count((map.get(*port).map_or(0, |t| t.len()) + apart) as u64)
+                    let apart: usize = parts.iter().filter(|x| x.port == *port).map(|x| x.table.count()).sum();
+                    fmt_count((map.get(*port).map_or(0, |t| t.count()) + apart) as u64)
                 };
                 let named = |ports: &[&str], labels: &[String], map: &HashMap<String, Arc<Table>>| {
                     ports
@@ -996,6 +1015,7 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
                             format!("{} {}", n, if n == 1 { "picture" } else { "pictures" })
                         }
                         Some(t) if t.image.is_some() => "an image".to_string(),
+                        Some(t) if t.points.is_some() => format!("{} points", fmt_count(t.count() as u64)),
                         Some(t) => format!("{} {}", fmt_count(t.len() as u64), if t.len() == 1 { "feature" } else { "features" }),
                         None => "nothing".to_string(),
                     };
@@ -1025,6 +1045,11 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
                 if writer {
                     let to = if names.is_empty() { String::new() } else { format!(" to {}", names.join(", ")) };
                     written.push(LogEntry { level: Level::Info, node: Some(n.id.clone()), msg: format!("{} wrote {}{}", n.label(), wrote, to) });
+                }
+                // What a node keeps in memory, when it is much, so that it can be found.
+                let held: usize = outputs.values().map(|t| t.approx_bytes()).sum();
+                if held > 500_000_000 {
+                    ctx.notes.info(format!("about {} MB in memory", fmt_count((held / 1_000_000) as u64)));
                 }
                 if !ctx.notes.info.is_empty() {
                     msg += &format!(" · {}", ctx.notes.info.join(", "));

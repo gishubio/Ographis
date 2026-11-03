@@ -1,0 +1,30 @@
+{
+  "format": "ographis/1",
+  "name": "A map of the subregions",
+  "nodes": [
+    { "id": "areas", "type": "Reader", "name": "Subregions", "x": 20, "y": 20, "params": { "path": "subregions.gpkg" } },
+    { "id": "routes", "type": "Reader", "name": "Routes", "x": 20, "y": 160, "params": { "path": "routes.shp" } },
+    { "id": "towns", "type": "Reader", "name": "Towns", "x": 20, "y": 300, "params": { "path": "towns.csv", "crs": "EPSG:4326" } },
+    { "id": "map", "type": "MapRenderer", "name": "Map of the subregions", "x": 300, "y": 140, "comment": "The top row in the list of layers is drawn on top",
+      "params": {
+        "width": "1600",
+        "crs": "EPSG:3006",
+        "layers": [
+          { "from": "towns:Output", "fill": "#000000", "stroke": "#ffffff", "width": 1.5, "size": 9 },
+          { "from": "routes:Output", "fill": "none", "stroke": "#b2182b", "width": 2.5, "size": 6 },
+          { "from": "areas:Output", "fill": "#cfe3f2", "stroke": "#4a7fb0", "width": 1.5, "size": 6 }
+        ]
+      } },
+    { "id": "png", "type": "Writer", "name": "Map as PNG", "x": 560, "y": 60, "params": { "path": "out/map.png" } },
+    { "id": "tif", "type": "Writer", "name": "Map as GeoTIFF", "x": 560, "y": 200, "params": { "path": "out/map.tif" } },
+    { "id": "pdf", "type": "Writer", "name": "Map as PDF", "x": 560, "y": 340, "params": { "path": "out/map.pdf", "pdf_title": "Subregions, routes and towns – Skaraborg, Västra Götaland" } }
+  ],
+  "edges": [
+    { "from": ["areas", "Output"], "to": ["map", "Layers"] },
+    { "from": ["routes", "Output"], "to": ["map", "Layers"] },
+    { "from": ["towns", "Output"], "to": ["map", "Layers"] },
+    { "from": ["map", "Map"], "to": ["png", "Input"] },
+    { "from": ["map", "Map"], "to": ["tif", "Input"] },
+    { "from": ["map", "Map"], "to": ["pdf", "Input"] }
+  ]
+}

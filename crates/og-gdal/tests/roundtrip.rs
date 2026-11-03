@@ -28,6 +28,8 @@ fn col(t: &Table, name: &str) -> Vec<Value> {
 fn sample() -> Table {
     Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: vec![
             Field::new("muni_code", FieldType::Text),
             Field::new("name", FieldType::Text),
@@ -281,6 +283,8 @@ fn whole_flow_with_mixed_crs_and_formats() {
 fn points(first: i64, n: i64) -> Table {
     Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: vec![Field::new("id", FieldType::Int), Field::new("code", FieldType::Text)],
         crs: Some(3006),
         features: (first..first + n)
@@ -2243,6 +2247,7 @@ fn travel_times_from_an_open_trip_planner() {
         height: 3,
         values: vec![10.0, 12.0, 15.0, 8.0, 0.0, 9.0, 20.0, 14.0, f32::NAN],
         bands: Vec::new(),
+        meta: Default::default(),
         geotransform: [319000.0, 100.0, 0.0, 6400300.0, 0.0, -100.0],
         crs: Some(3006),
     };
@@ -2425,8 +2430,8 @@ fn cloud_optimized_geotiff_and_copc_are_read_where_they_are() {
     // The points in the rectangle, the same from the disk and from the web.
     let a = r.output("points", "Output").unwrap();
     let w = r.output("web_points", "Output").unwrap();
-    assert!(!a.is_empty() && a.len() < 107, "{}", a.len());
-    assert_eq!(a.len(), w.len());
+    assert!(a.count() > 0 && a.count() < 107, "{}", a.count());
+    assert_eq!(a.count(), w.count());
     assert_eq!(a.crs, Some(2992));
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -2713,8 +2718,8 @@ fn rasters_are_measured_and_point_clouds_written() {
         &dir,
     );
     let back = r2.output("back", "Output").unwrap();
-    assert_eq!((back.len(), back.crs), (3, Some(3006)), "{:?}", r2.log);
-    let z = back.features[0].heights().unwrap()[0];
+    assert_eq!((back.count(), back.crs), (3, Some(3006)), "{:?}", r2.log);
+    let z = back.points.as_ref().unwrap().z[0];
     assert!((z - h[0].as_f64().unwrap()).abs() < 0.5, "{} {:?}", z, h[0]);
     let d = r.output("distance", "Raster").unwrap().grid.clone().unwrap();
     assert_eq!(d.cell_size().0, 1000.0);
@@ -3219,5 +3224,134 @@ fn a_report_is_written_as_a_web_page_and_a_pdf() {
     assert!(text.contains("The first 1 of 2 rows"));
     // GDAL reads it as a PDF.
     assert!(gdal::Dataset::open(dir.join("out/rapport.pdf")).is_ok());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Two made-up satellite pictures, a GeoTIFF for each band in UTM as Sentinel-2 has them,
+/// read onto a grid over an area, their clouds masked, NDVI made and put together.
+#[test]
+fn satellite_pictures_are_read_masked_and_put_together() {
+    use gdal::raster::Buffer;
+    let b = GdalBackend::new();
+    let dir = tmp("sentinel");
+    let band = |name: &str, value: f32, cloud_left: bool| {
+        let path = dir.join(name);
+        let drv = gdal::DriverManager::get_driver_by_name("GTiff").unwrap();
+        let mut ds = drv.create_with_band_type::<f32, _>(&path, 50, 50, 1).unwrap();
+        // UTM 33N around Skövde, 20 m cells.
+        ds.set_geo_transform(&[440_000.0, 20.0, 0.0, 6_480_000.0, 0.0, -20.0]).unwrap();
+        ds.set_spatial_ref(&gdal::spatial_ref::SpatialRef::from_epsg(32633).unwrap()).unwrap();
+        let data: Vec<f32> = (0..2500).map(|i| if cloud_left && i % 50 < 25 { 9.0 } else { value }).collect();
+        ds.rasterband(1).unwrap().write((0, 0), (50, 50), &mut Buffer::new((50, 50), data)).unwrap();
+        path.file_name().unwrap().to_string_lossy().into_owned()
+    };
+    let rows = [
+        ("2026-06-01T10:00:00Z", band("a_red.tif", 500.0, false), band("a_nir.tif", 4000.0, false), band("a_scl.tif", 4.0, true)),
+        ("2026-06-11T10:00:00Z", band("b_red.tif", 400.0, false), band("b_nir.tif", 3600.0, false), band("b_scl.tif", 4.0, false)),
+    ];
+    let mut csv = String::from("id;datetime;asset_red;asset_nir;asset_scl\n");
+    for (k, r) in rows.iter().enumerate() {
+        csv.push_str(&format!("s{};{};{};{};{}\n", k, r.0, dir.join(&r.1).display(), dir.join(&r.2).display(), dir.join(&r.3).display()));
+    }
+    std::fs::write(dir.join("items.csv"), csv).unwrap();
+    // The area, inside the pictures; the grid is in its coordinate system.
+    std::fs::write(dir.join("area.csv"), "id;wkt\n1;POLYGON((440300 6479300,440700 6479300,440700 6479700,440300 6479700,440300 6479300))\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "items", "type": "Reader", "params": {"path": "items.csv"}},
+        {"id": "area", "type": "Reader", "params": {"path": "area.csv", "crs": "EPSG:32633"}},
+        {"id": "read", "type": "SceneReader", "params": {"bands": "red, nir, scl", "cell": "20"}},
+        {"id": "mask", "type": "CloudMasker", "params": {}},
+        {"id": "ndvi", "type": "SpectralIndex", "params": {"index": "ndvi"}},
+        {"id": "both", "type": "TemporalComposite", "params": {"method": "median"}},
+        {"id": "each", "type": "Writer", "params": {"path": "out/ndvi.tif"}},
+        {"id": "out", "type": "Writer", "params": {"path": "out/summer.tif"}}],
+      "edges": [
+        {"from": ["items", "Output"], "to": ["read", "Items"]},
+        {"from": ["area", "Output"], "to": ["read", "Extent"]},
+        {"from": ["read", "Rasters"], "to": ["mask", "Rasters"]},
+        {"from": ["mask", "Rasters"], "to": ["ndvi", "Rasters"]},
+        {"from": ["ndvi", "Rasters"], "to": ["both", "Rasters"]},
+        {"from": ["ndvi", "Rasters"], "to": ["each", "Input"]},
+        {"from": ["both", "Composite"], "to": ["out", "Input"]}]}"#,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    assert_eq!(r.errors, 0);
+    let read = r.output("read", "Rasters").unwrap();
+    let series = read.series.as_ref().unwrap();
+    assert_eq!(series.len(), 2);
+    assert_eq!(series[0].meta.names, ["red", "nir", "scl"]);
+    assert_eq!(read.crs, Some(32633));
+    assert!((series[0].values[0] - 0.05).abs() < 1e-6, "scaled to reflectance");
+    assert_eq!(series[1].bands[1][0], 4.0, "classes are not scaled");
+    // The left half of the first picture is cloud; the composite has both there, one elsewhere.
+    let count = r.output("both", "Count").unwrap().grid.clone().unwrap();
+    assert!(count.values.contains(&1.0) && count.values.contains(&2.0), "{:?}", &count.values[..20]);
+    let g = r.output("both", "Composite").unwrap().grid.clone().unwrap();
+    assert_eq!(g.meta.names[0], "ndvi");
+    let ds = gdal::Dataset::open(dir.join("out/summer.tif")).unwrap();
+    assert_eq!(ds.raster_count(), 4);
+    assert_eq!(gdal::Metadata::description(&ds.rasterband(1).unwrap()).unwrap(), "ndvi");
+    assert!(dir.join("out/ndvi_2026-06-01.tif").is_file() && dir.join("out/ndvi_2026-06-11.tif").is_file());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A DXF drawing with a 3D face: read as a 3D model, each body a feature with its layer, and
+/// the lines kept as they are.
+#[test]
+fn the_3d_bodies_of_a_drawing_are_a_3d_model() {
+    let b = GdalBackend::new();
+    let dir = tmp("bodies");
+    // A 3D face on the layer Roof, and a line on Plan, in the plainest DXF.
+    let codes: &[(&str, &str)] = &[
+        ("0", "SECTION"),
+        ("2", "ENTITIES"),
+        ("0", "3DFACE"),
+        ("8", "Roof"),
+        ("10", "0"),
+        ("20", "0"),
+        ("30", "3"),
+        ("11", "4"),
+        ("21", "0"),
+        ("31", "3"),
+        ("12", "4"),
+        ("22", "4"),
+        ("32", "3"),
+        ("13", "0"),
+        ("23", "4"),
+        ("33", "3"),
+        ("0", "LINE"),
+        ("8", "Plan"),
+        ("10", "0"),
+        ("20", "0"),
+        ("30", "0"),
+        ("11", "10"),
+        ("21", "0"),
+        ("31", "0"),
+        ("0", "ENDSEC"),
+        ("0", "EOF"),
+    ];
+    let text_dxf: String = codes.iter().map(|(c, v)| format!("{}\n{}\n", c, v)).collect();
+    let path = dir.join("bodies.dxf");
+    std::fs::write(&path, text_dxf).unwrap();
+    let mut notes = Notes::default();
+    let t = b.read(&path, &ReadOpts { allow_no_crs: true, ..Default::default() }, &mut notes).unwrap();
+    let m = t.mesh.as_ref().expect("a 3D model");
+    assert_eq!(m.objects.len(), t.len());
+    assert_eq!(m.tris.len(), 2, "the face of four corners as two triangles");
+    let entity = t.field_index("entity").unwrap();
+    let layer = t.field_index("layer").unwrap();
+    let faces: Vec<&Feature> = t.features.iter().filter(|f| f.attrs[entity] == text("3DFACE")).collect();
+    assert_eq!(faces.len(), 1, "{:?}", t.features.iter().map(|f| f.attrs[entity].clone()).collect::<Vec<_>>());
+    assert_eq!(faces[0].attrs[layer], text("Roof"));
+    assert!(
+        t.features.iter().any(|f| f.attrs[layer] == text("Plan") && f.geom.is_some()),
+        "the lines are kept: {:?}",
+        t.features.iter().map(|f| (f.attrs[entity].clone(), f.attrs[layer].clone())).collect::<Vec<_>>()
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

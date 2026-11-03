@@ -299,7 +299,17 @@ fn the_map_draws_every_feature_also_hundreds_of_thousands() {
             Feature { z: None, attrs: vec![Value::Int(i as i64)], geom: Some(g) }
         })
         .collect();
-    let table = Table { mesh: None, fields: vec![Field::new("id", FieldType::Int)], crs: Some(3006), features, raster: false, image: None, grid: None };
+    let table = Table {
+        mesh: None,
+        points: None,
+        series: None,
+        fields: vec![Field::new("id", FieldType::Int)],
+        crs: Some(3006),
+        features,
+        raster: false,
+        image: None,
+        grid: None,
+    };
     let mut h = app_with_result(table);
     wait_for_map(&mut h);
     // Zoomed out, every road is drawn as one image, and the map says so.
@@ -1036,6 +1046,8 @@ fn a_large_point_cloud_is_seen_in_3d() {
     let n = 2_000_000usize;
     let table = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: vec![Field::new("class", FieldType::Int)],
         crs: Some(2961),
         features: (0..n)
@@ -1073,6 +1085,8 @@ fn a_row_with_megabytes_of_text_is_picked_and_drawn() {
     assert!(one_line.len() > 2_000_000);
     let table = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: vec![Field::new("name", FieldType::Text), Field::new("_response", FieldType::Text), Field::new("_status", FieldType::Int)],
         crs: None,
         features: vec![

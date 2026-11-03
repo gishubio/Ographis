@@ -248,7 +248,7 @@ fn run_interpolate(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         return err("Triangles need at least three points. Choose inverse distance or the nearest point.");
     }
     let values = interpolate(&points, w, h, gt, &method, k, power, reach)?;
-    let g = Grid { width: w, height: h, values, geotransform: gt, crs, bands: Vec::new() };
+    let g = Grid { width: w, height: h, values, geotransform: gt, crs, bands: Vec::new(), meta: Default::default() };
     ctx.notes.info(format!("{} points", fmt_count(points.len() as u64)));
     note_grid(&g, ctx, "values");
     Ok(vec![("Raster".into(), g.into_table())])
@@ -280,7 +280,15 @@ pub fn resample_to(g: &Grid, w: usize, h: usize, gt: [f64; 6], method: &str) -> 
     use rayon::prelude::*;
     let center = |c: usize, r: usize| (gt[0] + (c as f64 + 0.5) * gt[1], gt[3] + (r as f64 + 0.5) * gt[5]);
     let band = |values: &[f32]| -> Vec<f32> {
-        let src = Grid { width: g.width, height: g.height, values: values.to_vec(), geotransform: g.geotransform, crs: g.crs, bands: Vec::new() };
+        let src = Grid {
+            width: g.width,
+            height: g.height,
+            values: values.to_vec(),
+            geotransform: g.geotransform,
+            crs: g.crs,
+            bands: Vec::new(),
+            meta: Default::default(),
+        };
         match method {
             "mean" | "majority" => {
                 let mut gathered: Vec<Vec<f32>> = vec![Vec::new(); w * h];
@@ -333,7 +341,7 @@ pub fn resample_to(g: &Grid, w: usize, h: usize, gt: [f64; 6], method: &str) -> 
                 .collect(),
         }
     };
-    Grid { width: w, height: h, values: band(&g.values), bands: g.bands.iter().map(|b| band(b)).collect(), geotransform: gt, crs: g.crs }
+    Grid { width: w, height: h, values: band(&g.values), bands: g.bands.iter().map(|b| band(b)).collect(), meta: g.meta.clone(), geotransform: gt, crs: g.crs }
 }
 
 fn run_resample(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
@@ -706,7 +714,8 @@ fn run_watershed(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         }
     }
     // The catchments as areas, through the cells that carry their number.
-    let labels = Grid { values: label.iter().map(|l| if *l == 0 { f32::NAN } else { *l as f32 }).collect(), bands: Vec::new(), ..g.clone() };
+    let labels =
+        Grid { values: label.iter().map(|l| if *l == 0 { f32::NAN } else { *l as f32 }).collect(), bands: Vec::new(), meta: Default::default(), ..g.clone() };
     let polys = ctx.backend("Catchments")?.polygonize(&labels, "catchment", false)?;
     let mut areas = Table {
         fields: vec![Field::new("catchment", FieldType::Int), Field::new("area_km2", FieldType::Real), Field::new("outlet_flow_km2", FieldType::Real)],
@@ -813,6 +822,7 @@ fn run_watershed(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let flow = Grid {
         values: acc.iter().zip(&g.values).map(|(a, v)| if v.is_nan() { f32::NAN } else { (*a as f64 * cell_area) as f32 }).collect(),
         bands: Vec::new(),
+        meta: Default::default(),
         ..g.clone()
     };
     ctx.notes.info(format!("{} catchments, {} stream lines", fmt_count(areas.len() as u64), fmt_count(streams.len() as u64)));
@@ -923,6 +933,7 @@ mod tests {
             geotransform: [0.0, 10.0, 0.0, 20.0, 0.0, -10.0],
             crs: None,
             bands: Vec::new(),
+            meta: Default::default(),
         };
         let mean = resample_to(&fine, 2, 1, [0.0, 20.0, 0.0, 20.0, 0.0, -20.0], "mean");
         assert_eq!(mean.values, [2.0, 6.0]);
@@ -942,7 +953,15 @@ mod tests {
         // A valley along the middle, falling to the south: two slopes drain into it.
         let (w, h) = (21usize, 30usize);
         let values = (0..w * h).map(|i| ((i % w) as f32 - 10.0).abs() * 2.0 + (h - i / w) as f32 * 0.5).collect();
-        let g = Grid { width: w, height: h, values, geotransform: [0.0, 10.0, 0.0, 300.0, 0.0, -10.0], crs: Some(3006), bands: Vec::new() };
+        let g = Grid {
+            width: w,
+            height: h,
+            values,
+            geotransform: [0.0, 10.0, 0.0, 300.0, 0.0, -10.0],
+            crs: Some(3006),
+            bands: Vec::new(),
+            meta: Default::default(),
+        };
         let down = flow_directions(&g);
         let acc = accumulation(&down);
         // The bottom of the valley gathers the most.

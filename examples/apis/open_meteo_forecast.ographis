@@ -5,40 +5,38 @@
     {
       "id": "om",
       "type": "HttpCaller",
-      "name": "Open-Meteo",
       "x": 20,
       "y": 40,
       "params": {
         "url": "https://api.open-meteo.com/v1/forecast?latitude=57.71&longitude=11.97&hourly=temperature_2m,precipitation&timezone=UTC"
-      }
+      },
+      "comment": "Open-Meteo"
     },
     {
       "id": "series",
       "type": "JsonExploder",
-      "name": "A row per hour",
       "x": 300,
       "y": 40,
       "params": {
         "attribute": "_response",
         "path": "hourly.time, hourly.temperature_2m, hourly.precipitation"
       },
-      "comment": "The lists are taken side by side"
+      "comment": "A row per hour. The lists are taken side by side"
     },
     {
       "id": "hour",
       "type": "AttributeCreator",
-      "name": "Swedish time",
       "x": 560,
       "y": 40,
       "params": {
         "name": "hour",
         "expression": "format_time(time || 'Z', '%a %H:%M')"
-      }
+      },
+      "comment": "Swedish time"
     },
     {
       "id": "chart",
       "type": "ChartDrawer",
-      "name": "Chart",
       "x": 820,
       "y": 40,
       "params": {
@@ -50,17 +48,18 @@
         "subtitle": "The coming day, hour by hour",
         "note": "Source: Open-Meteo",
         "unit": "°C"
-      }
+      },
+      "comment": "Chart"
     },
     {
       "id": "out",
       "type": "Writer",
-      "name": "Chart",
       "x": 1080,
       "y": 40,
       "params": {
         "path": "out/forecast.png"
-      }
+      },
+      "comment": "Chart"
     }
   ],
   "edges": [

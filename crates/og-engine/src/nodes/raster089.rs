@@ -258,7 +258,8 @@ fn run_sampler(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     for b in 0..g.bands.len() {
         slots.push(column(&mut out, &format!("{}_{}", name, b + 2), FieldType::Real));
     }
-    let bands: Vec<Grid> = g.bands.iter().map(|values| Grid { values: values.clone(), bands: Vec::new(), ..g.clone() }).collect::<Vec<_>>();
+    let bands: Vec<Grid> =
+        g.bands.iter().map(|values| Grid { values: values.clone(), bands: Vec::new(), meta: Default::default(), ..g.clone() }).collect::<Vec<_>>();
     let (mut found, mut outside, mut not_points) = (0usize, 0usize, 0usize);
     for (f, geom) in out.features.iter_mut().zip(&geoms) {
         let Some(geom) = geom else { continue };
@@ -553,7 +554,7 @@ pub fn terrain_measure(g: &Grid, measure: &str, radius: usize, zf: f64) -> Grid 
             })
         })
         .collect();
-    Grid { values, bands: Vec::new(), ..g.clone() }
+    Grid { values, bands: Vec::new(), meta: Default::default(), ..g.clone() }
 }
 
 fn run_terrain(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
@@ -647,6 +648,7 @@ fn run_clip_raster(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         height: h,
         values: cut(&g.values),
         bands: g.bands.iter().map(|b| cut(b)).collect(),
+        meta: g.meta.clone(),
         geotransform: ngt,
         crs: g.crs,
     });
@@ -805,7 +807,7 @@ fn run_rasterize(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             *v = background;
         }
     }
-    let grid = Grid { width: cells.width, height: cells.height, values, geotransform: cells.gt, crs, bands: Vec::new() };
+    let grid = Grid { width: cells.width, height: cells.height, values, geotransform: cells.gt, crs, bands: Vec::new(), meta: Default::default() };
     if reached < t.features.iter().filter(|f| f.geom.is_some()).count() {
         ctx.notes.warn(format!(
             "{} features reached no cell: smaller than a cell, whose middle must lie inside an area, or outside the raster.",
@@ -861,7 +863,7 @@ fn run_reclassify(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         })
         .collect();
     let missed = g.values.iter().zip(&values).filter(|(a, b)| !a.is_nan() && b.is_nan()).count();
-    let out = Grid { values, bands: Vec::new(), ..g.clone() };
+    let out = Grid { values, bands: Vec::new(), meta: Default::default(), ..g.clone() };
     note_range(&out, ctx, "values");
     if missed > 0 {
         ctx.notes.warn(format!("{} cells had a value in no range and were made empty.", fmt_count(missed as u64)));
@@ -978,7 +980,7 @@ fn run_distance(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     }
     let d = distance_transform(&set, cells.width, cells.height, cells.gt[1].abs(), cells.gt[5].abs());
     let values: Vec<f32> = d.into_iter().map(|x| if x > reach { f32::NAN } else { x as f32 }).collect();
-    let grid = Grid { width: cells.width, height: cells.height, values, geotransform: cells.gt, crs, bands: Vec::new() };
+    let grid = Grid { width: cells.width, height: cells.height, values, geotransform: cells.gt, crs, bands: Vec::new(), meta: Default::default() };
     note_range(&grid, ctx, "distances");
     Ok(vec![("Raster".into(), grid.into_table())])
 }
@@ -1144,7 +1146,7 @@ fn run_viewshed(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     }
     let seen = count.iter().filter(|v| **v > 0.0).count();
     let reached = count.iter().filter(|v| !v.is_nan()).count();
-    let grid = Grid { values: count, bands: Vec::new(), ..g.clone() };
+    let grid = Grid { values: count, bands: Vec::new(), meta: Default::default(), ..g.clone() };
     ctx.notes.info(format!(
         "{} of {} cells within reach are seen ({}%), from {} places",
         fmt_count(seen as u64),
@@ -1303,7 +1305,7 @@ mod tests {
     /// A slope rising 1 m per cell to the east, 10 × 10 cells of 1 m, at 1000, 2000.
     fn ramp() -> Grid {
         let values = (0..100).map(|i| (i % 10) as f32).collect();
-        Grid { width: 10, height: 10, values, geotransform: [1000.0, 1.0, 0.0, 2010.0, 0.0, -1.0], crs: None, bands: Vec::new() }
+        Grid { width: 10, height: 10, values, geotransform: [1000.0, 1.0, 0.0, 2010.0, 0.0, -1.0], crs: None, bands: Vec::new(), meta: Default::default() }
     }
 
     fn table_of(geoms: Vec<Geometry<f64>>) -> Table {

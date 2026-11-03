@@ -5,7 +5,6 @@
     {
       "id": "kolada",
       "type": "HttpCaller",
-      "name": "Kolada: N01951",
       "x": 20,
       "y": 40,
       "params": {
@@ -13,50 +12,50 @@
         "paging": "next",
         "next_path": "next_url"
       },
-      "comment": "Kolada API v3 gives its answer in pages: next_url points to the next one"
+      "comment": "Kolada: N01951. Kolada API v3 gives its answer in pages: next_url points to the next one"
     },
     {
       "id": "rows",
       "type": "JsonExploder",
-      "name": "A value per municipality",
       "x": 300,
       "y": 40,
       "params": {
         "attribute": "_response",
         "path": "values"
-      }
+      },
+      "comment": "A value per municipality"
     },
     {
       "id": "sex",
       "type": "JsonExploder",
-      "name": "Per sex",
       "x": 560,
       "y": 40,
       "params": {
         "attribute": "values",
         "path": "",
         "prefix": "v"
-      }
+      },
+      "comment": "Per sex"
     },
     {
       "id": "total",
       "type": "Tester",
-      "name": "Total",
       "x": 820,
       "y": 40,
       "params": {
         "test": "\"v.gender\" = 'T'"
-      }
+      },
+      "comment": "Total"
     },
     {
       "id": "out",
       "type": "Writer",
-      "name": "Inhabitants",
       "x": 1080,
       "y": 40,
       "params": {
         "path": "out/kolada.csv"
-      }
+      },
+      "comment": "Inhabitants"
     }
   ],
   "edges": [

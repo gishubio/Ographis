@@ -319,7 +319,7 @@ fn parse_csv_with(text: &str, opts: &CsvReadOpts, notes: &mut Notes, progress: &
         _ => "no geometry".to_string(),
     });
     let fields = names.into_iter().zip(types).enumerate().filter(|(i, _)| Some(*i) != wkt_col).map(|(_, (n, t))| Field::new(n, t)).collect();
-    Ok(Table { mesh: None, fields, crs, features, raster: false, image: None, grid: None })
+    Ok(Table { mesh: None, points: None, series: None, fields, crs, features, raster: false, image: None, grid: None })
 }
 
 /// Guesses the coordinate system from the values when the reader was given none. The guess is always logged.
@@ -425,7 +425,7 @@ pub fn geometry_as_columns(table: &Table, mode: GeomMode, geographic: Option<boo
             Feature { z: None, attrs, geom: None }
         })
         .collect();
-    Table { mesh: None, fields, crs: None, features, raster: false, image: None, grid: None }
+    Table { mesh: None, points: None, series: None, fields, crs: None, features, raster: false, image: None, grid: None }
 }
 
 pub fn csv_text(table: &Table, opts: &CsvWriteOpts) -> Result<String> {
@@ -486,6 +486,8 @@ pub fn append_csv(table: &Table, path: &Path, opts: &CsvWriteOpts, notes: &mut N
     }
     let lined = Table {
         mesh: None,
+        points: None,
+        series: None,
         fields: header.iter().zip(&idx).map(|(h, i)| Field::new(h.clone(), i.map_or(FieldType::Text, |i| flat.fields[i].ty))).collect(),
         crs: None,
         features: flat

@@ -1122,6 +1122,9 @@ fn database_connections_are_kept_in_the_settings() {
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Comma);
     h.run_steps(3);
     assert!(h.state().settings_window.is_some());
+    // General comes first; the connections have a tab of their own.
+    h.get_by_label("Database connections").click();
+    h.run_steps(3);
     for label in ["Settings", "Database connections", "New connection", "Close"] {
         assert!(h.query_all_by_label(label).count() >= 1, "{} should be in the settings", label);
     }

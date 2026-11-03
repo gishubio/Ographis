@@ -5,10 +5,9 @@
     {
       "id": "house",
       "type": "Reader",
-      "name": "House",
       "x": 20,
       "y": 20,
-      "comment": "An OBJ file, placed on the map: origin, height and turning are set in the input",
+      "comment": "House. An OBJ file, placed on the map: origin, height and turning are set in the input",
       "params": {
         "path": "house/house.obj",
         "crs": "EPSG:3006",
@@ -21,10 +20,9 @@
     {
       "id": "neighbour",
       "type": "Reader",
-      "name": "Neighbour, as glTF",
       "x": 20,
       "y": 380,
-      "comment": "The same house as a .glb, with its textures inside: glTF has y up and metres",
+      "comment": "Neighbour, as glTF. The same house as a .glb, with its textures inside: glTF has y up and metres",
       "params": {
         "path": "house/house.glb",
         "crs": "EPSG:3006",
@@ -37,32 +35,31 @@
     {
       "id": "dem",
       "type": "Reader",
-      "name": "Terrain model",
       "x": 20,
       "y": 200,
       "params": {
         "path": "terrain.tif",
         "raster_as": "grid"
-      }
+      },
+      "comment": "Terrain model"
     },
     {
       "id": "studio",
       "type": "SceneRenderer",
-      "name": "In the studio",
       "x": 300,
       "y": 20,
       "params": {
         "width": "1600",
         "height": "1000"
-      }
+      },
+      "comment": "In the studio"
     },
     {
       "id": "spring",
       "type": "SceneRenderer",
-      "name": "Spring afternoon",
       "x": 300,
       "y": 200,
-      "comment": "The sun as it stands at 15:00 on the spring equinox",
+      "comment": "Spring afternoon. The sun as it stands at 15:00 on the spring equinox",
       "params": {
         "width": "1600",
         "height": "1000",
@@ -78,40 +75,39 @@
     {
       "id": "png1",
       "type": "Writer",
-      "name": "Studio picture",
       "x": 560,
       "y": 20,
       "params": {
         "path": "out/house_studio.png"
-      }
+      },
+      "comment": "Studio picture"
     },
     {
       "id": "png2",
       "type": "Writer",
-      "name": "Spring picture",
       "x": 560,
       "y": 200,
       "params": {
         "path": "out/house_spring.png"
-      }
+      },
+      "comment": "Spring picture"
     },
     {
       "id": "gpkg",
       "type": "Writer",
-      "name": "Objects with Z",
       "x": 300,
       "y": 380,
       "params": {
         "path": "out/house_3d.gpkg"
-      }
+      },
+      "comment": "Objects with Z"
     },
     {
       "id": "evening",
       "type": "SceneRenderer",
-      "name": "An evening by the water",
       "x": 560,
       "y": 560,
-      "comment": "The sky as it is at half past eight on midsummer's day, a few clouds, and water up to 86.3 m over the low ground. About a minute",
+      "comment": "An evening by the water. The sky as it is at half past eight on midsummer's day, a few clouds, and water up to 86.3 m over the low ground. About a minute",
       "params": {
         "width": "1600",
         "height": "1000",
@@ -132,10 +128,9 @@
     {
       "id": "study",
       "type": "SceneRenderer",
-      "name": "Sun study",
       "x": 560,
       "y": 740,
-      "comment": "The shadows at 9, 12 and 15 at the equinox, at midsummer and at midwinter, on white models: nine pictures on one sheet",
+      "comment": "Sun study. The shadows at 9, 12 and 15 at the equinox, at midsummer and at midwinter, on white models: nine pictures on one sheet",
       "params": {
         "width": "640",
         "height": "400",
@@ -154,22 +149,22 @@
     {
       "id": "png3",
       "type": "Writer",
-      "name": "Evening",
       "x": 840,
       "y": 560,
       "params": {
         "path": "out/house_evening.png"
-      }
+      },
+      "comment": "Evening"
     },
     {
       "id": "png4",
       "type": "Writer",
-      "name": "Sun study",
       "x": 840,
       "y": 740,
       "params": {
         "path": "out/house_sun_study.png"
-      }
+      },
+      "comment": "Sun study"
     }
   ],
   "edges": [

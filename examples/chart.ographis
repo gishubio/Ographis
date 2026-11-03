@@ -5,18 +5,17 @@
     {
       "id": "towns",
       "type": "Reader",
-      "name": "Towns",
       "x": 20,
       "y": 20,
       "params": {
         "path": "towns.csv",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "Towns"
     },
     {
       "id": "pop",
       "type": "ChartDrawer",
-      "name": "Population chart",
       "x": 260,
       "y": 20,
       "params": {
@@ -33,53 +32,53 @@
         ],
         "labels": "all",
         "html": "out/largest_towns.html"
-      }
+      },
+      "comment": "Population chart"
     },
     {
       "id": "pop_png",
       "type": "Writer",
-      "name": "Population chart file",
       "x": 520,
       "y": 20,
       "params": {
         "path": "out/population.png"
-      }
+      },
+      "comment": "Population chart file"
     },
     {
       "id": "sub",
       "type": "Reader",
-      "name": "Subregions",
       "x": 20,
       "y": 200,
       "params": {
         "path": "subregions.gpkg"
-      }
+      },
+      "comment": "Subregions"
     },
     {
       "id": "sweref",
       "type": "Reprojector",
-      "name": "To SWEREF 99 TM",
       "x": 240,
       "y": 200,
       "params": {
         "crs": "EPSG:3006"
-      }
+      },
+      "comment": "To SWEREF 99 TM"
     },
     {
       "id": "area",
       "type": "AttributeCreator",
-      "name": "Area in km²",
       "x": 460,
       "y": 200,
       "params": {
         "name": "area_km2",
         "expression": "$area / 1000000"
-      }
+      },
+      "comment": "Area in km²"
     },
     {
       "id": "sub_chart",
       "type": "ChartDrawer",
-      "name": "Area chart",
       "x": 680,
       "y": 200,
       "params": {
@@ -92,22 +91,22 @@
         "mean": "yes",
         "width": "900",
         "html": "out/subregions.html"
-      }
+      },
+      "comment": "Area chart"
     },
     {
       "id": "sub_png",
       "type": "Writer",
-      "name": "Area chart file",
       "x": 920,
       "y": 200,
       "params": {
         "path": "out/subregions.png"
-      }
+      },
+      "comment": "Area chart file"
     },
     {
       "id": "slides",
       "type": "SlideWriter",
-      "name": "Slides",
       "x": 1180,
       "y": 20,
       "comment": "Both charts as slides for PowerPoint, after a first slide with a title",

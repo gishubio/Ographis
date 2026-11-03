@@ -1128,7 +1128,7 @@ fn point_table(
         })
         .collect();
     notes.info(format!("{} points of {} tiles", fmt_count(cloud.len() as u64), fmt_count(picks.len() as u64)));
-    Ok(Table { mesh: None, fields, crs, features, raster: false, image: None, grid: None })
+    Ok(Table { mesh: None, points: None, series: None, fields, crs, features, raster: false, image: None, grid: None })
 }
 
 #[cfg(test)]

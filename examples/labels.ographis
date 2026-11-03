@@ -5,41 +5,40 @@
     {
       "id": "areas",
       "type": "Reader",
-      "name": "Subregions",
       "x": 20,
       "y": 20,
       "params": {
         "path": "subregions.gpkg"
-      }
+      },
+      "comment": "Subregions"
     },
     {
       "id": "routes",
       "type": "Reader",
-      "name": "Routes",
       "x": 20,
       "y": 160,
       "params": {
         "path": "routes.shp"
-      }
+      },
+      "comment": "Routes"
     },
     {
       "id": "towns",
       "type": "Reader",
-      "name": "Towns",
       "x": 20,
       "y": 300,
       "params": {
         "path": "towns.csv",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "Towns"
     },
     {
       "id": "places",
       "type": "Reader",
-      "name": "Places in Skövde",
       "x": 20,
       "y": 560,
-      "comment": "Made up, with the kind of place as in OpenStreetMap or in Swedish",
+      "comment": "Places in Skövde. Made up, with the kind of place as in OpenStreetMap or in Swedish",
       "params": {
         "path": "places.geojson"
       }
@@ -47,10 +46,9 @@
     {
       "id": "map",
       "type": "MapRenderer",
-      "name": "Labelled map",
       "x": 300,
       "y": 120,
-      "comment": "Towns sized and placed by population, where there is room",
+      "comment": "Labelled map. Towns sized and placed by population, where there is room",
       "params": {
         "width": "1600",
         "crs": "EPSG:3006",
@@ -67,7 +65,8 @@
             "label_size": 12,
             "label_size_by": "population",
             "label_size_max": 22,
-            "label_priority": "population"
+            "label_priority": "population",
+            "name": "Towns"
           },
           {
             "from": "routes:Output",
@@ -77,7 +76,8 @@
             "size": 6,
             "label": "name",
             "label_colour": "#7f0f1e",
-            "label_size": 13
+            "label_size": 13,
+            "name": "Routes"
           },
           {
             "from": "areas:Output",
@@ -91,7 +91,8 @@
             "label_bold": true,
             "label_colour": "#4a7fb0",
             "label_size": 18,
-            "label_halo": "none"
+            "label_halo": "none",
+            "name": "Subregions"
           }
         ]
       }
@@ -99,7 +100,6 @@
     {
       "id": "pois",
       "type": "MapRenderer",
-      "name": "Places with icons",
       "x": 300,
       "y": 540,
       "params": {
@@ -117,42 +117,44 @@
             "icon_by": "amenity",
             "icon_style": "circle",
             "label": "name",
-            "label_size": 13
+            "label_size": 13,
+            "name": "Places in Skövde"
           }
         ]
-      }
+      },
+      "comment": "Places with icons"
     },
     {
       "id": "png",
       "type": "Writer",
-      "name": "Labelled map",
       "x": 560,
       "y": 120,
       "params": {
         "path": "out/labels.png"
-      }
+      },
+      "comment": "Labelled map"
     },
     {
       "id": "poipng",
       "type": "Writer",
-      "name": "Places",
       "x": 560,
       "y": 520,
       "params": {
         "path": "out/places.png"
-      }
+      },
+      "comment": "Places"
     },
     {
       "id": "poipdf",
       "type": "Writer",
-      "name": "Places for print",
       "x": 560,
       "y": 640,
       "params": {
         "path": "out/places.pdf",
         "pdf_size": "a3",
         "pdf_title": "Places in Skövde"
-      }
+      },
+      "comment": "Places for print"
     }
   ],
   "edges": [

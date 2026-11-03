@@ -577,8 +577,8 @@ pub(super) fn run_reader(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
             // A rectangle in the coordinates of the file is used while reading, and saves
             // memory; one in other coordinates is applied after.
             let rect = within.filter(|(_, c)| c.is_none() || *c == crs).map(|(r, _)| r);
-            // Each point is a feature, so without a limit at most two million are read.
-            let most = Some(left.unwrap_or(2_000_000));
+            // The points are kept as a cloud of columns, so all are read unless a limit is set.
+            let most = left;
             let spacing = number_param(p, "las_spacing", "The spacing")?.filter(|s| *s > 0.0);
             let opts = crate::pointcloud::LasOpts { classes, every, most, within: rect, crs, spacing };
             let (progress, gate) = (ctx.progress, ctx.gate);
@@ -1238,12 +1238,7 @@ pub(super) fn run_file_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<
         let ext = ext_of(&file);
         let mut notes = Notes::default();
         let t = if matches!(ext.as_str(), "las" | "laz") {
-            crate::pointcloud::read_las(
-                &file,
-                &crate::pointcloud::LasOpts { every: 1, most: Some(2_000_000), crs, ..Default::default() },
-                &mut notes,
-                &|_, _| true,
-            )
+            crate::pointcloud::read_las(&file, &crate::pointcloud::LasOpts { every: 1, crs, ..Default::default() }, &mut notes, &|_, _| true)
         } else if is_text_format(&ext) {
             csv_io::read_csv_with(&file, &CsvReadOpts { delimiter: None, encoding: None, x: None, y: None, wkt: None, crs }, &mut notes, &|_, _| true)
         } else {

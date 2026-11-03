@@ -1,0 +1,243 @@
+{
+  "format": "ographis/1",
+  "name": "Terrain with light and shadows",
+  "nodes": [
+    {
+      "id": "dem",
+      "type": "Reader",
+      "name": "Terrain model",
+      "x": 20,
+      "y": 20,
+      "comment": "A made-up terrain, 12.8 × 9.6 km in cells of 20 m",
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "water",
+      "type": "Reader",
+      "name": "Water",
+      "x": 20,
+      "y": 220,
+      "params": {
+        "path": "water.geojson"
+      }
+    },
+    {
+      "id": "lakes",
+      "type": "Tester",
+      "name": "Lakes",
+      "x": 240,
+      "y": 220,
+      "params": {
+        "test": "kind = 'lake'"
+      }
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "name": "Water as a map",
+      "x": 460,
+      "y": 220,
+      "params": {
+        "width": "2000",
+        "margin": "0",
+        "background": "none",
+        "crs": "EPSG:3006",
+        "layers": [
+          {
+            "from": "lakes:Failed",
+            "fill": "none",
+            "stroke": "#3b7bbf",
+            "width": 3,
+            "size": 6
+          },
+          {
+            "from": "lakes:Passed",
+            "fill": "#7fb2e5",
+            "stroke": "#3b7bbf",
+            "width": 1.5,
+            "size": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "shade",
+      "type": "TerrainShader",
+      "name": "Shaded relief",
+      "x": 700,
+      "y": 20,
+      "params": {
+        "exaggeration": "2",
+        "haze": "35"
+      }
+    },
+    {
+      "id": "view",
+      "type": "TerrainRenderer",
+      "name": "3D view from the south-west",
+      "x": 700,
+      "y": 240,
+      "params": {
+        "exaggeration": "2.5",
+        "sun_altitude": "25",
+        "width": "1600",
+        "height": "900"
+      }
+    },
+    {
+      "id": "out_shade",
+      "type": "Writer",
+      "name": "Relief as GeoTIFF",
+      "x": 940,
+      "y": 20,
+      "params": {
+        "path": "out/relief.tif"
+      }
+    },
+    {
+      "id": "out_view",
+      "type": "Writer",
+      "name": "3D view as PNG",
+      "x": 940,
+      "y": 240,
+      "params": {
+        "path": "out/terrain_3d.png"
+      }
+    },
+    {
+      "id": "contours",
+      "type": "ContourGenerator",
+      "name": "Contours every 10 m",
+      "x": 240,
+      "y": 20,
+      "params": {
+        "interval": "10"
+      }
+    },
+    {
+      "id": "out_contours",
+      "type": "Writer",
+      "name": "Contours",
+      "x": 460,
+      "y": 20,
+      "params": {
+        "path": "out/contours.gpkg"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "shade",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "view",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "water",
+        "Output"
+      ],
+      "to": [
+        "lakes",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "lakes",
+        "Passed"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "lakes",
+        "Failed"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "shade",
+        "Map"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "view",
+        "Map"
+      ]
+    },
+    {
+      "from": [
+        "shade",
+        "Image"
+      ],
+      "to": [
+        "out_shade",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "view",
+        "Image"
+      ],
+      "to": [
+        "out_view",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "contours",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "contours",
+        "Contours"
+      ],
+      "to": [
+        "out_contours",
+        "Input"
+      ]
+    }
+  ]
+}

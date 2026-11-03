@@ -1,0 +1,170 @@
+{
+  "format": "ographis/1",
+  "name": "NDVI of a summer from Sentinel-2",
+  "description": "Sentinel-2 pictures of the summer around Skövde from Element 84, their clouds masked, NDVI worked out, and put together into one picture without clouds and one for each month. Needs the internet.",
+  "nodes": [
+    {
+      "id": "stac",
+      "type": "StacSearch",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "url": "https://earth-search.aws.element84.com/v1",
+        "collections": "sentinel-2-l2a",
+        "bbox": "13.80, 58.36, 13.92, 58.42",
+        "datetime": "2025-06-01/2025-08-31",
+        "query": "eo:cloud_cover < 40",
+        "max_items": "20"
+      },
+      "comment": "Sentinel-2 over Skövde, summer 2025"
+    },
+    {
+      "id": "read",
+      "type": "SceneReader",
+      "x": 300,
+      "y": 40,
+      "params": {
+        "bands": "red, nir, scl",
+        "cell": "10",
+        "bbox": "13.80, 58.36, 13.92, 58.42",
+        "crs": "EPSG:3006",
+        "most": "12"
+      },
+      "comment": "Red, near infrared and the scene classes, 10 m"
+    },
+    {
+      "id": "mask",
+      "type": "CloudMasker",
+      "x": 560,
+      "y": 40,
+      "params": {
+        "least": "20"
+      },
+      "comment": "Clouds and their shadows taken away"
+    },
+    {
+      "id": "ndvi",
+      "type": "SpectralIndex",
+      "x": 820,
+      "y": 40,
+      "params": {
+        "index": "ndvi"
+      },
+      "comment": "NDVI"
+    },
+    {
+      "id": "summer",
+      "type": "TemporalComposite",
+      "x": 1080,
+      "y": 40,
+      "params": {
+        "method": "median"
+      },
+      "comment": "The median of the summer"
+    },
+    {
+      "id": "months",
+      "type": "TemporalComposite",
+      "x": 1080,
+      "y": 180,
+      "params": {
+        "method": "median",
+        "period": "month"
+      },
+      "comment": "A picture for each month"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "x": 1340,
+      "y": 40,
+      "params": {
+        "path": "out/ndvi_summer.tif",
+        "format": "cog"
+      },
+      "comment": "Cloud Optimized GeoTIFF"
+    },
+    {
+      "id": "out_months",
+      "type": "Writer",
+      "x": 1340,
+      "y": 180,
+      "params": {
+        "path": "out/ndvi_month.tif"
+      },
+      "comment": "A file for each month"
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "stac",
+        "Items"
+      ],
+      "to": [
+        "read",
+        "Items"
+      ]
+    },
+    {
+      "from": [
+        "read",
+        "Rasters"
+      ],
+      "to": [
+        "mask",
+        "Rasters"
+      ]
+    },
+    {
+      "from": [
+        "mask",
+        "Rasters"
+      ],
+      "to": [
+        "ndvi",
+        "Rasters"
+      ]
+    },
+    {
+      "from": [
+        "ndvi",
+        "Rasters"
+      ],
+      "to": [
+        "summer",
+        "Rasters"
+      ]
+    },
+    {
+      "from": [
+        "ndvi",
+        "Rasters"
+      ],
+      "to": [
+        "months",
+        "Rasters"
+      ]
+    },
+    {
+      "from": [
+        "summer",
+        "Composite"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "months",
+        "Composite"
+      ],
+      "to": [
+        "out_months",
+        "Input"
+      ]
+    }
+  ]
+}

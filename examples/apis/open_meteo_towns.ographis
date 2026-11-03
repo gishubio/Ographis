@@ -5,29 +5,27 @@
     {
       "id": "in",
       "type": "Reader",
-      "name": "Towns",
       "x": 20,
       "y": 40,
       "params": {
         "path": "towns.csv"
-      }
+      },
+      "comment": "Towns"
     },
     {
       "id": "om",
       "type": "HttpCaller",
-      "name": "Open-Meteo per town",
       "x": 280,
       "y": 40,
       "params": {
         "url": "'https://api.open-meteo.com/v1/forecast?latitude=' || lat || '&longitude=' || lon || '&daily=temperature_2m_max&timezone=Europe%2FStockholm&forecast_days=2'",
         "per_second": "5"
       },
-      "comment": "A request for each town, at a calm pace"
+      "comment": "Open-Meteo per town. A request for each town, at a calm pace"
     },
     {
       "id": "max",
       "type": "JsonExtractor",
-      "name": "Tomorrow",
       "x": 540,
       "y": 40,
       "params": {
@@ -42,12 +40,12 @@
             "date"
           ]
         ]
-      }
+      },
+      "comment": "Tomorrow"
     },
     {
       "id": "chart",
       "type": "ChartDrawer",
-      "name": "Chart",
       "x": 800,
       "y": 40,
       "params": {
@@ -58,17 +56,18 @@
         "subtitle": "Six towns in Västra Götaland",
         "note": "Source: Open-Meteo",
         "unit": "°C"
-      }
+      },
+      "comment": "Chart"
     },
     {
       "id": "png",
       "type": "Writer",
-      "name": "Chart",
       "x": 1060,
       "y": 40,
       "params": {
         "path": "out/highest_temperature.png"
-      }
+      },
+      "comment": "Chart"
     }
   ],
   "edges": [

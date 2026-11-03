@@ -5,10 +5,9 @@
     {
       "id": "dxf",
       "type": "Reader",
-      "name": "Plan, DXF",
       "x": 20,
       "y": 20,
-      "comment": "DXF has no coordinate system: it is set here. The wells are blocks with the attributes ID and DJUP",
+      "comment": "Plan, DXF. DXF has no coordinate system: it is set here. The wells are blocks with the attributes ID and DJUP",
       "params": {
         "path": "formats/plan.dxf",
         "crs": "EPSG:3006"
@@ -17,68 +16,67 @@
     {
       "id": "wells",
       "type": "Tester",
-      "name": "Wells",
       "x": 280,
       "y": 20,
       "params": {
         "test": "block = 'BRUNN'"
-      }
+      },
+      "comment": "Wells"
     },
     {
       "id": "fgb",
       "type": "Writer",
-      "name": "Wells as FlatGeobuf",
       "x": 520,
       "y": 20,
       "params": {
         "path": "out/wells.fgb"
-      }
+      },
+      "comment": "Wells as FlatGeobuf"
     },
     {
       "id": "towns",
       "type": "Reader",
-      "name": "Towns, GeoParquet",
       "x": 20,
       "y": 200,
       "params": {
         "path": "formats/towns.parquet"
-      }
+      },
+      "comment": "Towns, GeoParquet"
     },
     {
       "id": "towns_xlsx",
       "type": "Writer",
-      "name": "Towns as a table",
       "x": 280,
       "y": 200,
       "params": {
         "path": "out/towns_from_parquet.xlsx"
-      }
+      },
+      "comment": "Towns as a table"
     },
     {
       "id": "cityjson",
       "type": "Reader",
-      "name": "Blocks, CityJSON",
       "x": 20,
       "y": 340,
       "params": {
         "path": "formats/blocks.city.json"
-      }
+      },
+      "comment": "Blocks, CityJSON"
     },
     {
       "id": "citygml",
       "type": "Reader",
-      "name": "Blocks, CityGML LoD1",
       "x": 20,
       "y": 480,
       "params": {
         "path": "formats/blocks.gml",
         "city_lod": "1"
-      }
+      },
+      "comment": "Blocks, CityGML LoD1"
     },
     {
       "id": "dem",
       "type": "Reader",
-      "name": "Terrain model",
       "x": 20,
       "y": 620,
       "params": {
@@ -89,12 +87,12 @@
         "min_y": "6472350",
         "max_x": "418500",
         "max_y": "6472750"
-      }
+      },
+      "comment": "Terrain model"
     },
     {
       "id": "scene",
       "type": "SceneRenderer",
-      "name": "LoD2 on the terrain",
       "x": 280,
       "y": 380,
       "params": {
@@ -108,59 +106,59 @@
         "time": "17:00",
         "background": "sky",
         "quality": "16"
-      }
+      },
+      "comment": "LoD2 on the terrain"
     },
     {
       "id": "png",
       "type": "Writer",
-      "name": "Picture",
       "x": 520,
       "y": 380,
       "params": {
         "path": "out/blocks_lod2.png"
-      }
+      },
+      "comment": "Picture"
     },
     {
       "id": "glb",
       "type": "Writer",
-      "name": "LoD1 as glTF",
       "x": 280,
       "y": 560,
       "params": {
         "path": "out/blocks_lod1.glb"
-      }
+      },
+      "comment": "LoD1 as glTF"
     },
     {
       "id": "vt",
       "type": "Reader",
-      "name": "Subregions from vector tiles",
       "x": 20,
       "y": 800,
       "params": {
         "path": "formats/subregions.pmtiles",
         "vt_zoom": "8"
       },
-      "comment": "PMTiles, as MapLibre draws maps from. The pieces the tiles cut apart are put together again"
+      "comment": "Subregions from vector tiles. PMTiles, as MapLibre draws maps from. The pieces the tiles cut apart are put together again"
     },
     {
       "id": "vt_sweref",
       "type": "Reprojector",
-      "name": "To SWEREF 99 TM",
       "x": 280,
       "y": 800,
       "params": {
         "crs": "EPSG:3006"
-      }
+      },
+      "comment": "To SWEREF 99 TM"
     },
     {
       "id": "vt_out",
       "type": "Writer",
-      "name": "Subregions from tiles",
       "x": 540,
       "y": 800,
       "params": {
         "path": "out/subregions_from_tiles.gpkg"
-      }
+      },
+      "comment": "Subregions from tiles"
     }
   ],
   "edges": [

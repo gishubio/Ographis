@@ -227,7 +227,7 @@ mod tests {
                 values.push((100.0 - d * 4.0).max(0.0) as f32);
             }
         }
-        Grid { bands: Vec::new(), width: n, height: n, values, geotransform: [0.0, 10.0, 0.0, 1000.0, 0.0, -10.0], crs: Some(3006) }
+        Grid { bands: Vec::new(), meta: Default::default(), width: n, height: n, values, geotransform: [0.0, 10.0, 0.0, 1000.0, 0.0, -10.0], crs: Some(3006) }
     }
 
     #[test]

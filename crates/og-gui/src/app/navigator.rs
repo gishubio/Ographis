@@ -139,7 +139,8 @@ impl App {
                 }
                 if let Some(t) = result.and_then(|r| r.outputs.get("Output")) {
                     let crs = if t.crs.is_some() { format!(" · {}", crs_label(t.crs)) } else { String::new() };
-                    lines.push(format!("{} features{}", fmt_count(t.len() as u64), crs));
+                    let what = if t.points.is_some() { "points" } else { "features" };
+                    lines.push(format!("{} {}{}", fmt_count(t.count() as u64), what, crs));
                 }
             } else {
                 match &path {

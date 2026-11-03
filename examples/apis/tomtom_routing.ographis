@@ -20,10 +20,9 @@
     {
       "id": "route",
       "type": "HttpCaller",
-      "name": "Car routes in traffic",
       "x": 20,
       "y": 20,
-      "comment": "Routing API: by car from Drottningtorget to Liseberg on Wednesday at 07:30, with the traffic of that time, two alternatives and the time without traffic too. One request, as nothing comes in. The key is under Settings → API connections as TomTom, of the kind 'A key only where {{key}} is written'. Get one at developer.tomtom.com",
+      "comment": "Car routes in traffic. Routing API: by car from Drottningtorget to Liseberg on Wednesday at 07:30, with the traffic of that time, two alternatives and the time without traffic too. One request, as nothing comes in. The key is under Settings → API connections as TomTom, of the kind 'A key only where {{key}} is written'. Get one at developer.tomtom.com",
       "params": {
         "url": "'https://api.tomtom.com/routing/1/calculateRoute/$(from):$(to)/json?travelMode=car&routeType=fastest&traffic=true&departAt=$(departure)&maxAlternatives=2&computeTravelTimeFor=all&key={{key}}'",
         "connection": "TomTom",
@@ -34,7 +33,6 @@
     {
       "id": "routes",
       "type": "JsonExploder",
-      "name": "A feature per route",
       "x": 280,
       "y": 20,
       "params": {
@@ -42,12 +40,12 @@
         "path": "routes",
         "prefix": "route",
         "index_attr": "alternative"
-      }
+      },
+      "comment": "A feature per route"
     },
     {
       "id": "route_pts",
       "type": "JsonExtractor",
-      "name": "The points of the route",
       "x": 540,
       "y": 20,
       "params": {
@@ -58,15 +56,15 @@
             "points"
           ]
         ]
-      }
+      },
+      "comment": "The points of the route"
     },
     {
       "id": "route_geom",
       "type": "GeometryFromText",
-      "name": "Route as a line",
       "x": 800,
       "y": 20,
-      "comment": "TomTom gives the route as a list of points with latitude and longitude",
+      "comment": "Route as a line. TomTom gives the route as a list of points with latitude and longitude",
       "params": {
         "attribute": "points",
         "kind": "points",
@@ -76,7 +74,6 @@
     {
       "id": "route_attrs",
       "type": "AttributeManager",
-      "name": "Minutes, km and delay",
       "x": 1060,
       "y": 20,
       "params": {
@@ -107,33 +104,33 @@
             "value": "\"route.summary.arrivalTime\""
           }
         ]
-      }
+      },
+      "comment": "Minutes, km and delay"
     },
     {
       "id": "route_keep",
       "type": "AttributeKeeper",
-      "name": "The useful attributes",
       "x": 1320,
       "y": 20,
       "params": {
         "keep": "alternative, minutes, without_traffic, delay_minutes, km, leaves, arrives"
-      }
+      },
+      "comment": "The useful attributes"
     },
     {
       "id": "route_out",
       "type": "Writer",
-      "name": "Routes",
       "x": 1580,
       "y": 20,
       "params": {
         "path": "out/tomtom.gpkg",
         "layer": "routes"
-      }
+      },
+      "comment": "Routes"
     },
     {
       "id": "towns",
       "type": "Reader",
-      "name": "Towns",
       "x": 20,
       "y": 220,
       "params": {
@@ -141,15 +138,15 @@
         "x": "lon",
         "y": "lat",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "Towns"
     },
     {
       "id": "to_town",
       "type": "HttpCaller",
-      "name": "From Göteborg to each town",
       "x": 280,
       "y": 220,
-      "comment": "A request for each town, at most four a second, as the free plan of TomTom allows five",
+      "comment": "From Göteborg to each town. A request for each town, at most four a second, as the free plan of TomTom allows five",
       "params": {
         "url": "'https://api.tomtom.com/routing/1/calculateRoute/$(from):' || lat || ',' || lon || '/json?travelMode=car&traffic=true&departAt=$(departure)&key={{key}}'",
         "connection": "TomTom",
@@ -161,7 +158,6 @@
     {
       "id": "town_take",
       "type": "JsonExtractor",
-      "name": "Time, length and route",
       "x": 540,
       "y": 220,
       "params": {
@@ -184,24 +180,24 @@
             "points"
           ]
         ]
-      }
+      },
+      "comment": "Time, length and route"
     },
     {
       "id": "town_geom",
       "type": "GeometryFromText",
-      "name": "Route as a line",
       "x": 800,
       "y": 220,
       "params": {
         "attribute": "points",
         "kind": "points",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "Route as a line"
     },
     {
       "id": "town_attrs",
       "type": "AttributeManager",
-      "name": "Minutes and km",
       "x": 1060,
       "y": 220,
       "params": {
@@ -220,48 +216,48 @@
             "value": "round(metres / 1000, 1)"
           }
         ]
-      }
+      },
+      "comment": "Minutes and km"
     },
     {
       "id": "town_keep",
       "type": "AttributeKeeper",
-      "name": "The useful attributes",
       "x": 1320,
       "y": 220,
       "params": {
         "keep": "town, minutes, delay_minutes, km"
-      }
+      },
+      "comment": "The useful attributes"
     },
     {
       "id": "town_out",
       "type": "Writer",
-      "name": "To the towns",
       "x": 1580,
       "y": 220,
       "params": {
         "path": "out/tomtom.gpkg",
         "layer": "to_towns"
-      }
+      },
+      "comment": "To the towns"
     },
     {
       "id": "town_csv",
       "type": "Writer",
-      "name": "Table of the towns",
       "x": 1580,
       "y": 340,
       "params": {
         "path": "out/tomtom_towns.xlsx",
         "bold_header": "true",
         "freeze": "true"
-      }
+      },
+      "comment": "Table of the towns"
     },
     {
       "id": "budgets",
       "type": "FeatureCreator",
-      "name": "10, 20 and 30 minutes",
       "x": 20,
       "y": 480,
-      "comment": "Three features, each named by a number of minutes: a reachable range is asked for each",
+      "comment": "10, 20 and 30 minutes. Three features, each named by a number of minutes: a reachable range is asked for each",
       "params": {
         "kind": "point",
         "coordinates": "11.9698 57.7069\n11.9698 57.7069\n11.9698 57.7069",
@@ -272,21 +268,20 @@
     {
       "id": "budget_s",
       "type": "AttributeCreator",
-      "name": "Seconds",
       "x": 280,
       "y": 480,
       "params": {
         "name": "seconds",
         "expression": "to_int(name) * 60"
-      }
+      },
+      "comment": "Seconds"
     },
     {
       "id": "range",
       "type": "HttpCaller",
-      "name": "Reachable range by car",
       "x": 540,
       "y": 480,
-      "comment": "Reachable Range API: how far one gets from Drottningtorget by car within the time, in the traffic of Wednesday morning",
+      "comment": "Reachable range by car. Reachable Range API: how far one gets from Drottningtorget by car within the time, in the traffic of Wednesday morning",
       "params": {
         "url": "'https://api.tomtom.com/routing/1/calculateReachableRange/$(from)/json?timeBudgetInSec=' || seconds || '&travelMode=car&traffic=true&departAt=$(departure)&key={{key}}'",
         "connection": "TomTom",
@@ -298,7 +293,6 @@
     {
       "id": "range_take",
       "type": "JsonExtractor",
-      "name": "The boundary",
       "x": 800,
       "y": 480,
       "params": {
@@ -309,35 +303,35 @@
             "boundary"
           ]
         ]
-      }
+      },
+      "comment": "The boundary"
     },
     {
       "id": "range_geom",
       "type": "GeometryFromText",
-      "name": "Boundary as an area",
       "x": 1060,
       "y": 480,
       "params": {
         "attribute": "boundary",
         "kind": "points_area",
         "crs": "EPSG:4326"
-      }
+      },
+      "comment": "Boundary as an area"
     },
     {
       "id": "range_keep",
       "type": "AttributeCreator",
-      "name": "Minutes",
       "x": 1320,
       "y": 480,
       "params": {
         "name": "minutes",
         "expression": "to_int(name)"
-      }
+      },
+      "comment": "Minutes"
     },
     {
       "id": "range_sort",
       "type": "Sorter",
-      "name": "Largest first",
       "x": 1580,
       "y": 480,
       "params": {
@@ -347,23 +341,23 @@
             "descending"
           ]
         ]
-      }
+      },
+      "comment": "Largest first"
     },
     {
       "id": "range_out",
       "type": "Writer",
-      "name": "Reachable ranges",
       "x": 1840,
       "y": 480,
       "params": {
         "path": "out/tomtom.gpkg",
         "layer": "reachable"
-      }
+      },
+      "comment": "Reachable ranges"
     },
     {
       "id": "map",
       "type": "MapRenderer",
-      "name": "Map of it all",
       "x": 2100,
       "y": 220,
       "params": {
@@ -402,17 +396,18 @@
             "method": "quantile"
           }
         ]
-      }
+      },
+      "comment": "Map of it all"
     },
     {
       "id": "png",
       "type": "Writer",
-      "name": "Map as PNG",
       "x": 2360,
       "y": 220,
       "params": {
         "path": "out/tomtom.png"
-      }
+      },
+      "comment": "Map as PNG"
     }
   ],
   "edges": [

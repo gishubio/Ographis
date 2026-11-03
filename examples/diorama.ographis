@@ -5,10 +5,9 @@
     {
       "id": "cover",
       "type": "Reader",
-      "name": "Land cover",
       "x": 20,
       "y": 20,
-      "comment": "Made-up islands off the coast, with kinds of land named as in Lantmäteriet's land cover",
+      "comment": "Land cover. Made-up islands off the coast, with kinds of land named as in Lantmäteriet's land cover",
       "params": {
         "path": "islands.geojson"
       }
@@ -16,10 +15,9 @@
     {
       "id": "heights",
       "type": "Reader",
-      "name": "Heights",
       "x": 20,
       "y": 160,
-      "comment": "A made-up terrain model of the islands",
+      "comment": "Heights. A made-up terrain model of the islands",
       "params": {
         "path": "islands_heights.tif",
         "raster_as": "grid"
@@ -28,7 +26,6 @@
     {
       "id": "diorama",
       "type": "DioramaMaker",
-      "name": "Make diorama",
       "x": 280,
       "y": 20,
       "params": {
@@ -46,10 +43,9 @@
     {
       "id": "scene",
       "type": "SceneRenderer",
-      "name": "Toy picture",
       "x": 540,
       "y": 20,
-      "comment": "Parallel projection, no floor, warm light and a background colour, with a title",
+      "comment": "Toy picture. Parallel projection, no floor, warm light and a background colour, with a title",
       "params": {
         "width": "1600",
         "height": "1200",
@@ -72,22 +68,22 @@
     {
       "id": "png",
       "type": "Writer",
-      "name": "Picture",
       "x": 800,
       "y": 20,
       "params": {
         "path": "out/diorama.png"
-      }
+      },
+      "comment": "Picture"
     },
     {
       "id": "glb",
       "type": "Writer",
-      "name": "For Blender",
       "x": 540,
       "y": 200,
       "params": {
         "path": "out/diorama.glb"
-      }
+      },
+      "comment": "For Blender"
     }
   ],
   "edges": [

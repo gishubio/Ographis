@@ -1246,7 +1246,14 @@ fn point_clouds_are_read_from_las_and_laz() {
     .unwrap();
     let r = run(&ws, None, &dir);
     show(&r);
-    let all = r.output("all", "Output").unwrap();
+    // A cloud of columns, which is the same as features when it is made into them.
+    let cloud = |id: &str| {
+        let t = r.output(id, "Output").unwrap();
+        let c = t.points.as_ref().unwrap_or_else(|| panic!("{} is not a cloud", id));
+        c.to_features(t.crs, 1)
+    };
+    let all = &cloud("all");
+    assert_eq!(r.output("all", "Output").unwrap().count(), 1000);
     assert_eq!((all.len(), all.crs), (1000, Some(3006)));
     assert_eq!(all.field_names(), ["classification", "class", "intensity", "return_number", "returns", "red", "green", "blue"]);
     // The point with its height, and its colour in 8 bits.
@@ -1256,13 +1263,13 @@ fn point_clouds_are_read_from_las_and_laz() {
     assert_eq!(&f.attrs[..2], &[Value::Int(6), Value::Text("building".into())]);
     assert_eq!(&f.attrs[5..], &[Value::Int(255), Value::Int(128), Value::Int(0)]);
     // LAZ is the same.
-    let packed = r.output("packed", "Output").unwrap();
+    let packed = cloud("packed");
     assert_eq!(packed.len(), 1000);
     assert_eq!(packed.features[41].attrs, f.attrs);
-    assert_eq!(r.output("buildings", "Output").unwrap().len(), 500);
-    assert_eq!(r.output("thin", "Output").unwrap().len(), 100);
-    assert_eq!(r.output("corner", "Output").unwrap().len(), 50);
-    assert_eq!(r.output("few", "Output").unwrap().len(), 100);
+    assert_eq!(r.output("buildings", "Output").unwrap().count(), 500);
+    assert_eq!(r.output("thin", "Output").unwrap().count(), 100);
+    assert_eq!(r.output("corner", "Output").unwrap().count(), 50);
+    assert_eq!(r.output("few", "Output").unwrap().count(), 100);
     assert!(r.nodes["few"].warnings.iter().any(|w| w.starts_with("Only the first 100 points")));
     assert!(r.nodes["wrong"].error.as_ref().unwrap().contains("not the number of a class"));
     let _ = std::fs::remove_dir_all(&dir);

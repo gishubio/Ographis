@@ -248,6 +248,7 @@ pub fn generalize_grid(g: &Grid, n: usize, method: &str) -> Grid {
         height: h,
         values: band(&g.values),
         bands: g.bands.iter().map(|b| band(b)).collect(),
+        meta: g.meta.clone(),
         geotransform: [t[0], t[1] * k, t[2] * k, t[3], t[4] * k, t[5] * k],
         crs: g.crs,
     }
@@ -474,6 +475,7 @@ pub(super) fn run_raster_calculator(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> 
         height: h,
         values: cells,
         bands: Vec::new(),
+        meta: Default::default(),
         geotransform: [t[0] + c0 as f64 * t[1], t[1], 0.0, t[3] + r0 as f64 * t[5], 0.0, t[5]],
         crs,
     };

@@ -200,6 +200,22 @@ Why Ographis works as it does, and what it does not do yet.
   drew large circles; Ographis turns them back before the DXF is written, and this has to be
   taken away when acadrust mends it. The DXF it writes is read as UTF-8, whatever code page the
   drawing was made in.
+- A point cloud is kept as columns (`Cloud` in cloud.rs) rather than a feature for each
+  point. The tools for point clouds work on the columns and give a cloud back, or features
+  when they got features. Every other tool gets the points as features, made when it runs:
+  that is where memory can run out, and the log warns. Extra attributes of a cloud, such as
+  the height above ground, are kept as values of their own and take more memory than the
+  coordinates.
+- A series of pictures over time is the stream's `series`, a grid for each time with the
+  names of its bands; the first is also its grid, so the other raster tools take that one.
+  Read satellite bands reads every picture onto one grid with GDAL's warper and holds all of
+  them in memory: an area of 10 × 10 km at 10 m and three bands is about 1.2 MB a picture.
+  Scale and offset are given by hand, not read from the catalogue.
+- Check topology finds gaps as the holes of all the areas put together: a gap that opens to
+  the outside of them all is not found.
+- 3D solids of DWG and DXF are made into triangles from their ACIS faces: flat faces, also
+  with arcs and holes. Cylinders, cones, spheres and free-form faces are counted and left
+  out for now. Bodies inside blocks are not read yet.
 - GTFS, NetCDF and Zarr are read through GDAL. A cube is read through the classic rasters of
   GDAL, where the steps along the other dimensions (time, height) are bands; a variable of
   four dimensions has a band for each combination. Only variables on a regular grid can be

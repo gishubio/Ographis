@@ -5,10 +5,9 @@
     {
       "id": "dem",
       "type": "Reader",
-      "name": "Terrain model",
       "x": 20,
       "y": 20,
-      "comment": "A made-up terrain, 12.8 × 9.6 km in cells of 20 m",
+      "comment": "Terrain model. A made-up terrain, 12.8 × 9.6 km in cells of 20 m",
       "params": {
         "path": "terrain.tif",
         "raster_as": "grid"
@@ -17,27 +16,26 @@
     {
       "id": "water",
       "type": "Reader",
-      "name": "Water",
       "x": 20,
       "y": 220,
       "params": {
         "path": "water.geojson"
-      }
+      },
+      "comment": "Water"
     },
     {
       "id": "lakes",
       "type": "Tester",
-      "name": "Lakes",
       "x": 240,
       "y": 220,
       "params": {
         "test": "kind = 'lake'"
-      }
+      },
+      "comment": "Lakes"
     },
     {
       "id": "map",
       "type": "MapRenderer",
-      "name": "Water as a map",
       "x": 460,
       "y": 220,
       "params": {
@@ -51,33 +49,35 @@
             "fill": "none",
             "stroke": "#3b7bbf",
             "width": 3,
-            "size": 6
+            "size": 6,
+            "name": "Lakes"
           },
           {
             "from": "lakes:Passed",
             "fill": "#7fb2e5",
             "stroke": "#3b7bbf",
             "width": 1.5,
-            "size": 6
+            "size": 6,
+            "name": "Lakes"
           }
         ]
-      }
+      },
+      "comment": "Water as a map"
     },
     {
       "id": "shade",
       "type": "TerrainShader",
-      "name": "Shaded relief",
       "x": 700,
       "y": 20,
       "params": {
         "exaggeration": "2",
         "haze": "35"
-      }
+      },
+      "comment": "Shaded relief"
     },
     {
       "id": "view",
       "type": "TerrainRenderer",
-      "name": "3D view from the south-west",
       "x": 700,
       "y": 240,
       "params": {
@@ -85,47 +85,48 @@
         "sun_altitude": "25",
         "width": "1600",
         "height": "900"
-      }
+      },
+      "comment": "3D view from the south-west"
     },
     {
       "id": "out_shade",
       "type": "Writer",
-      "name": "Relief as GeoTIFF",
       "x": 940,
       "y": 20,
       "params": {
         "path": "out/relief.tif"
-      }
+      },
+      "comment": "Relief as GeoTIFF"
     },
     {
       "id": "out_view",
       "type": "Writer",
-      "name": "3D view as PNG",
       "x": 940,
       "y": 240,
       "params": {
         "path": "out/terrain_3d.png"
-      }
+      },
+      "comment": "3D view as PNG"
     },
     {
       "id": "contours",
       "type": "ContourGenerator",
-      "name": "Contours every 10 m",
       "x": 240,
       "y": 20,
       "params": {
         "interval": "10"
-      }
+      },
+      "comment": "Contours every 10 m"
     },
     {
       "id": "out_contours",
       "type": "Writer",
-      "name": "Contours",
       "x": 460,
       "y": 20,
       "params": {
         "path": "out/contours.gpkg"
-      }
+      },
+      "comment": "Contours"
     }
   ],
   "edges": [

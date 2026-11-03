@@ -442,6 +442,15 @@ pub trait Backend: Sync {
         let _ = (grid, to);
         Err(crate::model::GbError("Reprojecting a grid needs the GDAL support.".into()))
     }
+    /// The values of the first band of a raster, a file or a web address of a Cloud Optimized
+    /// GeoTIFF, drawn onto a grid of `width` × `height` cells placed by `geotransform` in
+    /// `crs`: only the part that is needed is read. `nearest` takes the value of the nearest
+    /// cell, as classes need; otherwise between the four nearest. Cells it does not reach are
+    /// NaN, and so are those without a value.
+    fn read_onto(&self, source: &str, geotransform: [f64; 6], width: usize, height: usize, crs: u32, nearest: bool) -> Result<Vec<f32>> {
+        let _ = (geotransform, width, height, crs, nearest);
+        Err(crate::model::GbError(format!("Reading {} needs the GDAL support.", source)))
+    }
     /// A picture in another coordinate system.
     fn warp_image(&self, image: &crate::model::RasterImage, from: u32, to: u32) -> Result<crate::model::RasterImage> {
         let _ = (image, from, to);

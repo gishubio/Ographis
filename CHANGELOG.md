@@ -3,6 +3,49 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.93
+
+Large data
+
+- **Point clouds are kept as columns**, about 30 bytes a point instead of some 1 000, and
+  every point is read: the limit of two million is gone. A tile of 4 million points, of
+  which 0.92 read half in over 2 GB, now takes about 120 MB, and a whole run with it some 700 MB. Height above ground, Filter
+  point cloud, Thin point cloud, Point cloud to raster, Classify ground points, Building
+  heights, LoD2 buildings and Reproject work on the columns; other tools get the points as
+  features, with a warning when they are many. Clouds put together, such as the tiles of a
+  folder, become one cloud. The map shows every n-th point, up to half a million.
+- The log says how much memory a node keeps when it is over half a gigabyte.
+
+Remote sensing
+
+- **Read satellite bands**: the bands of the pictures that STAC search found, read onto one
+  grid over the area, a picture for each time, with the names of the bands; only the part of
+  each file that covers the area is fetched.
+- **Mask clouds** by the scene classes of Sentinel-2 or QA_PIXEL of Landsat.
+- **Spectral index**: NDVI, NDWI, NDMI, NDBI, NBR, EVI, SAVI or an expression of your own.
+- **Composite over time**: the median, mean, highest, lowest or greenest, for the whole time
+  or each month, season or year, with how many clear values each cell had.
+- A series of pictures is written as a GeoTIFF for each time, and bands keep their names.
+
+Vector tools
+
+- **Check topology** (overlaps and gaps between areas) and **Eliminate slivers**.
+- **Merge lines**, **Points along lines** and **Offset lines**.
+- **Locate along lines** and **Place along lines**: linear referencing, as roads in NVDB.
+- **Pivot** and **Unpivot**: tables from long to wide and back.
+
+Fixed and changed
+
+- DWG and DXF: **meshes, polyface meshes, 3D faces and the flat faces of 3D solids** are read
+  as a 3D model, which was asked for in issue #34. Curved faces of solids are not yet.
+- The settings window no longer moves when another tab is chosen, *General* is the first tab,
+  and the background map the map under the canvas starts with can be chosen there.
+- *Stylize picture*: the style that was named after a home computer of the 1980s is now *8 bit
+  retro style*. Models that use it are unchanged.
+- *Report* and *Slides* take the comment of a tool as its heading when it has no name.
+- The example models keep the names of their tools, with what each does in its comment. New
+  examples: `vector_tools.ographis` and `apis/sentinel_ndvi.ographis`. The interface tests use their own copies of the models they open (see docs/TESTING.md).
+
 ## 0.92
 
 Maps
