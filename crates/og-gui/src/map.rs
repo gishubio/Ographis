@@ -420,6 +420,11 @@ impl MapView {
         self.probe.as_ref().map(|p| p.2.as_str())
     }
 
+    /// The table the map has drawn, once it is ready.
+    pub fn drawn(&self) -> Option<&Arc<Table>> {
+        self.prepared.as_ref().map(|p| &p.table)
+    }
+
     pub fn shows_tiles(&self) -> bool {
         self.prepared.as_ref().is_some_and(|p| p.mercator)
     }
@@ -432,6 +437,12 @@ impl MapView {
 
     /// True while the stream is made ready, or an image of it is drawn.
     /// Where the map is on the screen, as of the latest fit to the data.
+    /// The place on the ground under a point of the screen, in the rectangle the map was
+    /// fitted to.
+    pub fn world_at(&self, p: Pos2) -> [f64; 2] {
+        self.to_world(self.fitted_rect, p)
+    }
+
     pub fn fitted_rect(&self) -> Rect {
         self.fitted_rect
     }

@@ -6,8 +6,10 @@ mod db;
 mod dxf;
 mod pdf;
 pub mod raster;
+mod s57;
 mod services;
 pub mod sheets;
+mod xml_formats;
 
 use gdal::errors::CplErrType;
 use gdal::spatial_ref::{AxisMappingStrategy, CoordTransform, SpatialRef};
@@ -59,6 +61,11 @@ pub(crate) fn clear_messages() {
 
 /// A drawing with its 3D bodies added as a 3D model, and a note of what they are.
 fn with_bodies(t: Table, bodies: Vec<og_engine::dwg::Body>, report: og_engine::dwg::BodyReport, notes: &mut Notes) -> Table {
+    // What the drawing has that is not read at all.
+    if !report.left_out.is_empty() {
+        let list: Vec<String> = report.left_out.iter().map(|(k, n)| format!("{} {}", n, k)).collect();
+        notes.warn(format!("Not read from the drawing: {}.", list.join(", ")));
+    }
     if bodies.is_empty() && report.curved_faces == 0 && report.unread_solids == 0 {
         return t;
     }
@@ -70,11 +77,11 @@ fn with_bodies(t: Table, bodies: Vec<og_engine::dwg::Body>, report: og_engine::d
         notes.warnings.retain(|w| !w.contains("have a geometry type that is not supported"));
     }
     if n > 0 {
-        notes.info(format!("{} 3D faces, meshes and solids as a 3D model of {} triangles", n, og_engine::model::fmt_count(tris as u64)));
+        notes.info(format!("{} 3D faces, meshes, solids, regions and surfaces as a 3D model of {} triangles", n, og_engine::model::fmt_count(tris as u64)));
     }
     if report.curved_faces > 0 {
         notes.warn(format!(
-            "{} curved faces of 3D solids, such as cylinders and spheres, are not made into triangles yet and are left out; the flat faces are there.",
+            "{} free-form faces of 3D solids, such as splines, are not made into triangles yet and are left out; the flat and the round faces are there.",
             report.curved_faces
         ));
     }
@@ -132,6 +139,12 @@ impl GdalBackend {
                         break;
                     }
                 }
+            }
+            // The grids of the geoid that come with Ographis: beside the program in a folder
+            // made by build.cmd -Package, or in data/proj-grids of the source.
+            let grids = dir.ancestors().take(5).flat_map(|a| [a.join("proj-grids"), a.join("data").join("proj-grids")]).find(|p| p.is_dir());
+            if let Some(grids) = grids {
+                add_proj_search_path(&grids);
             }
             if packaged || std::env::var_os("GDAL_DATA").is_none() {
                 for cand in ["gdal-data", "share/gdal", "gdal"] {
@@ -200,6 +213,16 @@ impl GdalBackend {
                     Err(e) => Err(e.0),
                 },
             });
+            // The same place 60 m above the ellipsoid, in RH 2000 with the grid that comes along.
+            let mut zs = [60.0];
+            out.push(Check {
+                what: "Heights: the ellipsoid → RH 2000".into(),
+                result: match self.transform_heights(3006, "ellipsoid", "5613", &[319_758.3], &[6_400_326.0], &mut zs, false) {
+                    Ok(()) if (20.0..28.0).contains(&zs[0]) => Ok(format!("60 m above the ellipsoid is {:.2} m in RH 2000", zs[0])),
+                    Ok(()) => Err(format!("wrong answer: {:.2} m (expected about 24 m)", zs[0])),
+                    Err(e) => Err(format!("{} The folder proj-grids should be beside the program.", e.0)),
+                },
+            });
         }
         clear_messages();
         out
@@ -261,7 +284,10 @@ fn gdal_encoding(label: &str) -> String {
         "utf-8" | "utf8" | "utf-8-bom" => "UTF-8".into(),
         "windows-1252" | "cp1252" | "1252" | "ansi" => "CP1252".into(),
         "iso-8859-1" | "latin1" | "latin-1" => "ISO-8859-1".into(),
-        other => other.to_uppercase(),
+        other => match other.strip_prefix("windows-") {
+            Some(n) => format!("CP{}", n),
+            None => other.to_uppercase(),
+        },
     }
 }
 
@@ -274,6 +300,20 @@ pub(crate) fn epsg_of(srs: &SpatialRef) -> Option<u32> {
     if copy.auto_identify_epsg().is_ok() {
         if let Some(c) = code(&copy) {
             return Some(c);
+        }
+    }
+    // Places with heights of their own, as a BAG of depths has them: the system of the places.
+    if unsafe { gdal_sys::OSRIsCompound(srs.to_c_hsrs()) } != 0 {
+        let horizontal = srs
+            .to_projjson()
+            .ok()
+            .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
+            .and_then(|j| j.get("components").and_then(|c| c.get(0)).cloned())
+            .and_then(|h| SpatialRef::from_definition(&h.to_string()).ok());
+        if let Some(h) = horizontal {
+            if let Some(c) = epsg_of(&h) {
+                return Some(c);
+            }
         }
     }
     // Last resort: let PROJ look for a system that matches, and accept only confident hits.
@@ -686,6 +726,30 @@ pub(crate) fn read_layer<L: LayerAccess>(layer: &mut L, opts: &ReadOpts, notes: 
     Ok(Table { mesh: None, points: None, series: None, fields, crs, features, raster: false, image: None, grid: None })
 }
 
+/// Adds a folder to where PROJ looks for its grids, after those it has.
+fn add_proj_search_path(dir: &Path) {
+    let mut paths: Vec<CString> = Vec::new();
+    unsafe {
+        let list = gdal_sys::OSRGetPROJSearchPaths();
+        if !list.is_null() {
+            let mut k = 0;
+            while !(*list.add(k)).is_null() {
+                paths.push(std::ffi::CStr::from_ptr(*list.add(k)).to_owned());
+                k += 1;
+            }
+            gdal_sys::CSLDestroy(list);
+        }
+    }
+    let Ok(own) = CString::new(dir.to_string_lossy().as_bytes()) else { return };
+    if paths.contains(&own) {
+        return;
+    }
+    paths.push(own);
+    let mut ptrs: Vec<*const std::ffi::c_char> = paths.iter().map(|p| p.as_ptr()).collect();
+    ptrs.push(std::ptr::null());
+    unsafe { gdal_sys::OSRSetPROJSearchPaths(ptrs.as_ptr()) };
+}
+
 fn srs_from_epsg(code: u32) -> Result<SpatialRef> {
     let mut s = SpatialRef::from_epsg(code).map_err(|e| GbError(format!("Unknown coordinate system EPSG:{} ({})", code, e)))?;
     s.set_axis_mapping_strategy(AxisMappingStrategy::TraditionalGisOrder);
@@ -715,7 +779,16 @@ impl Backend for GdalBackend {
             return t;
         }
         if ext == "dxf" {
+            // The encoding, when one is chosen: older DXF are in the code page of the
+            // computer that wrote them, which the header may not say, or say wrongly.
+            let chosen = opts.encoding.as_deref().filter(|e| !e.trim().is_empty()).map(gdal_encoding);
+            if let Some(e) = &chosen {
+                let _ = gdal::config::set_thread_local_config_option("DXF_ENCODING", e);
+            }
             let t = dxf::read(path, opts, notes, progress);
+            if chosen.is_some() {
+                let _ = gdal::config::clear_thread_local_config_option("DXF_ENCODING");
+            }
             drain_messages(notes);
             // 3D faces, meshes and solids as a 3D model, as acadrust reads them.
             if opts.layer.is_none() && og_engine::dwg::may_have_bodies(path) {
@@ -764,6 +837,12 @@ impl Backend for GdalBackend {
                 }
             }
             return Ok(t);
+        }
+        // An electronic nautical chart, S-57.
+        if s57::as_chart(path) {
+            let t = s57::read(self, path, opts, notes, progress);
+            drain_messages(notes);
+            return t;
         }
         // A DWG is made a DXF by acadrust, and read as one.
         if ext == "dwg" {
@@ -945,7 +1024,17 @@ impl Backend for GdalBackend {
                 }
                 vec![path.to_path_buf()]
             }
-            other => return Err(GbError(format!("The output cannot write .{}. Use .gpkg, .shp, .fgb, .geojson, .xlsx, .ods, .csv or .txt.", other))),
+            "kml" | "kmz" => {
+                xml_formats::write_kml(table, path, &opts.layer.clone().filter(|l| !l.trim().is_empty()).unwrap_or(stem), &opts.sizes, ext == "kmz", notes)?
+            }
+            "gml" => xml_formats::write_gml(table, path, &opts.layer.clone().filter(|l| !l.trim().is_empty()).unwrap_or(stem), &opts.sizes, notes)?,
+            "gpx" => xml_formats::write_gpx(table, path, notes)?,
+            other => {
+                return Err(GbError(format!(
+                    "The output cannot write .{}. Use .gpkg, .shp, .fgb, .geojson, .kml, .kmz, .gml, .gpx, .xlsx, .ods, .csv or .txt.",
+                    other
+                )))
+            }
         };
         drain_messages(notes);
         Ok(files)
@@ -1094,6 +1183,81 @@ impl Backend for GdalBackend {
             )));
         }
         Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn transform_heights(&self, crs: u32, from: &str, to: &str, xs: &[f64], ys: &[f64], zs: &mut [f64], fetch: bool) -> Result<()> {
+        if from == to || zs.is_empty() {
+            return Ok(());
+        }
+        let label = |v: &str| if v == "ellipsoid" { "heights above the ellipsoid".to_string() } else { format!("EPSG:{}", v) };
+        // The places in two dimensions, also for a system with heights of its own, such as
+        // EPSG:4979, which GeoJSON with heights is read in.
+        let flat = || -> Result<SpatialRef> {
+            let s = srs_from_epsg(crs)?;
+            if unsafe { gdal_sys::OSRGetAxesCount(s.to_c_hsrs()) } == 3 && unsafe { gdal_sys::OSRIsCompound(s.to_c_hsrs()) } == 0 {
+                unsafe { gdal_sys::OSRDemoteTo2D(s.to_c_hsrs(), std::ptr::null()) };
+            }
+            Ok(s)
+        };
+        let srs = |v: &str| -> Result<SpatialRef> {
+            let mut s = if v == "ellipsoid" {
+                let s = flat()?;
+                // The same system with heights above its ellipsoid as the third axis.
+                if unsafe { gdal_sys::OSRPromoteTo3D(s.to_c_hsrs(), std::ptr::null()) } != gdal_sys::OGRErr::OGRERR_NONE {
+                    return Err(GbError(format!("EPSG:{} cannot be given heights above its ellipsoid.", crs)));
+                }
+                s
+            } else {
+                let code: u32 = v.parse().map_err(|_| GbError(format!("{} is not the EPSG code of a height system.", v)))?;
+                let vertical = SpatialRef::from_epsg(code).map_err(|e| GbError(format!("EPSG:{} is not a height system PROJ knows ({}).", code, e)))?;
+                let horizontal = flat()?;
+                let compound = SpatialRef::new().map_err(|e| gerr("Cannot set up the change of heights", e))?;
+                let name = CString::new("places and heights").expect("no nul");
+                let ok = unsafe { gdal_sys::OSRSetCompoundCS(compound.to_c_hsrs(), name.as_ptr(), horizontal.to_c_hsrs(), vertical.to_c_hsrs()) };
+                if ok != gdal_sys::OGRErr::OGRERR_NONE {
+                    return Err(GbError(format!("EPSG:{} with the heights of EPSG:{} is not a system PROJ can make.", crs, code)));
+                }
+                compound
+            };
+            s.set_axis_mapping_strategy(AxisMappingStrategy::TraditionalGisOrder);
+            Ok(s)
+        };
+        let (s, t) = (srs(from)?, srs(to)?);
+        // Without the grid of the geoid PROJ would rather move the heights by nothing at all,
+        // a "ballpark" change, than say so. That is not allowed here.
+        let mut options = gdal::spatial_ref::CoordTransformOptions::new().map_err(|e| gerr("Cannot set up the change of heights", e))?;
+        options.set_ballpark_allowed(false).map_err(|e| gerr("Cannot set up the change of heights", e))?;
+        static NETWORK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _turn = NETWORK.lock().unwrap_or_else(|e| e.into_inner());
+        let was = unsafe { gdal_sys::OSRGetPROJEnableNetwork() };
+        unsafe { gdal_sys::OSRSetPROJEnableNetwork(fetch as std::ffi::c_int) };
+        let missing = || {
+            GbError(format!(
+                "The heights cannot be changed from {} to {} here: the grid of the geoid it needs is not here{}. Grids for Sweden (RH 2000), Norway (NN2000) and the world (EGM96) come with Ographis.",
+                label(from),
+                label(to),
+                if fetch { ", and could not be fetched from cdn.proj.org" } else { ". Allow fetching it from cdn.proj.org, or put it in the folder proj beside the program" }
+            ))
+        };
+        let result = (|| {
+            let ct = CoordTransform::new_with_options(&s, &t, &options).map_err(|_| missing())?;
+            let (mut x, mut y) = (xs.to_vec(), ys.to_vec());
+            let before = zs.to_vec();
+            // A point that cannot be changed, such as outside the grid, fails alone.
+            let _ = ct.transform_coords(&mut x, &mut y, zs);
+            for (z, b) in zs.iter_mut().zip(&before) {
+                if !z.is_finite() || b.is_nan() {
+                    *z = f64::NAN;
+                }
+            }
+            if zs.iter().all(|z| z.is_nan()) && before.iter().any(|z| z.is_finite()) {
+                return Err(missing());
+            }
+            Ok(())
+        })();
+        unsafe { gdal_sys::OSRSetPROJEnableNetwork(was) };
+        result
     }
 
     fn crs_info(&self, epsg: u32) -> Option<CrsInfo> {

@@ -42,6 +42,34 @@ function FirstExisting($paths) {
     return $null
 }
 
+# ---------------------------------------------------------------- 0. The source folder
+# A new version unpacked over an old one leaves the files the old one had. Most do no harm,
+# but a file that has become a folder, such as nodes\output.rs to nodes\output\mod.rs,
+# stops the build with errors that say nothing about the cause.
+$removedList = Sub $root "tools\removed-files.txt"
+if (Test-Path $removedList) {
+    $left = Get-Content $removedList | Where-Object { $_ -and -not $_.StartsWith("#") } |
+        ForEach-Object { $_.Trim() } | Where-Object { $_ -and (Test-Path (Sub $root $_) -PathType Leaf) }
+    if ($left) {
+        Step "0. Files from an earlier version"
+        foreach ($f in $left) {
+            Remove-Item -LiteralPath (Sub $root $f) -Force
+            Note "Removed $f"
+        }
+    }
+}
+# What the list does not know of: a module both as name.rs and as name\mod.rs.
+$twice = @()
+foreach ($mod in Get-ChildItem -Path (Sub $root "crates") -Recurse -Filter "mod.rs" -ErrorAction SilentlyContinue) {
+    $folder = $mod.Directory
+    $file = Join-Path $folder.Parent.FullName ($folder.Name + ".rs")
+    if (Test-Path $file -PathType Leaf) { $twice += $file.Substring($root.Length + 1) }
+}
+if ($twice) {
+    Fail ("These files are left from an earlier version, and each has become a folder of the same name: " +
+        ($twice -join ", ") + ". Remove them, or unpack the new version into an empty folder.")
+}
+
 # ---------------------------------------------------------------- 1. Rust
 Step "1. Rust"
 if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
@@ -316,6 +344,13 @@ if ($Package) {
     New-Item -ItemType Directory -Path $proj | Out-Null
     Get-ChildItem $projDir -File | Where-Object { $_.Extension -notin @(".tif", ".gtx", ".gsb", ".byn") -and $_.Length -lt 50MB } |
         ForEach-Object { Copy-Item $_.FullName $proj }
+    # The grids of the geoid that come with Ographis, for Change height system.
+    $grids = Sub $root "data\proj-grids"
+    if (Test-Path $grids) {
+        $gridsOut = Sub $dist "proj-grids"
+        New-Item -ItemType Directory -Path $gridsOut | Out-Null
+        Get-ChildItem $grids -File | ForEach-Object { Copy-Item $_.FullName $gridsOut }
+    }
     if ($dataDir) { Copy-Item $dataDir (Sub $dist "gdal-data") -Recurse }
     $certs = FirstExisting @((Sub $gdalBin "curl-ca-bundle.crt"), (Sub $gdalHome "share\curl\curl-ca-bundle.crt"), (Sub $gdalHome "bin\curl-ca-bundle.crt"))
     if ($certs) { Copy-Item $certs (Sub $dist "curl-ca-bundle.crt") }

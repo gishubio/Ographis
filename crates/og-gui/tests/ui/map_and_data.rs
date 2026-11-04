@@ -1335,3 +1335,42 @@ fn the_rows_of_the_data_view_are_filtered() {
     assert!(h.query_by_label("Output 2 of 12").is_some());
     assert!(h.state().workspace().to_json().find("001%").is_none(), "the filter is not in the model");
 }
+
+#[test]
+fn a_series_of_rasters_shows_the_picture_of_the_picked_row() {
+    // Two pictures at two times, read as satellite bands from the example terrain.
+    let dir = scratch("series");
+    std::fs::copy(root().join("examples/terrain.tif"), dir.join("terrain.tif")).unwrap();
+    std::fs::write(dir.join("items.csv"), "id;datetime;asset_red\na;2026-06-01T10:00:00Z;terrain.tif\nb;2026-07-01T10:00:00Z;terrain.tif\n").unwrap();
+    std::fs::write(
+        dir.join("series.ographis"),
+        r#"{"nodes": [
+        {"id": "items", "type": "Reader", "x": 20, "y": 20, "params": {"path": "items.csv"}},
+        {"id": "read", "type": "SceneReader", "x": 280, "y": 20, "params": {"bands": "red", "cell": "200", "crs": "EPSG:3006", "bbox": "13.52, 58.38, 13.69, 58.44"}}],
+      "edges": [{"from": ["items", "Output"], "to": ["read", "Items"]}]}"#,
+    )
+    .unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("series.ographis")).unwrap();
+    app.map.set_tile_source(NO_TILES);
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(4);
+    h.state_mut().run_blocking();
+    h.state_mut().focus_node("read");
+    settle(&mut h);
+    let time = |h: &Harness<'_, App>| h.state().map.drawn().and_then(|t| t.grid.as_ref()).and_then(|g| g.meta.time.clone());
+    let result = h.state().result.clone().unwrap();
+    let table = result.output("read", "Rasters").unwrap_or_else(|| panic!("{:?}", result.log)).clone();
+    assert_eq!(table.series.as_ref().map(|s| s.len()), Some(2), "{:?}", result.log);
+    assert_eq!(time(&h).as_deref(), Some("2026-06-01T10:00:00Z"));
+    // The second row picked: the map draws the second picture.
+    h.get_by_label("2026-07-01T10:00:00Z").click();
+    settle(&mut h);
+    assert_eq!(h.state().view.feature, Some(1));
+    assert_eq!(time(&h).as_deref(), Some("2026-07-01T10:00:00Z"));
+    shot(&mut h, "93-series-second-picture");
+    // And back to the first.
+    h.get_by_label("2026-06-01T10:00:00Z").click();
+    settle(&mut h);
+    assert_eq!(time(&h).as_deref(), Some("2026-06-01T10:00:00Z"));
+}

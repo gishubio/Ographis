@@ -25,6 +25,10 @@ cargo run -p og-gui --bin ographis -- examples/skaraborg.ographis
 cargo run -p og-cli --bin og -- run examples/buildtest.ographis
 ```
 
+When a file is removed or turned into a folder, add its path to `tools/removed-files.txt`,
+so that `build.cmd` can tidy away what is left when a new version is unpacked over an old
+one.
+
 ## Testing
 
 The check on GitHub uses Rust 1.97.0, so that a newer Rust with new lints of clippy does
@@ -45,6 +49,10 @@ which are worth a look when you change something that is drawn.
 
 A pull request should leave every test passing, `cargo fmt` without changes and clippy
 without warnings. A new tool or a fixed bug comes with a test.
+
+Before a release, run the performance tests in a release build and add a row to
+docs/PERFORMANCE.md:
+`cargo test --release -p og-gdal --test performance -- --ignored --nocapture`.
 
 ## Adding a tool, in five steps
 

@@ -535,6 +535,7 @@ fn stamp_cut_join_and_replace_text() {
         {"id": "mid", "type": "SubstringExtractor", "params": {"attribute": "name", "part": "middle", "start": 2, "count": 3, "name": "name"}},
         {"id": "join", "type": "StringConcatenator", "params": {"attributes": ["code", "name", "part"], "separator": " - ", "name": "label"}},
         {"id": "join_all", "type": "StringConcatenator", "params": {"attributes": "size,part", "separator": "_", "skip_empty": "false"}},
+        {"id": "fixed", "type": "StringConcatenator", "params": {"attributes": "'0', code, ', it''s ', \"part\"", "name": "fixed"}},
         {"id": "a_to_b", "type": "StringReplacer", "params": {"attributes": ["part", "name"], "find": "A", "replace": "B"}},
         {"id": "no_spaces", "type": "StringReplacer", "params": {"attributes": ["name", "size"], "find": " ", "replace": ""}},
         {"id": "any_case", "type": "StringReplacer", "params": {"attributes": ["name"], "find": "ÖTE", "replace": "*", "match_case": "false"}},
@@ -550,6 +551,7 @@ fn stamp_cut_join_and_replace_text() {
         {"from": ["last", "Output"], "to": ["mid", "Input"]},
         {"from": ["in", "Output"], "to": ["join", "Input"]},
         {"from": ["in", "Output"], "to": ["join_all", "Input"]},
+        {"from": ["in", "Output"], "to": ["fixed", "Input"]},
         {"from": ["in", "Output"], "to": ["a_to_b", "Input"]},
         {"from": ["in", "Output"], "to": ["no_spaces", "Input"]},
         {"from": ["in", "Output"], "to": ["any_case", "Input"]},
@@ -584,6 +586,8 @@ fn stamp_cut_join_and_replace_text() {
     // Joined, with and without the empty values.
     assert_eq!(col(r.output("join", "Output").unwrap(), "label"), texts(&["0114 - Upplands Väsby", "1480 - Göteborg - A", "B"]));
     assert_eq!(col(r.output("join_all", "Output").unwrap(), "_concatenated"), texts(&["12.5_", "7_A", "_B"]));
+    // Fixed texts in single quotes, which may hold commas, spaces and a quote written twice.
+    assert_eq!(col(r.output("fixed", "Output").unwrap(), "fixed"), texts(&["00114, it's ", "01480, it's A", "0, it's B"]));
 
     // Replaced. Only what matches changes, and a number that is not touched stays a number.
     let a = r.output("a_to_b", "Output").unwrap();
@@ -1382,7 +1386,7 @@ fn tools_have_names_that_say_what_they_do() {
     // GeoSpatial PDF are reached from Input and Output instead of the list.
     let mut hidden: Vec<&str> = NODE_TYPES.iter().filter(|t| t.hidden).map(|t| t.name).collect();
     hidden.sort();
-    assert_eq!(hidden, ["LayeredPdfWriter", "PointOnAreaOverlayer", "PostgisReader", "PostgisWriter", "QgisProjectWriter"]);
+    assert_eq!(hidden, ["AttributeFileReader", "LayeredPdfWriter", "PointOnAreaOverlayer", "PostgisReader", "PostgisWriter", "QgisProjectWriter"]);
 
     // A workspace saved before the change has the old names on the nodes the user did not
     // name. They are read as the new ones, and a name the user chose is left alone.
@@ -3298,4 +3302,69 @@ fn a_trial_run_reads_the_first_features_of_every_input() {
     let r = run(&ws, None, &dir);
     assert_eq!(r.output("a", "Output").unwrap().len(), 5);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_input_reads_the_files_a_stream_names() {
+    let dir = tmp("paths");
+    std::fs::write(dir.join("a.csv"), "name;x;y\nBorås;1;2\n").unwrap();
+    std::fs::write(dir.join("b.csv"), "name;x;y\nAlingsås;3;4\nLerum;5;6\n").unwrap();
+    std::fs::write(dir.join("files.csv"), "region;file\nsouth;a.csv\nnorth;b.csv\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "list", "type": "Reader", "params": {"path": "files.csv"}},
+        {"id": "each", "type": "Reader", "params": {"path_attribute": "file"}},
+        {"id": "old", "type": "AttributeFileReader", "params": {"attribute": "file"}}],
+      "edges": [{"from": ["list", "Output"], "to": ["each", "Paths"]}, {"from": ["list", "Output"], "to": ["old", "Input"]}]}"#,
+    )
+    .unwrap();
+    // A model from before 0.94 opens with an Input in place of the tool that did this.
+    assert_eq!(ws.nodes.iter().find(|n| n.id == "old").unwrap().kind, "Reader");
+    let r = run(&ws, None, &dir);
+    show(&r);
+    for id in ["each", "old"] {
+        let t = r.output(id, "Output").unwrap();
+        assert_eq!(t.len(), 3, "{}", id);
+        assert_eq!(col(t, "region"), [text("south"), text("north"), text("north")], "{}: the attributes of the row that named the file", id);
+        assert_eq!(col(t, "name")[2], text("Lerum"));
+    }
+}
+
+#[test]
+fn a_3d_model_is_written_around_the_origin_chosen_or_none() {
+    let dir = tmp("origin");
+    std::fs::write(dir.join("a.csv"), "id;wkt\n1;POLYGON((-700 -1100,-660 -1100,-660 -1050,-700 -1050,-700 -1100))\n2;POLYGON((319000 6400000,319010 6400000,319010 6400010,319000 6400010,319000 6400000))\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "in", "type": "Reader", "params": {"path": "a.csv", "crs": "EPSG:3006"}},
+        {"id": "local", "type": "Tester", "params": {"test": "id = 1"}},
+        {"id": "block", "type": "Extruder", "params": {"height": "10"}},
+        {"id": "far", "type": "Extruder", "params": {"height": "10"}},
+        {"id": "middle", "type": "Writer", "params": {"path": "out/middle.obj"}},
+        {"id": "none", "type": "Writer", "params": {"path": "out/none.obj", "gltf_origin": "none"}},
+        {"id": "given", "type": "Writer", "params": {"path": "out/given.obj", "gltf_origin": "-700, -1100, 0"}},
+        {"id": "glb", "type": "Writer", "params": {"path": "out/far.glb", "gltf_origin": "none"}}],
+      "edges": [
+        {"from": ["in", "Output"], "to": ["local", "Input"]},
+        {"from": ["local", "Passed"], "to": ["block", "Input"]},
+        {"from": ["local", "Failed"], "to": ["far", "Input"]},
+        {"from": ["block", "Output"], "to": ["middle", "Input"]},
+        {"from": ["block", "Output"], "to": ["none", "Input"]},
+        {"from": ["block", "Output"], "to": ["given", "Input"]},
+        {"from": ["far", "Output"], "to": ["glb", "Input"]}]}"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0);
+    let obj = |name: &str| std::fs::read_to_string(dir.join("out").join(name)).unwrap();
+    let first_v = |text: &str| text.lines().find(|l| l.starts_with("v ")).unwrap().to_string();
+    // Near the middle, as before; as they are with none; and around a point given.
+    assert!(obj("middle.obj").contains("# Ographis origin -680 -1075 0"));
+    assert!(obj("none.obj").contains("# Ographis origin 0 0 0"));
+    assert!(first_v(&obj("none.obj")).contains("-700.0000 -1100.0000"), "{}", first_v(&obj("none.obj")));
+    assert!(first_v(&obj("given.obj")).starts_with("v 0.0000 0.0000"), "{}", first_v(&obj("given.obj")));
+    // A glTF of SWEREF 99 TM without an origin: warned that it is coarse there.
+    assert!(r.nodes["glb"].warnings.iter().any(|w| w.contains("seven digits")), "{:?}", r.nodes["glb"].warnings);
+    assert!(r.nodes["none"].warnings.is_empty());
 }

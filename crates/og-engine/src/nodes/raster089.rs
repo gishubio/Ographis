@@ -10,7 +10,7 @@ use geo::Geometry;
 // ---------- Shared ----------
 
 /// The grid on a port, or a word on what to connect.
-fn grid_on<'a>(t: &'a Table, port: &str) -> Result<&'a Grid> {
+pub(super) fn grid_on<'a>(t: &'a Table, port: &str) -> Result<&'a Grid> {
     match t.grid.as_deref() {
         Some(g) if g.is_turned() => err(format!("The raster on {} is turned, which this tool cannot work with yet.", port)),
         Some(g) => Ok(g),
@@ -23,7 +23,7 @@ fn grid_on<'a>(t: &'a Table, port: &str) -> Result<&'a Grid> {
 }
 
 /// The geometries of a stream in another coordinate system, for looking them up in a raster.
-fn geoms_in(t: &Table, to: Option<u32>, ctx: &NodeCtx) -> Result<Vec<Option<Geometry<f64>>>> {
+pub(super) fn geoms_in(t: &Table, to: Option<u32>, ctx: &NodeCtx) -> Result<Vec<Option<Geometry<f64>>>> {
     let mut geoms: Vec<Option<Geometry<f64>>> = t.features.iter().map(|f| f.geom.clone()).collect();
     if let (Some(from), Some(to)) = (t.crs, to) {
         if from != to {

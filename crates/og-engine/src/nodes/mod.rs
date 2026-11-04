@@ -511,6 +511,14 @@ impl<'a> P<'a> {
     pub fn flag(&self, key: &str) -> bool {
         matches!(self.get(key).as_deref(), Some("true") | Some("1") | Some("yes") | Some("ja"))
     }
+    /// A list where an entry may be a fixed text in single quotes, which can hold commas:
+    /// `'0', kod, ' - ', namn`. The quotes are kept, for the tool to tell the entries apart.
+    pub fn list_quoted(&self, key: &str) -> Vec<String> {
+        match self.values.get(key) {
+            Some(serde_json::Value::Array(_)) => self.list(key),
+            _ => self.get(key).map(|s| split_quoted(&s)).unwrap_or_default(),
+        }
+    }
     /// A list: either a JSON list or comma-separated text.
     pub fn list(&self, key: &str) -> Vec<String> {
         match self.values.get(key) {
@@ -621,7 +629,15 @@ pub fn is_image_format(ext: &str) -> bool {
 
 /// A choice of yes or no, stored as true or false.
 const YES_NO: &[(&str, &str)] = &[("false", "No"), ("true", "Yes")];
-const ENCODINGS: &[(&str, &str)] = &[("", "Detect"), ("utf-8", "UTF-8"), ("windows-1252", "Windows-1252")];
+const ENCODINGS: &[(&str, &str)] = &[
+    ("", "Detect"),
+    ("utf-8", "UTF-8"),
+    ("windows-1252", "Windows-1252: Western Europe, as Swedish files from Windows"),
+    ("iso-8859-15", "ISO-8859-15: Western Europe, with €"),
+    ("windows-1250", "Windows-1250: Central Europe"),
+    ("windows-1251", "Windows-1251: Cyrillic"),
+    ("windows-1257", "Windows-1257: the Baltic"),
+];
 
 pub use attr_filter::{checks_of, value_problems, Check};
 pub use attr_table::{
@@ -680,6 +696,7 @@ mod tests086;
 mod tests087;
 mod tools088;
 mod tools091;
+mod tools094;
 mod vector093;
 pub mod vector_tiles;
 #[cfg(test)]
@@ -737,6 +754,7 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         raster090::TYPES,
         remote::TYPES,
         vector093::TYPES,
+        tools094::TYPES,
         pointcloud089::TYPES,
         pointcloud090::TYPES,
         osm::TYPES,
@@ -793,4 +811,63 @@ pub(crate) fn run_for_test_with(kind: &str, values: Params, given: Vec<(&'static
     };
     let out = (t.run)(&p, &inp, &mut ctx)?;
     Ok((out, ctx.notes))
+}
+
+/// Splits a list at its commas, except those inside an entry that begins with a single
+/// quote, which goes on to the closing quote ('' is a quote inside it). The entries are
+/// trimmed, but what is inside quotes is kept as it is. A quote elsewhere, as in O'Brien, is
+/// an ordinary character.
+pub fn split_quoted(s: &str) -> Vec<String> {
+    let chars: Vec<char> = s.chars().collect();
+    let (mut out, mut i) = (Vec::new(), 0);
+    while i < chars.len() {
+        while i < chars.len() && chars[i].is_whitespace() {
+            i += 1;
+        }
+        let start = i;
+        if i < chars.len() && chars[i] == '\'' {
+            i += 1;
+            while i < chars.len() {
+                if chars[i] == '\'' {
+                    if chars.get(i + 1) == Some(&'\'') {
+                        i += 2;
+                        continue;
+                    }
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+        }
+        while i < chars.len() && chars[i] != ',' {
+            i += 1;
+        }
+        out.push(chars[start..i].iter().collect::<String>().trim().to_string());
+        i += 1;
+    }
+    out.into_iter().filter(|x| !x.is_empty()).collect()
+}
+
+/// A fixed text written in single quotes, with '' for a quote inside it, or None if the
+/// entry is not one.
+pub fn quoted_text(entry: &str) -> Option<String> {
+    let inner = entry.strip_prefix('\'')?.strip_suffix('\'')?;
+    Some(inner.replace("''", "'"))
+}
+
+#[cfg(test)]
+mod quoted_tests {
+    use super::*;
+
+    #[test]
+    fn fixed_texts_in_quotes_keep_their_commas_and_spaces() {
+        assert_eq!(split_quoted("'0', kod"), ["'0'", "kod"]);
+        assert_eq!(split_quoted("namn, ', ', ort"), ["namn", "', '", "ort"]);
+        assert_eq!(split_quoted("'it''s, here', b"), ["'it''s, here'", "b"]);
+        assert_eq!(split_quoted("O'Brien, kod"), ["O'Brien", "kod"]);
+        assert_eq!(split_quoted(" a ,, b "), ["a", "b"]);
+        assert_eq!(quoted_text("'it''s'"), Some("it's".to_string()));
+        assert_eq!(quoted_text("' '"), Some(" ".to_string()));
+        assert_eq!(quoted_text("kod"), None);
+    }
 }

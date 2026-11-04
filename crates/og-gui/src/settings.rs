@@ -129,7 +129,9 @@ impl SettingsWindow {
             }
         }
         let modal = egui::Modal::new(egui::Id::new("gb-settings-window")).show(ctx, |ui| {
-            ui.set_width(760.0);
+            // Wide enough for the widest tab, the form of a database connection, so that the
+            // window keeps its size when another tab is chosen.
+            ui.set_width(840.0);
             ui.label(RichText::new("Settings").font(theme::strong(17.0)).color(pal.ink));
             ui.label(
                 RichText::new(
@@ -159,7 +161,9 @@ impl SettingsWindow {
                 ui.allocate_ui_with_layout(room, Layout::top_down(Align::Min), |ui| {
                     ui.set_min_size(room);
                     ui.set_max_size(room);
-                    egui::ScrollArea::vertical().id_salt(("settings-tab", self.tab as u8)).auto_shrink([false, false]).max_height(room.y).show(ui, |ui| {
+                    // Scrolled both ways: should a tab ever be wider than the room, as with
+                    // larger text, it scrolls instead of making the window wider.
+                    egui::ScrollArea::both().id_salt(("settings-tab", self.tab as u8)).auto_shrink([false, false]).max_height(room.y).max_width(room.x).show(ui, |ui| {
                         ui.set_width(room.x - 14.0);
                         match self.tab {
                             Tab::Connections => changed |= self.connections(ui, pal, settings, backend),

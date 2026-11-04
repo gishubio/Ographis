@@ -109,7 +109,7 @@ pub(super) const HTTP_PARAMS: &[ParamSpec] = &[
         label: "The answer",
         kind: ParamKind::Choice(&[("text", "As text in an attribute"), ("file", "As a file, its path in _file")]),
         default: "text",
-        hint: "A file for answers that are not text, such as a GeoTIFF of travel times. Read the files with Read files named in an attribute",
+        hint: "A file for answers that are not text, such as a GeoTIFF of travel times. Read the files with an Input, with this stream connected to its Paths",
     },
     ParamSpec {
         key: "folder",
@@ -613,7 +613,13 @@ pub(super) const STAC_PARAMS: &[ParamSpec] = &[
         default: "",
         hint: "Such as sentinel-2-l2a. Several are separated by commas. Empty searches all",
     },
-    ParamSpec { key: "datetime", label: "Time", kind: ParamKind::Text, default: "", hint: "A date, or from and to: 2026-06-01/2026-08-31. Empty: any time" },
+    ParamSpec {
+        key: "datetime",
+        label: "Time",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "A date, month or year, or from and to: 2026-06-01/2026-08-31 or 2026-06/2026-08. Empty: any time",
+    },
     ParamSpec {
         key: "bbox",
         label: "Area, in WGS 84",
@@ -689,10 +695,7 @@ pub(super) fn run_stac(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
         url.push_str(&format!("&collections={}", encode(&list.join(","))));
     }
     if let Some(d) = p.get("datetime").filter(|d| !d.trim().is_empty()) {
-        let d = d.trim();
-        // A date alone is the whole day.
-        let d = if d.len() == 10 && !d.contains('/') { format!("{}T00:00:00Z/{}T23:59:59Z", d, d) } else { d.to_string() };
-        url.push_str(&format!("&datetime={}", encode(&d)));
+        url.push_str(&format!("&datetime={}", encode(&stac_datetime(&d)?)));
     }
     if let Some(q) = p.get("query").filter(|q| !q.trim().is_empty()) {
         url.push_str(&format!("&filter-lang=cql2-text&filter={}", encode(q.trim())));
@@ -805,3 +808,69 @@ pub(super) const TYPES: &[NodeType] = &[
         summary: |p| p.get("url").unwrap_or_default(),
     },
 ];
+
+/// The time of a STAC search as RFC 3339, which catalogues such as Earth Search insist on.
+/// A year, a month or a date is the whole of it: 2025-06 is from the first of June to the
+/// end of the 30th. From and to are written with a slash, and an open end as .. or nothing.
+fn stac_datetime(text: &str) -> Result<String> {
+    use chrono::{Datelike, NaiveDate};
+    fn bound(s: &str, end: bool) -> Result<String> {
+        let s = s.trim();
+        if s.is_empty() || s == ".." {
+            return Ok("..".to_string());
+        }
+        if s.contains('T') || s.contains('t') {
+            return Ok(s.to_string());
+        }
+        let bad = || GbError(format!("The time {} is not a date such as 2025-06-01, a month such as 2025-06 or a year", s));
+        let parts: Vec<&str> = s.split('-').collect();
+        let num = |i: usize| parts.get(i).and_then(|x| x.parse::<u32>().ok());
+        let (first, last) = match parts.len() {
+            1 => {
+                let y = num(0).ok_or_else(bad)? as i32;
+                (NaiveDate::from_ymd_opt(y, 1, 1), NaiveDate::from_ymd_opt(y, 12, 31))
+            }
+            2 => {
+                let (y, m) = (num(0).ok_or_else(bad)? as i32, num(1).ok_or_else(bad)?);
+                let first = NaiveDate::from_ymd_opt(y, m, 1);
+                let next = if m == 12 { NaiveDate::from_ymd_opt(y + 1, 1, 1) } else { NaiveDate::from_ymd_opt(y, m + 1, 1) };
+                (first, next.and_then(|n| n.pred_opt()))
+            }
+            3 => {
+                let d = NaiveDate::parse_from_str(s, "%Y-%m-%d").ok();
+                (d, d)
+            }
+            _ => (None, None),
+        };
+        let day = if end { last } else { first }.ok_or_else(bad)?;
+        let clock = if end { "23:59:59" } else { "00:00:00" };
+        Ok(format!("{:04}-{:02}-{:02}T{}Z", day.year(), day.month(), day.day(), clock))
+    }
+    let text = text.trim();
+    Ok(match text.split_once('/') {
+        Some((from, to)) => format!("{}/{}", bound(from, false)?, bound(to, true)?),
+        None if text.contains('T') || text.contains('t') => text.to_string(),
+        None => format!("{}/{}", bound(text, false)?, bound(text, true)?),
+    })
+}
+
+#[cfg(test)]
+mod stac_time_tests {
+    use super::stac_datetime;
+
+    #[test]
+    fn times_are_written_as_rfc3339() {
+        let t = |s: &str| stac_datetime(s).unwrap();
+        assert_eq!(t("2025-06-01/2025-08-31"), "2025-06-01T00:00:00Z/2025-08-31T23:59:59Z");
+        assert_eq!(t("2025-06-01"), "2025-06-01T00:00:00Z/2025-06-01T23:59:59Z");
+        assert_eq!(t("2025-06"), "2025-06-01T00:00:00Z/2025-06-30T23:59:59Z");
+        assert_eq!(t("2024-02/2024-12"), "2024-02-01T00:00:00Z/2024-12-31T23:59:59Z");
+        assert_eq!(t("2025"), "2025-01-01T00:00:00Z/2025-12-31T23:59:59Z");
+        assert_eq!(t("2025-06-01/.."), "2025-06-01T00:00:00Z/..");
+        assert_eq!(t("/2025-06-01"), "../2025-06-01T23:59:59Z");
+        assert_eq!(t("2025-06-01T10:00:00Z"), "2025-06-01T10:00:00Z");
+        assert_eq!(t("2025-06-01T00:00:00Z/2025-08-31T23:59:59Z"), "2025-06-01T00:00:00Z/2025-08-31T23:59:59Z");
+        assert!(stac_datetime("summer").is_err());
+        assert!(stac_datetime("2025-02-30").is_err());
+    }
+}

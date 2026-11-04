@@ -24,6 +24,22 @@ pub fn grids_of(t: &Table) -> Vec<Grid> {
 
 /// A stream of grids over time: the first as the grid of the stream, and a feature for each
 /// with its outline, time, size and the share of its cells with a value.
+/// Picks `most` of the items, which are in the order of their times: the time is cut into
+/// `most` runs of about as many items each, and from each run the one with the least
+/// `cloud`. A summer then keeps pictures from all its months, not only the first.
+fn spread_over_time(order: &[usize], most: usize, cloud: impl Fn(usize) -> f64) -> Vec<usize> {
+    let n = order.len();
+    if n <= most {
+        return order.to_vec();
+    }
+    (0..most)
+        .filter_map(|k| {
+            let run = &order[k * n / most..(k + 1) * n / most];
+            run.iter().copied().min_by(|a, b| cloud(*a).total_cmp(&cloud(*b)))
+        })
+        .collect()
+}
+
 pub fn series_table(grids: Vec<Grid>, extra: &[(&str, FieldType, Vec<Value>)]) -> Table {
     let mut fields = vec![
         Field::new("time", FieldType::Text),
@@ -140,7 +156,13 @@ const SCENE_PARAMS: &[ParamSpec] = &[
         default: "0",
         hint: "Added after the scale. Sentinel-2 from 2022 at Copernicus has −0.1; Element 84 has already taken it away",
     },
-    ParamSpec { key: "most", label: "At most pictures", kind: ParamKind::Text, default: "20", hint: "The first by time; each is read over the web" },
+    ParamSpec {
+        key: "most",
+        label: "At most pictures",
+        kind: ParamKind::Text,
+        default: "20",
+        hint: "Spread over the time, the least cloudy in each part; each is read over the web",
+    },
 ];
 
 /// The area of a grid in `crs`: the extent of what comes in on Extent, or the rectangle in
@@ -230,14 +252,22 @@ fn run_scenes(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let time_of = |i: usize| time_at.map(|a| items.features[i].attrs[a].to_text()).unwrap_or_default();
     order.sort_by_key(|i| time_of(*i));
     if order.len() > most {
-        ctx.notes.info(format!("the first {} of {} pictures by time; raise At most pictures for more", most, order.len()));
-        order.truncate(most);
+        let cloud_at = items.field_index("cloud_cover");
+        let cloud = |i: usize| cloud_at.and_then(|a| items.features[i].attrs[a].as_f64()).unwrap_or(f64::MAX);
+        let n = order.len();
+        order = spread_over_time(&order, most, cloud);
+        ctx.notes.info(format!(
+            "{} of {} pictures, spread over the time{}; raise At most pictures for more",
+            most,
+            n,
+            if cloud_at.is_some() { ", the least cloudy in each part" } else { "" }
+        ));
     }
     let b = ctx.backend("Reading satellite pictures")?;
     let (progress, gate) = (ctx.progress, ctx.gate);
     let mut grids = Vec::new();
     let mut ids = Vec::new();
-    let mut failed = 0usize;
+    let (mut failed, mut first_failure) = (0usize, None);
     for (k, i) in order.iter().enumerate() {
         if !gate.going() {
             return err(crate::model::STOPPED);
@@ -252,6 +282,8 @@ fn run_scenes(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
                 problem = Some(format!("has no file {}", name));
                 break;
             }
+            // A file of its own, as in a catalogue kept beside the model, is found from there.
+            let href = if href.contains("://") || href.starts_with("/vsi") { href } else { ctx.resolve(&href).to_string_lossy().into_owned() };
             match b.read_onto(&href, gt, w, h, crs, is_class_band(name)) {
                 Ok(mut v) => {
                     if !is_class_band(name) && (scale != 1.0 || offset != 0.0) {
@@ -269,7 +301,9 @@ fn run_scenes(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         }
         if let Some(why) = problem {
             failed += 1;
-            ctx.notes.warn(format!("The picture of {} was left out: {}", time_of(*i), why));
+            let note = format!("The picture of {} was left out: {}", time_of(*i), why);
+            first_failure.get_or_insert_with(|| note.clone());
+            ctx.notes.warn(note);
             continue;
         }
         // A picture that does not reach the area is left out.
@@ -282,7 +316,12 @@ fn run_scenes(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         ids.push(items.field_index("id").map_or(Value::Null, |a| f.attrs[a].clone()));
     }
     if grids.is_empty() {
-        return err(if failed > 0 { "No picture could be read. See the warnings." } else { "No picture reaches into the area." });
+        // The warnings are not shown when the tool fails, so the first one is told here.
+        return match first_failure {
+            Some(why) if failed > 1 => err(format!("No picture could be read. {} (and {} more)", why, failed - 1)),
+            Some(why) => err(format!("No picture could be read. {}", why)),
+            None => err("No picture reaches into the area."),
+        };
     }
     ctx.notes.info(format!("{} pictures of {} × {} cells of {}, {} bands each, in {}", grids.len(), w, h, fmt_real(cell), columns.len(), crs_label(Some(crs))));
     Ok(vec![("Rasters".into(), series_table(grids, &[("id", FieldType::Text, ids)]))])
@@ -775,6 +814,19 @@ pub(super) const TYPES: &[NodeType] = &[
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn pictures_are_spread_over_the_time_and_the_clear_ones_kept() {
+        // Twelve items in time order, two of them clear in each third of the time.
+        let order: Vec<usize> = (0..12).collect();
+        let cloud = |i: usize| [50.0, 3.0, 40.0, 60.0, 70.0, 80.0, 90.0, 1.0, 20.0, 30.0, 2.0, 99.0][i];
+        assert_eq!(spread_over_time(&order, 3, cloud), [1, 7, 10]);
+        assert_eq!(spread_over_time(&order, 12, cloud), order);
+        assert_eq!(spread_over_time(&order, 1, cloud), [7]);
+        // Without cloud cover, one from each part.
+        assert_eq!(spread_over_time(&order, 4, |_| f64::MAX), [0, 3, 6, 9]);
+    }
+
     use super::*;
 
     fn picture(time: &str, red: f32, nir: f32, scl: f32) -> Grid {

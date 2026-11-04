@@ -1,0 +1,27 @@
+# Files that earlier versions of Ographis had, but that are gone or have become folders.
+# build.ps1 removes them when a new version has been unpacked over an old one, since some
+# of them would otherwise stop the build. Add to the list when a file is removed or moved.
+
+# 0.93
+crates/og-engine/src/nodes/output.rs
+crates/og-gui/src/params.rs
+
+# Before 0.93
+crates/og-engine/src/nodes.rs
+crates/og-engine/src/nodes/chart_node.rs
+crates/og-engine/src/nodes/checks.rs
+crates/og-engine/src/nodes/db.rs
+crates/og-engine/src/nodes/extra.rs
+crates/og-engine/src/nodes/height_node.rs
+crates/og-engine/src/nodes/json_nodes.rs
+crates/og-engine/src/nodes/model_runner.rs
+crates/og-engine/src/nodes/more.rs
+crates/og-engine/src/nodes/route_node.rs
+crates/og-engine/src/nodes/scene_node.rs
+crates/og-engine/src/nodes/stac_node.rs
+crates/og-engine/src/nodes/terrain_nodes.rs
+crates/og-engine/src/nodes/text_geom_nodes.rs
+crates/og-engine/src/nodes/turn_nodes.rs
+crates/og-engine/src/nodes/zip_node.rs
+crates/og-gui/src/app.rs
+crates/og-gui/tests/ui.rs

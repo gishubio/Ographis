@@ -234,6 +234,28 @@ impl App {
         v
     }
 
+    /// What the map shows of a series of rasters, such as satellite pictures over time: the
+    /// grid of the picked row, from `whole`, on the table `shown` that the map draws.
+    pub(super) fn series_view(&self, shown: &Arc<Table>, whole: &Table, row: usize) -> Arc<Table> {
+        let Some(grid) = whole.series.as_ref().and_then(|s| s.get(row)) else { return shown.clone() };
+        if shown.grid.as_ref().is_some_and(|g| std::ptr::eq(g.as_ref(), grid)) {
+            return shown.clone();
+        }
+        let key = (Arc::as_ptr(shown) as usize, row);
+        let mut views = self.series_views.borrow_mut();
+        if let Some(v) = views.get(&key) {
+            return v.clone();
+        }
+        if views.len() > 64 {
+            views.clear();
+        }
+        let mut t = (**shown).clone();
+        t.grid = Some(Arc::new(grid.clone()));
+        let v = Arc::new(t);
+        views.insert(key, v.clone());
+        v
+    }
+
     /// What there is to show for the chosen node: (port name, table) and the chosen port.
     pub(super) fn viewed(&self) -> Option<Viewed> {
         let (id, result) = (self.view.node.as_deref()?, self.result.as_ref()?);

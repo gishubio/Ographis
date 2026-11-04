@@ -112,7 +112,8 @@ five models.
 | See what was written | Each output says in the log how many features it wrote, to which file, and the end of the log lists them all again |
 | Write a file, layer or sheet for each value | Put an attribute or an expression in braces in the file name or the layer of an output: `out/{municipality}.gpkg` writes a GeoPackage per municipality, the layer `{municipality}` a table or a sheet for each in one file, and `stops_{now('%Y-%m-%d')}.xlsx` the date of the run in the name. Characters a file name cannot have become `_`, and an empty value is called `empty` |
 | Add to a table, a sheet or a file that is there | Set *If it is already there* in the output to *Add the features to it* |
-| Keep, rename, remove or order attributes | *Manage attributes* lists every attribute that comes in, with Keep, Rename or Remove, its type, and arrows for the order. Choose another type, and the values are made into it; those that cannot be are left empty. New attributes are added under the list, with a value, or empty, of a type you choose |
+| Keep, rename, remove or order attributes | *Manage attributes* lists every attribute that comes in, with Keep, Rename or Remove, its type, and arrows for the order. Choose another type, and the values are made into it; those that cannot be are left empty. New attributes are added under the list, with a value, or empty, of a type you choose. Tick several, or all with the box at the top, and keep, remove or give them a type at once |
+| Read the files a stream names | Connect the stream to *Paths* of an Input, and choose the attribute with the paths under *Paths from*, such as _file from HTTP request with the answers as files. Each file is read, with the attributes of the row that named it |
 
 Attribute lists and the checking of expressions rely on the latest run. So run the
 model once before you set up nodes further down the chain.
@@ -215,6 +216,40 @@ model, named after it: `house.ographis` keeps its runs in `house.runs`.
 `og history <model>` shows the latest runs (`--last N`, 20 to begin with), and whether it
 is running now. In the program, Model → *Run history…* shows the same for the open model,
 with a button for the log and the lineage of each run and one to open the folder.
+
+## What the computer needs
+
+**These are estimates.** They come from what has been measured along the way, not from
+tests made for the purpose, and will be replaced when such tests are in place.
+
+| | Least | Recommended |
+| --- | --- | --- |
+| System | Windows 11, 64-bit, Intel or AMD | The same |
+| Memory | 8 GB | 16 GB or more for point clouds, satellite pictures and large rasters |
+| Processor | Two cores | Four or more: shadows, sunlight, interpolation and point clouds use them all |
+| Graphics | DirectX 12, also built into the processor | The same |
+| Screen | 1280 × 720; the window is at least 960 × 600 | 1920 × 1080 or more |
+
+- **Windows 10** probably works but has not been tried. **Windows on ARM**, such as
+  Snapdragon, has no build of its own. On Linux the program is built from the source.
+- **Without DirectX 12**, as in some remote desktops, the program can draw with OpenGL or
+  Vulkan instead: set `WGPU_BACKEND` to `opengl` or `vulkan` before starting.
+- **Memory follows the data.** Features and rasters are held in memory while a model runs;
+  point clouds are kept compactly, at about 30 bytes a point. What has been measured:
+
+  | Data | Memory |
+  | --- | --- |
+  | A point cloud of 4 million points, ground, heights and a raster | about 700 MB for the whole run |
+  | The example for OpenTripPlanner, 15 000 stops | about 0.5 GB |
+  | A satellite picture of 10 × 10 km at 10 m, three bands | about 12 MB a picture |
+  | The largest raster allowed, 40 million cells | about 160 MB a band |
+
+  Not yet measured: very large vector data, such as all of Sweden from OpenStreetMap. A
+  GeoPackage of some 400 MB has been read, but made the window slow. The log tells how much
+  memory a node keeps when it is over half a gigabyte.
+- **Disk:** the program with GDAL, PROJ and their data takes about 250 MB unpacked (240 MB for
+  0.93; the zip file is about 80 MB), and the results of the models come on top. Building it from the
+  source takes many gigabytes for the `target` folder.
 
 ## When something goes wrong
 

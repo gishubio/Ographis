@@ -453,7 +453,13 @@ impl View3d {
         }
         if resp.hovered() {
             let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
+            let was = self.zoom;
             self.zoom = (self.zoom * (scroll * 0.0035).exp() * pinch).clamp(0.05, 50.0);
+            // Around the place under the pointer, as on the map: what is there stays there.
+            if let Some(pos) = resp.hover_pos().filter(|_| self.zoom != was) {
+                let mid = rect.center() + self.pan;
+                self.pan += (pos - mid) * (1.0 - self.zoom / was);
+            }
         }
         if resp.double_clicked() {
             self.reset();

@@ -1461,7 +1461,8 @@ impl SnarlViewer<GNode> for Viewer<'_> {
     /// that are both free, and when that makes no loop.
     fn can_drop_node_on_wire(&mut self, node: NodeId, from: OutPinId, to: InPinId, snarl: &Snarl<GNode>) -> bool {
         let Some(ty) = snarl.get_node(node).and_then(|n| n.ty()) else { return false };
-        if ty.inputs.is_empty() || ty.outputs.is_empty() || from.node == node || to.node == node {
+        // An input reads; its port Paths is not where a connection is put through.
+        if ty.inputs.is_empty() || ty.outputs.is_empty() || ty.group == og_engine::nodes::Group::Reader || from.node == node || to.node == node {
             return false;
         }
         let taken = snarl.wires().any(|(o, i)| (i.node == node && i.input == 0) || (o.node == node && o.output == 0));

@@ -40,7 +40,7 @@ fn fits(t: &NodeType, want: Want) -> bool {
     !t.hidden
         && match want {
             Want::Any => true,
-            Want::WithInput => !t.inputs.is_empty(),
+            Want::WithInput => !t.inputs.is_empty() && t.group != Group::Reader,
             Want::WithOutput => !t.outputs.is_empty() && t.group != Group::Writer,
         }
 }
@@ -167,7 +167,7 @@ mod tests {
         assert_eq!(matches("sort", Want::Any)[0].title, "Sort");
         assert_eq!(matches("Reader", Want::Any)[0].name, "Reader", "by the name in files too");
         // After an output only what has an input; before an input no outputs.
-        assert!(matches("", Want::WithInput).iter().all(|t| !t.inputs.is_empty()));
+        assert!(matches("", Want::WithInput).iter().all(|t| !t.inputs.is_empty() && t.group != Group::Reader));
         assert!(matches("", Want::WithOutput).iter().all(|t| t.group != Group::Writer));
         used("Sorter");
         assert_eq!(matches("", Want::Any)[0].name, "Sorter", "the latest used first");

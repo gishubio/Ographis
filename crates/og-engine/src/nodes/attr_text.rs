@@ -173,7 +173,13 @@ pub(super) fn run_substring(p: &P, inp: &Inputs, _ctx: &mut NodeCtx) -> Result<O
 // ---------- Concatenate attributes (StringConcatenator) ----------
 
 pub(super) const CONCAT_PARAMS: &[ParamSpec] = &[
-    ParamSpec { key: "attributes", label: "Attributes", kind: ParamKind::Attributes("Input"), default: "", hint: "Joined in the order they are chosen" },
+    ParamSpec {
+        key: "attributes",
+        label: "Attributes",
+        kind: ParamKind::Attributes("Input"),
+        default: "",
+        hint: "Joined in the order they are chosen. A fixed text is written in single quotes: '0', kod",
+    },
     ParamSpec {
         key: "separator",
         label: "Separator",
@@ -193,22 +199,43 @@ pub(super) const CONCAT_PARAMS: &[ParamSpec] = &[
 
 pub(super) fn run_concat(p: &P, inp: &Inputs, _ctx: &mut NodeCtx) -> Result<Outputs> {
     let table = input(inp, "Input");
-    let attrs = p.list("attributes");
-    if attrs.is_empty() {
+    let entries = p.list_quoted("attributes");
+    if entries.is_empty() {
         return err("Choose the attributes to join.");
     }
     let name = p.get("name").unwrap_or_else(|| "_concatenated".into());
     if table.fields.is_empty() && table.is_empty() {
         return Ok(vec![("Output".into(), table.clone())]);
     }
-    let idx: Vec<usize> = attrs.iter().map(|n| table.need_field(n)).collect::<Result<_>>()?;
+    // Each entry is an attribute, also in double quotes, or a fixed text in single quotes.
+    enum Part {
+        Attr(usize),
+        Fixed(String),
+    }
+    let parts: Vec<Part> = entries
+        .iter()
+        .map(|e| match super::quoted_text(e) {
+            Some(text) => Ok(Part::Fixed(text)),
+            None => {
+                let n = e.strip_prefix('"').and_then(|x| x.strip_suffix('"')).unwrap_or(e);
+                table.need_field(n).map(Part::Attr)
+            }
+        })
+        .collect::<Result<_>>()?;
     let (separator, skip) = (p.exact("separator"), p.flag("skip_empty"));
     let values = table
         .features
         .iter()
         .map(|f| {
-            let parts: Vec<String> = idx.iter().map(|i| f.attrs[*i].to_text()).filter(|t| !(skip && t.is_empty())).collect();
-            Value::Text(parts.join(&separator))
+            let texts: Vec<String> = parts
+                .iter()
+                .map(|part| match part {
+                    Part::Attr(i) => f.attrs[*i].to_text(),
+                    Part::Fixed(t) => t.clone(),
+                })
+                .filter(|t| !(skip && t.is_empty()))
+                .collect();
+            Value::Text(texts.join(&separator))
         })
         .collect();
     let mut out = with_column(table, &name, values);
@@ -381,14 +408,14 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Attributes",
-        desc: "Joins several attributes into one new text attribute, with a separator between them if you want one.",
+        desc: "Joins several attributes, and fixed texts if you want, into one new text attribute, with a separator between them if you want one.",
         inputs: &["Input"],
         outputs: &["Output"],
         ports: None,
         params: CONCAT_PARAMS,
         run: run_concat,
         summary: |p| {
-            let attrs = p.list("attributes");
+            let attrs = p.list_quoted("attributes");
             if attrs.is_empty() {
                 "nothing chosen".to_string()
             } else {

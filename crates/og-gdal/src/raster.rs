@@ -368,15 +368,31 @@ fn read_grid(
     }
     let sx = gt[1] * w as f64 / gw as f64;
     let sy = gt[5] * h as f64 / gh as f64;
-    let grid = og_engine::model::Grid {
-        bands: Vec::new(),
-        meta: Default::default(),
-        width: gw,
-        height: gh,
-        values,
-        geotransform: [gt[0], sx, 0.0, gt[3], 0.0, sy],
-        crs,
-    };
+    // The other bands go along, with the names of all, as the depth and its uncertainty of
+    // a BAG, or the colours of a satellite picture, which Spectral index can then use.
+    let count = ds.raster_count();
+    let mut bands = Vec::new();
+    let mut meta = og_engine::model::GridMeta::default();
+    if which == 1 && (2..=16).contains(&count) {
+        for i in 2..=count {
+            let b = ds.rasterband(i).map_err(|e| GbError(format!("Cannot read band {}: {}", i, e)))?;
+            let nd = b.no_data_value();
+            let mut v = b
+                .read_as::<f32>((x0 as isize, y0 as isize), (w, h), (gw, gh), resample)
+                .map_err(|e| GbError(format!("Cannot read {}: {}", path.display(), e)))?
+                .into_shape_and_vec()
+                .1;
+            if let Some(n) = nd {
+                v.iter_mut().filter(|x| **x == n as f32).for_each(|x| *x = f32::NAN);
+            }
+            bands.push(v);
+        }
+        let names = band_names(ds);
+        if names.iter().any(|n| !n.starts_with("band_")) {
+            meta.names = names;
+        }
+    }
+    let grid = og_engine::model::Grid { bands, meta, width: gw, height: gh, values, geotransform: [gt[0], sx, 0.0, gt[3], 0.0, sy], crs };
     if let Some((lo, hi)) = grid.range() {
         notes.info(format!("a grid of {} × {} cells of {}, values from {} to {}", gw, gh, og_engine::model::fmt_real(sx.abs()), lo, hi));
     }

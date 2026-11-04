@@ -12,6 +12,7 @@ pub mod cloud;
 pub mod crash;
 pub mod csv_io;
 pub mod dwg;
+mod dwg_curved;
 pub mod expr;
 pub mod formats;
 pub mod geom;

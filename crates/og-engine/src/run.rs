@@ -291,6 +291,21 @@ impl Workspace {
                 }
             }
         }
+        // Before 0.94 the files named in an attribute were read by a tool of their own; now
+        // an Input does it, with the stream on its port Paths. Rasters were read as grids.
+        let file_readers: Vec<String> = ws.nodes.iter().filter(|n| n.kind == "AttributeFileReader").map(|n| n.id.clone()).collect();
+        for n in ws.nodes.iter_mut().filter(|n| n.kind == "AttributeFileReader") {
+            n.kind = "Reader".into();
+            if let Some(a) = n.params.remove("attribute") {
+                n.params.insert("path_attribute".into(), a);
+            }
+            n.params.entry("raster_as").or_insert_with(|| serde_json::json!("grid"));
+        }
+        for e in &mut ws.edges {
+            if e.to.1 == "Input" && file_readers.contains(&e.to.0) {
+                e.to.1 = "Paths".into();
+            }
+        }
         // Before 0.77 Join by location took only polygons, on a port of that name, and placed
         // a line or an area by one point on it.
         let joiners: Vec<String> = ws.nodes.iter().filter(|n| n.kind == "SpatialJoiner").map(|n| n.id.clone()).collect();
@@ -831,6 +846,11 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
         let mut unfed: Option<&str> = None;
         let mut failure: Option<String> = None;
         for port in ty.inputs {
+            // A port of an input, such as Paths, is only there when something is connected:
+            // otherwise the input reads its own file.
+            if ty.group == nodes::Group::Reader && !live.iter().any(|e| e.to.0 == n.id && e.to.1 == *port) {
+                continue;
+            }
             let mut tables = Vec::new();
             let mut off = 0;
             if ty.group == nodes::Group::Writer && !live.iter().any(|e| e.to.0 == n.id && e.to.1 == *port) {
@@ -1000,6 +1020,12 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
                 // View writes nothing; it only keeps what comes in to be looked at.
                 let writer = ty.group == nodes::Group::Writer && n.kind != "Viewer";
                 let mut wrote = String::new();
+                // The ports something came in on: an input with nothing on Paths has none.
+                let fed: Vec<&str> = if ty.group == nodes::Group::Reader {
+                    ty.inputs.iter().copied().filter(|p| kept_inputs.contains_key(*p)).collect()
+                } else {
+                    ty.inputs.to_vec()
+                };
                 if writer {
                     // An output says how much it wrote.
                     let input = kept_inputs.get("Input");
@@ -1022,11 +1048,11 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
                     msg += &format!("{} written", wrote.trim_start_matches("an "));
                 } else if n.kind == "Viewer" {
                     msg = n.label().to_string();
-                } else if !ty.inputs.is_empty() {
-                    let labels: Vec<String> = ty.inputs.iter().map(|p| p.to_string()).collect();
-                    msg += &format!("{} in", named(ty.inputs, &labels, &kept_inputs));
+                } else if !fed.is_empty() {
+                    let labels: Vec<String> = fed.iter().map(|p| p.to_string()).collect();
+                    msg += &format!("{} in", named(&fed, &labels, &kept_inputs));
                 }
-                if !ty.inputs.is_empty() && !ports.is_empty() {
+                if !fed.is_empty() && !ports.is_empty() {
                     msg += " → ";
                 }
                 if !ports.is_empty() {

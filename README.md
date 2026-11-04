@@ -69,6 +69,12 @@ without OSGeo4W. On Linux, `cargo build --release` with GDAL 3.4 or later instal
 Open one of the [examples](docs/EXAMPLES.md), press F5 to run it, and click a node to see
 what came out of it.
 
+### What the computer needs
+
+Windows 11, 64-bit, on Intel or AMD, with DirectX 12 and at least 8 GB of memory; 16 GB
+and four cores or more for point clouds, satellite pictures and large rasters. These are
+estimates, not yet measured. See [docs/GUIDE.md](docs/GUIDE.md#what-the-computer-needs).
+
 Ographis was called GeoBobbo up to version 0.74. Models saved as `.json` by GeoBobbo open and
 run as they did, and its settings are taken over the first time Ographis starts.
 
@@ -88,6 +94,7 @@ run as they did, and its settings are taken over the first time Ographis starts.
 | `docs/EXAMPLES.md` | The example models and the web APIs they talk to. |
 | `docs/DESIGN.md` | The choices that were made, and the known limitations. |
 | `docs/TESTING.md` | What the tests cover. |
+| `docs/PERFORMANCE.md` | How long large data takes and how much memory, in four fixed cases, version by version. |
 | `docs/BUILD-WINDOWS.md` | Step by step on Windows 11, and what has been checked. |
 | `docs/FORMATS.html` | The formats Ographis reads and writes, and whether GDAL or Ographis itself handles each, as written by `og formats --html`. |
 | `CHANGELOG.md` | What changed in each version. |

@@ -113,16 +113,51 @@ fn run_topology(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             }
         }
     }
-    // Gaps: the holes in all the areas put together.
+    // Gaps: the holes in all the areas put together, or with a boundary, all of it that no
+    // area covers, also gaps that open to the outside.
     let all: Vec<Polygon<f64>> = areas.iter().flatten().flat_map(|m| m.0.iter().cloned()).collect();
     let union = geo::unary_union(all.iter());
     let mut gaps = Table { fields: vec![Field::new("gap", FieldType::Real)], crs: t.crs, ..Default::default() };
-    for p in &union.0 {
-        for hole in p.interiors() {
-            let g = Polygon::new(hole.clone(), vec![]);
-            let size = g.unsigned_area();
-            if size > smallest && largest.is_none_or(|l| size <= l) {
-                gaps.features.push(Feature::new(vec![Value::Real((size * 100.0).round() / 100.0)], Some(Geometry::Polygon(g))));
+    let boundary_in = input(inp, "Boundary");
+    let boundary: Option<MultiPolygon<f64>> = if boundary_in.features.iter().any(|f| f.geom.is_some()) {
+        let b = match (boundary_in.crs, t.crs) {
+            (Some(a), Some(c)) if a != c => reproject(boundary_in, c, ctx.backend)?,
+            _ => boundary_in.clone(),
+        };
+        let parts: Vec<Polygon<f64>> = b.features.iter().filter_map(|f| f.geom.as_ref().and_then(multi_area)).flat_map(|m| m.0).collect();
+        (!parts.is_empty()).then(|| geo::unary_union(parts.iter()))
+    } else {
+        None
+    };
+    let mut push_gap = |g: Polygon<f64>| {
+        let size = g.unsigned_area();
+        if size > smallest && largest.is_none_or(|l| size <= l) {
+            gaps.features.push(Feature::new(vec![Value::Real((size * 100.0).round() / 100.0)], Some(Geometry::Polygon(g))));
+        }
+    };
+    match &boundary {
+        Some(b) => {
+            for g in b.difference(&union).0 {
+                push_gap(g);
+            }
+        }
+        None => {
+            for p in &union.0 {
+                for hole in p.interiors() {
+                    push_gap(Polygon::new(hole.clone(), vec![]));
+                }
+            }
+        }
+    }
+    // Areas that reach out beyond the boundary.
+    let mut beyond = Table { fields: vec![Field::new("area", id_ty), Field::new("beyond", FieldType::Real)], crs: t.crs, ..Default::default() };
+    if let Some(b) = &boundary {
+        for (i, a) in areas.iter().enumerate() {
+            let Some(a) = a else { continue };
+            let out = a.difference(b);
+            let size = out.unsigned_area();
+            if size > smallest && size > 0.0 {
+                beyond.features.push(Feature::new(vec![name_of(t, id_at, i), Value::Real((size * 100.0).round() / 100.0)], Some(Geometry::MultiPolygon(out))));
             }
         }
     }
@@ -135,8 +170,17 @@ fn run_topology(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     if not_areas > 0 {
         ctx.notes.warn(format!("{} features are not areas and were not checked.", fmt_count(not_areas as u64)));
     }
-    ctx.notes.info(format!("{} overlaps and {} gaps", fmt_count(overlaps.len() as u64), fmt_count(gaps.len() as u64)));
-    Ok(vec![("Areas".into(), out), ("Overlaps".into(), overlaps), ("Gaps".into(), gaps)])
+    if boundary.is_some() {
+        ctx.notes.info(format!(
+            "{} overlaps, {} gaps within the boundary and {} areas reaching beyond it",
+            fmt_count(overlaps.len() as u64),
+            fmt_count(gaps.len() as u64),
+            fmt_count(beyond.len() as u64)
+        ));
+    } else {
+        ctx.notes.info(format!("{} overlaps and {} gaps", fmt_count(overlaps.len() as u64), fmt_count(gaps.len() as u64)));
+    }
+    Ok(vec![("Areas".into(), out), ("Overlaps".into(), overlaps), ("Gaps".into(), gaps), ("Beyond".into(), beyond)])
 }
 
 // ---------- Eliminate slivers (SliverEliminator) ----------
@@ -888,9 +932,9 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Geometry",
-        desc: "Finds where areas that should lie edge to edge, such as properties or zones, overlap one another, and the gaps between them. Each overlap comes out with the two areas it lies in, and each gap as an area; the areas get how many others they overlap. Overlaps and gaps smaller than a size are left out as noise, and holes larger than a size are taken to be meant.",
-        inputs: &["Areas"],
-        outputs: &["Areas", "Overlaps", "Gaps"],
+        desc: "Finds where areas that should lie edge to edge, such as properties or zones, overlap one another, and the gaps between them. Each overlap comes out with the two areas it lies in, and each gap as an area; the areas get how many others they overlap. With a boundary on Boundary, such as the municipality the areas should fill, gaps that open to the outside are found too, and what reaches beyond it comes out on Beyond. Overlaps and gaps smaller than a size are left out as noise, and holes larger than a size are taken to be meant.",
+        inputs: &["Areas", "Boundary"],
+        outputs: &["Areas", "Overlaps", "Gaps", "Beyond"],
         ports: None,
         params: TOPO_PARAMS,
         run: run_topology,
@@ -1027,7 +1071,8 @@ mod tests {
     #[test]
     fn overlaps_gaps_and_slivers() {
         // Three squares in a row: the second overlaps the first by 1, and leaves a gap of 1 to
-        // the third above a sliver. A gap open to the outside is not found: only holes.
+        // the third above a sliver. Without a boundary, a gap open to the outside is not
+        // found: only holes.
         let t = areas(vec![
             polygon![(x: 0.0, y: 0.0), (x: 10.0, y: 0.0), (x: 10.0, y: 10.0), (x: 0.0, y: 10.0)],
             polygon![(x: 9.0, y: 0.0), (x: 20.0, y: 0.0), (x: 20.0, y: 4.0), (x: 21.0, y: 4.0), (x: 21.0, y: 6.0), (x: 20.0, y: 6.0), (x: 20.0, y: 10.0), (x: 9.0, y: 10.0)],
@@ -1050,6 +1095,26 @@ mod tests {
         // It shares 5 m of border with p2 and 4 with p3.
         let merged = out[0].1.features.iter().find(|f| f.attrs[0] == Value::Text("p2".into())).unwrap();
         assert!((merged.geom.as_ref().unwrap().unsigned_area() - 116.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn gaps_open_to_the_outside_are_found_within_a_boundary() {
+        // Two squares side by side with a notch between them open at the top, in a boundary
+        // that the second does not reach the end of, and that the first reaches beyond.
+        let t = areas(vec![
+            polygon![(x: -1.0, y: 0.0), (x: 10.0, y: 0.0), (x: 10.0, y: 10.0), (x: -1.0, y: 10.0)],
+            polygon![(x: 10.0, y: 0.0), (x: 20.0, y: 0.0), (x: 20.0, y: 8.0), (x: 10.0, y: 8.0)],
+        ]);
+        let boundary = areas(vec![polygon![(x: 0.0, y: 0.0), (x: 20.0, y: 0.0), (x: 20.0, y: 10.0), (x: 0.0, y: 10.0)]]);
+        let (out, _) = run_for_test("TopologyChecker", &[("id", "id")], vec![("Areas", t.clone())]).unwrap();
+        assert_eq!(out[2].1.len(), 0, "without a boundary, no hole and no gap");
+        let (out, notes) = run_for_test("TopologyChecker", &[("id", "id")], vec![("Areas", t), ("Boundary", boundary)]).unwrap();
+        let gaps = &out[2].1;
+        assert_eq!(gaps.len(), 1, "{:?}", notes.info);
+        assert_eq!(gaps.features[0].attrs[0], Value::Real(20.0), "10 × 2 above the second square");
+        let beyond = &out[3].1;
+        assert_eq!(beyond.len(), 1);
+        assert_eq!(beyond.features[0].attrs, [Value::Text("p1".into()), Value::Real(10.0)]);
     }
 
     #[test]

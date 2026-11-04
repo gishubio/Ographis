@@ -259,6 +259,9 @@ pub struct App {
     pub cloud_views: std::cell::RefCell<std::collections::HashMap<usize, Arc<og_engine::Table>>>,
     /// Of a cloud shown by every n-th point: n, and how many points it has.
     pub cloud_totals: std::cell::RefCell<std::collections::HashMap<usize, (usize, usize)>>,
+    /// A series of rasters as the map shows it with another row than the first picked: the
+    /// same table with the grid of that row, made once for each, so the map keeps its drawing.
+    pub series_views: std::cell::RefCell<std::collections::HashMap<(usize, usize), Arc<og_engine::Table>>>,
     /// The list of Ctrl+F and Ctrl+L, while it is open.
     pub picker: Option<keyboard::Picker>,
     /// Enter on the canvas: the form gets the keyboard, over two frames.
@@ -459,6 +462,7 @@ impl App {
             area_for: None,
             cloud_views: Default::default(),
             cloud_totals: Default::default(),
+            series_views: Default::default(),
             focus_form: 0,
             tab_surrender: 0,
             show_minimap: true,

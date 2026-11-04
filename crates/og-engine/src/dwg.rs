@@ -60,10 +60,14 @@ pub struct Body {
 /// What could not be made into triangles.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct BodyReport {
-    /// Faces of 3D solids that are curved, such as cylinders and spheres, left out.
+    /// Faces of 3D solids whose surface is not made into triangles: free-form surfaces,
+    /// splines, left out.
     pub curved_faces: usize,
     /// 3D solids that could not be read.
     pub unread_solids: usize,
+    /// What the drawing has that is not read at all, by kind, with how many: pictures,
+    /// references to other drawings, underlays and the like.
+    pub left_out: std::collections::BTreeMap<&'static str, usize>,
 }
 
 /// The 3D bodies of a DWG or DXF drawing as triangles.
@@ -97,6 +101,19 @@ fn bodies_of(doc: &acadrust::CadDocument) -> (Vec<Body>, BodyReport) {
         }
         t.into_iter().filter(|t| area3(t) > 1e-12).collect()
     };
+    let acis = |sat: Option<acadrust::entities::acis::SatDocument>, report: &mut BodyReport| match sat {
+        Some(sat) => solid_triangles(&sat, report),
+        None => {
+            report.unread_solids += 1;
+            Vec::new()
+        }
+    };
+    // References to other drawings: blocks that point to a file.
+    for b in doc.block_records.iter() {
+        if !b.xref_path.trim().is_empty() {
+            *report.left_out.entry("references to other drawings (XREF)").or_default() += 1;
+        }
+    }
     for e in doc.entities() {
         let (kind, common) = match e {
             EntityType::Face3D(f) => ("3DFACE", &f.common),
@@ -104,17 +121,35 @@ fn bodies_of(doc: &acadrust::CadDocument) -> (Vec<Body>, BodyReport) {
             EntityType::PolygonMesh(m) => ("POLYGONMESH", &m.common),
             EntityType::Mesh(m) => ("MESH", &m.common),
             EntityType::Solid3D(m) => ("3DSOLID", &m.common),
-            _ => continue,
+            EntityType::Region(m) => ("REGION", &m.common),
+            EntityType::Body(m) => ("BODY", &m.common),
+            EntityType::Surface(m) => ("SURFACE", &m.common),
+            other => {
+                // What neither GDAL nor this reads: told, so that nothing is missed unseen.
+                let kind = match other {
+                    EntityType::RasterImage(_) => Some("pictures (IMAGE)"),
+                    EntityType::Underlay(_) => Some("underlays of PDF, DGN or DWF"),
+                    EntityType::Ole2Frame(_) => Some("embedded objects (OLE)"),
+                    EntityType::Wipeout(_) => Some("wipeouts"),
+                    EntityType::Light(_) => Some("lights"),
+                    EntityType::Table(_) => Some("tables (ACAD_TABLE)"),
+                    EntityType::Tolerance(_) => Some("tolerances"),
+                    EntityType::Shape(_) => Some("shapes (SHAPE)"),
+                    EntityType::SectionSymbol(_) | EntityType::ViewBorder(_) => Some("section and view marks"),
+                    _ => None,
+                };
+                if let Some(k) = kind {
+                    *report.left_out.entry(k).or_default() += 1;
+                }
+                continue;
+            }
         };
         let tris: Vec<[[f64; 3]; 3]> = match e {
             EntityType::Face3D(f) => face(f),
-            EntityType::Solid3D(s) => match s.acis_data.parse() {
-                Some(sat) => solid_triangles(&sat, &mut report),
-                None => {
-                    report.unread_solids += 1;
-                    Vec::new()
-                }
-            },
+            EntityType::Solid3D(s) => acis(s.acis_data.parse(), &mut report),
+            EntityType::Region(s) => acis(s.acis_data.parse(), &mut report),
+            EntityType::Body(s) => acis(s.acis_data.parse(), &mut report),
+            EntityType::Surface(s) => acis(s.acis_data.parse(), &mut report),
             // Meshes as acadrust breaks them into 3D faces.
             _ => e
                 .explode()
@@ -224,7 +259,19 @@ fn solid_triangles(sat: &acadrust::entities::acis::SatDocument, report: &mut Bod
     let mut tris = Vec::new();
     for f in sat.faces() {
         let Some(plane) = sat.resolve(f.surface()).and_then(SatPlaneSurface::from_record) else {
-            report.curved_faces += 1;
+            // A curved face: laid out on the parameters of its surface.
+            let mut loops = Vec::new();
+            let mut lp = f.first_loop();
+            let mut seen = std::collections::HashSet::new();
+            while !lp.is_null() && seen.insert(lp) {
+                let Some(l) = sat.resolve(lp).and_then(SatLoop::from_record) else { break };
+                loops.push(loop_points(sat, l.first_coedge()));
+                lp = l.next_loop();
+            }
+            match crate::dwg_curved::face_triangles(sat, &f, &loops, &place) {
+                Some(t) if !t.is_empty() => tris.extend(t),
+                _ => report.curved_faces += 1,
+            }
             continue;
         };
         let (nx, ny, nz) = plane.normal();
@@ -274,7 +321,7 @@ fn solid_triangles(sat: &acadrust::entities::acis::SatDocument, report: &mut Bod
 pub fn may_have_bodies(dxf: &Path) -> bool {
     let Ok(bytes) = std::fs::read(dxf) else { return false };
     let has = |w: &[u8]| bytes.windows(w.len()).any(|x| x == w);
-    has(b"3DFACE") || has(b"3DSOLID") || has(b"AcDbPolyFaceMesh") || has(b"AcDbPolygonMesh") || has(b"AcDbSubDMesh")
+    has(b"3DFACE") || has(b"3DSOLID") || has(b"AcDbPolyFaceMesh") || has(b"AcDbPolygonMesh") || has(b"AcDbSubDMesh") || has(b"REGION") || has(b"AcDbSurface")
 }
 
 /// The stream of a drawing with its 3D bodies as a 3D model: each body a feature of its own
@@ -374,11 +421,30 @@ mod body_tests {
         assert!((area - 2.0 * (8.0 + 6.0 + 12.0)).abs() < 1e-9, "{}", area);
         let zs: Vec<f64> = tris.iter().flat_map(|t| t.iter().map(|p| p[2])).collect();
         assert!(zs.iter().all(|z| (*z - 0.0).abs() < 1e-9 || (*z - 3.0).abs() < 1e-9), "{:?}", zs);
-        let cyl = acadrust::entities::acis::primitives::build_cylinder([0.0, 0.0, 0.0], 1.0, 2.0);
-        let tris = solid_triangles(&cyl, &mut report);
-        assert!(report.curved_faces >= 1, "the side of a cylinder is left out");
-        let area: f64 = tris.iter().map(area3).sum();
-        assert!((area - 2.0 * std::f64::consts::PI).abs() < 0.1, "the two discs, {}", area);
+    }
+
+    #[test]
+    fn curved_solids_are_made_into_triangles() {
+        use acadrust::entities::acis::primitives::{build_cone, build_cylinder, build_sphere, build_torus};
+        use std::f64::consts::PI;
+        let check = |sat: acadrust::entities::acis::SatDocument, want: f64, what: &str| {
+            let mut report = BodyReport::default();
+            let tris = solid_triangles(&sat, &mut report);
+            assert_eq!(report.curved_faces, 0, "{}: every face is made", what);
+            let area: f64 = tris.iter().map(area3).sum();
+            // Flat triangles on a curve are a little smaller than the curve.
+            assert!(area < want * 1.001 && area > want * 0.98, "{}: {} against {}", what, area, want);
+        };
+        // A cylinder of radius 1 and height 2 at (5, 5, 1): sides and two discs.
+        check(build_cylinder([5.0, 5.0, 1.0], 1.0, 2.0), 2.0 * PI * 2.0 + 2.0 * PI, "cylinder");
+        // A cone of radius 3 and height 4: the side, πrs with the slant 5, and the base.
+        check(build_cone([0.0, 0.0, 0.0], 3.0, 4.0), PI * 3.0 * 5.0 + PI * 9.0, "cone");
+        check(build_sphere([1.0, 2.0, 3.0], 2.0), 4.0 * PI * 4.0, "sphere");
+        check(build_torus([0.0, 0.0, 0.0], 5.0, 1.0), 4.0 * PI * PI * 5.0, "torus");
+        // The points lie on the surface: the sphere, 2 from its centre.
+        let mut report = BodyReport::default();
+        let tris = solid_triangles(&build_sphere([1.0, 2.0, 3.0], 2.0), &mut report);
+        assert!(tris.iter().flatten().all(|p| (((p[0] - 1.0).powi(2) + (p[1] - 2.0).powi(2) + (p[2] - 3.0).powi(2)).sqrt() - 2.0).abs() < 1e-9));
     }
 
     /// The bodies of the drawing in OG_DWG: cargo test -- --ignored.

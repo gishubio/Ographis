@@ -3,6 +3,92 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.94.1
+
+- The scroll bars of the canvas stop at the edge of the model. Before, dragging one went on
+  past it, as far as it was dragged.
+- KML and KMZ keep every attribute, in the data of each placemark: GDAL's driver, which
+  wrote them in 0.94, put them in the wrong places by their order and lost all but the name.
+  They are now written by Ographis, and a KMZ is laid out so that QGIS finds its attributes too.
+- *Origin* of Output applies to OBJ as well as glTF (issue #37): `none`, or `0, 0, 0`, writes
+  the coordinates as they are, without moving the model; a point of your own writes it around
+  that; empty, as before, near its middle. A glTF that reaches far from its origin, such as in
+  SWEREF 99 TM without one, gets a warning, since glTF keeps coordinates to about seven digits.
+
+## 0.94
+
+Heights, sea and formats
+
+- **Change height system**: heights above the ellipsoid, as GNSS and many point clouds give
+  them, to RH 2000 and back, or between NN2000, N2000, DVR90, DHHN2016, EGM96, EGM2008, NAVD88
+  and others, with the grid of the geoid. For the heights of coordinates, point clouds, grids
+  and 3D models. The grids for Sweden, Norway and EGM96 come along (about 5 MB, in
+  `data/proj-grids`); others are fetched from cdn.proj.org when allowed. Without the grid it
+  says so, rather than leave the heights as they were. `og doctor` checks it.
+- **Nautical charts in S-57** (.000, with updates applied) are read with every object class
+  named to be read, and **BAG and S-102** with depth and uncertainty as two named bands. A
+  GeoTIFF of several bands read as a grid keeps them all, with their names.
+- **KML, KMZ, GML 3.2 and GPX** are written. KML and GPX in WGS 84 degrees; GPX with points as
+  waypoints, lines as tracks, heights as ele and the other attributes in extensions.
+
+New tools
+
+- *Parse coordinates*: points from coordinates written as text, in degrees, minutes and
+  seconds, degrees and minutes, decimal degrees or metres, with or without N and E.
+- *Profile along line*: the height of a surface along lines, as points for a chart and as 3D
+  lines with their length over the ground, climb and descent.
+- *Volume between surfaces*: cut and fill between a surface and a reference or a level, per
+  area, and the difference as a raster.
+
+Changed
+
+- **Input reads the files a stream names** when a stream is connected to its new port Paths,
+  such as the answers HTTP request keeps as files. This did *Read files named in an
+  attribute*, which is gone from the list; models that have it open with an Input in its
+  place.
+- *Check topology* takes a boundary, such as the municipality the areas should fill: then
+  gaps that open to the outside are found too, and what reaches beyond it comes out on Beyond.
+- **DWG**: the round faces of 3D solids (cylinders, cones, spheres and tori), regions and
+  surfaces are read as a 3D model too. What a drawing has that is not read, such as pictures
+  and references to other drawings, is said in the log.
+- *Encoding* of Input also applies to DXF, with more encodings to choose (Windows-1250, -1251
+  and -1257, ISO-8859-15). Text with characters that could not be read, shown as �, is said in
+  the log, with whether another encoding may help. In the drawing of issue #34 they were lost
+  already in the file.
+- *Manage attributes*: several attributes can be ticked and kept, removed or given a type at
+  once.
+- *Concatenate attributes* takes fixed texts in single quotes beside the attributes: `'0', kod`.
+- *Report*: the tables can have one of a few colours, and in the web page a click on a column
+  heading sorts by it.
+- *STAC search* sends the time as full timestamps, which Earth Search insists on:
+  2025-06-01/2025-08-31 was refused with *datetime value is invalid*. A month or a year, such
+  as 2025-06, is understood as the whole of it.
+- *Read satellite bands* picks the pictures spread over the whole time, the least cloudy in each
+  part, when there are more than *At most pictures*. Before, it took the first by time, and
+  with the latest first from the catalogue a summer could be only August. Paths in a catalogue
+  of your own are found beside the model, and when no picture can be read, the error says why.
+  The example `sentinel_ndvi.ographis` asks for up to 100 items.
+- With a series of rasters, the map shows the picture of the row picked in the table.
+
+Fixed
+
+- The settings window keeps its size whichever tab is chosen, also with a connection in a
+  form wider than the others.
+- A node that is removed takes what it read with it: a new Input given the same id showed the
+  data of the old one on the map.
+- The wheel zooms around the pointer in the 3D view too, as on the map.
+- `build.cmd` removes the files an earlier version had when a new one is unpacked over it, and
+  stops with a clear message if a file has become a folder: unpacking 0.93 over 0.92 left
+  `nodes\output.rs` beside the new `nodes\output\`, and the build stopped with errors that did
+  not say why.
+
+Tests and documents
+
+- **Performance tests**: four cases of made-up data, a million points joined to squares,
+  200 000 areas buffered, the slope of 16 million heights and 5 million points made a terrain
+  model, run in a release build with their time and peak memory. See docs/PERFORMANCE.md.
+- What the computer needs is written down in the README and docs/GUIDE.md.
+
 ## 0.93
 
 Large data

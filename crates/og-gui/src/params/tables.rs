@@ -410,12 +410,55 @@ pub(super) fn attribute_table(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec, f
     let mut moved: Option<(usize, usize)> = None;
     let mut dropped = None;
     let count = rows.len();
+    // Several attributes at once: the ticked ones are kept between frames, by the node.
+    let chosen_id = egui::Id::new(("attributes chosen", node.id.as_str(), spec.key));
+    let mut chosen: Vec<String> = ui.data(|d| d.get_temp(chosen_id)).unwrap_or_default();
+    chosen.retain(|n| rows.iter().any(|r| &r.0 == n));
+    let mut for_chosen: Option<AttrAction> = None;
+    let mut type_for_chosen: Option<String> = None;
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let all = !chosen.is_empty() && chosen.len() == rows.len();
+        let mut tick = all;
+        if ui.checkbox(&mut tick, "").on_hover_text("Tick all, or none").changed() {
+            chosen = if tick { rows.iter().map(|r| r.0.clone()).collect() } else { Vec::new() };
+        }
+        if chosen.is_empty() {
+            ui.label(RichText::new("Tick attributes to keep, remove or change the type of several at once").small().color(pal.muted));
+        } else {
+            ui.label(RichText::new(format!("{} ticked:", chosen.len())).small().color(pal.ink));
+            if ui.small_button("Keep").clicked() {
+                for_chosen = Some(AttrAction::Keep);
+            }
+            if ui.small_button("Remove").clicked() {
+                for_chosen = Some(AttrAction::Remove);
+            }
+            egui::ComboBox::from_id_salt(("attr_type_chosen", spec.key)).selected_text("Type").width(70.0).show_ui(ui, |ui| {
+                for (v, l) in [("", "as it comes"), ("integer", "integer"), ("decimal", "decimal"), ("text", "text")] {
+                    if ui.selectable_label(false, l).clicked() {
+                        type_for_chosen = Some(v.to_string());
+                    }
+                }
+            });
+            if ui.small_button("Untick").clicked() {
+                chosen.clear();
+            }
+        }
+    });
     ui.spacing_mut().item_spacing.y = 2.0;
     for (i, (name, action, listed)) in rows.iter_mut().enumerate() {
         let here = names.contains(name);
         let ty = fields.iter().find(|f| &f.0 == name).map_or("", |f| f.1);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
+            let mut on = chosen.contains(name);
+            if ui.checkbox(&mut on, "").on_hover_text("Tick to change several at once").changed() {
+                if on {
+                    chosen.push(name.clone());
+                } else {
+                    chosen.retain(|n| n != name);
+                }
+            }
             if symbol(ui, "▲", i > 0, "Move up") {
                 moved = Some((i, i - 1));
             }
@@ -491,6 +534,19 @@ pub(super) fn attribute_table(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec, f
             });
         }
     }
+    // What was chosen for the ticked ones. A type of their own is kept, unless one is chosen.
+    for (k, r) in rows.iter_mut().enumerate() {
+        if chosen.contains(&r.0) {
+            if let Some(a) = &for_chosen {
+                r.1 = a.clone();
+            }
+            if let Some(t) = &type_for_chosen {
+                let own = fields.iter().find(|f| f.0 == r.0).map_or("", |f| f.1);
+                types[k] = if t == own { String::new() } else { t.clone() };
+            }
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(chosen_id, chosen));
     let mut after: Vec<(String, AttrAction)> = rows.iter().map(|r| (r.0.clone(), r.1.clone())).collect();
     if let Some((a, b)) = moved {
         after.swap(a, b);

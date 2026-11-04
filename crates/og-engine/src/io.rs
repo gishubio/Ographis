@@ -88,7 +88,7 @@ pub enum RasterMode {
 
 /// The file extensions that are read as rasters.
 pub fn is_raster(ext: &str) -> bool {
-    matches!(ext, "tif" | "tiff" | "asc" | "img" | "vrt" | "jp2" | "png" | "jpg" | "jpeg") || is_cube(ext)
+    matches!(ext, "tif" | "tiff" | "asc" | "img" | "vrt" | "jp2" | "png" | "jpg" | "jpeg" | "bag" | "h5") || is_cube(ext)
 }
 
 /// The file extensions of data cubes: variables over a grid, with time or other dimensions,
@@ -450,6 +450,16 @@ pub trait Backend: Sync {
     fn read_onto(&self, source: &str, geotransform: [f64; 6], width: usize, height: usize, crs: u32, nearest: bool) -> Result<Vec<f32>> {
         let _ = (geotransform, width, height, crs, nearest);
         Err(crate::model::GbError(format!("Reading {} needs the GDAL support.", source)))
+    }
+    /// Changes heights from one height system to another, at places given in `crs`: such as
+    /// from heights above the ellipsoid, as GNSS gives them, to RH 2000. `from` and `to` are
+    /// "ellipsoid" or the EPSG code of a vertical system, such as 5613 for RH 2000. `fetch`
+    /// lets a grid of the geoid that is not here be fetched from cdn.proj.org. Heights that
+    /// cannot be changed, outside the grid, become NaN.
+    #[allow(clippy::too_many_arguments)]
+    fn transform_heights(&self, crs: u32, from: &str, to: &str, xs: &[f64], ys: &[f64], zs: &mut [f64], fetch: bool) -> Result<()> {
+        let _ = (crs, from, to, xs, ys, zs, fetch);
+        Err(crate::model::GbError("Changing height systems needs the GDAL support.".into()))
     }
     /// A picture in another coordinate system.
     fn warp_image(&self, image: &crate::model::RasterImage, from: u32, to: u32) -> Result<crate::model::RasterImage> {

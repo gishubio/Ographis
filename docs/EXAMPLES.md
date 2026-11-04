@@ -28,6 +28,7 @@ between towns, the bus stops in `examples/stops` are invented, and so are the he
 | `house.ographis` | A house from an OBJ file with textures, and its neighbour, the same house as a glTF (.glb), placed on the made-up terrain, rendered in a light studio and on the terrain in the afternoon sun of the spring equinox, and the objects written with Z. An evening by the water on midsummer's day under a few clouds, and a sun study of the white houses at 9, 12 and 15 at the equinox, midsummer and midwinter |
 | `extrude_tin.ographis` | Made-up building footprints (`blocks.geojson`) raised by their number of floors with Extrude onto the made-up terrain, a TIN of the terrain around them in 3D and in 2D with slope and aspect, the blocks on the TIN in the afternoon sun, the same at dusk with lit windows, street lamps from `lamps.geojson` and a shallow depth of field, the triangles as GeoPackage and the blocks as glTF |
 | `vector_tools.ographis` | Overlaps and gaps between the subregions, the routes merged into a line each with a point every 5 km and moved 1 km to the side, and made-up populations by year turned wide with Pivot and long again with Unpivot |
+| `profile_and_volume.ographis` | Four places written as text in different ways (`places_as_text.csv`) made into points, the fourth, in metres, to Failed; a walk between them with its profile over the example terrain every 20 m, as a chart and as a 3D line, and the earth above 100 m within 200 m of the walk, in cubic metres |
 | `share.ographis` | Ways to share what a model made: the made-up places in Skövde drawn on OpenStreetMap (made paler, with a legend; without the internet the map is drawn without it), a report as a web page with the map and a table of the places, a QGIS project with the places coloured by kind, sized by visitors and labelled, and the made-up blocks raised with Extrude and written as 3D Tiles for Cesium and as CityGML in LoD2 |
 | `labels.ographis` | Labels: the towns sized and placed first by population, the routes named along their lines, the subregions in capitals in their middle, and a legend. Made-up places in Skövde (`places.geojson`) with Maki icons from their kind, written in English as in OpenStreetMap or in Swedish, labelled, with a legend of the icons, as PNG and as an A3 PDF |
 | `ifc.ographis` | A made-up house in IFC4 (`house/villa.ifc`, made by `tools/make_ifc_example.py`) with walls, openings, windows, a door, a floor slab and a gable roof, property sets and quantities, placed on the made-up terrain by its map conversion: its windows found with Test, its elements in a workbook, a picture in the afternoon sun and the model as glTF |
@@ -60,8 +61,8 @@ between towns, the bus stops in `examples/stops` are invented, and so are the he
   their coordinates in WGS 84, *HTTP request* sends the GraphQL query with POST, eight at a
   time and with the answers kept, *Extract JSON values* takes the duration and the route out,
   and *Geometry from text* makes the route a line from its encoded polyline. A travel time
-  surface comes as a GeoTIFF with *The answer* as a file, read with *Read files named in an
-  attribute*. `date_add` spreads the departures over an hour, and the percentiles of
+  surface comes as a GeoTIFF with *The answer* as a file, read by an Input with the answers
+  connected to its *Paths*. `date_add` spreads the departures over an hour, and the percentiles of
   *Calculate statistics* sum them up. See `examples/apis/otp_travel_times.ographis`.
   The REST API of OpenTripPlanner 2.4 (`/otp/routers/default/…`) is used in
   `examples/apis/otp_routes_and_departures.ographis`: every stop as a point, a planned trip

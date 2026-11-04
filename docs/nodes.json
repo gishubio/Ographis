@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.93.0",
+  "version": "0.94.1",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a name that is shown, x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -451,7 +451,7 @@
         "Output"
       ],
       "outputs_follow_settings": false,
-      "offered": true,
+      "offered": false,
       "params": [
         {
           "key": "attribute",
@@ -507,8 +507,10 @@
       "title": "Input",
       "group": "input",
       "category": "",
-      "description": "Reads a file, a folder of files or a web address: geodata, tables, rasters, CAD drawings, city and building models, 3D models and point clouds. The formats are listed when nothing is selected.",
-      "inputs": [],
+      "description": "Reads a file, a folder of files or a web address: geodata, tables, rasters, CAD drawings, city and building models, 3D models and point clouds. The formats are listed when nothing is selected. With a stream connected to Paths, it reads the file each feature names instead, such as the answers HTTP request keeps as files; the features of each file get the attributes of its row, and grids are put together into one.",
+      "inputs": [
+        "Paths"
+      ],
       "outputs": [
         "Output"
       ],
@@ -522,6 +524,15 @@
           "shape": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model",
           "default": "",
           "hint": "A file, also zipped; a folder, whose files that match the filter are read as one; or a web address (https://…)"
+        },
+        {
+          "key": "path_attribute",
+          "label": "Paths from",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Paths",
+          "default": "_file",
+          "hint": "With a stream connected to Paths: the attribute with the path of each file to read, such as _file from HTTP request. The file or folder above is then not used"
         },
         {
           "key": "web_as",
@@ -1157,11 +1168,27 @@
             },
             {
               "value": "windows-1252",
-              "label": "Windows-1252"
+              "label": "Windows-1252: Western Europe, as Swedish files from Windows"
+            },
+            {
+              "value": "iso-8859-15",
+              "label": "ISO-8859-15: Western Europe, with €"
+            },
+            {
+              "value": "windows-1250",
+              "label": "Windows-1250: Central Europe"
+            },
+            {
+              "value": "windows-1251",
+              "label": "Windows-1251: Cyrillic"
+            },
+            {
+              "value": "windows-1257",
+              "label": "Windows-1257: the Baltic"
             }
           ],
           "default": "",
-          "hint": "For CSV, and for Shapefiles without .cpg"
+          "hint": "For CSV and DXF, and for Shapefiles without .cpg. A DWG says its own"
         },
         {
           "key": "x",
@@ -1378,6 +1405,22 @@
             {
               "value": "gpkg",
               "label": "GeoPackage (.gpkg)"
+            },
+            {
+              "value": "gml",
+              "label": "GML 3.2 (.gml)"
+            },
+            {
+              "value": "gpx",
+              "label": "GPX for GPS units (.gpx)"
+            },
+            {
+              "value": "kml",
+              "label": "KML for Google Earth (.kml)"
+            },
+            {
+              "value": "kmz",
+              "label": "KMZ for Google Earth (.kmz)"
             },
             {
               "value": "geopdf",
@@ -1739,7 +1782,7 @@
           "kind": "text",
           "shape": "a string",
           "default": "",
-          "hint": "glTF: x, y and z the model is written around, the same for files that are to fit together in Blender, such as 418300, 6472550, 0. Empty: near its middle"
+          "hint": "glTF and OBJ: x, y and z the model is written around, the same for files that are to fit together, such as 418300, 6472550, 0. none, or 0, 0, 0: the coordinates as they are, without moving the model. Empty: near its middle"
         },
         {
           "key": "gltf_georef",
@@ -2070,6 +2113,22 @@
               "label": "GeoPackage (.gpkg)"
             },
             {
+              "value": "gml",
+              "label": "GML 3.2 (.gml)"
+            },
+            {
+              "value": "gpx",
+              "label": "GPX for GPS units (.gpx)"
+            },
+            {
+              "value": "kml",
+              "label": "KML for Google Earth (.kml)"
+            },
+            {
+              "value": "kmz",
+              "label": "KMZ for Google Earth (.kmz)"
+            },
+            {
               "value": "geopdf",
               "label": "GeoSpatial PDF with layers (.pdf)"
             },
@@ -2267,6 +2326,22 @@
             {
               "value": "gpkg",
               "label": "GeoPackage (.gpkg)"
+            },
+            {
+              "value": "gml",
+              "label": "GML 3.2 (.gml)"
+            },
+            {
+              "value": "gpx",
+              "label": "GPX for GPS units (.gpx)"
+            },
+            {
+              "value": "kml",
+              "label": "KML for Google Earth (.kml)"
+            },
+            {
+              "value": "kmz",
+              "label": "KMZ for Google Earth (.kmz)"
             },
             {
               "value": "geopdf",
@@ -2599,6 +2674,54 @@
           ],
           "default": "true",
           "hint": "Each section under the name of the tool it comes from, or its comment when the tool has no name of its own"
+        },
+        {
+          "key": "colours",
+          "label": "Colours of the tables",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "plain",
+              "label": "Plain: light grey"
+            },
+            {
+              "value": "sea",
+              "label": "Sea: deep blue"
+            },
+            {
+              "value": "forest",
+              "label": "Forest: dark green"
+            },
+            {
+              "value": "sand",
+              "label": "Sand: warm brown"
+            },
+            {
+              "value": "graphite",
+              "label": "Graphite: near black"
+            }
+          ],
+          "default": "plain",
+          "hint": "The heading row and every other row, in the web page and the PDF"
+        },
+        {
+          "key": "sortable",
+          "label": "Sort by a click",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "true",
+          "hint": "Web page: a click on the heading of a column sorts the rows by it, a second click the other way. Only the rows in the table are sorted"
         }
       ]
     },
@@ -2656,6 +2779,22 @@
             {
               "value": "gpkg",
               "label": "GeoPackage (.gpkg)"
+            },
+            {
+              "value": "gml",
+              "label": "GML 3.2 (.gml)"
+            },
+            {
+              "value": "gpx",
+              "label": "GPX for GPS units (.gpx)"
+            },
+            {
+              "value": "kml",
+              "label": "KML for Google Earth (.kml)"
+            },
+            {
+              "value": "kmz",
+              "label": "KMZ for Google Earth (.kmz)"
             },
             {
               "value": "geopdf",
@@ -3046,6 +3185,22 @@
             {
               "value": "gpkg",
               "label": "GeoPackage (.gpkg)"
+            },
+            {
+              "value": "gml",
+              "label": "GML 3.2 (.gml)"
+            },
+            {
+              "value": "gpx",
+              "label": "GPX for GPS units (.gpx)"
+            },
+            {
+              "value": "kml",
+              "label": "KML for Google Earth (.kml)"
+            },
+            {
+              "value": "kmz",
+              "label": "KMZ for Google Earth (.kmz)"
             },
             {
               "value": "geopdf",
@@ -3908,7 +4063,7 @@
       "title": "Concatenate attributes",
       "group": "tool",
       "category": "Attributes",
-      "description": "Joins several attributes into one new text attribute, with a separator between them if you want one.",
+      "description": "Joins several attributes, and fixed texts if you want, into one new text attribute, with a separator between them if you want one.",
       "inputs": [
         "Input"
       ],
@@ -3925,7 +4080,7 @@
           "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
           "port": "Input",
           "default": "",
-          "hint": "Joined in the order they are chosen"
+          "hint": "Joined in the order they are chosen. A fixed text is written in single quotes: '0', kod"
         },
         {
           "key": "separator",
@@ -6684,7 +6839,7 @@
           "kind": "text",
           "shape": "a string",
           "default": "",
-          "hint": "A date, or from and to: 2026-06-01/2026-08-31. Empty: any time"
+          "hint": "A date, month or year, or from and to: 2026-06-01/2026-08-31 or 2026-06/2026-08. Empty: any time"
         },
         {
           "key": "bbox",
@@ -6937,7 +7092,7 @@
             }
           ],
           "default": "text",
-          "hint": "A file for answers that are not text, such as a GeoTIFF of travel times. Read the files with Read files named in an attribute"
+          "hint": "A file for answers that are not text, such as a GeoTIFF of travel times. Read the files with an Input, with this stream connected to its Paths"
         },
         {
           "key": "folder",
@@ -11043,7 +11198,7 @@
           "kind": "text",
           "shape": "a string",
           "default": "20",
-          "hint": "The first by time; each is read over the web"
+          "hint": "Spread over the time, the least cloudy in each part; each is read over the web"
         }
       ]
     },
@@ -11281,14 +11436,16 @@
       "title": "Check topology",
       "group": "tool",
       "category": "Geometry",
-      "description": "Finds where areas that should lie edge to edge, such as properties or zones, overlap one another, and the gaps between them. Each overlap comes out with the two areas it lies in, and each gap as an area; the areas get how many others they overlap. Overlaps and gaps smaller than a size are left out as noise, and holes larger than a size are taken to be meant.",
+      "description": "Finds where areas that should lie edge to edge, such as properties or zones, overlap one another, and the gaps between them. Each overlap comes out with the two areas it lies in, and each gap as an area; the areas get how many others they overlap. With a boundary on Boundary, such as the municipality the areas should fill, gaps that open to the outside are found too, and what reaches beyond it comes out on Beyond. Overlaps and gaps smaller than a size are left out as noise, and holes larger than a size are taken to be meant.",
       "inputs": [
-        "Areas"
+        "Areas",
+        "Boundary"
       ],
       "outputs": [
         "Areas",
         "Overlaps",
-        "Gaps"
+        "Gaps",
+        "Beyond"
       ],
       "outputs_follow_settings": false,
       "offered": true,
@@ -11767,6 +11924,293 @@
             }
           ],
           "default": "keep"
+        }
+      ]
+    },
+    {
+      "type": "CoordinateParser",
+      "title": "Parse coordinates",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "Makes points of coordinates written as text, as people and programs write them: degrees, minutes and seconds (57°42'31\"N 11°58'25\"E), degrees and minutes (N 57° 42.520' E 11° 58.418'), decimal degrees with a point or a comma, or metres such as SWEREF 99 TM. The letters N, S, E and W, and Ö and V, say which is which; a third number is a height. What cannot be read goes to Failed with the reason.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Points",
+        "Failed"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "attribute",
+          "label": "Coordinates in",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "Text such as 57°42'31\"N 11°58'25\"E, N 57° 42.520' E 11° 58.418', 57.7087, 11.9737 or 6400123 319456"
+        },
+        {
+          "key": "order",
+          "label": "Order",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "auto",
+              "label": "Auto: by the letters, or as written below"
+            },
+            {
+              "value": "yx",
+              "label": "Latitude or north first"
+            },
+            {
+              "value": "xy",
+              "label": "Longitude or east first"
+            }
+          ],
+          "default": "auto",
+          "hint": "Without letters such as N and E: in degrees, latitude first unless a value is over 90; in metres, the larger is north"
+        },
+        {
+          "key": "crs",
+          "label": "Coordinate system",
+          "kind": "crs",
+          "shape": "a coordinate system, such as \"EPSG:3006\"",
+          "default": "EPSG:4326",
+          "hint": "Of the coordinates: EPSG:4326 for degrees, EPSG:3006 for SWEREF 99 TM"
+        }
+      ]
+    },
+    {
+      "type": "ProfileMaker",
+      "title": "Profile along line",
+      "group": "tool",
+      "category": "Terrain",
+      "description": "The height of a surface, such as a terrain model, along each line: a point every few metres with its distance along the line and its height, for a chart of the profile, and the line itself in 3D with its length over the ground, lowest and highest point, and how much it climbs and descends. A path, a road or a planned pipe.",
+      "inputs": [
+        "Lines",
+        "Surface"
+      ],
+      "outputs": [
+        "Profiles",
+        "Points"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "step",
+          "label": "Every",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Metres between the points of the profile. Empty: the size of a cell of the surface"
+        },
+        {
+          "key": "method",
+          "label": "Value",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "bilinear",
+              "label": "Between the four nearest cells"
+            },
+            {
+              "value": "cell",
+              "label": "Of the cell"
+            }
+          ],
+          "default": "bilinear"
+        }
+      ]
+    },
+    {
+      "type": "VolumeCalculator",
+      "title": "Volume between surfaces",
+      "group": "tool",
+      "category": "Terrain",
+      "description": "How much lies above and below: the volume between a surface and a reference surface, such as the ground before and after, or a level, such as the bottom of a pit. Cut and fill in cubic metres, for each area connected to Areas or for the whole surface, and the difference cell by cell as a raster.",
+      "inputs": [
+        "Surface",
+        "Reference",
+        "Areas"
+      ],
+      "outputs": [
+        "Volumes",
+        "Difference"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "level",
+          "label": "Level",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "The height to measure from when nothing is connected to Reference, such as the bottom of a pit or the level of a lake"
+        }
+      ]
+    },
+    {
+      "type": "HeightTransformer",
+      "title": "Change height system",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "Changes heights from one height system to another with the grid of the geoid: from heights above the ellipsoid, as GNSS and many point clouds give them, to heights above sea level in RH 2000, or back, or between others such as NN2000 and EGM2008. The heights of the coordinates, of a point cloud, of a grid of heights and of a 3D model. The places stay as they are; Reproject moves them.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "from",
+          "label": "From",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "ellipsoid",
+              "label": "Above the ellipsoid, as from GNSS"
+            },
+            {
+              "value": "5613",
+              "label": "RH 2000, Sweden"
+            },
+            {
+              "value": "5718",
+              "label": "RH 70, Sweden"
+            },
+            {
+              "value": "5941",
+              "label": "NN2000, Norway"
+            },
+            {
+              "value": "3900",
+              "label": "N2000, Finland"
+            },
+            {
+              "value": "5799",
+              "label": "DVR90, Denmark"
+            },
+            {
+              "value": "7837",
+              "label": "DHHN2016, Germany"
+            },
+            {
+              "value": "5773",
+              "label": "EGM96, the world"
+            },
+            {
+              "value": "3855",
+              "label": "EGM2008, the world"
+            },
+            {
+              "value": "5703",
+              "label": "NAVD88, North America"
+            },
+            {
+              "value": "code",
+              "label": "Another, by its EPSG code"
+            }
+          ],
+          "default": "ellipsoid",
+          "hint": "The height system the heights are in now"
+        },
+        {
+          "key": "from_code",
+          "label": "From, EPSG code",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "With Another: the code of a vertical system, such as 5613"
+        },
+        {
+          "key": "to",
+          "label": "To",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "ellipsoid",
+              "label": "Above the ellipsoid, as from GNSS"
+            },
+            {
+              "value": "5613",
+              "label": "RH 2000, Sweden"
+            },
+            {
+              "value": "5718",
+              "label": "RH 70, Sweden"
+            },
+            {
+              "value": "5941",
+              "label": "NN2000, Norway"
+            },
+            {
+              "value": "3900",
+              "label": "N2000, Finland"
+            },
+            {
+              "value": "5799",
+              "label": "DVR90, Denmark"
+            },
+            {
+              "value": "7837",
+              "label": "DHHN2016, Germany"
+            },
+            {
+              "value": "5773",
+              "label": "EGM96, the world"
+            },
+            {
+              "value": "3855",
+              "label": "EGM2008, the world"
+            },
+            {
+              "value": "5703",
+              "label": "NAVD88, North America"
+            },
+            {
+              "value": "code",
+              "label": "Another, by its EPSG code"
+            }
+          ],
+          "default": "5613"
+        },
+        {
+          "key": "to_code",
+          "label": "To, EPSG code",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "With Another: the code of a vertical system"
+        },
+        {
+          "key": "fetch",
+          "label": "Fetch a missing grid",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "true",
+          "hint": "From cdn.proj.org, when the grid of the geoid that is needed is not among those that come with Ographis: Sweden, Norway and EGM96"
         }
       ]
     },

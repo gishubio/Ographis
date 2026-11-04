@@ -146,7 +146,7 @@ fn shapefile_names_encoding_and_split() {
 
     // Writing once more overwrites without an error.
     b.write(&mixed, &dir.join("mixed.shp"), &WriteOpts::default(), &mut notes).unwrap();
-    assert!(b.write(&mixed, &dir.join("wrong.kml"), &WriteOpts::default(), &mut notes).is_err());
+    assert!(b.write(&mixed, &dir.join("wrong.mif"), &WriteOpts::default(), &mut notes).is_err(), "a format the output does not write");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -3353,5 +3353,210 @@ fn the_3d_bodies_of_a_drawing_are_a_3d_model() {
         "the lines are kept: {:?}",
         t.features.iter().map(|f| (f.attrs[entity].clone(), f.attrs[layer].clone())).collect::<Vec<_>>()
     );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_dxf_is_read_in_the_encoding_chosen_and_lost_characters_are_told() {
+    let dir = tmp("dxf_encoding");
+    // A DXF of AutoCAD R12 whose header says Cyrillic, but whose layer name is Swedish in
+    // Windows-1252, as when a drawing passed through a computer set up for another language.
+    let mut dxf: Vec<u8> = Vec::new();
+    for line in [
+        "0",
+        "SECTION",
+        "2",
+        "HEADER",
+        "9",
+        "$ACADVER",
+        "1",
+        "AC1009",
+        "9",
+        "$DWGCODEPAGE",
+        "3",
+        "ANSI_1251",
+        "0",
+        "ENDSEC",
+        "0",
+        "SECTION",
+        "2",
+        "ENTITIES",
+        "0",
+        "LINE",
+        "8",
+        "J\u{e4}rnv\u{e4}g",
+        "10",
+        "0",
+        "20",
+        "0",
+        "30",
+        "0",
+        "11",
+        "10",
+        "21",
+        "10",
+        "31",
+        "0",
+        "0",
+        "ENDSEC",
+        "0",
+        "EOF",
+    ] {
+        dxf.extend(line.chars().map(|c| c as u32 as u8));
+        dxf.extend(b"\r\n");
+    }
+    std::fs::write(dir.join("track.dxf"), &dxf).unwrap();
+    let read = |encoding: &str| {
+        let ws = Workspace::from_json(&format!(
+            r#"{{"nodes": [{{"id": "in", "type": "Reader", "params": {{"path": "track.dxf", "encoding": "{}"}}}}], "edges": []}}"#,
+            encoding
+        ))
+        .unwrap();
+        let r = run(&ws, Some(&GdalBackend::new()), &dir);
+        let t = r.output("in", "Output").unwrap().clone();
+        (col(&t, "layer")[0].to_text(), r.log.iter().map(|l| l.msg.clone()).collect::<Vec<_>>().join("\n"))
+    };
+    let (wrong, _) = read("");
+    assert_ne!(wrong, "Järnväg", "the header is followed when nothing is chosen");
+    let (right, log) = read("windows-1252");
+    assert_eq!(right, "Järnväg", "{}", log);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn characters_that_could_not_be_read_are_told() {
+    let dir = tmp("lost_characters");
+    std::fs::write(dir.join("t.csv"), "name;x;y\nJ\u{fffd}rnv\u{fffd}g;1;2\nBor\u{e5}s;3;4\n").unwrap();
+    let ws = Workspace::from_json(r#"{"nodes": [{"id": "in", "type": "Reader", "params": {"path": "t.csv", "crs": "EPSG:3006"}}], "edges": []}"#).unwrap();
+    let r = run(&ws, Some(&GdalBackend::new()), &dir);
+    let warned = r.log.iter().find(|l| l.msg.contains("could not be read")).map(|l| l.msg.clone());
+    assert!(warned.as_deref().is_some_and(|w| w.contains("1 value has") && w.contains("J\u{fffd}rnv\u{fffd}g") && w.contains("Encoding")), "{:?}", warned);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn heights_are_changed_between_the_ellipsoid_and_rh_2000_with_the_grid_that_comes_along() {
+    let b = GdalBackend::new();
+    // Göteborg, 60 m above the ellipsoid of SWEREF 99: the geoid lies some 36 m above it.
+    let (xs, ys) = ([319_000.0], [6_400_000.0]);
+    let mut zs = [60.0];
+    b.transform_heights(3006, "ellipsoid", "5613", &xs, &ys, &mut zs, false).unwrap();
+    assert!(zs[0] > 22.0 && zs[0] < 26.0, "RH 2000 height {}", zs[0]);
+    let rh = zs[0];
+    b.transform_heights(3006, "5613", "ellipsoid", &xs, &ys, &mut zs, false).unwrap();
+    assert!((zs[0] - 60.0).abs() < 1e-6, "and back: {}", zs[0]);
+    // EGM96, in degrees, gives nearly the same.
+    let mut egm = [60.0];
+    b.transform_heights(4326, "ellipsoid", "5773", &[11.97], &[57.7], &mut egm, false).unwrap();
+    assert!((egm[0] - rh).abs() < 1.5, "EGM96 {} and RH 2000 {}", egm[0], rh);
+    // A grid that is not here, without fetching: said so, not moved by nothing at all.
+    let mut z = [10.0];
+    let e = b.transform_heights(4326, "ellipsoid", "5703", &[-100.0], &[40.0], &mut z, false).unwrap_err();
+    assert!(e.0.contains("grid of the geoid"), "{}", e.0);
+
+    // The tool, on a stream of points with heights.
+    let dir = tmp("heights");
+    std::fs::write(
+        dir.join("p.geojson"),
+        r#"{"type": "FeatureCollection", "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3006"}}, "features": [{"type": "Feature", "properties": {"id": 1}, "geometry": {"type": "Point", "coordinates": [319000, 6400000, 60]}}]}"#,
+    )
+    .unwrap();
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "in", "type": "Reader", "params": {"path": "p.geojson", "crs": "EPSG:3006"}},
+        {"id": "h", "type": "HeightTransformer", "params": {"from": "ellipsoid", "to": "5613", "fetch": "false"}}],
+      "edges": [{"from": ["in", "Output"], "to": ["h", "Input"]}]}"#,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let out = r.output("h", "Output").unwrap();
+    assert!((out.features[0].heights().unwrap()[0] - rh).abs() < 1e-6);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn kml_kmz_gml_and_gpx_are_written_and_read_back() {
+    let dir = tmp("xml_formats");
+    // Two places and a walk between them in SWEREF 99 TM, with heights.
+    std::fs::write(
+        dir.join("walk.geojson"),
+        r#"{"type": "FeatureCollection", "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3006"}}, "features": [
+        {"type": "Feature", "properties": {"name": "Skansen Kronan", "kind": "sight"}, "geometry": {"type": "Point", "coordinates": [318800, 6399700, 50]}},
+        {"type": "Feature", "properties": {"name": "Järntorget", "kind": "square"}, "geometry": {"type": "Point", "coordinates": [318900, 6400100, 8]}},
+        {"type": "Feature", "properties": {"name": "Promenad", "kind": "walk"}, "geometry": {"type": "LineString", "coordinates": [[318800, 6399700, 50], [318850, 6399900, 30], [318900, 6400100, 8]]}},
+        {"type": "Feature", "properties": {"name": "Park", "kind": "area"}, "geometry": {"type": "Polygon", "coordinates": [[[318000, 6399000, 0], [318100, 6399000, 0], [318100, 6399100, 0], [318000, 6399000, 0]]]}}]}"#,
+    )
+    .unwrap();
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "in", "type": "Reader", "params": {"path": "walk.geojson"}},
+        {"id": "kml", "type": "Writer", "params": {"path": "out/walk.kml"}},
+        {"id": "kmz", "type": "Writer", "params": {"path": "out/walk", "format": "kmz"}},
+        {"id": "gml", "type": "Writer", "params": {"path": "out/walk.gml"}},
+        {"id": "gpx", "type": "Writer", "params": {"path": "out/walk.gpx"}}],
+      "edges": [
+        {"from": ["in", "Output"], "to": ["kml", "Input"]}, {"from": ["in", "Output"], "to": ["kmz", "Input"]},
+        {"from": ["in", "Output"], "to": ["gml", "Input"]}, {"from": ["in", "Output"], "to": ["gpx", "Input"]}]}"#,
+    )
+    .unwrap();
+    let b = GdalBackend::new();
+    let r = run(&ws, Some(&b), &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    assert!(r.log.iter().any(|l| l.msg.contains("1 areas or features without geometry were left out")), "the park has no place in GPX: {:?}", r.log);
+    let read = |file: &str, layer: Option<&str>| {
+        b.read(&dir.join("out").join(file), &ReadOpts { layer: layer.map(String::from), ..Default::default() }, &mut Notes::default()).unwrap()
+    };
+    for file in ["walk.kml", "walk.kmz"] {
+        let t = read(file, None);
+        assert_eq!((t.len(), t.crs), (4, Some(4326)), "{}", file);
+        assert_eq!(col(&t, "Name")[1], Value::Text("Järntorget".into()), "{}: named by name", file);
+        assert_eq!(col(&t, "kind")[2], Value::Text("walk".into()), "{}: every attribute in its data", file);
+        assert!(t.features[2].heights().is_some_and(|z| z[0] == 50.0), "{}: at its heights", file);
+        let x = match t.features[0].geom.as_ref().unwrap() {
+            Geometry::Point(p) => p.x(),
+            g => panic!("{:?}", g),
+        };
+        assert!((x - 11.95).abs() < 0.05, "{}: in degrees, {}", file, x);
+    }
+    let gml = read("walk.gml", None);
+    assert_eq!((gml.len(), gml.crs), (4, Some(3006)), "GML stays in SWEREF 99 TM");
+    assert_eq!(col(&gml, "kind")[2], Value::Text("walk".into()));
+    assert!(dir.join("out/walk.xsd").exists(), "with its schema");
+    let waypoints = read("walk.gpx", Some("waypoints"));
+    assert_eq!(waypoints.len(), 2);
+    assert_eq!(col(&waypoints, "name")[0], Value::Text("Skansen Kronan".into()));
+    assert_eq!(col(&waypoints, "ele")[0].as_f64(), Some(50.0), "the height as ele");
+    let tracks = read("walk.gpx", Some("tracks"));
+    assert_eq!((tracks.len(), col(&tracks, "name")[0].clone()), (1, Value::Text("Promenad".into())));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_nautical_chart_and_bathymetry_are_read() {
+    let dir = tmp("marine");
+    // An S-57 cell with a depth area, made with GDAL's writer of S-57 (ogr2ogr -f S57).
+    std::fs::copy(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/depth_area.000"), dir.join("chart.000")).unwrap();
+    let b = GdalBackend::new();
+    let t = b.read(&dir.join("chart.000"), &ReadOpts::default(), &mut Notes::default()).unwrap();
+    assert_eq!(t.crs, Some(4326));
+    let depth = t.features.iter().position(|f| f.attrs[0] == Value::Text("DEPARE".into())).expect("the depth area");
+    assert_eq!(t.features[depth].attrs[1], Value::Text("Depth area".into()), "named to be read");
+    assert_eq!(col(&t, "DRVAL2")[depth].as_f64(), Some(5.0));
+    assert!(t.features.iter().all(|f| f.attrs[0] != Value::Text("DSID".into())), "not the description of the cell");
+
+    // A BAG of the example terrain: depth and uncertainty as named bands.
+    let bag = dir.join("depth.bag");
+    let status = std::process::Command::new("gdal_translate")
+        .args(["-q", "-of", "BAG"])
+        .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/terrain.tif"))
+        .arg(&bag)
+        .status();
+    if status.map(|s| s.success()).unwrap_or(false) {
+        let g = b.read(&bag, &ReadOpts { raster: og_engine::io::RasterMode::Grid, ..Default::default() }, &mut Notes::default()).unwrap();
+        let grid = g.grid.as_ref().expect("a grid");
+        assert_eq!(grid.meta.names, ["elevation", "uncertainty"]);
+        assert_eq!(grid.band_count(), 2);
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

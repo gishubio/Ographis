@@ -505,7 +505,9 @@ fn statistics_geometry_as_text_time_series_and_stac() {
     assert_eq!(col(items, "cloud_cover")[0], Value::Real(12.5));
     let first = log.lock().unwrap().iter().find(|q| q.route() == "/stac/search").unwrap().path.clone();
     assert!(
-        first.contains("bbox=11.8,57.6,12.1,57.8") && first.contains("collections=sentinel-2-l2a") && first.contains("datetime=2026-06-01%2F2026-06-30"),
+        first.contains("bbox=11.8,57.6,12.1,57.8")
+            && first.contains("collections=sentinel-2-l2a")
+            && first.contains("datetime=2026-06-01T00%3A00%3A00Z%2F2026-06-30T23%3A59%3A59Z"),
         "{}",
         first
     );
@@ -960,6 +962,7 @@ fn a_zip_file_on_the_web_is_read_and_a_file_in_it_chosen() {
             ("routes.shx", "routes.shx"),
             ("routes.dbf", "routes.dbf"),
             ("routes.prj", "routes.prj"),
+            ("routes.cpg", "routes.cpg"),
         ] {
             z.start_file(inside, zip::write::SimpleFileOptions::default()).unwrap();
             z.write_all(&std::fs::read(examples.join(from)).unwrap()).unwrap();
@@ -980,7 +983,7 @@ fn a_zip_file_on_the_web_is_read_and_a_file_in_it_chosen() {
     let r = run(&ws, Some(&GdalBackend::new()), &dir);
     let routes = r.output("first", "Output").unwrap();
     assert_eq!(routes.len(), 5, "the Shapefiles first, as before");
-    assert!(r.nodes["first"].warnings.is_empty());
+    assert!(r.nodes["first"].warnings.is_empty(), "{:?}", r.nodes["first"].warnings);
     assert!(
         r.log.iter().any(|l| l.msg.contains("data.zip holds 3 data files") && l.msg.contains("Read the Shapefiles")),
         "{:?}",

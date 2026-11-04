@@ -293,6 +293,11 @@ impl App {
         } else {
             together.as_ref().map(|t| t.table.clone()).or_else(|| filtered.as_ref().map(|f| f.table.clone())).or_else(|| table.clone())
         };
+        // A series of rasters shows the picture of the picked row.
+        let map_table = match (map_table, table.as_ref(), self.view.feature) {
+            (Some(m), Some(t), Some(row)) if together.is_none() && t.series.is_some() => Some(self.series_view(&m, t, row)),
+            (m, _, _) => m,
+        };
         // While the rectangle of a download is chosen, a map to choose it on.
         let has_place = map_table.as_ref().is_some_and(|t| t.crs.is_some());
         let map_table = if has_place || self.area_for.is_none() { map_table } else { self.area_table().or(map_table) };

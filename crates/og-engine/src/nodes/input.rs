@@ -36,6 +36,13 @@ pub(super) const READER_PARAMS: &[ParamSpec] = &[
         hint: "A file, also zipped; a folder, whose files that match the filter are read as one; or a web address (https://…)",
     },
     ParamSpec {
+        key: "path_attribute",
+        label: "Paths from",
+        kind: ParamKind::Attribute("Paths"),
+        default: "_file",
+        hint: "With a stream connected to Paths: the attribute with the path of each file to read, such as _file from HTTP request. The file or folder above is then not used",
+    },
+    ParamSpec {
         key: "web_as",
         label: "The address is",
         kind: ParamKind::Choice(WEB_SERVICES),
@@ -223,7 +230,7 @@ pub(super) const READER_PARAMS: &[ParamSpec] = &[
         hint: "Reads the grid at coarser cells, such as 10 for 10 metres, which saves memory. Empty reads it as it is, or coarser when it is very large",
     },
     ParamSpec { key: "crs", label: "Coordinate system", kind: ParamKind::Crs, default: "", hint: "Used when the file does not state its own" },
-    ParamSpec { key: "encoding", label: "Encoding", kind: ParamKind::Choice(ENCODINGS), default: "", hint: "For CSV, and for Shapefiles without .cpg" },
+    ParamSpec { key: "encoding", label: "Encoding", kind: ParamKind::Choice(ENCODINGS), default: "", hint: "For CSV and DXF, and for Shapefiles without .cpg. A DWG says its own" },
     ParamSpec { key: "x", label: "X column (CSV)", kind: ParamKind::Text, default: "", hint: "Empty looks for x, lon, e, east" },
     ParamSpec { key: "y", label: "Y column (CSV)", kind: ParamKind::Text, default: "", hint: "Empty looks for y, lat, n, north" },
     ParamSpec { key: "wkt", label: "WKT column (CSV)", kind: ParamKind::Text, default: "", hint: "Empty looks for wkt, geom, geometry" },
@@ -434,7 +441,11 @@ pub fn reader_sources(p: &P, base_dir: &Path) -> Result<Sources> {
     Ok(Sources { files, folder: Some((dir, patterns)), url: None })
 }
 
-pub(super) fn run_reader(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+pub(super) fn run_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+    // With a stream on Paths, the files it names, one for each feature.
+    if inp.contains_key("Paths") {
+        return run_file_reader(p, inp, ctx);
+    }
     let mut sources = reader_sources(p, ctx.base_dir)?;
     let mut web_headers: Vec<(String, String)> = Vec::new();
     if let Some(url) = sources.url.clone() {
@@ -916,7 +927,42 @@ pub(super) fn run_reader(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
     if table.crs.is_some() {
         ctx.notes.info(crs_label(table.crs));
     }
+    if let Some(w) = lost_characters(&table, &ctx.sources) {
+        ctx.notes.warn(w);
+    }
     Ok(vec![("Output".into(), table)])
+}
+
+/// A warning when text has characters that could not be read, which come as �: read in
+/// the wrong encoding, or lost already when the file was saved.
+fn lost_characters(table: &Table, files: &[PathBuf]) -> Option<String> {
+    let bad = |v: &Value| matches!(v, Value::Text(t) if t.contains('\u{FFFD}'));
+    let rows = table.features.iter().filter(|f| f.attrs.iter().any(bad)).count();
+    let names: Vec<&str> = table.fields.iter().filter(|f| f.name.contains('\u{FFFD}')).map(|f| f.name.as_str()).collect();
+    if rows == 0 && names.is_empty() {
+        return None;
+    }
+    let example = table
+        .features
+        .iter()
+        .flat_map(|f| f.attrs.iter())
+        .find(|v| bad(v))
+        .map(|v| v.to_text())
+        .or_else(|| names.first().map(|n| n.to_string()))
+        .unwrap_or_default();
+    let dwg = files.iter().any(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("dwg")));
+    let why = if dwg {
+        "A DWG from AutoCAD 2007 or later keeps its text as Unicode, so they were most likely lost already when the drawing was saved, by the program that wrote it, and cannot be brought back here"
+    } else {
+        "The file may be in another encoding than it was read in: choose it under Encoding in the input"
+    };
+    Some(format!(
+        "{} {} text with characters that could not be read, shown as �, such as \"{}\". {}.",
+        fmt_count(rows.max(names.len()) as u64),
+        if rows.max(names.len()) == 1 { "value has" } else { "values have" },
+        example.chars().take(60).collect::<String>(),
+        why
+    ))
 }
 
 /// Reads a 3D Tiles tileset, from this computer or the web, as one model.
@@ -1035,6 +1081,9 @@ pub const READ_FORMATS: &[&str] = &[
     "IFC building models (.ifc)",
     "CAD drawings (.dxf, .dwg)",
     "GPS tracks and waypoints (.gpx)",
+    "Nautical charts, S-57 (.000)",
+    "Bathymetry, BAG and S-102 (.bag, .h5)",
+    "KML and KMZ (.kml, .kmz)",
     "GTFS timetables of public transport (.zip or a folder)",
     "NetCDF and Zarr data cubes, such as climate and weather (.nc, .zarr)",
     "Photos with their places (.jpg)",
@@ -1210,9 +1259,11 @@ pub(super) const FILE_READER_PARAMS: &[ParamSpec] = &[
     ParamSpec { key: "crs", label: "Coordinate system", kind: ParamKind::Crs, default: "", hint: "For files that do not say. Empty: as the files say" },
 ];
 
+/// The files named in an attribute of each feature: for Input with a stream on Paths, and
+/// for the tool it took the place of in 0.94, which models from before still open as.
 pub(super) fn run_file_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let table = input(inp, "Input");
-    let attr = p.get("attribute").unwrap_or_else(|| "_file".into());
+    let table = if inp.contains_key("Paths") { input(inp, "Paths") } else { input(inp, "Input") };
+    let attr = p.get("path_attribute").or_else(|| p.get("attribute")).unwrap_or_else(|| "_file".into());
     let at = table.need_field(&attr)?;
     let raster = match p.get("raster_as").as_deref() {
         Some("cells") => RasterMode::Cells,
@@ -1309,7 +1360,9 @@ pub(super) const TYPES: &[NodeType] = &[
     NodeType {
         name: "AttributeFileReader",
         title: "Read files named in an attribute",
-        hidden: false,
+        // Since 0.94 Input does this with a stream on Paths; models that have it are made so
+        // when they are opened.
+        hidden: true,
         group: Group::Transformer,
         category: "Input and output",
         desc: "Reads the file whose path is in an attribute of each feature, such as the answers HTTP request keeps as files: GeoJSON, GeoTIFF and anything Input reads. The features of each file get the attributes of its row; grids are put together into one.",
@@ -1326,8 +1379,8 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Reader,
         category: "",
-        desc: "Reads a file, a folder of files or a web address: geodata, tables, rasters, CAD drawings, city and building models, 3D models and point clouds. The formats are listed when nothing is selected.",
-        inputs: &[],
+        desc: "Reads a file, a folder of files or a web address: geodata, tables, rasters, CAD drawings, city and building models, 3D models and point clouds. The formats are listed when nothing is selected. With a stream connected to Paths, it reads the file each feature names instead, such as the answers HTTP request keeps as files; the features of each file get the attributes of its row, and grids are put together into one.",
+        inputs: &["Paths"],
         outputs: &["Output"],
         ports: None,
         params: READER_PARAMS,

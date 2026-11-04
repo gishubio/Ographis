@@ -11,6 +11,9 @@ This file is made by `tools/third_party.py`; do not edit it by hand.
 - **GDAL and PROJ**, with the libraries they bring, when they are shipped with the program on
   Windows. GDAL is under the MIT licence, PROJ under the MIT licence; the libraries that a GDAL
   build includes have their own licences, which go with that build.
+- **Grids of the geoid** in `data/proj-grids`, from PROJ-data: SWEN17_RH2000 from Lantmäteriet
+  under CC0, HREF2018B for NN2000 from Kartverket under CC BY 4.0 (© Kartverket), and EGM96
+  from NGA, in the public domain. See `data/proj-grids/README.md`.
 - **Map tiles** are not shipped: the background map is fetched from OpenStreetMap,
   © OpenStreetMap contributors, under the Open Database Licence, and the map says so.
 

@@ -32,7 +32,7 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 <main>
 <h1>What Ographis reads and writes</h1>
 <p class="lead">Each format with what handles it: <span class="tag gdal">GDAL</span>, the geodata library installed with the program, or <span class="tag own">Ographis</span>, code of the program's own, with the library it uses in brackets.</p>
-<div class="sum"><div><b>32</b>read</div><div><b>27</b>written</div><div><b>21</b>by Ographis itself</div></div>
+<div class="sum"><div><b>36</b>read</div><div><b>30</b>written</div><div><b>21</b>by Ographis itself</div></div>
 <div class="wrap">
 <table>
 <thead><tr><th scope="col">Format</th><th scope="col">Reads</th><th scope="col">Writes</th><th scope="col">Notes</th></tr></thead>
@@ -45,12 +45,16 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 <tr><th scope="row">PostGIS<div class="files">tables in PostgreSQL</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">With a primary key, schema and geometry type as asked</td></tr>
 <tr><th scope="row">SQL Server<div class="files">tables in Microsoft SQL Server</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Through ODBC, with geometry, a spatial index and a primary key; with a password or the login of Windows</td></tr>
 <tr><th scope="row">OpenStreetMap from Overpass<div class="files">an Overpass server on the web</div></th><td><span class="tag own">Ographis</span></td><td class="no">–</td><td class="note">Within a rectangle, made smaller when it is larger than allowed</td></tr>
-<tr><th scope="row">GML, KML, MapInfo, File geodatabase<div class="files">.gml, .kml, .tab, .gdb</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note">As far as the GDAL that is installed reads them</td></tr>
+<tr><th scope="row">KML and KMZ<div class="files">.kml, .kmz</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">For Google Earth. Written in WGS 84 degrees, each feature a placemark named by its name attribute, with the others in its data; KMZ is the same zipped</td></tr>
+<tr><th scope="row">GML<div class="files">.gml, .xsd</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">GML 3.2 in the coordinate system of the stream, with its schema in an .xsd beside it. CityGML is an output format of its own</td></tr>
+<tr><th scope="row">Nautical charts, S-57 (ENC)<div class="files">.000 and its updates .001, .002 …</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note">Every object class as one stream, each feature with its class by code and by name, such as DEPARE, Depth area; or one class chosen as a layer. Updates are applied, and each sounding is a point with its depth</td></tr>
+<tr><th scope="row">Bathymetry, BAG and S-102<div class="files">.bag, .h5</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note">Depth and its uncertainty as two named bands of a grid</td></tr>
+<tr><th scope="row">MapInfo, File geodatabase<div class="files">.tab, .gdb</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note">As far as the GDAL that is installed reads them</td></tr>
 <tr><th scope="row">OpenStreetMap<div class="files">.osm.pbf, .osm</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note">Points, lines, areas and relations, with the common tags as attributes</td></tr>
 <tr><th scope="row">Vector tiles (Mapbox Vector Tiles)<div class="files">.mbtiles, .pmtiles, a folder of tiles, {z}/{x}/{y}.pbf on the web</div></th><td><span class="tag gdal">GDAL and Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">As MapLibre draws maps from, at a zoom level; the pieces of a feature that the tiles cut apart are put together again. PMTiles on the web are read where they are. PMTiles are written, one layer for the zoom levels asked. Not yet the newer MapLibre Tile (MLT)</td></tr>
 <tr><th scope="row">GTFS timetables<div class="files">.zip, a folder with stops.txt</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note">Stops, routes, trips as lines, the shapes, stop times and calendars as layers</td></tr>
 <tr><th scope="row">NetCDF and Zarr data cubes<div class="files">.nc, .zarr</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note">Each variable a layer; the steps of time as attributes named after their dates, or one step as a grid or a picture</td></tr>
-<tr><th scope="row">GPS tracks (GPX)<div class="files">.gpx</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note">Tracks, routes and waypoints from a GPS: the first that the file has, or the layer chosen</td></tr>
+<tr><th scope="row">GPS tracks (GPX)<div class="files">.gpx</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Tracks, routes and waypoints from a GPS: the first that the file has, or the layer chosen. Written in degrees, points as waypoints and lines as tracks, with the heights</td></tr>
 <tr><th scope="row">Photos with their places<div class="files">.jpg, .jpeg without a world file</div></th><td><span class="tag own">Ographis (kamadak-exif)</span></td><td class="no">–</td><td class="note">A point where each was taken, from its Exif: the time, the height, the direction and the camera</td></tr>
 <tr><th scope="row">OGC API Features, WFS<div class="files">web services</div></th><td><span class="tag gdal">GDAL</span></td><td class="no">–</td><td class="note">Page by page, only what lies in a rectangle if asked</td></tr>
 <tr><th scope="row">ArcGIS feature services<div class="files">web services</div></th><td><span class="tag gdal">GDAL (ESRIJSON)</span></td><td class="no">–</td><td class="note">Layer by layer</td></tr>
@@ -79,7 +83,7 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 </tbody>
 </table>
 </div>
-<footer>Ographis 0.93 · GDAL 3.8.4. Which further formats GDAL reads depends on how it was built; <code>og info</code> tells whether a file can be read.</footer>
+<footer>Ographis 0.94.1 · GDAL 3.8.4. Which further formats GDAL reads depends on how it was built; <code>og info</code> tells whether a file can be read.</footer>
 </main>
 </body>
 </html>

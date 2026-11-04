@@ -229,7 +229,8 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         "pm_min" | "pm_max" => writer && ext == "pmtiles",
         "t3_most" | "t3_dz" => writer && node.params.get("format").and_then(|v| v.as_str()) == Some("3dtiles"),
         "citygml_lod" => writer && ext == "gml",
-        "gltf_name" | "gltf_group" | "gltf_material" | "gltf_origin" | "gltf_georef" | "gltf_sun" => writer && ext == "glb",
+        "gltf_origin" => writer && matches!(ext.as_str(), "glb" | "obj"),
+        "gltf_name" | "gltf_group" | "gltf_material" | "gltf_georef" | "gltf_sun" => writer && ext == "glb",
         "gltf_when" => writer && ext == "glb" && matches!(node.params.get("gltf_sun").and_then(|v| v.as_str()), Some("sun" | "both")),
         "key" => writer && ext == "gpkg",
         "key_name" => writer && ext == "gpkg" && node.params.get("key").and_then(|v| v.as_str()) != Some("attribute"),
@@ -412,8 +413,10 @@ fn chips(ui: &mut Ui, pal: &Palette, names: &[String], is_on: impl Fn(&str) -> b
     clicked
 }
 
+/// Commas inside single quotes do not split, so that a fixed text such as ', ' in
+/// Concatenate attributes stays one entry.
 fn split_list(s: &str) -> Vec<String> {
-    s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+    og_engine::nodes::split_quoted(s)
 }
 
 /// Changes the path of a reader or a writer, and what hangs on it. Returns true if
@@ -477,7 +480,16 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
     // The ticks are for one file. A folder holds many, with layers that may differ.
     // A drawing is one layer, entities, to GDAL: its CAD layers are in the attribute layer.
     let layers = if folder.is_some() || matches!(format_of(node, folder).as_str(), "dxf" | "dwg") { &[] } else { layers };
-    let specs: Vec<&ParamSpec> = ty.params.iter().filter(|s| relevant(node, s, folder, !layers.is_empty(), cx.base_dir)).collect();
+    // Where the paths are taken from only matters with a stream on Paths, which the latest run
+    // tells, or once it has been set.
+    let paths_in =
+        || !(cx.fields)("Paths").is_empty() || node.params.get("path_attribute").and_then(|v| v.as_str()).is_some_and(|v| !v.is_empty() && v != "_file");
+    let specs: Vec<&ParamSpec> = ty
+        .params
+        .iter()
+        .filter(|s| relevant(node, s, folder, !layers.is_empty(), cx.base_dir))
+        .filter(|s| !(node.kind == "Reader" && s.key == "path_attribute") || paths_in())
+        .collect();
     let sheets = is_spreadsheet(&format_of(node, folder));
     let what = if node.kind == "PostgisReader" {
         "tables"
@@ -666,6 +678,11 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                                     "dwg",
                                     "gpx",
                                     "gml",
+                                    "kml",
+                                    "kmz",
+                                    "000",
+                                    "bag",
+                                    "h5",
                                     "xlsx",
                                     "ods",
                                     "csv",

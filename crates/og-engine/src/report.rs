@@ -30,7 +30,88 @@ pub struct Report<'a> {
     /// Under the title, such as a date.
     pub subtitle: String,
     pub blocks: Vec<Block<'a>>,
+    /// The colours of the tables.
+    pub theme: Theme,
+    /// In the web page, a click on the heading of a column sorts the rows by it.
+    pub sortable: bool,
 }
+
+/// The colours of the tables: the heading row, its text, and every other row.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Theme {
+    pub head: [u8; 3],
+    pub head_ink: [u8; 3],
+    pub band: [u8; 3],
+}
+
+/// The colours to choose among, by key and label.
+pub const THEMES: &[(&str, &str)] = &[
+    ("plain", "Plain: light grey"),
+    ("sea", "Sea: deep blue"),
+    ("forest", "Forest: dark green"),
+    ("sand", "Sand: warm brown"),
+    ("graphite", "Graphite: near black"),
+];
+
+/// The colours of a theme by its key; plain for one not known.
+pub fn theme(key: &str) -> Theme {
+    let (head, head_ink, band) = match key {
+        "sea" => ([0x1f, 0x4e, 0x79], [0xff, 0xff, 0xff], [0xec, 0xf2, 0xf8]),
+        "forest" => ([0x2f, 0x5d, 0x50], [0xff, 0xff, 0xff], [0xec, 0xf4, 0xf0]),
+        "sand" => ([0x8a, 0x6d, 0x3b], [0xff, 0xff, 0xff], [0xf8, 0xf3, 0xea]),
+        "graphite" => ([0x2b, 0x2f, 0x33], [0xff, 0xff, 0xff], [0xf1, 0xf2, 0xf3]),
+        _ => ([0xf4, 0xf6, 0xf8], [0x1d, 0x23, 0x27], [0xf4, 0xf6, 0xf8]),
+    };
+    Theme { head, head_ink, band }
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        theme("plain")
+    }
+}
+
+fn hex(c: [u8; 3]) -> String {
+    format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
+}
+
+fn pdf_rgb(c: [u8; 3]) -> String {
+    format!("{:.3} {:.3} {:.3}", c[0] as f64 / 255.0, c[1] as f64 / 255.0, c[2] as f64 / 255.0)
+}
+
+/// Sorts the rows of a table by a click on the heading of a column: numbers as numbers, text
+/// as words of the language of the page, the empty last. A second click turns the order.
+const SORT_SCRIPT: &str = r#"<script>
+document.querySelectorAll("table.sortable").forEach(function (table) {
+  var heads = table.tHead.rows[0].cells;
+  Array.prototype.forEach.call(heads, function (th, col) {
+    th.tabIndex = 0;
+    var sort = function () {
+      var up = th.getAttribute("aria-sort") !== "ascending";
+      Array.prototype.forEach.call(heads, function (h) { h.removeAttribute("aria-sort"); });
+      th.setAttribute("aria-sort", up ? "ascending" : "descending");
+      var numeric = th.classList.contains("n");
+      var body = table.tBodies[0];
+      var rows = Array.prototype.slice.call(body.rows);
+      var key = function (row) {
+        var t = row.cells[col].textContent.trim();
+        if (numeric) { var v = parseFloat(t.replace(/\s/g, "").replace(",", ".")); return isNaN(v) ? null : v; }
+        return t === "" ? null : t;
+      };
+      var collator = new Intl.Collator(document.documentElement.lang, { numeric: true, sensitivity: "base" });
+      rows.sort(function (a, b) {
+        var x = key(a), y = key(b);
+        if (x === null || y === null) { return x === y ? 0 : (x === null ? 1 : -1); }
+        var c = numeric ? x - y : collator.compare(x, y);
+        return up ? c : -c;
+      });
+      rows.forEach(function (r) { body.appendChild(r); });
+    };
+    th.addEventListener("click", sort);
+    th.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); sort(); } });
+  });
+});
+</script>"#;
 
 /// The paragraphs of a text: (kind, text), where kind is 'h' for a heading, 'p' for a
 /// paragraph and 'l' for a point in a list.
@@ -139,7 +220,11 @@ pub fn write_html(r: &Report, path: &Path) -> Result<()> {
                 let _ = writeln!(body, "<figure><img alt=\"\" width=\"{}\" src=\"data:image/png;base64,{}\"></figure>", img.width, base64(&png));
             }
             Block::Table(t) => {
-                body.push_str("<div class=\"table\"><table><thead><tr>");
+                body.push_str(if r.sortable {
+                    "<div class=\"table\"><table class=\"sortable\"><thead><tr>"
+                } else {
+                    "<div class=\"table\"><table><thead><tr>"
+                });
                 for (f, n) in t.fields.iter().zip(&t.numeric) {
                     let _ = write!(body, "<th{}>{}</th>", if *n { " class=\"n\"" } else { "" }, esc(f));
                 }
@@ -162,8 +247,8 @@ pub fn write_html(r: &Report, path: &Path) -> Result<()> {
 <title>{title}</title>
 <meta name="generator" content="Ographis {version}">
 <style>
-:root {{ --ink: #1d2327; --muted: #5f6b73; --line: #dde3e7; --band: #f4f6f8; --bg: #ffffff; }}
-@media (prefers-color-scheme: dark) {{ :root {{ --ink: #e6eaed; --muted: #9aa6ad; --line: #36404a; --band: #20272d; --bg: #161b1f; }} }}
+:root {{ --ink: #1d2327; --muted: #5f6b73; --line: #dde3e7; --band: {band}; --bg: #ffffff; --head: {head}; --head-ink: {head_ink}; }}
+@media (prefers-color-scheme: dark) {{ :root {{ --ink: #e6eaed; --muted: #9aa6ad; --line: #36404a; --band: color-mix(in srgb, {head} {dark_share}%, #161b1f); --bg: #161b1f;{dark_head} }} }}
 body {{ margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 Inter, "Segoe UI", system-ui, sans-serif; }}
 main {{ max-width: 900px; margin: 0 auto; padding: 40px 20px 60px; }}
 h1 {{ font-size: 2rem; line-height: 1.2; margin: 0 0 4px; }}
@@ -175,18 +260,30 @@ img {{ max-width: 100%; height: auto; display: block; border-radius: 4px; }}
 .table {{ overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; }}
 table {{ border-collapse: collapse; width: 100%; font-size: 0.85rem; font-variant-numeric: tabular-nums; }}
 th, td {{ padding: 5px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); }}
-th {{ background: var(--band); position: sticky; top: 0; }}
+th {{ background: var(--head); color: var(--head-ink); position: sticky; top: 0; }}
+table.sortable th {{ cursor: pointer; user-select: none; }}
+table.sortable th::after {{ content: " ↕"; opacity: 0.35; font-size: 0.8em; }}
+table.sortable th[aria-sort="ascending"]::after {{ content: " ▲"; opacity: 0.8; }}
+table.sortable th[aria-sort="descending"]::after {{ content: " ▼"; opacity: 0.8; }}
 tbody tr:nth-child(even) {{ background: var(--band); }}
 .n {{ text-align: right; }}
 .count {{ color: var(--muted); font-size: 0.85rem; margin-top: 6px; }}
 @media print {{ body {{ background: #fff; color: #000; }} h2 {{ break-before: auto; }} figure, tr {{ break-inside: avoid; }} th {{ position: static; }} }}
 </style></head>
 <body><main>
-{body}</main></body></html>
+{body}</main>{script}</body></html>
 "#,
         title = esc(&r.title),
         version = env!("CARGO_PKG_VERSION"),
-        body = body
+        body = body,
+        head = hex(r.theme.head),
+        head_ink = hex(r.theme.head_ink),
+        band = hex(r.theme.band),
+        // Plain is grey on grey, so in the dark it becomes the dark grey of the page; the
+        // others keep their heading and get rows tinted by it.
+        dark_share = if r.theme == theme("plain") { 8 } else { 22 },
+        dark_head = if r.theme == theme("plain") { " --head: #20272d; --head-ink: #e6eaed;" } else { "" },
+        script = if r.sortable && r.blocks.iter().any(|b| matches!(b, Block::Table(_))) { SORT_SCRIPT } else { "" }
     );
     std::fs::write(path, html).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))
 }
@@ -480,16 +577,17 @@ pub fn write_pdf(r: &Report, path: &Path) -> Result<()> {
                     }
                 }
                 let row_h = size * 1.9;
+                let head_ink = pdf_rgb(r.theme.head_ink);
                 let header = |l: &mut Layout| {
                     let y = l.y - row_h;
                     let w: f64 = widths.iter().sum();
-                    let _ = writeln!(l.page(), "0.93 0.945 0.955 rg {:.2} {:.2} {:.2} {:.2} re f", MARGIN, y, w, row_h);
+                    let _ = writeln!(l.page(), "{} rg {:.2} {:.2} {:.2} {:.2} re f", pdf_rgb(r.theme.head), MARGIN, y, w, row_h);
                     let mut x = MARGIN;
                     l.y = y + size * 0.6;
                     for (i, cw) in widths.iter().enumerate() {
                         let s = fit(&t.fields[i], cw - 2.0 * pad, size, true);
                         let dx = if t.numeric[i] { cw - pad - text_width(&s, size, true) } else { pad };
-                        l.text(x + dx, &s, size, true, INK);
+                        l.text(x + dx, &s, size, true, &head_ink);
                         x += cw;
                     }
                     l.y = y;
@@ -504,7 +602,7 @@ pub fn write_pdf(r: &Report, path: &Path) -> Result<()> {
                     let y = l.y - row_h;
                     if k % 2 == 1 {
                         let w: f64 = widths.iter().sum();
-                        let _ = writeln!(l.page(), "0.97 0.975 0.98 rg {:.2} {:.2} {:.2} {:.2} re f", MARGIN, y, w, row_h);
+                        let _ = writeln!(l.page(), "{} rg {:.2} {:.2} {:.2} {:.2} re f", pdf_rgb(r.theme.band), MARGIN, y, w, row_h);
                     }
                     let mut x = MARGIN;
                     l.y = y + size * 0.6;
@@ -618,5 +716,33 @@ mod tests {
         assert_eq!(base64(b"Ographis"), "T2dyYXBoaXM=");
         assert_eq!(fit("Göteborgs stad", 30.0, 8.0, false).chars().last(), Some('…'));
         assert_eq!(wrap("a b c", 15.0, 10.0, false).len(), 2);
+    }
+
+    #[test]
+    fn tables_get_the_colours_chosen_and_can_be_sorted() {
+        let table = || {
+            Block::Table(TableBlock {
+                fields: vec!["name".into(), "people".into()],
+                numeric: vec![false, true],
+                rows: vec![vec!["Borås".into(), "75000".into()], vec!["Alingsås".into(), "28000".into()]],
+                total: 2,
+            })
+        };
+        let dir = std::env::temp_dir().join(format!("og-report-theme-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let sea = Report { title: "T".into(), subtitle: String::new(), blocks: vec![table()], theme: theme("sea"), sortable: true };
+        write_html(&sea, &dir.join("sea.html")).unwrap();
+        let html = std::fs::read_to_string(dir.join("sea.html")).unwrap();
+        assert!(html.contains("--head: #1f4e79") && html.contains("table class=\"sortable\"") && html.contains("aria-sort"));
+        write_pdf(&sea, &dir.join("sea.pdf")).unwrap();
+        let pdf = String::from_utf8_lossy(&std::fs::read(dir.join("sea.pdf")).unwrap()).into_owned();
+        assert!(pdf.contains("0.122 0.306 0.475 rg"), "the heading row in the blue of the sea");
+        // Plain, without sorting: no script, and the grey heading as before.
+        let plain = Report { title: "T".into(), subtitle: String::new(), blocks: vec![table()], theme: theme("plain"), sortable: false };
+        write_html(&plain, &dir.join("plain.html")).unwrap();
+        let html = std::fs::read_to_string(dir.join("plain.html")).unwrap();
+        assert!(!html.contains("<script") && !html.contains("class=\"sortable\"") && html.contains("--head: #f4f6f8"));
+        assert_eq!(theme("unknown"), theme("plain"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

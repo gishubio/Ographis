@@ -1,0 +1,29 @@
+{
+  "format": "ographis/1",
+  "nodes": [
+    {"id": "places", "type": "Reader", "x": 20, "y": 20, "comment": "Four places written as people write coordinates", "params": {"path": "places_as_text.csv"}},
+    {"id": "parse", "type": "CoordinateParser", "x": 280, "y": 20, "comment": "Degrees, minutes and seconds, degrees and minutes, a decimal comma; the fourth is in metres of SWEREF 99 TM and goes to Failed, since these are read as degrees", "params": {"attribute": "place", "crs": "EPSG:4326"}},
+    {"id": "sweref", "type": "Reprojector", "x": 540, "y": 20, "comment": "To SWEREF 99 TM, as the terrain is", "params": {"crs": "EPSG:3006"}},
+    {"id": "route", "type": "PointsToLines", "x": 800, "y": 20, "comment": "A walk from place to place", "params": {"order": "stop"}},
+    {"id": "terrain", "type": "Reader", "x": 800, "y": 220, "comment": "The heights of the example terrain", "params": {"path": "terrain.tif", "raster_as": "grid"}},
+    {"id": "profile", "type": "ProfileMaker", "x": 1060, "y": 20, "comment": "The height every 20 m along the walk", "params": {"step": "20"}},
+    {"id": "chart", "type": "ChartDrawer", "x": 1320, "y": 140, "comment": "The profile as a chart", "params": {"kind": "lines", "x": "distance", "value": "height"}},
+    {"id": "around", "type": "Bufferer", "x": 1060, "y": 260, "comment": "200 m on each side of the walk", "params": {"distance": "200"}},
+    {"id": "volume", "type": "VolumeCalculator", "x": 1320, "y": 300, "comment": "Earth above 100 m within it, and how much would fill it up to 100 m", "params": {"level": "100"}},
+    {"id": "out_profile", "type": "Writer", "x": 1580, "y": 20, "comment": "The walk in 3D", "params": {"path": "out/walk_3d.glb"}},
+    {"id": "out_volume", "type": "Writer", "x": 1580, "y": 300, "comment": "The volumes", "params": {"path": "out/volumes.csv"}}
+  ],
+  "edges": [
+    {"from": ["places", "Output"], "to": ["parse", "Input"]},
+    {"from": ["parse", "Points"], "to": ["sweref", "Input"]},
+    {"from": ["sweref", "Reprojected"], "to": ["route", "Input"]},
+    {"from": ["route", "Output"], "to": ["profile", "Lines"]},
+    {"from": ["terrain", "Output"], "to": ["profile", "Surface"]},
+    {"from": ["profile", "Points"], "to": ["chart", "Input"]},
+    {"from": ["route", "Output"], "to": ["around", "Input"]},
+    {"from": ["terrain", "Output"], "to": ["volume", "Surface"]},
+    {"from": ["around", "Buffered"], "to": ["volume", "Areas"]},
+    {"from": ["profile", "Profiles"], "to": ["out_profile", "Input"]},
+    {"from": ["volume", "Volumes"], "to": ["out_volume", "Input"]}
+  ]
+}

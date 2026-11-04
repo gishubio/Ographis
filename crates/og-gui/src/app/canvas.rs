@@ -371,6 +371,10 @@ impl App {
                 }
                 thumb_resp.on_hover_text("Drag to move the canvas");
             });
+            // Not beyond the model: at its edge the view stops, as scroll bars do. A view that
+            // is already beyond it, such as after zooming out, is not pulled back.
+            let (c_lo, c_hi) = if horizontal { (content.min.x, content.max.x) } else { (content.min.y, content.max.y) };
+            shift = within_model(shift, a, b, c_lo, c_hi);
             if shift != 0.0 {
                 let mut moved = t;
                 if horizontal {
@@ -416,7 +420,7 @@ impl App {
                 let id = node.id.clone();
                 let new = self.snarl.insert_node(pos, node);
                 if let Some(from) = after {
-                    if self.snarl.get_node(new).is_some_and(|g| g.ty().is_some_and(|t| !t.inputs.is_empty())) {
+                    if self.snarl.get_node(new).is_some_and(|g| g.ty().is_some_and(|t| !t.inputs.is_empty() && t.group != og_engine::nodes::Group::Reader)) {
                         self.snarl.connect(egui_snarl::OutPinId { node: from, output: 0 }, egui_snarl::InPinId { node: new, input: 0 });
                     }
                 }
@@ -455,5 +459,34 @@ impl App {
         if close {
             self.show_description = false;
         }
+    }
+}
+
+/// How far a scroll bar may move the view, from `a`..`b`, towards the model's `lo`..`hi`: not
+/// past its edge. A view that is already past it, as after zooming out, is not pulled back.
+fn within_model(shift: f32, a: f32, b: f32, lo: f32, hi: f32) -> f32 {
+    if shift < 0.0 {
+        shift.max((lo - a).min(0.0))
+    } else if shift > 0.0 {
+        shift.min((hi - b).max(0.0))
+    } else {
+        0.0
+    }
+}
+
+#[cfg(test)]
+mod scroll_tests {
+    use super::within_model;
+
+    #[test]
+    fn a_scroll_bar_stops_at_the_edge_of_the_model() {
+        // The model from 0 to 1000, the view 200 wide.
+        assert_eq!(within_model(50.0, 100.0, 300.0, 0.0, 1000.0), 50.0, "inside: as far as dragged");
+        assert_eq!(within_model(900.0, 100.0, 300.0, 0.0, 1000.0), 700.0, "to the right edge and no further");
+        assert_eq!(within_model(-500.0, 100.0, 300.0, 0.0, 1000.0), -100.0, "to the left edge");
+        assert_eq!(within_model(10.0, 800.0, 1000.0, 0.0, 1000.0), 0.0, "at the edge: stays");
+        // Beyond the edge already: back towards the model, but not further out.
+        assert_eq!(within_model(10.0, 900.0, 1100.0, 0.0, 1000.0), 0.0);
+        assert_eq!(within_model(-50.0, 900.0, 1100.0, 0.0, 1000.0), -50.0);
     }
 }

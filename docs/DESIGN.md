@@ -209,13 +209,33 @@ Why Ographis works as it does, and what it does not do yet.
 - A series of pictures over time is the stream's `series`, a grid for each time with the
   names of its bands; the first is also its grid, so the other raster tools take that one.
   Read satellite bands reads every picture onto one grid with GDAL's warper and holds all of
-  them in memory: an area of 10 × 10 km at 10 m and three bands is about 1.2 MB a picture.
+  them in memory: an area of 10 × 10 km at 10 m and three bands is about 12 MB a picture (4 bytes a cell and band).
   Scale and offset are given by hand, not read from the catalogue.
-- Check topology finds gaps as the holes of all the areas put together: a gap that opens to
-  the outside of them all is not found.
-- 3D solids of DWG and DXF are made into triangles from their ACIS faces: flat faces, also
-  with arcs and holes. Cylinders, cones, spheres and free-form faces are counted and left
-  out for now. Bodies inside blocks are not read yet.
+- Check topology finds gaps as the holes of all the areas put together, unless a boundary is
+  given: then a gap that opens to the outside is found as the part of the boundary no area
+  covers. Without a boundary, such a gap cannot be told from the outside.
+- 3D solids, regions and surfaces of DWG and DXF are made into triangles from their ACIS
+  faces: flat faces, also with arcs and holes, and faces on cylinders, cones, spheres and tori,
+  laid out on the parameters of their surface (round the axis and along it), filled with
+  triangles of a 32nd of a turn and taken back onto it (dwg_curved.rs). A face whose edges go
+  round more than twice, or round a torus both ways, and free-form (spline) faces are counted
+  and left out. Bodies inside blocks are not read yet. Pictures, references to other
+  drawings, underlays, OLE objects and tables are not read, and the log says how many.
+- Heights are changed between height systems by PROJ with the grid of the geoid, and never
+  with a "ballpark" change, which PROJ otherwise makes without a word when the grid is
+  missing: it moves the heights by nothing. Grids for Sweden, Norway and EGM96 come along in
+  `data/proj-grids`; PROJ may fetch others only while Change height system runs, and only when
+  it is allowed to. A stream keeps one coordinate system, an EPSG code for the places; which
+  height system its heights are in is not kept with it, and is said in the tool.
+- GPX and KML are written by Ographis itself, not by GDAL's drivers, which put attributes
+  in the wrong places by their order: in KML they lost all but the name. A KMZ is laid out as
+  GDAL's own, doc.kml linking to the layer in layers/, since QGIS and GDAL otherwise do not
+  find the attributes in it. GML is written by GDAL as GML 3.2; a stream that mixes
+  features with heights and without is valid GML, but GDAL reads the flat ones of such a
+  file wrongly.
+- S-57 is read with GDAL's options for charts: updates applied, soundings as points of their
+  own with their depth, texts in the national characters of the chart. The names to read of
+  the object classes are the 80 or so most charts have; others keep their code.
 - GTFS, NetCDF and Zarr are read through GDAL. A cube is read through the classic rasters of
   GDAL, where the steps along the other dimensions (time, height) are bands; a variable of
   four dimensions has a band for each combination. Only variables on a regular grid can be

@@ -118,6 +118,11 @@ Windows 11.
 Unpack the new zip file over the old folder, or next to it, and run `.\build.cmd` again.
 The `target` folder can be kept: only what has changed is compiled again.
 
+Files that the old version had but the new one does not are removed by `build.cmd`, as
+listed in `tools\removed-files.txt`. If a source file it does not know of has become a
+folder of the same name, it stops and names the file. Unpacking into an empty folder
+avoids both, and the `target` folder can be moved over to save building everything again.
+
 ## The GDAL version
 
 The Rust binding (`gdal-sys` 0.12) has ready-made bindings for GDAL 3.4 to 3.12. In October
@@ -215,6 +220,7 @@ of the import tables has also been checked against pefile on Windows DLLs.
 | `No GDAL was found` | OSGeo4W is not installed, or is in another folder | Do step 2, or point out the folder with `-Gdal` |
 | `build.ps1 cannot be loaded because running scripts is disabled` | A group policy stops scripts | Follow [Building by hand](#building-by-hand) |
 | `failed to remove file …\target\release\ographis.exe`, *Access is denied* (`os error 5`) | Ographis is running, and Windows keeps the file it runs from | Close Ographis (and `og` if it runs) and build again. `build.cmd` now says so before it builds |
+| `file for module … found at both …rs and …\mod.rs`, or *STOP: These files are left from an earlier version* | A new version was unpacked over an old one, built with an earlier `build.cmd` or by hand | Remove the `.rs` file named, or unpack into an empty folder |
 | `cargo` is not found | The window was opened before the installation | Open a new PowerShell window |
 | `link.exe` is not found, or `LNK1181` | The C++ tools are missing | Install *Desktop development with C++* |
 | The download of dependencies stops at `CRYPT_E_NO_REVOCATION_CHECK` or a certificate error | A proxy that inspects the traffic | `$env:CARGO_HTTP_CHECK_REVOKE = "false"` and run again. Set `HTTPS_PROXY` if a proxy has to be given |
@@ -259,6 +265,12 @@ Not yet checked on Windows:
   in MapLibre, and opened in QGIS; glTF with groups, materials, sun and camera imported into
   Blender 4 and 5, and BlenderGIS reading where it lies; GPX from a GPS and photos from a
   phone; PostGIS *Empty it and fill it again* against a table with views on it.
+- Version 0.94, all built and tested only on Linux: the grids of the geoid in `proj-grids`
+  beside the program, found by PROJ of OSGeo4W (`og doctor` checks RH 2000), and fetching
+  others from cdn.proj.org through the proxy; an S-57 chart from Sjöfartsverket and a BAG or
+  S-102 of depths; KMZ opened in Google Earth, GPX in a GPS program or Garmin BaseCamp; the
+  round faces of solids in a real drawing; the build check of files left from 0.93 in
+  Windows PowerShell 5.1; the performance tests on Windows, where peak memory is not measured.
 - Version 0.93, all built and tested only on Linux: a whole tile of Lantmäteriet's Laserdata
   read with every point, and how much memory it takes on Windows; Read satellite bands and
   the example `apis/sentinel_ndvi.ographis` against Element 84 and Copernicus through the

@@ -14,7 +14,7 @@
         "bbox": "13.80, 58.36, 13.92, 58.42",
         "datetime": "2025-06-01/2025-08-31",
         "query": "eo:cloud_cover < 40",
-        "max_items": "20"
+        "max_items": "100"
       },
       "comment": "Sentinel-2 over Skövde, summer 2025"
     },

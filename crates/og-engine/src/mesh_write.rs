@@ -50,8 +50,14 @@ fn write_png(t: &crate::mesh::Texture) -> Result<Vec<u8>> {
 /// Writes the model to an OBJ file with z up, its materials to a .mtl file beside it and its
 /// textures as PNG files. Gives the files written.
 pub fn write_obj(table: &Table, path: &Path) -> Result<Vec<PathBuf>> {
+    write_obj_around(table, path, None)
+}
+
+/// As `write_obj`, around a given origin: [0, 0, 0] writes the coordinates as they are.
+/// None puts it near the middle of the model.
+pub fn write_obj_around(table: &Table, path: &Path, origin: Option<[f64; 3]>) -> Result<Vec<PathBuf>> {
     let Some(mesh) = table.mesh.as_deref() else { return err("The stream has no 3D model to write.") };
-    let o = origin_of(mesh);
+    let o = origin.unwrap_or_else(|| origin_of(mesh));
     let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "model".into());
     let dir = path.parent().unwrap_or(Path::new("."));
     let mtl_path = dir.join(format!("{}.mtl", stem));

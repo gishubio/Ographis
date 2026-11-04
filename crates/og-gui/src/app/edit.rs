@@ -54,6 +54,13 @@ impl App {
                 self.view = View::default();
             }
             self.expanded.remove(&gone.id);
+            // What the node gave in the latest run goes with it. Otherwise a new node that is
+            // given the same id, such as another Input, would show the old one's data.
+            if let Some(result) = self.result.as_mut() {
+                if result.nodes.contains_key(&gone.id) {
+                    Arc::make_mut(result).nodes.remove(&gone.id);
+                }
+            }
             any = true;
             part_of_run |= !gone.is_note();
         }

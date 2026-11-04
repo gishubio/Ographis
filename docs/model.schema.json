@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.93.0. Written by og schema.",
+  "description": "A model of Ographis 0.94.1. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -218,6 +218,10 @@
             "EventPlacer",
             "Pivoter",
             "Unpivoter",
+            "CoordinateParser",
+            "ProfileMaker",
+            "VolumeCalculator",
+            "HeightTransformer",
             "PointCloudRasterizer",
             "HeightAboveGround",
             "PointCloudFilter",
@@ -318,6 +322,11 @@
                   "path": {
                     "title": "File or folder",
                     "description": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model. A file, also zipped; a folder, whose files that match the filter are read as one; or a web address (https://…)"
+                  },
+                  "path_attribute": {
+                    "title": "Paths from",
+                    "description": "the name of one attribute of the stream on the port. With a stream connected to Paths: the attribute with the path of each file to read, such as _file from HTTP request. The file or folder above is then not used",
+                    "default": "_file"
                   },
                   "web_as": {
                     "title": "The address is",
@@ -762,13 +771,17 @@
                   },
                   "encoding": {
                     "title": "Encoding",
-                    "description": "one of the values in choices, as a string. For CSV, and for Shapefiles without .cpg",
+                    "description": "one of the values in choices, as a string. For CSV and DXF, and for Shapefiles without .cpg. A DWG says its own",
                     "anyOf": [
                       {
                         "enum": [
                           "",
                           "utf-8",
-                          "windows-1252"
+                          "windows-1252",
+                          "iso-8859-15",
+                          "windows-1250",
+                          "windows-1251",
+                          "windows-1257"
                         ]
                       },
                       {
@@ -936,6 +949,10 @@
                           "geojson",
                           "parquet",
                           "gpkg",
+                          "gml",
+                          "gpx",
+                          "kml",
+                          "kmz",
                           "geopdf",
                           "tif",
                           "cog",
@@ -1160,7 +1177,7 @@
                   },
                   "gltf_origin": {
                     "title": "Origin",
-                    "description": "a string. glTF: x, y and z the model is written around, the same for files that are to fit together in Blender, such as 418300, 6472550, 0. Empty: near its middle"
+                    "description": "a string. glTF and OBJ: x, y and z the model is written around, the same for files that are to fit together, such as 418300, 6472550, 0. none, or 0, 0, 0: the coordinates as they are, without moving the model. Empty: near its middle"
                   },
                   "gltf_georef": {
                     "title": "Where it lies",
@@ -1386,6 +1403,10 @@
                           "geojson",
                           "parquet",
                           "gpkg",
+                          "gml",
+                          "gpx",
+                          "kml",
+                          "kmz",
                           "geopdf",
                           "tif",
                           "cog",
@@ -1496,6 +1517,10 @@
                           "geojson",
                           "parquet",
                           "gpkg",
+                          "gml",
+                          "gpx",
+                          "kml",
+                          "kmz",
                           "geopdf",
                           "tif",
                           "cog",
@@ -1695,6 +1720,43 @@
                       }
                     ],
                     "default": "true"
+                  },
+                  "colours": {
+                    "title": "Colours of the tables",
+                    "description": "one of the values in choices, as a string. The heading row and every other row, in the web page and the PDF",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "plain",
+                          "sea",
+                          "forest",
+                          "sand",
+                          "graphite"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "plain"
+                  },
+                  "sortable": {
+                    "title": "Sort by a click",
+                    "description": "one of the values in choices, as a string. Web page: a click on the heading of a column sorts the rows by it, a second click the other way. Only the rows in the table are sorted",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
                   }
                 }
               }
@@ -1731,6 +1793,10 @@
                           "geojson",
                           "parquet",
                           "gpkg",
+                          "gml",
+                          "gpx",
+                          "kml",
+                          "kmz",
                           "geopdf",
                           "tif",
                           "cog",
@@ -1957,6 +2023,10 @@
                           "geojson",
                           "parquet",
                           "gpkg",
+                          "gml",
+                          "gpx",
+                          "kml",
+                          "kmz",
                           "geopdf",
                           "tif",
                           "cog",
@@ -2581,7 +2651,7 @@
                 "properties": {
                   "attributes": {
                     "title": "Attributes",
-                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. Joined in the order they are chosen"
+                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. Joined in the order they are chosen. A fixed text is written in single quotes: '0', kod"
                   },
                   "separator": {
                     "title": "Separator",
@@ -4855,7 +4925,7 @@
                   },
                   "datetime": {
                     "title": "Time",
-                    "description": "a string. A date, or from and to: 2026-06-01/2026-08-31. Empty: any time"
+                    "description": "a string. A date, month or year, or from and to: 2026-06-01/2026-08-31 or 2026-06/2026-08. Empty: any time"
                   },
                   "bbox": {
                     "title": "Area, in WGS 84",
@@ -5003,7 +5073,7 @@
                   },
                   "answer_as": {
                     "title": "The answer",
-                    "description": "one of the values in choices, as a string. A file for answers that are not text, such as a GeoTIFF of travel times. Read the files with Read files named in an attribute",
+                    "description": "one of the values in choices, as a string. A file for answers that are not text, such as a GeoTIFF of travel times. Read the files with an Input, with this stream connected to its Paths",
                     "anyOf": [
                       {
                         "enum": [
@@ -8096,7 +8166,7 @@
                   },
                   "most": {
                     "title": "At most pictures",
-                    "description": "a string. The first by time; each is read over the web",
+                    "description": "a string. Spread over the time, the least cloudy in each part; each is read over the web",
                     "default": "20"
                   }
                 }
@@ -8631,6 +8701,208 @@
                       }
                     ],
                     "default": "keep"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "CoordinateParser"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "attribute": {
+                    "title": "Coordinates in",
+                    "description": "the name of one attribute of the stream on the port. Text such as 57°42'31\"N 11°58'25\"E, N 57° 42.520' E 11° 58.418', 57.7087, 11.9737 or 6400123 319456"
+                  },
+                  "order": {
+                    "title": "Order",
+                    "description": "one of the values in choices, as a string. Without letters such as N and E: in degrees, latitude first unless a value is over 90; in metres, the larger is north",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "auto",
+                          "yx",
+                          "xy"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "auto"
+                  },
+                  "crs": {
+                    "title": "Coordinate system",
+                    "description": "a coordinate system, such as \"EPSG:3006\". Of the coordinates: EPSG:4326 for degrees, EPSG:3006 for SWEREF 99 TM",
+                    "default": "EPSG:4326"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ProfileMaker"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "step": {
+                    "title": "Every",
+                    "description": "a string. Metres between the points of the profile. Empty: the size of a cell of the surface"
+                  },
+                  "method": {
+                    "title": "Value",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "bilinear",
+                          "cell"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "bilinear"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "VolumeCalculator"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "level": {
+                    "title": "Level",
+                    "description": "a string. The height to measure from when nothing is connected to Reference, such as the bottom of a pit or the level of a lake",
+                    "default": "0"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "HeightTransformer"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "title": "From",
+                    "description": "one of the values in choices, as a string. The height system the heights are in now",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ellipsoid",
+                          "5613",
+                          "5718",
+                          "5941",
+                          "3900",
+                          "5799",
+                          "7837",
+                          "5773",
+                          "3855",
+                          "5703",
+                          "code"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "ellipsoid"
+                  },
+                  "from_code": {
+                    "title": "From, EPSG code",
+                    "description": "a string. With Another: the code of a vertical system, such as 5613"
+                  },
+                  "to": {
+                    "title": "To",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "ellipsoid",
+                          "5613",
+                          "5718",
+                          "5941",
+                          "3900",
+                          "5799",
+                          "7837",
+                          "5773",
+                          "3855",
+                          "5703",
+                          "code"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "5613"
+                  },
+                  "to_code": {
+                    "title": "To, EPSG code",
+                    "description": "a string. With Another: the code of a vertical system"
+                  },
+                  "fetch": {
+                    "title": "Fetch a missing grid",
+                    "description": "one of the values in choices, as a string. From cdn.proj.org, when the grid of the geoid that is needed is not among those that come with Ographis: Sweden, Norway and EGM96",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
                   }
                 }
               }

@@ -55,6 +55,10 @@ pub const WRITER_FORMATS: &[(&str, &str)] = &[
     ("geojson", "GeoJSON (.geojson)"),
     ("parquet", "GeoParquet (.parquet)"),
     ("gpkg", "GeoPackage (.gpkg)"),
+    ("gml", "GML 3.2 (.gml)"),
+    ("gpx", "GPX for GPS units (.gpx)"),
+    ("kml", "KML for Google Earth (.kml)"),
+    ("kmz", "KMZ for Google Earth (.kmz)"),
     ("tif", "GeoTIFF image (.tif)"),
     ("cog", "Cloud Optimized GeoTIFF (.tif)"),
     ("citygml", "CityGML 2.0 buildings (.gml)"),
@@ -83,6 +87,10 @@ pub const OUTPUT_FORMATS: &[(&str, &str)] = &[
     ("geojson", "GeoJSON (.geojson)"),
     ("parquet", "GeoParquet (.parquet)"),
     ("gpkg", "GeoPackage (.gpkg)"),
+    ("gml", "GML 3.2 (.gml)"),
+    ("gpx", "GPX for GPS units (.gpx)"),
+    ("kml", "KML for Google Earth (.kml)"),
+    ("kmz", "KMZ for Google Earth (.kmz)"),
     ("geopdf", "GeoSpatial PDF with layers (.pdf)"),
     ("tif", "GeoTIFF image (.tif)"),
     ("cog", "Cloud Optimized GeoTIFF (.tif)"),
@@ -250,7 +258,7 @@ pub(super) const WRITER_PARAMS: &[ParamSpec] = &[
         label: "Origin",
         kind: ParamKind::Text,
         default: "",
-        hint: "glTF: x, y and z the model is written around, the same for files that are to fit together in Blender, such as 418300, 6472550, 0. Empty: near its middle",
+        hint: "glTF and OBJ: x, y and z the model is written around, the same for files that are to fit together, such as 418300, 6472550, 0. none, or 0, 0, 0: the coordinates as they are, without moving the model. Empty: near its middle",
     },
     ParamSpec {
         key: "gltf_georef",
@@ -540,17 +548,24 @@ fn gltf_opts(p: &P, table: &Table, ctx: &NodeCtx) -> Result<crate::mesh_write::G
         kinds: values("gltf_material", "Materials by")?,
         sun,
         camera: matches!(sun_camera.as_str(), "camera" | "both"),
-        origin: match p.get("gltf_origin").filter(|o| !o.trim().is_empty()) {
-            None => None,
-            Some(text) => {
-                let v: Vec<f64> = text.split([',', ';', ' ']).filter(|t| !t.trim().is_empty()).filter_map(|t| crate::model::parse_number(t.trim())).collect();
-                match v.as_slice() {
-                    [x, y] => Some([*x, *y, 0.0]),
-                    [x, y, z] => Some([*x, *y, *z]),
-                    _ => return err(format!("The origin is written as x, y, z, such as 418300, 6472550, 0, not \"{}\".", text)),
-                }
+        origin: model_origin(p)?,
+    })
+}
+
+/// The origin a 3D model is written around, as Origin gives it: None near its middle, and
+/// [0, 0, 0] for none, that is the coordinates as they are.
+fn model_origin(p: &P) -> Result<Option<[f64; 3]>> {
+    Ok(match p.get("gltf_origin").filter(|o| !o.trim().is_empty()) {
+        None => None,
+        Some(text) if matches!(text.trim().to_lowercase().as_str(), "none" | "no" | "off") => Some([0.0; 3]),
+        Some(text) => {
+            let v: Vec<f64> = text.split([',', ';', ' ']).filter(|t| !t.trim().is_empty()).filter_map(|t| crate::model::parse_number(t.trim())).collect();
+            match v.as_slice() {
+                [x, y] => Some([*x, *y, 0.0]),
+                [x, y, z] => Some([*x, *y, *z]),
+                _ => return err(format!("The origin is written as x, y, z, such as 418300, 6472550, 0, or none, not \"{}\".", text)),
             }
-        },
+        }
     })
 }
 
@@ -698,6 +713,15 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             match table.mesh.as_deref() {
                 Some(m) => {
                     let o = opts.origin.unwrap_or_else(|| crate::mesh_write::origin_of(m));
+                    // glTF keeps coordinates as 32-bit numbers, of about seven digits.
+                    let far = m.positions.iter().map(|q| (q[0] - o[0]).abs().max((q[1] - o[1]).abs()).max((q[2] - o[2]).abs())).fold(0.0, f64::max);
+                    if far > 100_000.0 {
+                        ctx.notes.warn(format!(
+                            "The model reaches {} m from its origin. glTF keeps coordinates with about seven digits, so they are only good to {} there: give an origin near the model, or leave Origin empty.",
+                            fmt_count(far as u64),
+                            if far > 1_000_000.0 { "decimetres" } else { "centimetres" }
+                        ));
+                    }
                     ctx.notes.info(format!(
                         "{} triangles written around the origin {}, {}, {}, which is kept in the file",
                         fmt_count(m.tris.len() as u64),
@@ -717,8 +741,9 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
             std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
         }
-        let files = if ext == "obj" { crate::mesh_write::write_obj(table, &path)? } else { crate::mesh_write::write_glb(table, &path)? };
-        let o = crate::mesh_write::origin_of(table.mesh.as_deref().expect("a model"));
+        let origin = model_origin(p)?;
+        let files = if ext == "obj" { crate::mesh_write::write_obj_around(table, &path, origin)? } else { crate::mesh_write::write_glb(table, &path)? };
+        let o = origin.unwrap_or_else(|| crate::mesh_write::origin_of(table.mesh.as_deref().expect("a model")));
         ctx.notes.info(format!(
             "{} triangles written around the origin {}, {}, {}, which is kept in the file",
             fmt_count(table.mesh.as_ref().map_or(0, |m| m.tris.len()) as u64),

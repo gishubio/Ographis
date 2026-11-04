@@ -117,6 +117,20 @@ pub(in crate::nodes) const REPORT_PARAMS: &[ParamSpec] = &[
         default: "true",
         hint: "Each section under the name of the tool it comes from, or its comment when the tool has no name of its own",
     },
+    ParamSpec {
+        key: "colours",
+        label: "Colours of the tables",
+        kind: ParamKind::Choice(crate::report::THEMES),
+        default: "plain",
+        hint: "The heading row and every other row, in the web page and the PDF",
+    },
+    ParamSpec {
+        key: "sortable",
+        label: "Sort by a click",
+        kind: ParamKind::Choice(YES_NO),
+        default: "true",
+        hint: "Web page: a click on the heading of a column sorts the rows by it, a second click the other way. Only the rows in the table are sorted",
+    },
 ];
 
 pub(in crate::nodes) fn run_report(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
@@ -179,7 +193,9 @@ pub(in crate::nodes) fn run_report(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> R
     let title =
         p.get("title").filter(|t| !t.trim().is_empty()).unwrap_or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
     let subtitle = p.get("subtitle").filter(|t| !t.trim().is_empty()).unwrap_or_else(|| ctx.now.format("%Y-%m-%d %H:%M").to_string());
-    let report = crate::report::Report { title, subtitle, blocks };
+    let theme = crate::report::theme(p.get("colours").as_deref().unwrap_or("plain"));
+    let sortable = p.get("sortable").as_deref() != Some("false");
+    let report = crate::report::Report { title, subtitle, blocks, theme, sortable };
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
     }

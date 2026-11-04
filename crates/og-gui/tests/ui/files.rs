@@ -924,7 +924,7 @@ fn postgis_is_reached_from_input_and_output() {
     h.run_steps(2);
     h.event(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
-        delta: egui::vec2(0.0, -300.0),
+        delta: egui::vec2(0.0, -600.0),
         phase: egui::TouchPhase::Move,
         modifiers: Default::default(),
     });
@@ -955,7 +955,7 @@ fn postgis_is_reached_from_input_and_output() {
     h.run_steps(2);
     h.event(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
-        delta: egui::vec2(0.0, -300.0),
+        delta: egui::vec2(0.0, -600.0),
         phase: egui::TouchPhase::Move,
         modifiers: Default::default(),
     });
