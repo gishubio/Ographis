@@ -204,6 +204,9 @@ pub struct Node {
     /// A disabled node does not run and lets nothing through.
     #[serde(default, skip_serializing_if = "is_false")]
     pub disabled: bool,
+    /// Folded to its title on the canvas. Does not affect the run.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub collapsed: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -289,6 +292,14 @@ impl Workspace {
                         n.params.insert(k.into(), serde_json::json!(v));
                     }
                 }
+            }
+        }
+        // Before 0.95.2 Filter point cloud gave the classes ticked on Points; now each gets a
+        // port of its own unless asked. A model connected to Points keeps it.
+        let on_points: Vec<String> = ws.edges.iter().filter(|e| e.from.1 == "Points").map(|e| e.from.0.clone()).collect();
+        for n in ws.nodes.iter_mut().filter(|n| n.kind == "PointCloudFilter" && !n.params.contains_key("class_ports")) {
+            if on_points.contains(&n.id) {
+                n.params.insert("class_ports".into(), serde_json::json!("no"));
             }
         }
         // Before 0.94 the files named in an attribute were read by a tool of their own; now
@@ -487,6 +498,24 @@ pub struct RunOptions<'a> {
     pub everything: bool,
     /// A trial run: every input reads at most this many features, or fewer if it is set to.
     pub sample: Option<usize>,
+    /// What came out of a node is let go as soon as every node it feeds has run, as on the
+    /// command line, where nothing looks at it afterwards. The largest step then sets the
+    /// peak of memory, not all of them together. The results keep their counts and files.
+    pub lean: bool,
+}
+
+/// Lets go of the outputs that every node they feed has used, and of what came in to the
+/// nodes that have run.
+fn let_go(results: &mut HashMap<String, NodeResult>, live: &[&Edge], done: &HashSet<String>) {
+    for (id, r) in results.iter_mut() {
+        if !done.contains(id) {
+            continue;
+        }
+        r.inputs.clear();
+        if !r.outputs.is_empty() && live.iter().filter(|e| &e.from.0 == id).all(|e| done.contains(&e.to.0)) {
+            r.outputs.clear();
+        }
+    }
 }
 
 /// The model with every input set to read at most `n` features: a trial run. An input set
@@ -708,7 +737,12 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
 
     // The nodes that are switched off, and those that rest because of them.
     let mut idle: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut done: HashSet<String> = HashSet::new();
     for &i in &order {
+        if opts.lean {
+            let_go(&mut results, &live, &done);
+        }
+        done.insert(ws.nodes[i].id.clone());
         let n = &ws.nodes[i];
         if !in_scope(&n.id) {
             continue;
@@ -1107,6 +1141,9 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
         }
     }
 
+    if opts.lean {
+        let_go(&mut results, &live, &done);
+    }
     // Each output and what it wrote, together at the end.
     log.extend(written);
     for (id, r) in results.iter_mut() {

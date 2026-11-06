@@ -260,6 +260,7 @@ impl App {
             }
             return;
         }
+        self.alt_drag_detach(ctx);
         self.canvas_keys(ctx);
         if run {
             self.run(ctx);

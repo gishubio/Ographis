@@ -84,7 +84,7 @@ pub fn write_layered(layers: &[PdfLayer], crs: u32, page: &PdfPage, margin: f64,
         tree += &format!("    <Layer id=\"{}\" name=\"{}\" initiallyVisible=\"{}\"/>\n", id, xml(&l.name), l.visible);
         if let Some(img) = &l.table.image {
             let file = format!("/vsimem/ographis-pdf-{}-{}.tif", stamp, k);
-            write_image(img, Some(crs), Path::new(&file), "tif", page, false, notes)?;
+            write_image(img, Some(crs), Path::new(&file), "tif", page, false, &Default::default(), notes)?;
             temp.push(file.clone());
             content +=
                 &format!("      <IfLayerOn layerId=\"{}\">\n        <Raster dataset=\"{}\" georeferencingId=\"map\"/>\n      </IfLayerOn>\n", id, xml(&file));
@@ -107,7 +107,7 @@ pub fn write_layered(layers: &[PdfLayer], crs: u32, page: &PdfPage, margin: f64,
                 }
             }
             t.crs = Some(crs);
-            write_gpkg(&t, Path::new(&file), "features", &HashMap::new(), false, None, notes)?;
+            write_gpkg(&t, Path::new(&file), "features", &HashMap::new(), false, None, None, notes)?;
             temp.push(file.clone());
             content += &format!(
                 "      <IfLayerOn layerId=\"{}\">\n        <Vector dataset=\"{}\" layer=\"features\" georeferencingId=\"map\" ogrStyleString=\"{}\">\n          <LogicalStructure/>\n        </Vector>\n      </IfLayerOn>\n",

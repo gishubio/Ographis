@@ -105,6 +105,8 @@ impl App {
                 cache: cache.as_ref().map(|c| &c.nodes),
                 everything: scope_only,
                 sample,
+                // The results stay, to be looked at.
+                lean: false,
             };
             let result = og_engine::run_opts(
                 &ws,

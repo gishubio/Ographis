@@ -27,6 +27,7 @@ out. The source is unchanged except for the places marked `Ographis:` in `src/ui
 | A node dragged near the edge of the canvas pans it that way, and the dragged nodes go along; the edge is that of the canvas as seen on the screen | The node stops at the edge of what is seen |
 | The room for an output pin is taken through the layout, from right to left | Only the first output got the room, and the names of the others ran in under their pins |
 | `wire_flow` of the viewer: dots that move along a connection, such as those into a node at work | No such hook |
+| A line drawn with Ctrl and the secondary button cuts the connections it crosses, through `cut_wires` of the viewer | Not available |
 
 The patch is wired in through `[patch.crates-io]` in the workspace `Cargo.toml`. To move to
 a newer egui-snarl, replace `src/` and apply the changes again.

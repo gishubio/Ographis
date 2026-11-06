@@ -24,6 +24,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd"] }
 # Spreads the shading and rendering of terrain over the cores.
 rayon = "1.12"
+e57 = "0.11"
 # Sets the text in charts, in the Inter font that is built in.
 ab_glyph = "0.2"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }

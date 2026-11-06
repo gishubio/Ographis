@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.94.1. Written by og schema.",
+  "description": "A model of Ographis 0.95.2. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -88,6 +88,7 @@
             "LayeredPdfWriter",
             "ReportWriter",
             "QgisProjectWriter",
+            "WebMapWriter",
             "PostgisReader",
             "SqlExecutor",
             "PostgisWriter",
@@ -222,6 +223,7 @@
             "ProfileMaker",
             "VolumeCalculator",
             "HeightTransformer",
+            "OutlineFromAbove",
             "PointCloudRasterizer",
             "HeightAboveGround",
             "PointCloudFilter",
@@ -969,6 +971,7 @@
                           "pmtiles",
                           "postgis",
                           "qgis",
+                          "webmap",
                           "pptx",
                           "odp",
                           "shp",
@@ -1256,6 +1259,52 @@
                     "description": "a string. PMTiles: the largest, at most 16. 14 has tiles of about 2 km, and maps zoom in beyond it",
                     "default": "14"
                   },
+                  "gpkg_version": {
+                    "title": "GeoPackage version",
+                    "description": "one of the values in choices, as a string. Of a new GeoPackage. GDAL chooses the oldest version that holds the data. A file that is there keeps its own",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "",
+                          "1.4",
+                          "1.3",
+                          "1.2"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ]
+                  },
+                  "img_dpi": {
+                    "title": "Pixels to the inch",
+                    "description": "a string. PNG, JPEG and GeoTIFF: how large the picture prints, kept in the file, such as 300. It does not change the picture, and makes it no sharper: for that, draw it for print in Draw map, which then gives its resolution here by itself. Empty takes that of the picture, or none"
+                  },
+                  "img_quality": {
+                    "title": "JPEG quality",
+                    "description": "a string. 1 to 100: more is sharper and larger. For JPEG, and GeoTIFF packed as JPEG",
+                    "default": "92"
+                  },
+                  "tif_compress": {
+                    "title": "GeoTIFF packed as",
+                    "description": "one of the values in choices, as a string. For pictures, also Cloud Optimized. JPEG suits aerial photos, not maps with lines and text",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "deflate",
+                          "lzw",
+                          "jpeg",
+                          "none"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "deflate"
+                  },
                   "pdf_size": {
                     "title": "Page size",
                     "description": "one of the values in choices, as a string.",
@@ -1423,6 +1472,7 @@
                           "pmtiles",
                           "postgis",
                           "qgis",
+                          "webmap",
                           "pptx",
                           "odp",
                           "shp",
@@ -1537,6 +1587,7 @@
                           "pmtiles",
                           "postgis",
                           "qgis",
+                          "webmap",
                           "pptx",
                           "odp",
                           "shp",
@@ -1813,6 +1864,7 @@
                           "pmtiles",
                           "postgis",
                           "qgis",
+                          "webmap",
                           "pptx",
                           "odp",
                           "shp",
@@ -1868,6 +1920,177 @@
           "if": {
             "properties": {
               "type": {
+                "const": "WebMapWriter"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "title": "Folder",
+                    "description": "a file to write; relative paths start at the folder of the model. The page is index.html in it, with the data in data. A name that ends in .html is the page, in the folder it is in"
+                  },
+                  "format": {
+                    "title": "Format",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "",
+                          "csv",
+                          "xlsx",
+                          "fgb",
+                          "geojson",
+                          "parquet",
+                          "gpkg",
+                          "gml",
+                          "gpx",
+                          "kml",
+                          "kmz",
+                          "geopdf",
+                          "tif",
+                          "cog",
+                          "citygml",
+                          "glb",
+                          "3dtiles",
+                          "jpg",
+                          "las",
+                          "laz",
+                          "ods",
+                          "obj",
+                          "pdf",
+                          "png",
+                          "pmtiles",
+                          "postgis",
+                          "qgis",
+                          "webmap",
+                          "pptx",
+                          "odp",
+                          "shp",
+                          "txt"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "webmap"
+                  },
+                  "title": {
+                    "title": "Title",
+                    "description": "a string. Of the page and over the legend. Empty: the name of the folder"
+                  },
+                  "library": {
+                    "title": "Drawn with",
+                    "description": "one of the values in choices, as a string. Loaded from unpkg.com when the page opens",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "leaflet",
+                          "maplibre"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "leaflet"
+                  },
+                  "layers": {
+                    "title": "Layers",
+                    "description": "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}. The top row is on top. A layer that is not ticked can be turned on in the legend"
+                  },
+                  "basemap": {
+                    "title": "Background map",
+                    "description": "one of the values in choices, as a string. Tiles from the web under the layers",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "osm",
+                          "carto_light",
+                          "carto_voyager",
+                          "carto_dark",
+                          "own"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "osm"
+                  },
+                  "basemap_own": {
+                    "title": "Name or address",
+                    "description": "a string. The name of one of your background maps under Settings, of tiles or WMS, or an address with {z}, {x} and {y}. One that needs a password or a key is left out, so that it is not written into the page"
+                  },
+                  "web_data": {
+                    "title": "The features as",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "auto",
+                          "geojson",
+                          "pmtiles"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "auto"
+                  },
+                  "popups": {
+                    "title": "Attributes when clicked",
+                    "description": "one of the values in choices, as a string. A click on a feature shows its attributes",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "true",
+                          "false"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
+                  },
+                  "legend": {
+                    "title": "Legend",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "true",
+                          "false"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "PostgisReader"
               }
             }
@@ -1901,7 +2124,7 @@
                   },
                   "password": {
                     "title": "Password",
-                    "description": "a string; better a $(variable) or a connection in the settings than the secret itself. Stored in the model file as it is. Write $(password) and set the variable to keep it out of the file"
+                    "description": "a string; better a $(variable) or a connection in the settings than the secret itself. Stored in the model file as it is, for anyone the model is given to to read. Better: a connection from Edit → Settings, or $(password) with the variable set"
                   },
                   "tables": {
                     "title": "Tables",
@@ -1910,6 +2133,10 @@
                   "where": {
                     "title": "Only rows where",
                     "description": "a string. A condition in SQL, such as kommun = 'Skövde', so that the database sends only those rows"
+                  },
+                  "bbox": {
+                    "title": "Only within",
+                    "description": "a string. A rectangle, west, south, east, north in degrees, such as 11.95, 57.69, 11.99, 57.71, or chosen on the map: the database sends only the rows that reach into it, found through its spatial index"
                   },
                   "sql": {
                     "title": "SQL query",
@@ -2043,6 +2270,7 @@
                           "pmtiles",
                           "postgis",
                           "qgis",
+                          "webmap",
                           "pptx",
                           "odp",
                           "shp",
@@ -2080,7 +2308,7 @@
                   },
                   "password": {
                     "title": "Password",
-                    "description": "a string; better a $(variable) or a connection in the settings than the secret itself. Stored in the model file as it is. Write $(password) and set the variable to keep it out of the file"
+                    "description": "a string; better a $(variable) or a connection in the settings than the secret itself. Stored in the model file as it is, for anyone the model is given to to read. Better: a connection from Edit → Settings, or $(password) with the variable set"
                   },
                   "schema": {
                     "title": "Schema",
@@ -2188,6 +2416,31 @@
                   "key_attribute": {
                     "title": "Key attribute",
                     "description": "the name of one attribute of the stream on the port. Its values must all be different and none empty"
+                  },
+                  "sql_before": {
+                    "title": "SQL before",
+                    "description": "text over several lines, such as SQL, with {attribute} put in from the stream on the port. Run in the same transaction before the rows are written. {table} is the table, as schema.table. A fault undoes all"
+                  },
+                  "sql_after": {
+                    "title": "SQL after",
+                    "description": "text over several lines, such as SQL, with {attribute} put in from the stream on the port. Run when the rows are written, such as GRANT SELECT ON {table} TO readers, or REFRESH MATERIALIZED VIEW. In the same transaction as the rows, or after the last part"
+                  },
+                  "analyze": {
+                    "title": "Statistics for the planner",
+                    "description": "one of the values in choices, as a string. So that queries on the new rows find the quickest way at once",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "true",
+                          "false"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
                   }
                 }
               }
@@ -5434,10 +5687,37 @@
                     "title": "Layers",
                     "description": "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}. Each stream connected to Layers is a layer. The top row is drawn on top"
                   },
+                  "size_as": {
+                    "title": "Size",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "pixels",
+                          "print"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "pixels"
+                  },
                   "width": {
                     "title": "Width in pixels",
                     "description": "a string. The height follows from the area that is drawn",
                     "default": "1600"
+                  },
+                  "print_mm": {
+                    "title": "Width in mm",
+                    "description": "a string. On paper, such as 180 for an A4 page with margins. The height follows from the area that is drawn",
+                    "default": "180"
+                  },
+                  "print_dpi": {
+                    "title": "Pixels to the inch",
+                    "description": "a string. 300 for print, 150 for a draft. Lines, points and labels keep the size they have on the screen, measured on paper, and the picture tells Output its resolution",
+                    "default": "300"
                   },
                   "margin": {
                     "title": "Margin in %",
@@ -8913,6 +9193,67 @@
           "if": {
             "properties": {
               "type": {
+                "const": "OutlineFromAbove"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "cut": {
+                    "title": "Seen from the height",
+                    "description": "a string. In metres, such as 1 to leave out what is above doors and windows. Empty sees all of the object, as its shadow from above"
+                  },
+                  "height_from": {
+                    "title": "Height from",
+                    "description": "one of the values in choices, as a string. An object without a storey is measured from its lowest point",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "storey",
+                          "bottom",
+                          "absolute"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "storey"
+                  },
+                  "shows": {
+                    "title": "Shows",
+                    "description": "one of the values in choices, as a string. Below a window, the wall under it is there; through the cut, the window leaves a gap",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "below",
+                          "section"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "below"
+                  },
+                  "min_area": {
+                    "title": "Smallest part",
+                    "description": "a string. In square metres: parts of an outline smaller than this are left out, and objects with nothing left go to Other. Empty keeps all"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "PointCloudRasterizer"
               }
             }
@@ -9026,7 +9367,24 @@
                 "properties": {
                   "classes": {
                     "title": "Classes",
-                    "description": "a string. The class numbers to keep, such as 2 for ground or 3, 4, 5 for vegetation and 6 for buildings. Empty keeps all"
+                    "description": "a string. The class numbers to keep, such as 2 for ground or 3, 4, 5 for vegetation and 6 for buildings, or ticked below from the data of the latest run. Empty keeps all"
+                  },
+                  "class_ports": {
+                    "title": "Out on",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "yes",
+                          "no"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "yes"
                   },
                   "returns": {
                     "title": "Returns",

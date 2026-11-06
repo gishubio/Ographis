@@ -808,6 +808,7 @@ pub(super) const COMPONENTS: &[(&str, &str, &str)] = &[
     ("acadrust", "DWG drawings", "MPL-2.0"),
     ("parquet", "GeoParquet (Apache Arrow)", "Apache-2.0"),
     ("las", "Point clouds, LAS and LAZ", "MIT"),
+    ("e57", "Laser scans in E57", "MIT"),
     ("serde_json", "JSON and the model files", "MIT OR Apache-2.0"),
     ("chrono", "Dates and times", "MIT OR Apache-2.0"),
     ("encoding_rs", "Text in older encodings, such as Windows-1252", "(Apache-2.0 OR MIT) AND BSD-3-Clause"),

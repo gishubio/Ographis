@@ -21,7 +21,7 @@ fn literal(s: &str) -> String {
 
 /// A name in lower case, with spaces and dashes as underscores.
 pub(crate) fn launder(s: &str) -> String {
-    s.trim().to_lowercase().chars().map(|c| if matches!(c, ' ' | '-' | '#' | '.') { '_' } else { c }).collect()
+    og_engine::io::db_name(s)
 }
 
 /// The geometry type of the table, and what each feature's geometry becomes in it.
@@ -110,8 +110,12 @@ pub(crate) fn write(table: &Table, conn: &str, opts: &DbWrite, notes: &mut Notes
     let table = &key.table;
     let features: Vec<&Feature> = table.features.iter().collect();
     let (ty, geoms) = plan_geometry(&features, &opts.geometry)?;
-    let mut shaped =
-        Table { features: table.features.iter().zip(geoms).map(|(f, g)| Feature { z: None, geom: g, attrs: f.attrs.clone() }).collect(), ..table.clone() };
+    let mut shaped = Table {
+        features: table.features.iter().zip(geoms).map(|(f, g)| Feature { z: None, geom: g, attrs: f.attrs.clone() }).collect(),
+        fields: table.fields.clone(),
+        crs: table.crs,
+        ..Default::default()
+    };
     let mut seen: Vec<String> = Vec::new();
     for f in shaped.fields.iter_mut() {
         let l = launder(&f.name);
@@ -158,6 +162,17 @@ pub(crate) fn write(table: &Table, conn: &str, opts: &DbWrite, notes: &mut Notes
     };
     let first = parts[0];
     let mut txn = ds.start_transaction().map_err(|e| gerr("Cannot start writing", e))?;
+    // {table} in the SQL of the user is the table, quoted as the database wants it.
+    let table_sql = if mssql { format!("[{}].[{}]", schema.replace(']', "]]"), name.replace(']', "]]")) } else { format!("{}.{}", ident(schema), ident(name)) };
+    let users_sql = |sql: &Option<String>| sql.as_ref().map(|s| s.replace("{table}", &table_sql));
+    if let Some(sql) = users_sql(&opts.sql_before) {
+        let failed = txn.execute_sql(sql, None, gdal::vector::sql::Dialect::DEFAULT).err().map(|e| gerr("The SQL before failed, and nothing was written", e));
+        if let Some(e) = failed {
+            let _ = txn.rollback();
+            return Err(e);
+        }
+        notes.info("ran the SQL before");
+    }
     let emptied = opts.empty_first && !opts.append && there;
     let written = if emptied {
         // The rows go and come back in one transaction: the table itself stays, with its
@@ -206,6 +221,13 @@ pub(crate) fn write(table: &Table, conn: &str, opts: &DbWrite, notes: &mut Notes
         }
         (w, _) => w,
     };
+    // The SQL after, in the same transaction when all is written in one.
+    let written = match (written, users_sql(&opts.sql_after)) {
+        (Ok(()), Some(sql)) if parts.len() == 1 => {
+            txn.execute_sql(sql, None, gdal::vector::sql::Dialect::DEFAULT).map(|_| ()).map_err(|e| gerr("The SQL after failed, and nothing was written", e))
+        }
+        (w, _) => w,
+    };
     match written {
         Ok(()) => txn.commit().map_err(|e| gerr("Cannot finish writing", e))?,
         Err(e) => {
@@ -231,6 +253,20 @@ pub(crate) fn write(table: &Table, conn: &str, opts: &DbWrite, notes: &mut Notes
     }
     if parts.len() > 1 {
         notes.info(format!("committed in {} parts", parts.len()));
+        if let Some(sql) = users_sql(&opts.sql_after) {
+            ds.execute_sql(sql, None, gdal::vector::sql::Dialect::DEFAULT)
+                .map_err(|e| gerr(format!("All {} rows were written and committed, but the SQL after failed", done), e))?;
+        }
+    }
+    if opts.sql_after.is_some() {
+        notes.info("ran the SQL after");
+    }
+    // The statistics of the table, so that the planner knows the new rows.
+    if opts.analyze {
+        let sql = if mssql { format!("UPDATE STATISTICS {}", table_sql) } else { format!("ANALYZE {}", table_sql) };
+        if let Err(e) = ds.execute_sql(sql, None, gdal::vector::sql::Dialect::DEFAULT) {
+            notes.warn(format!("The rows were written, but the statistics of the table could not be updated: {}", e));
+        }
     }
     if let (Some(og_engine::io::PrimaryKey::New(_) | og_engine::io::PrimaryKey::Attribute(_)), true) = (&opts.key, opts.append && there) {
         if opts.key != Some(og_engine::io::PrimaryKey::New("ogc_fid".into())) {

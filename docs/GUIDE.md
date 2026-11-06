@@ -28,6 +28,7 @@ five models.
 | Move a connection | Drag it from the input it goes to, and drop it on another input. A port is hit a few points outside its ring |
 | Switch a connection off | Right-click it and choose *Disable connection*, or click it and use the button in the panel. It is drawn faint and lets nothing through, until it is enabled again |
 | Set up database connections | Edit → *Settings…*, or Ctrl+, and *Database connections*: a name, the server, port, database, user and password, and *Test connection*. Inputs and outputs choose a connection by its name; the model keeps only the name |
+| Run SQL around a database write | In an Output to PostGIS or SQL Server, *SQL before* and *SQL after*, such as `DELETE FROM {table} WHERE kommun = '1480'` before; `{table}` is the table written. It runs in the same transaction as the write. *Only within* on a database Input reads only what lies in a rectangle chosen on the map |
 | Avoid connections that cross | Right-click the name of a port and choose *Move up* or *Move down*. The port moves with its connections, and its name is marked for a moment |
 | Set up a node | Click it. The form appears on the right |
 | Switch a node off | Right-click it and choose *Disable*. It does not run and lets nothing through |
@@ -44,6 +45,12 @@ five models.
 | Copy values from the table | The secondary button on a value under the canvas: *Copy value*, *Copy row* (with the names, for a spreadsheet) or *Copy column* |
 | Read only a part | *Read* on Input: *Only within a rectangle*, with its sides and its coordinate system. Each side is a number or a variable, such as `$(xmin)`; models that read within the variables before 0.75 get them written in the sides. A GeoPackage is then read through its spatial index, which is quick also for all of NVDB |
 | Read a 3D model | Point Input to an .obj, .gltf or .glb file. The materials and textures of an OBJ (.mtl and pictures) are read from beside it; a .glb holds its own, and a .gltf has them beside it or inside it. glTF is read through the nodes of its scene, each placed by its transform, with its materials: the base colour and its texture, how metallic and rough it is, and see-through parts. Neither format says where it stands, so the input has the units (glTF is in metres; an OBJ more than 200 across is taken as centimetres), which axis is up (y for glTF, z for OBJ, unless you say otherwise), the origin as east, north and height, and how far it is turned. Each object of the file becomes a feature with its faces as a MultiPolygon Z, its main material and its height; the model itself goes along for the 3D view and Render 3D scene. A model without a coordinate system is drawn in the map in its own units, without a background map |
+| Cut connections | Hold Ctrl and draw a line across them with the right button. They are removed when the button is let go, as one step to undo |
+| Connect several nodes | Select them and press F: the first output of each goes into the first free input of the next, from left to right |
+| Lift a node out | Drag it with Alt held: its connections go, and what came in goes on to where it went |
+| Fold a node | The arrow in its header folds it to its title, and opens it again. It stays folded in the file |
+| See how long each step took | After a run each node shows its time in its header. The one that took most of the run stands out in orange |
+| See what a port gives | After a run the shape of an output port tells: a circle for features, a square for a raster or a picture, a triangle for a 3D model, a star for a point cloud |
 | Group nodes | Select them and press Ctrl+G. Drag the box by its name and the nodes in it follow. Resize it by any edge or corner. Ten colours to choose from in its panel, or one of its own from the square beside them |
 | Set up a group | Click its name. Name, colour and the lock are in the panel on the right. Unlocked, the box moves without the nodes |
 | Duplicate or delete | Ctrl+D and Delete act on the selection. So does a right-click on a node |
@@ -100,6 +107,7 @@ five models.
 | Pick attributes in a new tool | Connect it after a tool that has run: its attributes can be picked at once, without running again |
 | Name a layer in the legend | Write the name in the row of the layer in Draw map. Empty gives the name of the stream |
 | Put OpenStreetMap under a map | Set *Background* of Draw map to *A background map*, and choose which. *Paler by %* at 30 to 50 lets the layers stand out. A picture of one's own goes under it in the same way, in its place when it has a world file |
+| Make a web map | Choose *Web map with Leaflet or MapLibre* as the format of an Output, and connect the streams to *Layers*. Open index.html in the folder in a browser. Set the look of each layer as in Draw map; the legend turns them on and off and a click shows the attributes. For large layers choose MapLibre: they go as PMTiles, and the folder is then to be put on a web server, or opened through one such as `python -m http.server` |
 | Go on in QGIS | Choose *QGIS project with its layers* as the format of an Output, and connect the streams to *Layers*. The project opens in QGIS with the layers in the order and with the colours, classes and labels of the form, and the data in a GeoPackage beside it |
 | Write a report | Connect maps, charts and tables to *Sections* of *Report*, in the order they are to come, and name the tools as the sections should be called. Write a text first and last, and choose a web page or a PDF |
 | Choose where to fetch OpenStreetMap or Overture | Click *Choose on the map* beside the rectangle, click two corners on the map and press Enter |

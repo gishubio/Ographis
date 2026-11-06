@@ -205,6 +205,7 @@ pub fn keeps_apart(kind: &str, port: &str) -> bool {
             | ("RasterCalculator", "Rasters")
             | ("LayeredPdfWriter", "Layers")
             | ("QgisProjectWriter", "Layers")
+            | ("WebMapWriter", "Layers")
             | ("ReportWriter", "Sections")
             | ("SlideWriter", "Pictures")
             | ("Viewer", "Input")
@@ -682,6 +683,7 @@ mod osm;
 mod output;
 mod overture_dl;
 mod pointcloud089;
+pub use pointcloud089::class_port;
 mod pointcloud090;
 mod props;
 mod raster;
@@ -697,6 +699,7 @@ mod tests087;
 mod tools088;
 mod tools091;
 mod tools094;
+mod tools095;
 mod vector093;
 pub mod vector_tiles;
 #[cfg(test)]
@@ -755,6 +758,7 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         remote::TYPES,
         vector093::TYPES,
         tools094::TYPES,
+        tools095::TYPES,
         pointcloud089::TYPES,
         pointcloud090::TYPES,
         osm::TYPES,

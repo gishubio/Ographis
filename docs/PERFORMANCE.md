@@ -31,9 +31,17 @@ On Linux, two cores of an Intel Xeon at 2.1 GHz and 8 GB of memory, release buil
 | Version | points_join | polygons_buffer | raster_slope | cloud_raster |
 | --- | --- | --- | --- | --- |
 | 0.94 | 6.1 s, 1 114 MB | 3.6 s, 820 MB | 2.5 s, 303 MB | 2.7 s, 208 MB |
+| 0.95 | 6.4 s, 678 MB | 3.8 s, 490 MB | 2.8 s, 244 MB | 2.6 s, 197 MB |
 
 What they say: a point cloud is kept compactly, about 30 bytes a point, and a raster as the
-values of its cells. Features are not: a point with four attributes takes about 1 kB, and a
-small area some 4 kB, through the run, with copies between the steps. That is where large
-vector data runs out of memory first, and what reading large vector files in parts, planned
-for 0.95, is to bring down. These numbers are what it will be measured against.
+values of its cells. Features take more: a point with four attributes some 200 bytes, a
+small area more. Up to 0.94 each step also kept what it made to the end of the run, and
+reading a CSV and writing a GeoPackage each held a copy of the data besides. In 0.95 the
+run lets go of what a step made once the steps after it have used it, as `og run` does (the
+program keeps it, to show it), CSV is read and written without the copies, and GeoPackage is
+written without one: the memory of the two cases of features fell by 40 %. Most of the time of
+points_join is GDAL writing the GeoPackage and its spatial index, as long as ogr2ogr takes
+for the same.
+
+From 0.95 the cases run as `og run` does, letting go of what each step has made once it is
+used. The times vary by some tenths of a second from run to run.

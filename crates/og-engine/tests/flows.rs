@@ -1386,7 +1386,10 @@ fn tools_have_names_that_say_what_they_do() {
     // GeoSpatial PDF are reached from Input and Output instead of the list.
     let mut hidden: Vec<&str> = NODE_TYPES.iter().filter(|t| t.hidden).map(|t| t.name).collect();
     hidden.sort();
-    assert_eq!(hidden, ["AttributeFileReader", "LayeredPdfWriter", "PointOnAreaOverlayer", "PostgisReader", "PostgisWriter", "QgisProjectWriter"]);
+    assert_eq!(
+        hidden,
+        ["AttributeFileReader", "LayeredPdfWriter", "PointOnAreaOverlayer", "PostgisReader", "PostgisWriter", "QgisProjectWriter", "WebMapWriter"]
+    );
 
     // A workspace saved before the change has the old names on the nodes the user did not
     // name. They are read as the new ones, and a name the user chose is left alone.
@@ -3367,4 +3370,267 @@ fn a_3d_model_is_written_around_the_origin_chosen_or_none() {
     // A glTF of SWEREF 99 TM without an origin: warned that it is coarse there.
     assert!(r.nodes["glb"].warnings.iter().any(|w| w.contains("seven digits")), "{:?}", r.nodes["glb"].warnings);
     assert!(r.nodes["none"].warnings.is_empty());
+}
+
+/// The area of the triangles of a model, in 3D, and of those that face up, seen from above.
+fn mesh_areas(m: &og_engine::mesh::Mesh) -> (f64, f64) {
+    let (mut all, mut up) = (0.0, 0.0);
+    for t in &m.tris {
+        let [a, b, c] = t.v.map(|i| m.positions[i as usize]);
+        let (u, v) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
+        let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+        all += (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt() / 2.0;
+        if n[2] > 1e-9 {
+            up += n[2] / 2.0;
+        }
+    }
+    (all, up)
+}
+
+#[test]
+fn a_tin_and_buildings_are_clipped_from_above_in_their_own_planes() {
+    let dir = tmp("clip3d");
+    // A sloping plane, z = 0.1 x + 0.2 y, made into a TIN from points.
+    let mut pts = String::from("id;z;wkt\n");
+    let mut k = 0;
+    for x in (0..=100).step_by(25) {
+        for y in (0..=100).step_by(25) {
+            k += 1;
+            pts.push_str(&format!("{};{};POINT ({} {})\n", k, 0.1 * x as f64 + 0.2 * y as f64, x, y));
+        }
+    }
+    std::fs::write(dir.join("points.csv"), pts).unwrap();
+    // The clip area: the half of the TIN east of x = 40, with a slanted edge across it, and a
+    // hole.
+    std::fs::write(dir.join("clip.csv"), "wkt\n\"POLYGON ((40 -10, 200 -10, 200 110, 60 110, 40 -10), (70 40, 80 40, 80 50, 70 50, 70 40))\"\n").unwrap();
+    std::fs::write(dir.join("house.csv"), "name;wkt\nhouse;\"POLYGON ((30 30, 50 30, 50 40, 30 40, 30 30))\"\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{
+      "nodes": [
+        {"id": "pts", "type": "Reader", "params": {"path": "points.csv", "crs": 3006}},
+        {"id": "clip", "type": "Reader", "params": {"path": "clip.csv", "crs": 3006}},
+        {"id": "house", "type": "Reader", "params": {"path": "house.csv", "crs": 3006}},
+        {"id": "z", "type": "HeightSetter", "params": {"height": "z"}},
+        {"id": "tin", "type": "TinGenerator"},
+        {"id": "block", "type": "Extruder", "params": {"height": "10"}},
+        {"id": "c", "type": "Clipper"},
+        {"id": "cb", "type": "Clipper"}
+      ],
+      "edges": [
+        {"from": ["pts", "Output"], "to": ["z", "Input"]},
+        {"from": ["z", "Output"], "to": ["tin", "Heights"]},
+        {"from": ["clip", "Output"], "to": ["c", "Clipper"]},
+        {"from": ["tin", "TIN"], "to": ["c", "Clippee"]},
+        {"from": ["house", "Output"], "to": ["block", "Input"]},
+        {"from": ["clip", "Output"], "to": ["cb", "Clipper"]},
+        {"from": ["block", "Output"], "to": ["cb", "Clippee"]}
+      ]
+    }"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0);
+    let tin = r.output("tin", "TIN").unwrap();
+    let (inside, outside) = (r.output("c", "Inside").unwrap(), r.output("c", "Outside").unwrap());
+    let (mi, mo) = (inside.mesh.as_deref().unwrap(), outside.mesh.as_deref().unwrap());
+    // Seen from above, the area of the clip area within the TIN, less the hole, and the rest.
+    // The slanted edge from (40, -10) to (60, 110) is at x = 41.67 at y = 0 and 58.33 at y = 100.
+    let clipped = 100.0 * (100.0 - 50.0) - 100.0;
+    let (_, up_in) = mesh_areas(mi);
+    let (_, up_out) = mesh_areas(mo);
+    assert!((up_in - clipped).abs() < 1e-4, "{}", up_in);
+    assert!((up_out - (10_000.0 - clipped)).abs() < 1e-4, "{}", up_out);
+    // Every corner is still on the plane, and on its side.
+    for p in mi.positions.iter().chain(&mo.positions) {
+        assert!((p[2] - (0.1 * p[0] + 0.2 * p[1])).abs() < 1e-9, "{:?}", p);
+    }
+    for p in &mi.positions {
+        assert!(p[0] >= 40.0 + (p[1] + 10.0) / 6.0 - 1e-6, "{:?}", p);
+    }
+    // The objects that were cut are on both sides, the others on one, and features follow
+    // their objects, with heights on the plane.
+    assert_eq!(inside.len(), mi.objects.len());
+    assert!(inside.len() + outside.len() > tin.len());
+    for f in inside.features.iter().chain(&outside.features) {
+        let z = f.heights().expect("heights");
+        let mut cs = Vec::new();
+        geo::CoordsIter::coords_iter(f.geom.as_ref().unwrap()).for_each(|c| cs.push(c));
+        for (c, z) in cs.iter().zip(z) {
+            assert!((z - (0.1 * c.x + 0.2 * c.y)).abs() < 1e-6, "{:?} {}", c, z);
+        }
+    }
+    // The house: x from 30 to 50, cut where the edge runs, x = 40 + (y + 10) / 6, through
+    // its walls, roof and floor. 20 by 10 by 10 m.
+    let (bi, bo) = (r.output("cb", "Inside").unwrap(), r.output("cb", "Outside").unwrap());
+    let (all_i, up_i) = mesh_areas(bi.mesh.as_deref().unwrap());
+    let (all_o, up_o) = mesh_areas(bo.mesh.as_deref().unwrap());
+    let total = 2.0 * 20.0 * 10.0 + 2.0 * (20.0 + 10.0) * 10.0;
+    assert!((all_i + all_o - total).abs() < 1e-4, "{} {}", all_i, all_o);
+    // The roof inside: from x = 46.67 at y = 30 and 48.33 at y = 40, to x = 50.
+    let roof_in = 10.0 * (50.0 - 47.5);
+    assert!((up_i - roof_in).abs() < 1e-4, "{}", up_i);
+    assert!((up_o - (200.0 - roof_in)).abs() < 1e-4, "{}", up_o);
+    // Inside, left open where it was cut: the roof and the floor, the east wall, and of the north and south walls the
+    // parts east of the cut.
+    let walls_in = 10.0 * 10.0 + 10.0 * (50.0 - 46.0 - 2.0 / 3.0) + 10.0 * (50.0 - 48.0 - 1.0 / 3.0);
+    assert!((all_i - (2.0 * roof_in + walls_in)).abs() < 1e-4, "{}", all_i);
+    // A wall on the east side, x = 50, is wholly inside; the cut walls are in pieces on both.
+    assert_eq!((bi.len(), bo.len()), (1, 1));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_large_tin_is_clipped_by_a_long_boundary_tile_by_tile() {
+    let dir = tmp("clip3d_tiles");
+    // A TIN of 100 by 100 cells of 10 m on a slope, and a circle of 4 000 corners over it.
+    let mut pts = String::from("z;wkt\n");
+    for i in 0..=100 {
+        for j in 0..=100 {
+            let (x, y) = (i as f64 * 10.0, j as f64 * 10.0);
+            pts.push_str(&format!("{};POINT ({} {})\n", 0.05 * x - 0.02 * y, x, y));
+        }
+    }
+    std::fs::write(dir.join("points.csv"), pts).unwrap();
+    let ring: Vec<String> = (0..=4000)
+        .map(|k| {
+            let a = (k % 4000) as f64 / 4000.0 * std::f64::consts::TAU;
+            format!("{} {}", 500.0 + 420.0 * a.cos(), 500.0 + 420.0 * a.sin())
+        })
+        .collect();
+    std::fs::write(dir.join("circle.csv"), format!("wkt\n\"POLYGON (({}))\"\n", ring.join(", "))).unwrap();
+    let ws = Workspace::from_json(
+        r#"{
+      "nodes": [
+        {"id": "pts", "type": "Reader", "params": {"path": "points.csv", "crs": 3006}},
+        {"id": "circle", "type": "Reader", "params": {"path": "circle.csv", "crs": 3006}},
+        {"id": "z", "type": "HeightSetter", "params": {"height": "z"}},
+        {"id": "tin", "type": "TinGenerator"},
+        {"id": "c", "type": "Clipper"},
+        {"id": "a", "type": "AreaCalculator"}
+      ],
+      "edges": [
+        {"from": ["pts", "Output"], "to": ["z", "Input"]},
+        {"from": ["z", "Output"], "to": ["tin", "Heights"]},
+        {"from": ["circle", "Output"], "to": ["c", "Clipper"]},
+        {"from": ["tin", "TIN"], "to": ["c", "Clippee"]},
+        {"from": ["circle", "Output"], "to": ["a", "Input"]}
+      ]
+    }"#,
+    )
+    .unwrap();
+    let started = std::time::Instant::now();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    println!("{:.2} s", started.elapsed().as_secs_f64());
+    assert_eq!(r.errors, 0);
+    let circle = match col(r.output("a", "Output").unwrap(), "_area")[0] {
+        Value::Real(v) => v,
+        ref v => panic!("{:?}", v),
+    };
+    let (_, up_in) = mesh_areas(r.output("c", "Inside").unwrap().mesh.as_deref().unwrap());
+    let (_, up_out) = mesh_areas(r.output("c", "Outside").unwrap().mesh.as_deref().unwrap());
+    assert!((up_in - circle).abs() < 0.5, "{} {}", up_in, circle);
+    assert!((up_in + up_out - 1_000_000.0).abs() < 0.5, "{}", up_in + up_out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn laser_scans_are_read_from_e57_placed_by_their_poses() {
+    use e57::{ColorLimits, IntensityLimits, Quaternion, Record, RecordDataType, RecordName, RecordValue, Transform, Translation};
+    let dir = tmp("e57");
+    let path = dir.join("scans.e57");
+    {
+        let mut w = e57::E57Writer::from_file(&path, "scans").unwrap();
+        w.set_coordinate_metadata(Some("EPSG:3006".into()));
+        let double = RecordDataType::Double { min: None, max: None };
+        let prototype = vec![
+            Record { name: RecordName::CartesianX, data_type: double.clone() },
+            Record { name: RecordName::CartesianY, data_type: double.clone() },
+            Record { name: RecordName::CartesianZ, data_type: double },
+            Record { name: RecordName::Intensity, data_type: RecordDataType::Integer { min: 0, max: 1000 } },
+            Record { name: RecordName::ColorRed, data_type: RecordDataType::Integer { min: 0, max: 255 } },
+            Record { name: RecordName::ColorGreen, data_type: RecordDataType::Integer { min: 0, max: 255 } },
+            Record { name: RecordName::ColorBlue, data_type: RecordDataType::Integer { min: 0, max: 255 } },
+        ];
+        // Two scans of 100 points each, in the coordinates of the scanner; the second stands
+        // 1 000 m east, turned a quarter to the left.
+        for (k, pose) in [
+            (0, None),
+            (
+                1,
+                Some(Transform {
+                    rotation: Quaternion { w: std::f64::consts::FRAC_1_SQRT_2, x: 0.0, y: 0.0, z: std::f64::consts::FRAC_1_SQRT_2 },
+                    translation: Translation { x: 1000.0, y: 0.0, z: 0.0 },
+                }),
+            ),
+        ] {
+            let mut pc = w.add_pointcloud(&format!("scan{}", k), prototype.clone()).unwrap();
+            pc.set_name(Some(format!("Scan {}", k + 1)));
+            pc.set_transform(pose);
+            pc.set_intensity_limits(Some(IntensityLimits { intensity_min: Some(RecordValue::Integer(0)), intensity_max: Some(RecordValue::Integer(1000)) }));
+            pc.set_color_limits(Some(ColorLimits {
+                red_min: Some(RecordValue::Integer(0)),
+                red_max: Some(RecordValue::Integer(255)),
+                green_min: Some(RecordValue::Integer(0)),
+                green_max: Some(RecordValue::Integer(255)),
+                blue_min: Some(RecordValue::Integer(0)),
+                blue_max: Some(RecordValue::Integer(255)),
+            }));
+            for i in 0..100 {
+                pc.add_point(vec![
+                    RecordValue::Double(10.0 + i as f64 / 10.0),
+                    RecordValue::Double(0.0),
+                    RecordValue::Double(2.0),
+                    RecordValue::Integer(500),
+                    RecordValue::Integer(255),
+                    RecordValue::Integer(if k == 0 { 0 } else { 255 }),
+                    RecordValue::Integer(0),
+                ])
+                .unwrap();
+            }
+            pc.finalize().unwrap();
+        }
+        w.finalize().unwrap();
+    }
+    let ws = Workspace::from_json(
+        r#"{
+      "nodes": [
+        {"id": "all", "type": "Reader", "params": {"path": "scans.e57"}},
+        {"id": "thin", "type": "Reader", "params": {"path": "scans.e57", "las_every": "10"}}
+      ],
+      "edges": []
+    }"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0);
+    let all = r.output("all", "Output").unwrap();
+    let c = all.points.as_deref().expect("a point cloud");
+    assert_eq!((c.len(), all.crs), (200, Some(3006)));
+    // The first scan as it was measured; the second turned and moved: x along the line of
+    // points becomes y, and the scanner stands at x = 1 000.
+    assert_eq!((c.x[0], c.y[0], c.z[0]), (10.0, 0.0, 2.0));
+    assert!((c.x[100] - 1000.0).abs() < 1e-9 && (c.y[100] - 10.0).abs() < 1e-9 && (c.z[100] - 2.0).abs() < 1e-9, "{} {} {}", c.x[100], c.y[100], c.z[100]);
+    assert!((c.y[199] - 19.9).abs() < 1e-9);
+    let rgb = c.rgb.as_ref().expect("colours");
+    assert_eq!((rgb[0], rgb[150]), ([255, 0, 0], [255, 255, 0]));
+    assert_eq!((c.intensity[0], c.class[0]), (32768, 1));
+    assert_eq!(r.output("thin", "Output").unwrap().points.as_deref().unwrap().len(), 20);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_point_cloud_filter_connected_to_points_keeps_it() {
+    let model = |edges: &str| {
+        format!(
+            r#"{{"nodes": [{{"id": "f", "type": "PointCloudFilter", "params": {{"classes": "2, 6"}}}}, {{"id": "w", "type": "Writer"}}], "edges": [{}]}}"#,
+            edges
+        )
+    };
+    let old = Workspace::from_json(&model(r#"{"from": ["f", "Points"], "to": ["w", "Input"]}"#)).unwrap();
+    assert_eq!(old.nodes[0].params.get("class_ports").and_then(|v| v.as_str()), Some("no"));
+    let new = Workspace::from_json(&model("")).unwrap();
+    assert!(!new.nodes[0].params.contains_key("class_ports"));
 }

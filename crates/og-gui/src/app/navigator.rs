@@ -343,7 +343,7 @@ impl App {
                     "Spatial data and tables",
                     &[
                         "gpkg", "shp", "geojson", "json", "fgb", "parquet", "sqlite", "db", "dxf", "dwg", "gpx", "gml", "kml", "kmz", "000", "bag", "h5",
-                        "xlsx", "ods", "tif", "tiff", "csv", "txt", "zip", "obj", "gltf", "glb", "ifc", "b3dm", "las", "laz",
+                        "xlsx", "ods", "tif", "tiff", "csv", "txt", "zip", "obj", "gltf", "glb", "ifc", "b3dm", "las", "laz", "e57",
                     ],
                 )
                 .add_filter("All files", &["*"]);

@@ -201,6 +201,37 @@ impl App {
                 }
                 out
             };
+            // The classes of the points coming in, counted once for each cloud.
+            let class_counts = std::mem::take(&mut self.class_counts);
+            let classes = |port: &str| {
+                let mut counts = [0u64; 256];
+                for table in incoming(port) {
+                    // By where the stream is and how long it is, so that a new run is counted anew.
+                    let key = (table as *const og_engine::model::Table as usize).wrapping_mul(31) ^ table.points.as_ref().map_or(table.len(), |c| c.len());
+                    if let Some(c) = class_counts.borrow().get(&key) {
+                        return c.clone();
+                    }
+                    match &table.points {
+                        Some(c) => c.class.iter().for_each(|k| counts[*k as usize] += 1),
+                        None => {
+                            let Some(i) = table.field_index("classification") else { continue };
+                            for f in &table.features {
+                                if let Some(k) = f.attrs[i].as_f64().filter(|k| (0.0..256.0).contains(k)) {
+                                    counts[k as usize] += 1;
+                                }
+                            }
+                        }
+                    }
+                    let found: Vec<(i64, u64)> = counts.iter().enumerate().filter(|(_, n)| **n > 0).map(|(k, n)| (k as i64, *n)).collect();
+                    let mut cache = class_counts.borrow_mut();
+                    if cache.len() > 16 {
+                        cache.clear();
+                    }
+                    cache.insert(key, found.clone());
+                    return found;
+                }
+                Vec::new()
+            };
             let has_path = self.snarl[node_id].params.contains_key("path");
             if self.snarl[node_id].disabled {
                 let mut enable = false;
@@ -303,6 +334,7 @@ impl App {
                     .and_then(|f| self.lookup.layers(f))
                     .or_else(|| db_key.as_ref().and_then(|k| self.lookup.layers(std::path::Path::new(k)))),
                 values: &values,
+                classes: &classes,
                 variables: &self.variables,
                 connections: &connections,
             };
@@ -310,6 +342,7 @@ impl App {
             let ports_before = node.outputs();
             let format_before = node.params.get("format").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let edited = params::node_form(ui, node, &cx);
+            self.class_counts = class_counts;
             // An input asked to read from PostGIS, or an output given a format that another
             // tool writes: a GeoSpatial PDF or a table in PostGIS.
             if edited.postgis {

@@ -13,7 +13,7 @@
 use og_engine::cloud::Cloud;
 use og_engine::io::{Backend, Notes, WriteOpts};
 use og_engine::model::{Grid, Table};
-use og_engine::{run, Workspace};
+use og_engine::Workspace;
 use og_gdal::GdalBackend;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -175,7 +175,8 @@ fn one(case: &str) {
     let ws = Workspace::from_json(model(case)).unwrap();
     let b = GdalBackend::new();
     let start = Instant::now();
-    let r = run(&ws, Some(&b), &dir);
+    // As og run does it: what a step made is let go once the steps after it have used it.
+    let r = og_engine::run_opts(&ws, Some(&b), &dir, &mut |_| {}, og_engine::RunOptions { lean: true, ..Default::default() });
     let seconds = start.elapsed().as_secs_f64();
     assert_eq!(r.errors, 0, "{}: {:?}", case, r.log);
     let peak = peak_mb();

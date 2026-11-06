@@ -111,7 +111,9 @@ pub fn snarl_from(ws: &Workspace) -> Snarl<GNode> {
                 .collect(),
         };
         let ports = (node.outputs(), node.inputs());
-        ids.insert(n.id.clone(), (snarl.insert_node(Pos2::new(n.x as f32, n.y as f32), node), ports));
+        let at = Pos2::new(n.x as f32, n.y as f32);
+        let id = if n.collapsed { snarl.insert_node_collapsed(at, node) } else { snarl.insert_node(at, node) };
+        ids.insert(n.id.clone(), (id, ports));
     }
     for note in &ws.notes {
         let mut node = new_node(&snarl, NOTE);
@@ -213,7 +215,7 @@ pub fn workspace_from(snarl: &Snarl<GNode>, name: &str, groups: &[GroupBox], nav
     let mut nodes: Vec<Node> = snarl
         .nodes_pos_ids()
         .filter(|(_, _, n)| !n.is_note())
-        .map(|(_, pos, n)| Node {
+        .map(|(id, pos, n)| Node {
             id: n.id.clone(),
             kind: n.kind.clone(),
             name: n.name.clone(),
@@ -224,6 +226,7 @@ pub fn workspace_from(snarl: &Snarl<GNode>, name: &str, groups: &[GroupBox], nav
             // The place of the box is kept only while there is a comment to put in it.
             comment_box: n.comment_box.filter(|_| !n.comment.trim().is_empty()).map(|b| b.map(|v| v.round() as f64)),
             disabled: n.disabled,
+            collapsed: snarl.get_node_info(id).is_some_and(|i| !i.open),
         })
         .collect();
     nodes.sort_by(|a, b| (a.x, a.y).partial_cmp(&(b.x, b.y)).unwrap_or(std::cmp::Ordering::Equal));
@@ -409,7 +412,8 @@ pub fn snarl_style(p: Palette) -> SnarlStyle {
     s.wire_width = Some(2.25);
     s.wire_style = Some(WireStyle::Bezier5);
     s.wire_layer = Some(WireLayer::BehindNodes);
-    s.collapsible = Some(false);
+    // A node folds to its title with the arrow in its header.
+    s.collapsible = Some(true);
     s.header_drag_space = Some(egui::vec2(0.0, 0.0));
     s.node_frame = Some(egui::Frame::new().fill(p.surface).stroke(Stroke::new(1.0, p.line)).corner_radius(5).inner_margin(egui::Margin::same(0)));
     s.header_frame = Some(egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 5)).corner_radius(egui::CornerRadius { nw: 4, ne: 4, sw: 0, se: 0 }));
@@ -1134,6 +1138,17 @@ impl SnarlViewer<GNode> for Viewer<'_> {
             let taken = self.result.and_then(|r| r.nodes.get(&n.id)).is_some_and(|r| r.cached);
             cache_mark(ui, &self.pal, *fresh, taken);
         }
+        // How long the node took at the last run; the one that took most of it stands out.
+        if let Some((r, total)) = self.result.and_then(|all| all.nodes.get(&n.id).map(|r| (r, all.ms))) {
+            if !r.cached && matches!(r.status, Status::Ok | Status::Warn) && r.ms >= 1.0 {
+                let slow = total > 500.0 && r.ms >= total * 0.4;
+                let text = og_engine::model::fmt_duration(r.ms);
+                let color = if slow && !self.stale { self.pal.warn } else { self.pal.muted };
+                let tip =
+                    if slow { format!("{} of the {} the run took", text, og_engine::model::fmt_duration(total)) } else { format!("{} at the last run", text) };
+                ui.label(RichText::new(text).font(theme::mono(10.5)).color(color)).on_hover_text(tip);
+            }
+        }
     }
 
     fn inputs(&mut self, node: &GNode) -> usize {
@@ -1175,8 +1190,18 @@ impl SnarlViewer<GNode> for Viewer<'_> {
             self.pal.muted
         };
         let text = RichText::new(name).font(theme::mono(11.5)).color(color);
-        let label =
-            ui.add(egui::Label::new(if moved { text.strong() } else { text }).sense(egui::Sense::click())).on_hover_text("Show the data from this port");
+        // The shape tells what came out at the last run: features, a raster or picture, a 3D
+        // model or a point cloud.
+        let table = self.result.and_then(|r| r.nodes.get(&n.id)).and_then(|r| r.outputs.get(name));
+        let (shape, what) = match table.map(|t| data_kind(t)) {
+            Some(DataKind::Raster) => (PinInfo::square(), "a raster or a picture"),
+            Some(DataKind::Model) => (PinInfo::triangle(), "a 3D model"),
+            Some(DataKind::Cloud) => (PinInfo::star(), "a point cloud"),
+            Some(DataKind::Features) => (PinInfo::circle(), "features"),
+            None => (PinInfo::circle(), ""),
+        };
+        let hover = if what.is_empty() { "Show the data from this port".to_string() } else { format!("Show the data from this port: {}", what) };
+        let label = ui.add(egui::Label::new(if moved { text.strong() } else { text }).sense(egui::Sense::click())).on_hover_text(hover);
         let mut clicked = label.clicked();
         let ports = n.outputs().len();
         if ports > 1 {
@@ -1196,7 +1221,7 @@ impl SnarlViewer<GNode> for Viewer<'_> {
         let wire = if flows { self.pal.xform } else { self.pal.wire };
         let fill = if viewed { self.pal.accent } else { self.pal.surface };
         let stroke = if viewed { self.pal.accent } else { self.pal.wire };
-        PinInfo::circle().with_fill(fill).with_stroke(Stroke::new(1.5, stroke)).with_wire_color(wire)
+        shape.with_fill(fill).with_stroke(Stroke::new(1.5, stroke)).with_wire_color(wire)
     }
 
     fn has_body(&mut self, node: &GNode) -> bool {
@@ -1554,6 +1579,17 @@ impl SnarlViewer<GNode> for Viewer<'_> {
         }
     }
 
+    fn cut_wires(&mut self, wires: &[(OutPinId, InPinId)], snarl: &mut Snarl<GNode>) {
+        let mut any = false;
+        for (from, to) in wires {
+            any |= snarl.disconnect(*from, *to);
+        }
+        if any {
+            self.events.changed = true;
+            self.events.rewired = true;
+        }
+    }
+
     fn drop_outputs(&mut self, pin: &OutPin, snarl: &mut Snarl<GNode>) {
         if snarl.drop_outputs(pin.id) > 0 {
             self.events.changed = true;
@@ -1896,5 +1932,26 @@ mod align_tests {
         let moved = alignment(&boxes, Align::SpreadAcross);
         assert_eq!(moved, [egui::Vec2::ZERO, egui::vec2(70.0, 0.0), egui::Vec2::ZERO]);
         assert_eq!(alignment(&boxes[..2], Align::SpreadAcross), [egui::Vec2::ZERO; 2]);
+    }
+}
+
+/// What a stream holds, for the shape of its port.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DataKind {
+    Features,
+    Raster,
+    Model,
+    Cloud,
+}
+
+pub fn data_kind(t: &og_engine::Table) -> DataKind {
+    if t.points.is_some() {
+        DataKind::Cloud
+    } else if t.mesh.is_some() {
+        DataKind::Model
+    } else if t.grid.is_some() || t.image.is_some() || t.raster {
+        DataKind::Raster
+    } else {
+        DataKind::Features
     }
 }

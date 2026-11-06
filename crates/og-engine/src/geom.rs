@@ -196,9 +196,139 @@ pub struct Clipped {
     pub supported: bool,
 }
 
+/// The part of the clip area in one tile.
+type Tile = std::sync::Arc<MultiPolygon<f64>>;
+
+/// The tiles of the clip area: the part of the area in each cell of a grid, made when first
+/// asked for.
+struct Tiles {
+    bbox: Rect<f64>,
+    origin: [f64; 2],
+    size: [f64; 2],
+    n: usize,
+    cache: std::sync::Mutex<std::collections::HashMap<(usize, usize), Tile>>,
+}
+
+impl Tiles {
+    fn new(b: Rect<f64>, segments: usize) -> Tiles {
+        // About 32 boundary segments to a tile, and no more than 256 tiles across.
+        let n = ((segments as f64 / 32.0).sqrt().ceil() as usize).clamp(1, 256);
+        let size = [(b.width() / n as f64).max(1e-9), (b.height() / n as f64).max(1e-9)];
+        Tiles { bbox: b, origin: [b.min().x, b.min().y], size, n, cache: Default::default() }
+    }
+
+    fn cell(&self, x: f64, y: f64) -> (usize, usize) {
+        let i = ((x - self.origin[0]) / self.size[0]).floor().clamp(0.0, (self.n - 1) as f64) as usize;
+        let j = ((y - self.origin[1]) / self.size[1]).floor().clamp(0.0, (self.n - 1) as f64) as usize;
+        (i, j)
+    }
+
+    /// The part of the area that matters for a rectangle: that of its tile when it lies in
+    /// one, kept for the next, otherwise the area cut to the rectangle. `None` when the area
+    /// is small enough to use as it is.
+    fn for_rect(&self, area: &MultiPolygon<f64>, lo: [f64; 2], hi: [f64; 2]) -> Option<std::sync::Arc<MultiPolygon<f64>>> {
+        if self.n == 1 {
+            return None;
+        }
+        let (a, b) = (self.cell(lo[0], lo[1]), self.cell(hi[0], hi[1]));
+        let b_rect = self.bbox;
+        let within = lo[0] >= b_rect.min().x && lo[1] >= b_rect.min().y && hi[0] <= b_rect.max().x && hi[1] <= b_rect.max().y;
+        if a != b || !within {
+            let pad = (hi[0] - lo[0]).max(hi[1] - lo[1]).max(1e-9) * 1e-6;
+            return Some(std::sync::Arc::new(cut_to_rect(area, Coord { x: lo[0] - pad, y: lo[1] - pad }, Coord { x: hi[0] + pad, y: hi[1] + pad })));
+        }
+        if let Some(t) = self.cache.lock().unwrap().get(&a) {
+            return Some(t.clone());
+        }
+        let (x0, y0) = (self.origin[0] + a.0 as f64 * self.size[0], self.origin[1] + a.1 as f64 * self.size[1]);
+        // A hair larger than the cell, so that a triangle on its edge is wholly in it.
+        let pad = self.size[0].max(self.size[1]) * 1e-6;
+        let tile = std::sync::Arc::new(cut_to_rect(area, Coord { x: x0 - pad, y: y0 - pad }, Coord { x: x0 + self.size[0] + pad, y: y0 + self.size[1] + pad }));
+        self.cache.lock().unwrap().insert(a, tile.clone());
+        Some(tile)
+    }
+}
+
+/// The part of an area within a rectangle. Each ring is first cut to the rectangle on its
+/// own, which is quick however long the ring, and the few corners left are then made a
+/// proper area.
+fn cut_to_rect(area: &MultiPolygon<f64>, lo: Coord<f64>, hi: Coord<f64>) -> MultiPolygon<f64> {
+    let rect = Rect::new(lo, hi);
+    let near: Vec<Polygon<f64>> = area
+        .0
+        .iter()
+        .filter(|p| p.bounding_rect().is_some_and(|r| r.intersects(&rect)))
+        .filter_map(|p| {
+            let outer = clip_ring_to_rect(&p.exterior().0, lo, hi)?;
+            let holes = p.interiors().iter().filter_map(|r| clip_ring_to_rect(&r.0, lo, hi)).map(LineString::new).collect();
+            Some(Polygon::new(LineString::new(outer), holes))
+        })
+        .collect();
+    if near.is_empty() {
+        return MultiPolygon::new(Vec::new());
+    }
+    MultiPolygon::new(near).intersection(&MultiPolygon::new(vec![rect.to_polygon()]))
+}
+
+/// A ring cut to a rectangle, by Sutherland and Hodgman: where it runs outside, it runs
+/// along the edge of the rectangle instead. `None` if nothing is left.
+fn clip_ring_to_rect(ring: &[Coord<f64>], lo: Coord<f64>, hi: Coord<f64>) -> Option<Vec<Coord<f64>>> {
+    let (lo, hi) = (Coord { x: lo.x.min(hi.x), y: lo.y.min(hi.y) }, Coord { x: lo.x.max(hi.x), y: lo.y.max(hi.y) });
+    let mut pts: Vec<Coord<f64>> = ring.to_vec();
+    if pts.len() > 1 && pts.first() == pts.last() {
+        pts.pop();
+    }
+    // Left, right, bottom, top: which side is kept, and where the edge is.
+    for edge in 0..4 {
+        if pts.is_empty() {
+            return None;
+        }
+        let keep = |c: &Coord<f64>| match edge {
+            0 => c.x >= lo.x,
+            1 => c.x <= hi.x,
+            2 => c.y >= lo.y,
+            _ => c.y <= hi.y,
+        };
+        let cross = |a: Coord<f64>, b: Coord<f64>| -> Coord<f64> {
+            let f = match edge {
+                0 => (lo.x - a.x) / (b.x - a.x),
+                1 => (hi.x - a.x) / (b.x - a.x),
+                2 => (lo.y - a.y) / (b.y - a.y),
+                _ => (hi.y - a.y) / (b.y - a.y),
+            };
+            let mut c = Coord { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+            match edge {
+                0 => c.x = lo.x,
+                1 => c.x = hi.x,
+                2 => c.y = lo.y,
+                _ => c.y = hi.y,
+            }
+            c
+        };
+        let mut next = Vec::with_capacity(pts.len());
+        for i in 0..pts.len() {
+            let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+            let (ka, kb) = (keep(&a), keep(&b));
+            if ka {
+                next.push(a);
+            }
+            if ka != kb {
+                next.push(cross(a, b));
+            }
+        }
+        pts = next;
+    }
+    if pts.len() < 3 {
+        return None;
+    }
+    pts.push(pts[0]);
+    Some(pts)
+}
+
 /// Clip areas, merged into one area and prepared for many queries.
 pub struct Clipper {
     area: MultiPolygon<f64>,
+    tiles: Tiles,
     tree: IntervalTreeMultiPolygon<f64>,
     /// All boundary segments, outer rings and holes, in an R-tree.
     boundary: RTree<Seg>,
@@ -225,7 +355,38 @@ impl Clipper {
             .collect();
         let boundary = RTree::bulk_load(segments);
         let tree = IntervalTreeMultiPolygon::new(&area);
-        Some(Clipper { area, tree, boundary, bbox })
+        let tiles = Tiles::new(bbox, boundary.size());
+        Some(Clipper { area, tiles, tree, boundary, bbox })
+    }
+
+    /// The clip areas, merged into one.
+    pub fn area(&self) -> &MultiPolygon<f64> {
+        &self.area
+    }
+
+    /// The rectangle around the clip areas.
+    pub fn bbox(&self) -> Rect<f64> {
+        self.bbox
+    }
+
+    /// The part of the clip area that matters for what lies within the rectangle from lo to
+    /// hi: that of one tile of a grid when the rectangle lies in it, as such a part has few
+    /// corners and cuts fast, otherwise all of it.
+    pub fn local_area(&self, lo: [f64; 2], hi: [f64; 2]) -> std::borrow::Cow<'_, MultiPolygon<f64>> {
+        match self.tiles.for_rect(&self.area, lo, hi) {
+            Some(t) => std::borrow::Cow::Owned((*t).clone()),
+            None => std::borrow::Cow::Borrowed(&self.area),
+        }
+    }
+
+    /// The number of boundary segments.
+    pub fn segment_count(&self) -> usize {
+        self.boundary.size()
+    }
+
+    /// Boundary segments whose bounding rectangle reaches into the rectangle from a to b.
+    pub fn boundary_near(&self, a: [f64; 2], b: [f64; 2]) -> impl Iterator<Item = &Line<f64>> {
+        self.near(a, b)
     }
 
     /// The number of parts after the union.
@@ -356,7 +517,8 @@ impl Clipper {
                     };
                 }
                 let m = MultiPolygon::new(polygons_of(g));
-                done(simplify_polygons(self.area.intersection(&m)), simplify_polygons(m.difference(&self.area)))
+                let area = self.local_area([r.min().x, r.min().y], [r.max().x, r.max().y]);
+                done(simplify_polygons(area.intersection(&m)), simplify_polygons(m.difference(area.as_ref())))
             }
             Geometry::GeometryCollection(_) => Clipped { inside: None, outside: Some(g.clone()), supported: false },
         }
@@ -782,6 +944,119 @@ pub fn rounded(g: &Geometry<f64>, decimals: i32) -> Geometry<f64> {
         c.y = (c.y * k).round() / k;
     });
     out
+}
+
+/// The heights of a clipped geometry, taken from the geometry it was cut from. A corner that
+/// was there keeps its height; a new one on an edge gets the height along that edge, and one
+/// inside an area that of the plane of the area. In the order of the coordinates.
+pub fn lift_heights(original: &Geometry<f64>, z: &[f64], clipped: &Geometry<f64>) -> Vec<f64> {
+    let mut orig = original.clone();
+    let mut corners: Vec<[f64; 3]> = Vec::with_capacity(z.len());
+    let mut i = 0;
+    each_coord(&mut orig, &mut |c| {
+        corners.push([c.x, c.y, z.get(i).copied().unwrap_or(0.0)]);
+        i += 1;
+    });
+    let exact: std::collections::HashMap<(u64, u64), f64> = corners.iter().map(|c| ((c[0].to_bits(), c[1].to_bits()), c[2])).collect();
+    // The edges with their heights, and the planes of the rings, in the same walk as above.
+    let mut edges: Vec<([f64; 3], [f64; 3])> = Vec::new();
+    let mut planes: Vec<(Polygon<f64>, [f64; 4])> = Vec::new();
+    let mut k = 0usize;
+    let mut take_ring = |n: usize, edges: &mut Vec<([f64; 3], [f64; 3])>| -> std::ops::Range<usize> {
+        let r = k..k + n;
+        for w in corners[r.clone()].windows(2) {
+            edges.push((w[0], w[1]));
+        }
+        k += n;
+        r
+    };
+    let polys: Vec<Polygon<f64>> = match &orig {
+        Geometry::Polygon(p) => vec![p.clone()],
+        Geometry::MultiPolygon(m) => m.0.clone(),
+        _ => Vec::new(),
+    };
+    if polys.is_empty() {
+        let mut g = orig.clone();
+        let mut lens = Vec::new();
+        match &mut g {
+            Geometry::LineString(ls) => lens.push(ls.0.len()),
+            Geometry::MultiLineString(m) => lens.extend(m.0.iter().map(|l| l.0.len())),
+            Geometry::Line(_) => lens.push(2),
+            _ => {}
+        }
+        for n in lens {
+            take_ring(n, &mut edges);
+        }
+    } else {
+        for p in &polys {
+            let outer = take_ring(p.exterior().0.len(), &mut edges);
+            for r in p.interiors() {
+                take_ring(r.0.len(), &mut edges);
+            }
+            planes.push((p.clone(), newell_plane(&corners[outer])));
+        }
+    }
+    let mut out = Vec::new();
+    let mut g = clipped.clone();
+    each_coord(&mut g, &mut |c| {
+        if let Some(z) = exact.get(&(c.x.to_bits(), c.y.to_bits())) {
+            out.push(*z);
+            return;
+        }
+        // The nearest edge, if the point lies on it.
+        let mut best: Option<(f64, f64)> = None;
+        for (a, b) in &edges {
+            let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+            let len2 = dx * dx + dy * dy;
+            if len2 == 0.0 {
+                continue;
+            }
+            let t = (((c.x - a[0]) * dx + (c.y - a[1]) * dy) / len2).clamp(0.0, 1.0);
+            let (px, py) = (a[0] + t * dx, a[1] + t * dy);
+            let d2 = (c.x - px).powi(2) + (c.y - py).powi(2);
+            if d2 <= 1e-12 * len2.max(1.0) && best.is_none_or(|(bd, _)| d2 < bd) {
+                best = Some((d2, a[2] + t * (b[2] - a[2])));
+            }
+        }
+        if let Some((_, z)) = best {
+            out.push(z);
+            return;
+        }
+        let plane = planes.iter().find(|(p, _)| p.intersects(c)).or(planes.first()).map(|(_, pl)| *pl);
+        out.push(match plane {
+            Some([a, b, cc, d]) if cc.abs() > 1e-12 => -(a * c.x + b * c.y + d) / cc,
+            _ => nearest_corner_z(&corners, *c),
+        });
+    });
+    out
+}
+
+fn nearest_corner_z(corners: &[[f64; 3]], c: Coord<f64>) -> f64 {
+    corners
+        .iter()
+        .min_by(|a, b| ((a[0] - c.x).powi(2) + (a[1] - c.y).powi(2)).total_cmp(&((b[0] - c.x).powi(2) + (b[1] - c.y).powi(2))))
+        .map(|p| p[2])
+        .unwrap_or(0.0)
+}
+
+/// The plane a x + b y + c z + d = 0 that best fits a ring, by Newell's method.
+fn newell_plane(ring: &[[f64; 3]]) -> [f64; 4] {
+    let n = ring.len();
+    if n < 3 {
+        return [0.0, 0.0, 1.0, -ring.first().map(|p| p[2]).unwrap_or(0.0)];
+    }
+    let mut nrm = [0.0f64; 3];
+    let mut centre = [0.0f64; 3];
+    for i in 0..n {
+        let (a, b) = (ring[i], ring[(i + 1) % n]);
+        nrm[0] += (a[1] - b[1]) * (a[2] + b[2]);
+        nrm[1] += (a[2] - b[2]) * (a[0] + b[0]);
+        nrm[2] += (a[0] - b[0]) * (a[1] + b[1]);
+        for k in 0..3 {
+            centre[k] += a[k] / n as f64;
+        }
+    }
+    [nrm[0], nrm[1], nrm[2], -(nrm[0] * centre[0] + nrm[1] * centre[1] + nrm[2] * centre[2])]
 }
 
 #[cfg(test)]

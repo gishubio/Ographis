@@ -74,6 +74,7 @@ The program draws it on a canvas, and `og run model.ographis` runs it from the c
 | Explode a JSON list into features, encoded lines, a planned trip | `examples/apis/otp_routes_and_departures.ographis` |
 | Read pages of an API and statistics in JSON-stat | `examples/apis/kolada_inhabitants.ographis`, `examples/apis/scb_population.ographis` |
 | Draw a map as a picture or a PDF | `examples/map.ographis`, `examples/village.ographis` |
+| A web map with Leaflet or MapLibre | `examples/web_map.ographis` |
 | Charts | `examples/chart.ographis` |
 | Terrain, rasters and 3D | `examples/terrain.ographis`, `examples/raster_tools.ographis`, `examples/extrude_tin.ographis`, `examples/house.ographis` |
 | Point clouds: ground, terrain models, buildings | `examples/point_cloud.ographis` |

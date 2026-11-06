@@ -30,7 +30,15 @@ struct Item {
     /// For areas: triangles, as indices into `pts`.
     tris: Vec<u32>,
     flat: bool,
+    /// For points: their own colour, class and intensity, when the stream has them, as a
+    /// point cloud does.
+    rgb: Option<[f32; 3]>,
+    class: Option<i64>,
+    intensity: Option<f32>,
 }
+
+/// What the points of a cloud are coloured by.
+pub const POINT_COLOURS: &[(&str, &str)] = &[("own", "Their own colours"), ("height", "Height"), ("class", "Class"), ("intensity", "Intensity")];
 
 /// A grid of heights to draw: its width and height in cells, the heights, the middle of the
 /// first cell, and the size of a cell.
@@ -65,6 +73,9 @@ pub struct View3d {
     pub azimuth: f32,
     pub elevation: f32,
     pub exaggeration: f32,
+    /// What points are coloured by: "own" (their colours, or the height without), "height",
+    /// "class" or "intensity".
+    pub points_by: String,
     zoom: f32,
     pan: Vec2,
     prepared: Option<Prepared>,
@@ -159,7 +170,17 @@ fn rasterize(w: usize, h: usize, faces: &[PixelFace], dots: &[PixelDot]) -> (Vec
 
 impl Default for View3d {
     fn default() -> Self {
-        View3d { also: Vec::new(), azimuth: 200.0, elevation: 35.0, exaggeration: 1.0, zoom: 1.0, pan: Vec2::ZERO, prepared: None, drawn: None }
+        View3d {
+            also: Vec::new(),
+            azimuth: 200.0,
+            elevation: 35.0,
+            exaggeration: 1.0,
+            points_by: "own".into(),
+            zoom: 1.0,
+            pan: Vec2::ZERO,
+            prepared: None,
+            drawn: None,
+        }
     }
 }
 
@@ -260,6 +281,14 @@ fn prepare(table: &Table, key: usize, skip: Option<usize>) -> Prepared {
         let total: usize = table.features.iter().skip(skip.unwrap_or(0)).filter_map(|f| f.geom.as_ref()).map(|g| g.coords_count()).sum();
         total.div_ceil(MOST_COORDS).max(1)
     };
+    // The colour, class and intensity of points, as a point cloud has them.
+    let at = |name: &str| table.field_index(name);
+    let rgb_at = match (at("red"), at("green"), at("blue")) {
+        (Some(r), Some(g), Some(b)) => Some([r, g, b]),
+        _ => None,
+    };
+    let (class_at, intensity_at) = (at("classification"), at("intensity"));
+    let num = |f: &og_engine::Feature, k: usize| f.attrs.get(k).and_then(|v| v.as_f64());
     for (fi, f) in table.features.iter().enumerate() {
         let Some(g) = &f.geom else { continue };
         match skip {
@@ -368,7 +397,16 @@ fn prepare(table: &Table, key: usize, skip: Option<usize>) -> Prepared {
                 Kind::Line
             }
         };
-        items.push(Item { kind, feature: fi, pts, ends, tris, flat: heights.is_none() });
+        let (rgb, class, intensity) = if kind == Kind::Point {
+            (
+                rgb_at.and_then(|k| Some([num(f, k[0])? as f32, num(f, k[1])? as f32, num(f, k[2])? as f32])),
+                class_at.and_then(|k| num(f, k)).map(|c| c as i64),
+                intensity_at.and_then(|k| num(f, k)).map(|i| i as f32),
+            )
+        } else {
+            (None, None, None)
+        };
+        items.push(Item { kind, feature: fi, pts, ends, tris, flat: heights.is_none(), rgb, class, intensity });
     }
     // A grid of heights, made small enough to turn smoothly.
     let grid = table.grid.as_deref().map(|g| {
@@ -412,7 +450,13 @@ impl View3d {
 
     /// Back to all of it, seen from where it was first seen, with the heights as drawn.
     pub fn reset(&mut self) {
-        *self = View3d { exaggeration: self.exaggeration, prepared: self.prepared.take(), drawn: self.drawn.take(), ..View3d::default() };
+        *self = View3d {
+            exaggeration: self.exaggeration,
+            points_by: std::mem::take(&mut self.points_by),
+            prepared: self.prepared.take(),
+            drawn: self.drawn.take(),
+            ..View3d::default()
+        };
     }
 
     pub fn show(&mut self, ui: &mut Ui, table: Option<&Arc<Table>>, selected: Option<usize>) -> Option<Option<usize>> {
@@ -517,6 +561,7 @@ impl View3d {
             ppp.to_bits(),
             mid.x.to_bits(),
             mid.y.to_bits(),
+            self.points_by.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32)),
         ]
         .to_vec();
         let need = self.drawn.as_ref().is_none_or(|d| d.key != key);
@@ -579,16 +624,26 @@ impl View3d {
             }
             // The points, as dots.
             let mut dots: Vec<PixelDot> = Vec::new();
+            // Intensities are spread from the lowest to the highest, a few at each end left out.
+            let ilo_hi = if self.points_by == "intensity" { intensity_range(&prep.items) } else { [0.0, 1.0] };
+            let by = self.points_by.as_str();
             for it in prep.items.iter().filter(|i| i.kind == Kind::Point) {
                 let chosen = selected == Some(it.feature) || also.contains(&it.feature);
                 for p in &it.pts {
                     let (sp, z) = project(*p);
                     let col = if chosen {
                         pal.accent
-                    } else if it.flat {
-                        pal.xform
                     } else {
-                        colour(ramp(t_of(p[2])), 0.85, 255)
+                        match (by, it.rgb, it.class, it.intensity) {
+                            ("own", Some(c), _, _) => Color32::from_rgb(c[0] as u8, c[1] as u8, c[2] as u8),
+                            ("class", _, Some(c), _) => class_colour(c),
+                            ("intensity", _, _, Some(i)) => {
+                                let v = (((i - ilo_hi[0]) / (ilo_hi[1] - ilo_hi[0]).max(1e-6)).clamp(0.0, 1.0) * 235.0 + 20.0) as u8;
+                                Color32::from_rgb(v, v, v)
+                            }
+                            _ if it.flat => pal.xform,
+                            _ => colour(ramp(t_of(p[2])), 0.85, 255),
+                        }
                     };
                     let r = if chosen {
                         5.0
@@ -698,5 +753,73 @@ impl View3d {
             y = r.top() - 3.0;
         }
         picked
+    }
+}
+
+/// The colours of the classes of points, as the ASPRS lists them and most programs draw them.
+fn class_colour(class: i64) -> Color32 {
+    match class {
+        2 => Color32::from_rgb(0xa8, 0x70, 0x00),
+        3 => Color32::from_rgb(0xb5, 0xd9, 0x8b),
+        4 => Color32::from_rgb(0x5c, 0xb8, 0x3a),
+        5 => Color32::from_rgb(0x1f, 0x7a, 0x1f),
+        6 => Color32::from_rgb(0xe3, 0x49, 0x48),
+        7 => Color32::from_rgb(0xff, 0x00, 0xff),
+        9 => Color32::from_rgb(0x2a, 0x78, 0xd6),
+        10 => Color32::from_rgb(0x8c, 0x5a, 0x3c),
+        11 => Color32::from_rgb(0x70, 0x70, 0x70),
+        13..=16 => Color32::from_rgb(0xf2, 0xb7, 0x05),
+        17 => Color32::from_rgb(0x9b, 0x59, 0xb6),
+        _ => Color32::from_rgb(0xb4, 0xb2, 0xac),
+    }
+}
+
+/// The range of the intensity of the points, from the 2nd to the 98th percentile.
+fn intensity_range(items: &[Item]) -> [f32; 2] {
+    let mut v: Vec<f32> = items.iter().filter_map(|i| i.intensity).collect();
+    if v.is_empty() {
+        return [0.0, 1.0];
+    }
+    v.sort_by(f32::total_cmp);
+    let at = |q: f32| v.get(((v.len() - 1) as f32 * q).round() as usize).copied().unwrap_or(0.0);
+    [at(0.02), at(0.98)]
+}
+
+impl View3d {
+    /// Whether what is shown has points, which can be coloured in more than one way.
+    pub fn has_points(&self) -> bool {
+        self.prepared.as_ref().is_some_and(|p| p.items.iter().any(|i| i.kind == Kind::Point && (i.rgb.is_some() || i.class.is_some() || i.intensity.is_some())))
+    }
+}
+
+#[cfg(test)]
+mod point_colour_tests {
+    use super::*;
+    use og_engine::{Feature, Field, FieldType, Value};
+
+    #[test]
+    fn points_keep_their_colours_classes_and_intensity() {
+        let mut t = Table { crs: Some(3006), ..Default::default() };
+        for name in ["classification", "intensity", "red", "green", "blue"] {
+            t.fields.push(Field::new(name, FieldType::Int));
+        }
+        for (k, (c, i, rgb)) in [(2, 100, [200, 10, 10]), (6, 900, [10, 200, 10])].into_iter().enumerate() {
+            let mut f = Feature::new(
+                vec![Value::Int(c), Value::Int(i), Value::Int(rgb[0]), Value::Int(rgb[1]), Value::Int(rgb[2])],
+                Some(geo::Geometry::Point(geo::point! { x: 400000.0 + k as f64, y: 6400000.0 })),
+            );
+            f.z = Some(std::sync::Arc::from(vec![10.0 + k as f64]));
+            t.features.push(f);
+        }
+        let p = prepare(&t, 1, None);
+        assert_eq!(p.items.len(), 2);
+        assert_eq!(p.items[0].rgb, Some([200.0, 10.0, 10.0]));
+        assert_eq!((p.items[1].class, p.items[1].intensity), (Some(6), Some(900.0)));
+        assert_eq!(class_colour(6), Color32::from_rgb(0xe3, 0x49, 0x48));
+        let r = intensity_range(&p.items);
+        assert!(r[0] >= 100.0 && r[1] <= 900.0 && r[0] < r[1], "{:?}", r);
+        let v = View3d { prepared: Some(p), ..View3d::default() };
+        assert!(v.has_points());
+        assert_eq!(v.points_by, "own");
     }
 }

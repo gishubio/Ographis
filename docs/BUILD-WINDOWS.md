@@ -265,6 +265,18 @@ Not yet checked on Windows:
   in MapLibre, and opened in QGIS; glTF with groups, materials, sun and camera imported into
   Blender 4 and 5, and BlenderGIS reading where it lies; GPX from a GPS and photos from a
   phone; PostGIS *Empty it and fill it again* against a table with views on it.
+- Version 0.95.2, all built and tested only on Linux: *Outline from above* on a real IFC
+  from an architect, with doors, windows and walls over several storeys; *SQL before* and
+  *SQL after*, *Only within* and the new statistics against SQL Server through ODBC (they
+  were tried here only against PostgreSQL 16 with PostGIS); the ports per class of *Filter
+  point cloud* on a whole tile of Laserdata.
+- Version 0.95, all built and tested only on Linux: the web maps opened in Edge and Chrome on
+  Windows, from the disk and from a web server, with the background maps over the internet
+  (they were tried here only with the libraries copied in and without tiles or letters for the
+  labels of MapLibre); an E57 from a real scanner, such as Leica, Faro or Trimble; clipping a
+  large TIN from Lantmäteriet and buildings read from IFC or CityGML; the dpi of a PNG and JPEG
+  as Windows shows it under Properties; a GeoPackage 1.2 in an older ArcGIS; the gestures of
+  the canvas with a real mouse (Ctrl and the right button, Alt and a drag) and a touchpad.
 - Version 0.94, all built and tested only on Linux: the grids of the geoid in `proj-grids`
   beside the program, found by PROJ of OSGeo4W (`og doctor` checks RH 2000), and fetching
   others from cdn.proj.org through the proxy; an S-57 chart from Sjöfartsverket and a BAG or

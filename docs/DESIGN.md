@@ -152,6 +152,21 @@ Why Ographis works as it does, and what it does not do yet.
   box goes along if every node in it is among them, and with everything selected all
   boxes do. One node dragged alone leaves its box, which is how it is taken out of it.
 
+- **A model is cut from above.** Clip cuts 3D models by the clip areas as seen from above:
+  each triangle in its own plane, and walls by upright planes, so a building cut in two is
+  left open where it was cut rather than closed with a new wall. Whatever is cut keeps the
+  heights, normals and texture coordinates of what it came from. The clip areas are kept in
+  tiles of a grid, so that a triangle near a long boundary is cut against a few corners
+  rather than all.
+- **A web map is a folder of plain files.** The page and the data are written beside each
+  other, the data as scripts rather than as GeoJSON files, since a browser lets a page read
+  scripts from the disk but not files. The libraries are loaded from unpkg.com at a fixed
+  version, so that the folder stays small. PMTiles need a web server, since they are read in
+  parts; MapLibre is then the one to use.
+- **The command line lets go of what it has used.** `og run` drops what a step made once
+  every step after it has used it, so that the largest step, not all of them, sets the peak
+  of memory. The program keeps everything, to show it.
+
 ## Known limitations
 
 - GeoParquet: only geometry in WKB is read, not the native GeoArrow encoding. Within a
@@ -287,6 +302,13 @@ Why Ographis works as it does, and what it does not do yet.
 - Extrude makes flat tops: no pitched roofs. Generate TIN from a raster places the corners
   on the middles of cells, and leaves out triangles over cells without a value by their
   middle, so the edge along such cells is ragged.
+- Outline from above: the shadow of each object is the union of its triangles seen from
+  above, so a surface open at the top, such as a mesh without a top face, still gives its
+  whole area; a section only gives areas where the cut goes through closed solids. Objects
+  without a storey count their height from the bottom of the object when the storey is chosen.
+- SQL before and after run as they are written, in the transaction of the write; Ographis
+  does not check them, and a statement that commits or changes the transaction itself, such
+  as VACUUM, fails there.
 - IFC: swept disks and solids swept along curves, surfaces of extrusion and revolution,
   and unions that are to be melted into one are not read; a union keeps both parts as they
   are. Curved faces are made of triangles within 2 mm of the surface, or 1 % of the face.

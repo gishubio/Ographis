@@ -1170,6 +1170,18 @@ impl MapView {
             ui.checkbox(&mut self.three_d, "3D").on_hover_text("Seen from an angle, with the heights. Drag to turn it");
             ui.add(egui::DragValue::new(&mut self.view3d.exaggeration).range(0.1..=50.0).speed(0.05).max_decimals(1).prefix("heights × "))
                 .on_hover_text("How much the heights are drawn larger than they are, for flat land");
+            if self.view3d.has_points() {
+                let now = crate::view3d::POINT_COLOURS.iter().find(|c| c.0 == self.view3d.points_by).map_or("Their own colours", |c| c.1);
+                egui::ComboBox::from_id_salt("points-by")
+                    .selected_text(format!("Points: {}", now.to_lowercase()))
+                    .show_ui(ui, |ui| {
+                        for (key, label) in crate::view3d::POINT_COLOURS {
+                            ui.selectable_value(&mut self.view3d.points_by, key.to_string(), *label);
+                        }
+                    })
+                    .response
+                    .on_hover_text("What the points are coloured by. Points without colours of their own are coloured by height");
+            }
             if ui
                 .button("Zoom to data")
                 .on_hover_text("Show all of it again, from the side it was first seen from. A double click in the view does the same")

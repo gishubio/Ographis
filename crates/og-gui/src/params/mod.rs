@@ -57,6 +57,8 @@ pub struct ParamCtx<'a> {
     pub stream_raster: &'a dyn Fn(&str) -> Option<og_engine::rasterlook::RasterInfo>,
     /// Whether expressions get suggestions while they are written.
     pub suggest: bool,
+    /// The classes of the points on an input port in the latest run, with how many of each.
+    pub classes: &'a dyn Fn(&str) -> Vec<(i64, u64)>,
 }
 
 /// What a form changed.
@@ -142,6 +144,8 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("SceneRenderer", "sun_azimuth" | "sun_altitude") => !matches!(param("sun").as_deref(), Some("date" | "study")),
             ("SceneRenderer", "study_dates" | "study_from" | "study_to" | "study_every" | "study_folder") => param("sun").as_deref() == Some("study"),
             ("SceneRenderer", "background_colour") => param("background").as_deref() == Some("colour"),
+            ("MapRenderer", "width") => param("size_as").as_deref() != Some("print"),
+            ("MapRenderer", "print_mm" | "print_dpi") => param("size_as").as_deref() == Some("print"),
             ("MapRenderer", "background_colour") => param("background").as_deref() == Some("colour"),
             ("MapRenderer", "basemap") => param("background").as_deref() == Some("map"),
             ("MapRenderer", "basemap_own") => param("background").as_deref() == Some("map") && param("basemap").as_deref() == Some("own"),
@@ -152,7 +156,7 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("PostgisWriter", "key_attribute") => param("key").as_deref() == Some("attribute"),
             ("PostgisWriter", "commit_rows") => param("commit").as_deref() == Some("every"),
             ("LayeredPdfWriter", "pdf_width" | "pdf_height") => param("pdf_size").as_deref() == Some("custom"),
-            ("QgisProjectWriter", "basemap_own") => param("basemap").as_deref() == Some("own"),
+            ("QgisProjectWriter" | "WebMapWriter", "basemap_own") => param("basemap").as_deref() == Some("own"),
             ("SceneRenderer", "focus") => param("blur").is_some_and(|b| b.trim().parse::<f64>().is_ok_and(|v| v > 0.0)),
             ("HttpCaller", "folder") => param("answer_as").as_deref() == Some("file"),
             ("SpatialJoiner", "distance") => param("relation").as_deref() == Some("near"),
@@ -227,6 +231,14 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         "pdf_dpi" => writer && ext == "pdf" && node.params.get("pdf_size").and_then(|v| v.as_str()) == Some("fit"),
         "pdf_quality" => writer && ext == "pdf" && node.params.get("pdf_compress").and_then(|v| v.as_str()) == Some("jpeg"),
         "pm_min" | "pm_max" => writer && ext == "pmtiles",
+        "gpkg_version" => writer && ext == "gpkg",
+        "img_dpi" => writer && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "tif" | "tiff"),
+        "img_quality" => {
+            writer
+                && (matches!(ext.as_str(), "jpg" | "jpeg")
+                    || (matches!(ext.as_str(), "tif" | "tiff") && node.params.get("tif_compress").and_then(|v| v.as_str()) == Some("jpeg")))
+        }
+        "tif_compress" => writer && matches!(ext.as_str(), "tif" | "tiff"),
         "t3_most" | "t3_dz" => writer && node.params.get("format").and_then(|v| v.as_str()) == Some("3dtiles"),
         "citygml_lod" => writer && ext == "gml",
         "gltf_origin" => writer && matches!(ext.as_str(), "glb" | "obj"),
@@ -250,7 +262,8 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         }
         "min_x" | "min_y" | "max_x" | "max_y" | "within_crs" => reader && node.params.get("within").and_then(|v| v.as_str()) == Some("rectangle"),
         "osm_tags" => reader && matches!(ext.as_str(), "pbf" | "osm"),
-        "las_classes" | "las_every" | "las_spacing" => reader && matches!(ext.as_str(), "las" | "laz"),
+        "las_classes" | "las_spacing" => reader && matches!(ext.as_str(), "las" | "laz"),
+        "las_every" => reader && matches!(ext.as_str(), "las" | "laz" | "e57"),
         "obj_unit" | "obj_up" => reader && matches!(ext.as_str(), "obj" | "gltf" | "glb"),
         "obj_east" | "obj_north" | "obj_height" | "obj_rotation" => reader && matches!(ext.as_str(), "obj" | "gltf" | "glb" | "ifc"),
         "ifc_openings" | "ifc_spaces" | "ifc_properties" => reader && ext == "ifc",
@@ -512,6 +525,9 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                 // A variable such as $(password) is shown, since it says nothing secret.
                 let plain = value.trim().starts_with("$(");
                 ui.add(TextEdit::singleline(&mut value).password(!plain).desired_width(f32::INFINITY));
+                if !plain && !value.trim().is_empty() {
+                    ui.label(RichText::new("⚠ Written in the model, for anyone it is given to").small().color(cx.pal.warn));
+                }
             }
             ParamKind::OptionalName(suggested) => {
                 let mut on = !value.trim().is_empty();
@@ -585,12 +601,20 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                     ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY).hint_text(spec.default));
                 });
             }
-            ParamKind::Text if spec.key == "bbox" && matches!(node.kind.as_str(), "OsmDownloader" | "OvertureDownloader") => {
+            ParamKind::Text if spec.key == "bbox" && matches!(node.kind.as_str(), "OsmDownloader" | "OvertureDownloader" | "PostgisReader") => {
                 ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
                 pick_area |= ui
                     .button("Choose on the map")
                     .on_hover_text("Click two corners on the map under the canvas, and Enter. Nothing needs to be connected to Extent")
                     .clicked();
+            }
+            ParamKind::Text if spec.key == "table" && node.kind == "PostgisWriter" => {
+                ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
+                db_names(ui, &value, &(cx.fields)("Input"), &cx.pal);
+            }
+            ParamKind::Text if spec.key == "classes" && node.kind == "PointCloudFilter" => {
+                ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
+                class_ticks(ui, &mut value, &(cx.classes)("Points"), &cx.pal);
             }
             ParamKind::Text => {
                 ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
@@ -698,7 +722,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                                 ],
                             )
                             .add_filter("3D models, IFC and 3D Tiles", &["obj", "gltf", "glb", "ifc", "json", "b3dm"])
-                            .add_filter("Point clouds", &["las", "laz"])
+                            .add_filter("Point clouds", &["las", "laz", "e57"])
                             .add_filter("All files", &["*"]);
                         if let Some(p) = dialog.pick_file() {
                             value = stored(&p);
@@ -1018,6 +1042,69 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
         }
     }
     Edited { any: changed || noted, run: changed, postgis, open_settings, pick_area }
+}
+
+/// The names the table and its columns get in the database, where they differ from those
+/// given, and those that are too long for PostgreSQL, which cuts names at 63 bytes.
+fn db_names(ui: &mut Ui, table: &str, fields: &[String], pal: &Palette) {
+    let mut lines: Vec<(String, bool)> = Vec::new();
+    let show = |given: &str, lines: &mut Vec<(String, bool)>| {
+        let made = og_engine::io::db_name(given);
+        if made.len() > 63 {
+            lines.push((format!("{} is longer than the 63 characters PostgreSQL keeps of a name", made), true));
+        } else if made != given.trim() {
+            lines.push((format!("{} → {}", given.trim(), made), false));
+        }
+    };
+    if !table.trim().is_empty() {
+        show(table, &mut lines);
+    }
+    for f in fields {
+        show(f, &mut lines);
+    }
+    if lines.is_empty() {
+        return;
+    }
+    ui.label(RichText::new("Named in the database as").small().color(pal.muted));
+    for (line, bad) in lines.iter().take(12) {
+        ui.label(RichText::new(line).font(theme::mono(11.0)).color(if *bad { pal.warn } else { pal.muted }));
+    }
+    if lines.len() > 12 {
+        ui.label(RichText::new(format!("and {} more", lines.len() - 12)).small().color(pal.muted));
+    }
+}
+
+/// A tick for each class the points of the latest run have, with how many, that writes the
+/// classes ticked into the field.
+fn class_ticks(ui: &mut Ui, value: &mut String, found: &[(i64, u64)], pal: &Palette) {
+    if found.is_empty() {
+        ui.label(RichText::new("Run the model, and the classes in the data can be ticked here.").small().color(pal.muted));
+        return;
+    }
+    let mut chosen: Vec<i64> = value.split([',', ';', ' ']).filter_map(|c| c.trim().parse().ok()).collect();
+    let before = chosen.clone();
+    for (c, n) in found {
+        let mut on = chosen.contains(c);
+        let label = format!("{} · {}", og_engine::nodes::class_port(*c), og_engine::model::fmt_count(*n));
+        if ui.checkbox(&mut on, label).changed() {
+            if on {
+                chosen.push(*c);
+            } else {
+                chosen.retain(|x| x != c);
+            }
+        }
+    }
+    ui.horizontal(|ui| {
+        if ui.add(egui::Button::new("Tick all").small()).clicked() {
+            chosen = found.iter().map(|(c, _)| *c).collect();
+        }
+        if ui.add_enabled(!chosen.is_empty(), egui::Button::new("None").small()).clicked() {
+            chosen.clear();
+        }
+    });
+    if chosen != before {
+        *value = chosen.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(", ");
+    }
 }
 
 #[cfg(test)]

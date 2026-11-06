@@ -28,6 +28,11 @@ pub(super) fn schema(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec, fields: &[
         return false;
     }
     let mut after = serde_json::Map::new();
+    // The names get the room the longest of them needs, up to two fifths of the form, so that
+    // a name such as pixel_size is shown whole; longer ones are cut, and shown on hover.
+    let font = theme::mono(11.5);
+    let longest = names.iter().map(|(n, _)| ui.painter().layout_no_wrap(n.clone(), font.clone(), egui::Color32::WHITE).size().x).fold(0.0f32, f32::max);
+    let name_w = longest.min(ui.available_width() * 0.4).max(48.0);
     egui::Grid::new(("schema", spec.key)).num_columns(3).spacing(egui::vec2(6.0, 3.0)).show(ui, |ui| {
         for heading in ["Attribute", "Write as", "Length / decimals"] {
             ui.label(RichText::new(heading).small().color(pal.muted));
@@ -35,7 +40,10 @@ pub(super) fn schema(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec, fields: &[
         ui.end_row();
         for (name, has) in &names {
             let (mut ty, mut length, mut decimals) = (text(name, "type"), text(name, "length"), text(name, "decimals"));
-            ui.add(egui::Label::new(RichText::new(name).font(theme::mono(11.5))).truncate()).on_hover_text(format!("{} ({})", name, has));
+            ui.allocate_ui_with_layout(egui::vec2(name_w, 18.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_width(name_w);
+                ui.add(egui::Label::new(RichText::new(name).font(font.clone())).truncate()).on_hover_text(format!("{} ({})", name, has));
+            });
             let shown = match TYPES.iter().find(|t| t.0 == ty) {
                 Some(("", _)) | None => format!("As it is ({})", has),
                 Some((_, label)) => label.to_string(),

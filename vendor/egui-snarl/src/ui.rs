@@ -1214,6 +1214,25 @@ where
         }
     }
 
+    // Ographis: a line drawn with Ctrl and the secondary button cuts the connections it
+    // crosses, when the button is let go.
+    let cut_id = ui.make_persistent_id(("ographis-cut", snarl_id));
+    let secondary_down = ui.ctx().input(|i| i.pointer.secondary_down());
+    let mut cut: Vec<Pos2> = ui.ctx().data(|d| d.get_temp(cut_id)).unwrap_or_default();
+    if secondary_down && (!cut.is_empty() || (modifiers.command && snarl_resp.contains_pointer())) {
+        if let Some(p) = latest_pos
+            && cut.last().is_none_or(|l| l.distance(p) > 2.0)
+        {
+            cut.push(p);
+        }
+        ui.ctx().data_mut(|d| d.insert_temp(cut_id, cut.clone()));
+    }
+    let cut_done = !secondary_down && cut.len() >= 2;
+    if !secondary_down && !cut.is_empty() {
+        ui.ctx().data_mut(|d| d.remove::<Vec<Pos2>>(cut_id));
+    }
+    let mut cut_wires: Vec<(OutPinId, InPinId)> = Vec::new();
+
     // Draw and interact with wires
     // Ographis: the points of connections that have them, to be drawn as handles.
     let mut handles: Vec<(OutPinId, InPinId, usize, Pos2, Color32)> = Vec::new();
@@ -1311,6 +1330,20 @@ where
                 pick_wire_style(from_r.wire_style, to_r.wire_style),
             ),
         }
+        // Ographis: does the cut line cross this connection?
+        if cut_done {
+            let crossed = wire_shapes[first_shape..].iter().any(|shape| {
+                let line: Vec<Pos2> = match shape {
+                    Shape::Path(p) => p.points.clone(),
+                    Shape::LineSegment { points, .. } => points.to_vec(),
+                    _ => Vec::new(),
+                };
+                line.windows(2).any(|w| cut.windows(2).any(|c| segments_cross(w[0], w[1], c[0], c[1])))
+            });
+            if crossed {
+                cut_wires.push((wire.out_pin, wire.in_pin));
+            }
+        }
         // Ographis: dots that move along a connection data flows along now.
         if let Some(phase) = viewer.wire_flow(wire.out_pin, wire.in_pin, snarl) {
             let lines: Vec<Vec<Pos2>> = wire_shapes[first_shape..]
@@ -1353,6 +1386,16 @@ where
                 }
             }
         }
+    }
+
+    // Ographis: the cut line while it is drawn, and the connections it crossed when done.
+    if secondary_down && cut.len() >= 2 {
+        let red = Color32::from_rgb(0xe3, 0x49, 0x48);
+        wire_shapes.extend(Shape::dashed_line(&cut, Stroke::new(1.5, red), 6.0, 4.0));
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+    }
+    if cut_done && !cut_wires.is_empty() {
+        viewer.cut_wires(&cut_wires, snarl);
     }
 
     // Ographis: the points of connections, as handles to drag, with a menu of their own.
@@ -2889,4 +2932,11 @@ fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
     let ab = b - a;
     let t = if ab.length_sq() > 0.0 { ((p - a).dot(ab) / ab.length_sq()).clamp(0.0, 1.0) } else { 0.0 };
     (p - (a + ab * t)).length()
+}
+
+/// Ographis: whether two line segments cross.
+fn segments_cross(a: Pos2, b: Pos2, c: Pos2, d: Pos2) -> bool {
+    let cross = |o: Pos2, p: Pos2, q: Pos2| (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
+    let (d1, d2, d3, d4) = (cross(c, d, a), cross(c, d, b), cross(a, b, c), cross(a, b, d));
+    (d1 > 0.0) != (d2 > 0.0) && (d3 > 0.0) != (d4 > 0.0)
 }

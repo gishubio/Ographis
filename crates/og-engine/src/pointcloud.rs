@@ -457,6 +457,93 @@ fn write_cloud(c: &Cloud, path: &Path, wkt: Option<&str>) -> Result<u64> {
     Ok(c.len() as u64)
 }
 
+/// Reads an E57 file, as terrestrial and mobile laser scanners give them: every scan in it,
+/// each placed by its pose, into one cloud. The points get their colours and their
+/// intensity, from 0 to 65 535; they have no classes or returns, so all are unclassified and
+/// the first of one. The coordinate system is the one the file names as EPSG, or the one
+/// set in the form; scanners often measure in a system of their own, which then has none.
+pub fn read_e57(path: &Path, opts: &LasOpts, notes: &mut Notes, going: &dyn Fn(u64, Option<u64>) -> bool) -> Result<Table> {
+    let named = |e: e57::Error| GbError(format!("{} cannot be read as E57: {}", path.display(), e));
+    let mut reader = e57::E57Reader::from_file(path).map_err(named)?;
+    let clouds = reader.pointclouds();
+    let total: u64 = clouds.iter().map(|c| c.records).sum();
+    let crs = opts.crs.or_else(|| {
+        let meta = reader.coordinate_metadata()?.to_uppercase();
+        let at = meta.find("EPSG")?;
+        let digits: String = meta[at + 4..].chars().skip_while(|c| !c.is_ascii_digit()).take_while(|c| c.is_ascii_digit()).collect();
+        digits.parse().ok()
+    });
+    if opts.classes.is_some() {
+        notes.warn("E57 has no classes, so the classes asked for were not used.");
+    }
+    if opts.spacing.is_some() {
+        notes.info("The spacing applies to COPC only, so every point of the E57 file is read");
+    }
+    let colours = clouds.iter().any(|c| c.has_color());
+    let mut cloud = Cloud { rgb: colours.then(Vec::new), ..Default::default() };
+    let (mut seen, mut cut_short, mut no_place) = (0u64, false, 0u64);
+    'scans: for pc in &clouds {
+        let mut points = reader.pointcloud_simple(pc).map_err(named)?;
+        points.apply_pose(true);
+        points.spherical_to_cartesian(true);
+        points.normalize_intensity(true);
+        points.normalize_color(true);
+        for p in points {
+            let p = p.map_err(named)?;
+            seen += 1;
+            if seen.is_multiple_of(100_000) && !going(seen, Some(total)) {
+                return err(crate::model::STOPPED);
+            }
+            if opts.every > 1 && (seen - 1) % opts.every as u64 != 0 {
+                continue;
+            }
+            let e57::CartesianCoordinate::Valid { x, y, z } = p.cartesian else {
+                no_place += 1;
+                continue;
+            };
+            if let Some(w) = opts.within {
+                if x < w[0] || x > w[2] || y < w[1] || y > w[3] {
+                    continue;
+                }
+            }
+            if opts.most.is_some_and(|m| cloud.len() >= m) {
+                cut_short = true;
+                break 'scans;
+            }
+            cloud.x.push(x);
+            cloud.y.push(y);
+            cloud.z.push(z);
+            cloud.class.push(1);
+            cloud.intensity.push(p.intensity.map(|i| (i.clamp(0.0, 1.0) * 65535.0).round() as u16).unwrap_or(0));
+            cloud.ret.push(1);
+            cloud.rets.push(1);
+            if let Some(rgb) = &mut cloud.rgb {
+                let c = p.color.unwrap_or(e57::Color { red: 0.0, green: 0.0, blue: 0.0 });
+                rgb.push([c.red, c.green, c.blue].map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8));
+            }
+        }
+    }
+    let n = cloud.len() as u64;
+    if no_place > 0 {
+        notes.warn(format!("{} points have no place, only a direction from the scanner, and were left out.", fmt_count(no_place)));
+    }
+    if cut_short {
+        notes.warn(format!("Only the first {} points were read, of {} in the file, as many as were asked for.", fmt_count(n), fmt_count(total)));
+    }
+    if crs.is_none() {
+        notes.info("The file names no coordinate system. If the scans are placed in one, set it under Coordinate system");
+    }
+    notes.info(format!(
+        "{} of {} points from {} {}, {} MB in memory",
+        fmt_count(n),
+        fmt_count(total),
+        clouds.len(),
+        if clouds.len() == 1 { "scan" } else { "scans" },
+        fmt_count((cloud.bytes() as u64).div_ceil(1_000_000))
+    ));
+    Ok(cloud.into_table(crs))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

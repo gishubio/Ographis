@@ -1,0 +1,43 @@
+name: A file that is not read right
+description: A file that cannot be read, or is read with something missing or wrong
+labels: ["bug", "format"]
+body:
+  - type: input
+    id: format
+    attributes:
+      label: Format
+      placeholder: DWG 2018, IFC4, GeoPackage, CSV from Excel …
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What is wrong
+      description: Not read at all, features missing, attributes wrong, in the wrong place, characters lost …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: From Help → About Ographis, or `og version`.
+      placeholder: Ographis 0.95.0 · GDAL 3.13.3
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Where the file comes from
+      description: The program that wrote it, and its version if you know it.
+      placeholder: AutoCAD 2024, Revit 2025, QGIS 3.40, a web service …
+  - type: textarea
+    id: info
+    attributes:
+      label: What og info says
+      description: Run `og info path/to/file` and paste what it prints.
+      render: text
+  - type: textarea
+    id: file
+    attributes:
+      label: The file
+      description: Attach the file, or a smaller one that shows the same thing, zipped if GitHub does not take the extension. Without a file such problems can rarely be found.

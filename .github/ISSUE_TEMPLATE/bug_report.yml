@@ -2,6 +2,11 @@ name: Bug report
 description: Something does not work as it should
 labels: ["bug"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting it. The quickest help comes with the version, the log and the model,
+        and a small piece of the data when you can share it.
   - type: textarea
     id: what
     attributes:
@@ -9,12 +14,42 @@ body:
       description: What you did, what you expected, and what happened instead.
     validations:
       required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      description: The steps, as short as you can make them. "Open the model, run, look at the node Clip" is enough.
   - type: input
     id: version
     attributes:
       label: Version
       description: From Help → About Ographis, or `og version`.
-      placeholder: Ographis 0.76 · GDAL 3.13.3
+      placeholder: Ographis 0.95.0 · GDAL 3.13.3
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux
+        - macOS
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - The program (canvas, forms, map, table)
+        - A tool in a model
+        - Reading or writing a format
+        - The command line (og)
+        - Installing or starting
+        - Something else
     validations:
       required: true
   - type: textarea
@@ -27,4 +62,4 @@ body:
     id: model
     attributes:
       label: The model and the data
-      description: Attach the .ographis file, and a small piece of the data if you can share it. Remove passwords and keys first.
+      description: Attach the .ographis file, and a small piece of the data if you can share it. Passwords and keys are never in a model; check the data for what should not be public.

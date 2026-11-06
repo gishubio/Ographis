@@ -338,7 +338,14 @@ const PC_FILTER_PARAMS: &[ParamSpec] = &[
         label: "Classes",
         kind: ParamKind::Text,
         default: "",
-        hint: "The class numbers to keep, such as 2 for ground or 3, 4, 5 for vegetation and 6 for buildings. Empty keeps all",
+        hint: "The class numbers to keep, such as 2 for ground or 3, 4, 5 for vegetation and 6 for buildings, or ticked below from the data of the latest run. Empty keeps all",
+    },
+    ParamSpec {
+        key: "class_ports",
+        label: "Out on",
+        kind: ParamKind::Choice(&[("yes", "A port for each class ticked, and the rest on Other"), ("no", "All classes ticked on Points, the rest on Other")]),
+        default: "yes",
+        hint: "",
     },
     ParamSpec { key: "returns", label: "Returns", kind: ParamKind::Choice(PC_RETURNS), default: "all", hint: "" },
     ParamSpec { key: "zmin", label: "Lowest height", kind: ParamKind::Text, default: "", hint: "Of the points, or of the attribute below. Empty has no limit" },
@@ -423,9 +430,43 @@ fn run_pc_filter(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         }
         true
     };
+    if p.get("class_ports").as_deref() == Some("yes") && !classes.is_empty() {
+        // A port for each class, in the order they are given; what no class takes, on Other.
+        let mut outs: Outputs = Vec::new();
+        for (k, name) in classes.iter().zip(pc_filter_ports(p)) {
+            let (one, _) = pts.split(|i| c.class[i] as i64 == *k && keep(i));
+            ctx.notes.info(format!("{}: {} points", name, fmt_count(one.count() as u64)));
+            outs.push((name.into(), one));
+        }
+        let (_, other) = pts.split(keep);
+        outs.push(("Other".into(), other));
+        return Ok(outs);
+    }
     let (kept, other) = pts.split(keep);
     ctx.notes.info(format!("{} of {} points kept", fmt_count(kept.count() as u64), fmt_count(t.count() as u64)));
     Ok(vec![("Points".into(), kept), ("Other".into(), other)])
+}
+
+/// The name of the port of a class: its number and its name, such as 2 - ground, or the
+/// number alone for a class without a name.
+pub fn class_port(c: i64) -> String {
+    match u8::try_from(c).map(crate::pointcloud::class_name) {
+        Ok(name) if name != "other" => format!("{} - {}", c, name),
+        _ => c.to_string(),
+    }
+}
+
+/// The outputs: Points and Other, or a port for each class given and Other.
+pub(super) fn pc_filter_ports(p: &P) -> Vec<String> {
+    let classes: Vec<i64> = p.list("classes").iter().filter_map(|c| c.parse().ok()).collect();
+    if p.get("class_ports").as_deref() != Some("yes") || classes.is_empty() {
+        return vec!["Points".into(), "Other".into()];
+    }
+    let mut ports: Vec<String> = classes.iter().map(|c| class_port(*c)).collect();
+    if !ports.is_empty() {
+        ports.push("Other".into());
+    }
+    ports
 }
 
 /// The tools of this module, for the registry in mod.rs.
@@ -464,10 +505,10 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Point clouds",
-        desc: "Keeps the points of some classes, of some returns (first, last or single), between two heights, and inside the areas on Areas when they are connected. The rest go to Other.",
+        desc: "Keeps the points of some classes, of some returns (first, last or single), between two heights, and inside the areas on Areas when they are connected. The rest go to Other. The classes can be ticked from those the data has, and each can get a port of its own.",
         inputs: &["Points", "Areas"],
         outputs: &["Points", "Other"],
-        ports: None,
+        ports: Some(pc_filter_ports),
         params: PC_FILTER_PARAMS,
         run: run_pc_filter,
         summary: |p| {
@@ -544,6 +585,14 @@ mod tests {
         // Filter: buildings, and the first returns above 2 m.
         let (out, _) = run_for_test("PointCloudFilter", &[("classes", "6")], vec![("Points", cloud())]).unwrap();
         assert_eq!((out[0].1.len(), out[1].1.len()), (30, 72));
+        // A port for each class, in the order given, and what no class takes on Other.
+        let (out, _) = run_for_test("PointCloudFilter", &[("classes", "6, 2"), ("class_ports", "yes")], vec![("Points", cloud())]).unwrap();
+        let got: Vec<(String, usize)> = out.iter().map(|(n, t)| (n.to_string(), t.len())).collect();
+        assert_eq!(got, [("6 - building".to_string(), 30), ("2 - ground".to_string(), 71), ("Other".to_string(), 1)]);
+        assert_eq!(class_port(8), "8");
+        // Ticked classes all on Points, as before 0.95.2.
+        let (out, _) = run_for_test("PointCloudFilter", &[("classes", "6, 2"), ("class_ports", "no")], vec![("Points", cloud())]).unwrap();
+        assert_eq!((out[0].0.as_ref(), out[0].1.len()), ("Points", 101));
         let (out, _) = run_for_test("PointCloudFilter", &[("returns", "last"), ("zmin", "15")], vec![("Points", cloud())]).unwrap();
         assert_eq!(out[0].1.len(), 0, "the top of the tree is not a last return");
         let (out, _) = run_for_test("PointCloudFilter", &[("returns", "first"), ("zmin", "15")], vec![("Points", cloud())]).unwrap();

@@ -570,7 +570,7 @@ pub(super) fn run_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
                 let t = b.read_with(file, &opts, &mut notes, &going).map_err(|e| GbError(e.0.replace(&file.to_string_lossy().to_string(), "the service")))?;
                 read.push((t, layer));
             }
-        } else if matches!(ext.as_str(), "las" | "laz") {
+        } else if matches!(ext.as_str(), "las" | "laz" | "e57") {
             let classes = match p.get("las_classes").filter(|c| !c.trim().is_empty()) {
                 None => None,
                 Some(text) => Some(
@@ -598,7 +598,9 @@ pub(super) fn run_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
                 gate.going()
             };
             let address = file.to_string_lossy();
-            let t = if is_url(&address) {
+            let t = if ext == "e57" {
+                crate::pointcloud::read_e57(file, &opts, &mut notes, &going)
+            } else if is_url(&address) {
                 // COPC on the web: only the parts of the octree that are needed are fetched.
                 crate::pointcloud::read_copc_url(ctx.backend("Reading from the web")?, &address, &web_headers, &opts, &mut notes)
             } else {
@@ -1288,7 +1290,9 @@ pub(super) fn run_file_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<
         let file = ctx.resolve(&path);
         let ext = ext_of(&file);
         let mut notes = Notes::default();
-        let t = if matches!(ext.as_str(), "las" | "laz") {
+        let t = if ext == "e57" {
+            crate::pointcloud::read_e57(&file, &crate::pointcloud::LasOpts { every: 1, crs, ..Default::default() }, &mut notes, &|_, _| true)
+        } else if matches!(ext.as_str(), "las" | "laz") {
             crate::pointcloud::read_las(&file, &crate::pointcloud::LasOpts { every: 1, crs, ..Default::default() }, &mut notes, &|_, _| true)
         } else if is_text_format(&ext) {
             csv_io::read_csv_with(&file, &CsvReadOpts { delimiter: None, encoding: None, x: None, y: None, wkt: None, crs }, &mut notes, &|_, _| true)

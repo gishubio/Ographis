@@ -300,7 +300,7 @@ impl App {
         };
         // While the rectangle of a download is chosen, a map to choose it on.
         let has_place = map_table.as_ref().is_some_and(|t| t.crs.is_some());
-        let map_table = if has_place || self.area_for.is_none() { map_table } else { self.area_table().or(map_table) };
+        let map_table = if has_place { map_table } else { self.area_table().or(map_table) };
         let to_map = |i: usize| -> Option<usize> { shown_rows.as_ref().map_or(Some(i), |r| r.binary_search(&i).ok()) };
         let from_map = |i: usize| -> Option<usize> { shown_rows.as_ref().map_or(Some(i), |r| r.get(i).copied()) };
         let skip = together.as_ref().map(|t| t.models);

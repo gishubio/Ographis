@@ -165,4 +165,48 @@ impl App {
         let (out, inp) = (a.outputs().get(wire.0.output)?.clone(), b.inputs().get(wire.1.input)?.clone());
         Some((format!("{} · {}", a.name, out), format!("{} · {}", b.name, inp)))
     }
+
+    /// Lifts nodes out of their connections, and joins what came in to where it went, so
+    /// that the flow goes on without them.
+    pub(super) fn detach(&mut self, nodes: &[NodeId]) {
+        let mut changed = false;
+        for &node in nodes {
+            let wires: Vec<(OutPinId, InPinId)> = self.snarl.wires().filter(|(o, i)| o.node == node || i.node == node).collect();
+            if wires.is_empty() {
+                continue;
+            }
+            let into: Vec<OutPinId> = wires.iter().filter(|(o, i)| i.node == node && i.input == 0 && !nodes.contains(&o.node)).map(|w| w.0).collect();
+            let out_of: Vec<InPinId> = wires.iter().filter(|(o, i)| o.node == node && o.output == 0 && !nodes.contains(&i.node)).map(|w| w.1).collect();
+            for (o, i) in &wires {
+                self.snarl.disconnect(*o, *i);
+            }
+            for o in &into {
+                for i in &out_of {
+                    self.snarl.connect(*o, *i);
+                }
+            }
+            changed = true;
+        }
+        if changed {
+            self.changed(true);
+        }
+    }
+
+    /// Follows a drag of nodes with Alt held: the first move lifts them out of their
+    /// connections.
+    pub(super) fn alt_drag_detach(&mut self, ctx: &egui::Context) {
+        let (alt, down) = ctx.input(|i| (i.modifiers.alt, i.pointer.primary_down()));
+        if !down || self.selected.is_empty() {
+            self.alt_drag = (Vec::new(), false);
+            return;
+        }
+        let now: Vec<(NodeId, egui::Pos2)> = self.selected.iter().filter_map(|id| self.snarl.get_node_info(*id).map(|n| (*id, n.pos))).collect();
+        let moved = !self.alt_drag.0.is_empty() && now.iter().any(|(id, p)| self.alt_drag.0.iter().any(|(j, q)| j == id && q != p));
+        if alt && moved && !self.alt_drag.1 {
+            let nodes: Vec<NodeId> = now.iter().map(|n| n.0).collect();
+            self.detach(&nodes);
+            self.alt_drag.1 = true;
+        }
+        self.alt_drag.0 = now;
+    }
 }

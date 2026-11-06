@@ -523,6 +523,12 @@ fn a_writer_is_told_the_format_and_the_fields() {
         assert!(h.query_all_by_value(value).count() >= 1, "the form should have a list that says: {}", value);
     }
     assert_eq!(param(&h, "out", "fields"), "");
+    // The names are shown whole: municipality, the longest, is as wide as its text.
+    h.get_all_by_value("As it is (decimal)").next().unwrap().scroll_to_me();
+    h.run_steps(3);
+    shot(&mut h, "95-field-names-whole");
+    let municipality = h.get_all_by_label("municipality").map(|n| n.rect().width()).fold(0.0f32, f32::max);
+    assert!(municipality >= 80.0, "the name municipality is cut: {} wide", municipality);
     // The first one is the name of the town. It is written as text of at most six characters.
     // The form of a GeoPackage is long: its list of attributes is scrolled to first.
     h.get_all_by_value("As it is (decimal)").next().unwrap().scroll_to_me();

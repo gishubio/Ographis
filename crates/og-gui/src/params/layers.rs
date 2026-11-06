@@ -115,9 +115,14 @@ pub(super) fn map_layer_rows(
         return false;
     }
     let keys: Vec<String> = connected.iter().map(|c| c.0.clone()).collect();
-    let named = matches!(node.kind.as_str(), "LayeredPdfWriter" | "QgisProjectWriter");
-    let qgis = node.kind == "QgisProjectWriter";
-    let place = if qgis { "QGIS" } else { "the PDF" };
+    let named = matches!(node.kind.as_str(), "LayeredPdfWriter" | "QgisProjectWriter" | "WebMapWriter");
+    // QGIS and the web map draw by values and labels, as Draw map does; the PDF does not.
+    let qgis = matches!(node.kind.as_str(), "QgisProjectWriter" | "WebMapWriter");
+    let place = match node.kind.as_str() {
+        "QgisProjectWriter" => "QGIS",
+        "WebMapWriter" => "the web map",
+        _ => "the PDF",
+    };
     let stored = map_layers(&node.params);
     let mut rows = arrange_layers(&stored, &keys);
     let before = rows.clone();

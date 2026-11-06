@@ -3,6 +3,97 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.95.2
+
+- **Outline from above** is a new tool: 3D objects, such as walls and doors read from IFC,
+  as areas in 2D, the shadow each casts when lit from straight above, with all that sticks
+  out, such as the handle of a door. Seen from a height, such as 1 m above the floor of the
+  storey, what lies above is left out, so that the wall over a door leaves a gap, as in a
+  plan; or only what the cut goes through. The height counts from the storey, the lowest
+  point of the object or the coordinate system, and parts smaller than an area can be left
+  out.
+- Objects read from IFC get the height of the floor of their storey, `storey_z`.
+- The names of the attributes under *Data types and sizes* of Output are shown whole, such
+  as pixel_size of a raster; only very long names are cut, and shown whole on hover.
+- *Filter point cloud* gives each class ticked a port of its own from the start, named by
+  its number and name, such as 2 - ground; a class without a name by its number. Ticked all
+  on *Points* is still a choice, and a model saved earlier with a connection from *Points*
+  keeps it.
+- Databases, PostGIS and SQL Server:
+  - Output can run **SQL before** and **SQL after** the write, such as a DELETE of the rows
+    of one municipality before they are written again, or a GRANT and a view after it.
+    `{table}` stands for the table written, with its schema. The SQL runs in the same
+    transaction as the write, so if it fails nothing is written.
+  - The table gets new statistics (ANALYZE, or UPDATE STATISTICS on SQL Server) after the
+    write, so the database plans the next query well; it can be turned off.
+  - Under *Table* the form shows the names the table and the columns get in the database,
+    such as Towns 2026 → towns_2026, and warns of names over 63 characters, which
+    PostgreSQL would cut.
+  - Input from a database can read **only within** a rectangle, chosen on the map as for a
+    download, so that the database sends only the features there.
+  - A password written in the model is warned of in the form and by `og check`; a connection
+    from the settings, or $(password), keeps it out of the file.
+
+## 0.95.1
+
+- *Filter point cloud* lists the classes of the points that came in at the latest run, with
+  how many of each, to tick, and can give each class ticked a port of its own, such as Ground
+  and Building, with the rest on Other.
+- Point clouds are drawn in 3D in their own colours, as an E57 or a LAS file with colours
+  has them, and by class, height or intensity when chosen beside *heights ×*. Points without
+  colours of their own are coloured by height, as before.
+- *Draw map* draws for print: a width in mm and pixels to the inch, such as 180 mm at 300.
+  The map gets as many pixels as that takes, lines, points and labels keep the size they have
+  on the screen, measured on paper, and Output writes the resolution into the file by itself.
+  *Pixels to the inch* in Output only says how large a picture prints, which its help now says.
+- Choosing the rectangle of a download on the map: Sweden is no longer covered by a blue
+  area when no rectangle is set; two small points at its corners frame the map instead, and a
+  rectangle that is set is drawn as its outline.
+- One Enter takes the rectangle drawn on the map. The first went to the canvas before.
+- Once the rectangle is taken, the map stays with it drawn, while the download is selected;
+  before, the map went blank. This holds for both OpenStreetMap and Overture Maps download.
+
+## 0.95
+
+Web maps, 3D clipping and large data
+
+- **Web map** is a new format of Output: a folder with index.html, drawn with Leaflet or
+  MapLibre GL, to open in a browser or put on a web server. The layers look as they do in
+  *Draw map*, with classes of colour, sizes after a number and labels; a legend turns them on
+  and off, a click on a feature shows its attributes, and the map starts zoomed to the data
+  over a background map of your choice. The features go beside the page in WGS 84, as GeoJSON
+  that also opens from the disk, or with MapLibre as PMTiles for large layers. A background
+  map that needs a password or a key is left out, so that it is not written into the page.
+- **Clip cuts TINs, surfaces and 3D models** (issue #38): each triangle the boundary crosses
+  is cut in its own plane, with its heights, normals and texture coordinates, and walls are
+  cut by upright planes along the boundary. Areas and lines with heights keep them too: a new
+  corner gets its height from the edge or the plane it lies on. Clipping against a long
+  boundary is several times faster, for flat features as well.
+- **E57**, as laser scanners on the ground give them, is read as a point cloud: every scan
+  placed by its pose, with colours and intensity.
+- **Less memory for large vector data**: CSV is read with about a third less, GeoPackage and
+  PostGIS are written without a copy of the table, CSV is written a part at a time, and
+  `og run` lets go of what a step made once the steps after it have used it. 1 000 000 points
+  joined to areas and written to GeoPackage took 1 112 MB and now take 675 MB.
+
+The canvas
+
+- Each node shows how long it took at the last run, and the one that took most of it stands
+  out.
+- The ports show what came out of them: a circle for features, a square for a raster or a
+  picture, a triangle for a 3D model and a star for a point cloud.
+- A line drawn with Ctrl and the right button cuts the connections it crosses.
+- F connects the selected nodes from left to right.
+- A node dragged with Alt held is lifted out of its connections, and what came in goes on to
+  where it went.
+- A node folds to its title with the arrow in its header, and stays folded in the file.
+
+Output
+
+- *GeoPackage version*: 1.2, 1.3 or 1.4 for a new file, for programs that read only older ones.
+- *Pixels to the inch* for PNG, JPEG and GeoTIFF, kept in the file for printing; *JPEG quality*;
+  and how a GeoTIFF is packed: Deflate, LZW, JPEG or not at all.
+
 ## 0.94.1
 
 - The scroll bars of the canvas stop at the edge of the model. Before, dragging one went on

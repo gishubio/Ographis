@@ -2518,6 +2518,7 @@ fn a_postgis_table_gets_the_primary_key_asked_for() {
         key,
         empty_first: false,
         commit_every: None,
+        ..Default::default()
     };
     b.write_postgis(&sample(), &conn, &opts("og_key_default", None), &mut notes).unwrap();
     assert_eq!(key_of("og_key_default"), ["ogc_fid"]);
@@ -2565,6 +2566,7 @@ fn a_postgis_table_is_emptied_and_filled_or_written_in_parts() {
         key: None,
         empty_first,
         commit_every,
+        ..Default::default()
     };
     let _ = sql("DROP VIEW IF EXISTS og_tx_view");
     b.write_postgis(&sample(), &conn, &opts(false, None), &mut notes).unwrap();
@@ -2576,6 +2578,61 @@ fn a_postgis_table_is_emptied_and_filled_or_written_in_parts() {
     assert_eq!(sql("SELECT count(*) FROM og_tx_view").as_deref(), Some("25"), "the view is there, on the new rows");
     assert!(notes.info.iter().any(|n| n.contains("committed in 3 parts")), "{:?}", notes.info);
     let _ = sql("DROP VIEW IF EXISTS og_tx_view");
+}
+
+/// SQL before and after the rows, the statistics of the planner, and only the rows within a
+/// rectangle when reading. Needs OG_TEST_PG, as above.
+#[test]
+fn a_postgis_table_is_written_with_sql_around_it_and_read_within_a_rectangle() {
+    use og_engine::io::DbWrite;
+    let Ok(conn) = std::env::var("OG_TEST_PG") else { return };
+    let b = GdalBackend::new();
+    let mut notes = Notes::default();
+    let sql = |q: &str| -> Option<String> {
+        let ds = gdal::Dataset::open_ex(
+            &conn,
+            gdal::DatasetOptions { open_flags: gdal::GdalOpenFlags::GDAL_OF_VECTOR | gdal::GdalOpenFlags::GDAL_OF_UPDATE, ..Default::default() },
+        )
+        .unwrap();
+        let mut rs = ds.execute_sql(q, None, gdal::vector::sql::Dialect::DEFAULT).unwrap()?;
+        let v = rs.features().next().and_then(|f| f.field_as_string(0).ok().flatten());
+        v
+    };
+    let _ = sql("DROP TABLE IF EXISTS og_sql_log");
+    let opts = DbWrite {
+        schema: "public".into(),
+        table: "og_sql".into(),
+        geometry: "auto".into(),
+        geom_column: "geom".into(),
+        sql_before: Some("CREATE TABLE IF NOT EXISTS og_sql_log (what text); INSERT INTO og_sql_log VALUES ('before')".into()),
+        sql_after: Some("INSERT INTO og_sql_log SELECT 'after ' || count(*) FROM {table}".into()),
+        analyze: true,
+        ..Default::default()
+    };
+    b.write_postgis(&sample(), &conn, &opts, &mut notes).unwrap();
+    assert_eq!(sql("SELECT string_agg(what, ', ' ORDER BY what DESC) FROM og_sql_log").as_deref(), Some("before, after 2"));
+    assert!(sql("SELECT last_analyze IS NOT NULL FROM pg_stat_user_tables WHERE relname = 'og_sql'").is_some_and(|v| v == "1" || v == "t" || v == "true"));
+    // A fault in the SQL after undoes all: the table keeps its two rows.
+    let mut more = sample();
+    more.features.truncate(1);
+    let bad = DbWrite { sql_after: Some("SELECT no_such_column FROM {table}".into()), sql_before: None, ..opts.clone() };
+    assert!(b.write_postgis(&more, &conn, &bad, &mut notes).is_err());
+    assert_eq!(sql("SELECT count(*) FROM og_sql").as_deref(), Some("2"));
+    // Only within a rectangle around the first feature, in degrees.
+    let all = b.read(std::path::Path::new(&conn), &ReadOpts { layer: Some("og_sql".into()), ..Default::default() }, &mut notes).unwrap();
+    let first = all.features[0].geom.clone().unwrap();
+    let c = geo::Centroid::centroid(&first).unwrap();
+    let mut pts = Table { crs: all.crs, features: vec![Feature::new(vec![], Some(Geometry::Point(c)))], ..Default::default() };
+    pts = og_engine::nodes::reproject(&pts, 4326, Some(&b)).unwrap();
+    let Some(Geometry::Point(p)) = &pts.features[0].geom else { panic!() };
+    let near = ReadOpts {
+        layer: Some("og_sql".into()),
+        within: Some(([p.x() - 0.001, p.y() - 0.001, p.x() + 0.001, p.y() + 0.001], Some(4326))),
+        ..Default::default()
+    };
+    let some = b.read(std::path::Path::new(&conn), &near, &mut notes).unwrap();
+    assert!(!some.is_empty() && some.len() < all.len(), "{} of {}", some.len(), all.len());
+    let _ = sql("DROP TABLE IF EXISTS og_sql_log");
 }
 
 #[test]
@@ -3558,5 +3615,197 @@ fn a_nautical_chart_and_bathymetry_are_read() {
         assert_eq!(grid.meta.names, ["elevation", "uncertainty"]);
         assert_eq!(grid.band_count(), 2);
     }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_geopackage_takes_a_version_and_a_picture_its_resolution_and_packing() {
+    use gdal::Metadata;
+    let dir = tmp("versions");
+    let b = GdalBackend::new();
+    std::fs::write(dir.join("areas.csv"), "name;wkt\nA;POLYGON ((400000 6400000, 401000 6400000, 401000 6401000, 400000 6401000, 400000 6400000))\n").unwrap();
+    let ws = Workspace::from_json(
+        r##"{
+      "nodes": [
+        {"id": "areas", "type": "Reader", "params": {"path": "areas.csv", "crs": "EPSG:3006"}},
+        {"id": "old", "type": "Writer", "params": {"path": "out/old.gpkg", "gpkg_version": "1.2"}},
+        {"id": "new", "type": "Writer", "params": {"path": "out/new.gpkg", "gpkg_version": "1.4"}},
+        {"id": "map", "type": "MapRenderer", "params": {"width": "200", "margin": "10", "background": "#ffffff",
+          "layers": [{"from": "areas:Output", "fill": "#a6cee3", "stroke": "#1f78b4", "width": 2, "size": 6}]}},
+        {"id": "png", "type": "Writer", "params": {"path": "out/map.png", "img_dpi": "300"}},
+        {"id": "jpg", "type": "Writer", "params": {"path": "out/map.jpg", "img_dpi": "150", "img_quality": "40"}},
+        {"id": "lzw", "type": "Writer", "params": {"path": "out/lzw.tif", "tif_compress": "lzw", "img_dpi": "300"}},
+        {"id": "jtif", "type": "Writer", "params": {"path": "out/jpeg.tif", "tif_compress": "jpeg"}},
+        {"id": "plain", "type": "Writer", "params": {"path": "out/plain.png"}}
+      ],
+      "edges": [
+        {"from": ["areas", "Output"], "to": ["old", "Input"]},
+        {"from": ["areas", "Output"], "to": ["new", "Input"]},
+        {"from": ["areas", "Output"], "to": ["map", "Layers"]},
+        {"from": ["map", "Map"], "to": ["png", "Input"]},
+        {"from": ["map", "Map"], "to": ["jpg", "Input"]},
+        {"from": ["map", "Map"], "to": ["lzw", "Input"]},
+        {"from": ["map", "Map"], "to": ["jtif", "Input"]},
+        {"from": ["map", "Map"], "to": ["plain", "Input"]}
+      ]
+    }"##,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    assert_eq!(r.errors, 0);
+    let out = dir.join("out");
+    // The version of a GeoPackage is the user_version of SQLite, at byte 60 of the file.
+    let version = |f: &str| {
+        let bytes = std::fs::read(out.join(f)).unwrap();
+        (u32::from_be_bytes(bytes[60..64].try_into().unwrap()), &bytes[68..72] == b"GPKG")
+    };
+    assert_eq!(version("old.gpkg"), (10200, true));
+    assert_eq!(version("new.gpkg"), (10400, true));
+    let mut notes = Notes::default();
+    assert_eq!(b.read(&out.join("old.gpkg"), &ReadOpts::default(), &mut notes).unwrap().len(), 1);
+    // The resolution is kept for printing; the pixels are as many.
+    let dpi = |f: &str| {
+        let ds = gdal::Dataset::open(out.join(f)).unwrap();
+        assert_eq!(ds.raster_size(), (200, 200), "{}", f);
+        ds.metadata_item("TIFFTAG_XRESOLUTION", "").map(|v| v.parse::<f64>().unwrap().round())
+    };
+    assert_eq!(dpi("map.png"), Some(300.0));
+    assert_eq!(dpi("map.jpg"), Some(150.0));
+    assert_eq!(dpi("lzw.tif"), Some(300.0));
+    assert_eq!(dpi("plain.png"), None);
+    // GeoTIFF packed as asked.
+    let packing = |f: &str| gdal::Dataset::open(out.join(f)).unwrap().metadata_item("COMPRESSION", "IMAGE_STRUCTURE");
+    assert_eq!(packing("lzw.tif").as_deref(), Some("LZW"));
+    assert!(packing("jpeg.tif").is_some_and(|c| c.contains("JPEG")), "{:?}", packing("jpeg.tif"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn layers_are_written_as_a_web_map_with_leaflet_or_maplibre() {
+    let dir = tmp("webmap");
+    let b = GdalBackend::new();
+    std::fs::write(
+        dir.join("areas.csv"),
+        "name;people;wkt\nNorth;120;\"POLYGON ((400000 6400000, 401000 6400000, 401000 6401000, 400000 6401000, 400000 6400000))\"\nSouth;3400;\"POLYGON ((400000 6398000, 401000 6398000, 401000 6399000, 400000 6399000, 400000 6398000))\"\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("stops.csv"), "id;stop;lon;lat\n1;Torget </script>;12.5;57.73\n2;Station;12.51;57.72\n").unwrap();
+    let ws = Workspace::from_json(
+        r##"{
+      "nodes": [
+        {"id": "areas", "type": "Reader", "params": {"path": "areas.csv", "crs": "EPSG:3006"}},
+        {"id": "stops", "type": "Reader", "params": {"path": "stops.csv", "x": "lon", "y": "lat", "crs": "EPSG:4326"}},
+        {"id": "web", "type": "WebMapWriter", "params": {"path": "out/web", "format": "webmap", "title": "Areas and stops", "basemap": "carto_light",
+          "layers": [
+            {"from": "stops:Output", "name": "Stops", "fill": "#e31a1c", "stroke": "#ffffff", "width": 1, "size": 10, "label": "stop"},
+            {"from": "areas:Output", "name": "Areas", "fill": "#a6cee3", "stroke": "#1f78b4", "width": 2, "size": 6, "color_by": "people", "ramp": "reds", "classes": 2}
+          ]}},
+        {"id": "gl", "type": "WebMapWriter", "params": {"path": "out/gl/map.html", "format": "webmap", "library": "maplibre", "web_data": "pmtiles", "basemap": "none"}}
+      ],
+      "edges": [
+        {"from": ["areas", "Output"], "to": ["web", "Layers"]},
+        {"from": ["stops", "Output"], "to": ["web", "Layers"]},
+        {"from": ["areas", "Output"], "to": ["gl", "Layers"]}
+      ]
+    }"##,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    assert_eq!(r.errors, 0);
+    let web = dir.join("out/web");
+    assert_eq!(r.nodes["web"].files, [web.join("index.html"), web.join("data/areas.js"), web.join("data/stops.js")]);
+    let html = std::fs::read_to_string(web.join("index.html")).unwrap();
+    assert!(html.contains("leaflet@1.9.4/dist/leaflet.js") && html.contains("<title>Areas and stops</title>"), "{}", html);
+    // The areas are under the stops: their data comes first.
+    assert!(html.find("data/areas.js").unwrap() < html.find("data/stops.js").unwrap());
+    assert!(html.contains("basemaps.cartocdn.com"));
+    // A text cannot end the script it is in.
+    let data = |f: &str| -> serde_json::Value {
+        let text = std::fs::read_to_string(web.join("data").join(f)).unwrap();
+        let json = text.split_once(" = ").unwrap().1.trim_end().trim_end_matches(';');
+        serde_json::from_str(json).unwrap()
+    };
+    let areas = data("areas.js");
+    let first = &areas["features"][0];
+    // In degrees, and coloured by the number of people, with the attributes for the popup.
+    let x = first["geometry"]["coordinates"][0][0][0].as_f64().unwrap();
+    assert!((13.0..14.0).contains(&x), "{}", x);
+    assert_eq!(first["properties"]["name"], "North");
+    assert_eq!(first["properties"]["people"], 120);
+    assert_ne!(first["properties"]["~fill"], areas["features"][1]["properties"]["~fill"]);
+    assert_eq!(first["properties"]["~stroke"], "#1f78b4");
+    let stops = data("stops.js");
+    assert_eq!(stops["features"][0]["properties"]["~label"], "Torget </script>");
+    assert_eq!(stops["features"][0]["properties"]["~size"], 10.0);
+    // The legend: two classes of the areas.
+    let config = html.split_once("const OG = ").unwrap().1.split_once(";\n").unwrap().0.replace("<\\/", "</");
+    let config: serde_json::Value = serde_json::from_str(&config).unwrap();
+    assert_eq!(config["layers"][0]["name"], "Areas");
+    assert_eq!(config["layers"][0]["keys"].as_array().unwrap().len(), 2);
+    assert_eq!(config["layers"][1]["labels"]["on"], true);
+    let bounds: Vec<f64> = config["bounds"].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
+    assert!(bounds[0] <= 12.5 && bounds[2] > 13.3 && bounds[1] > 57.0 && bounds[3] < 58.0, "{:?}", bounds);
+    // MapLibre, with the areas as vector tiles, named after the node, and the page named as
+    // asked.
+    let gl = dir.join("out/gl");
+    assert_eq!(r.nodes["gl"].files, [gl.join("map.html"), gl.join("data/input.pmtiles")]);
+    let html = std::fs::read_to_string(gl.join("map.html")).unwrap();
+    assert!(html.contains("maplibre-gl@4.7.1") && html.contains("pmtiles@3.2.1") && html.contains("\"pmtiles\":\"data/input.pmtiles\""), "{}", html);
+    let mut notes = Notes::default();
+    let tiles = b.read(&gl.join("data/input.pmtiles"), &ReadOpts::default(), &mut notes).unwrap();
+    assert!(tiles.field_names().contains(&"~fill".to_string()), "{:?}", tiles.field_names());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_map_drawn_for_print_is_sharper_and_tells_its_resolution() {
+    use gdal::Metadata;
+    let dir = tmp("print_map");
+    let b = GdalBackend::new();
+    std::fs::write(dir.join("line.csv"), "name;wkt\nA;LINESTRING (400000 6400000, 401000 6401000)\nB;LINESTRING (400000 6401000, 401000 6400000)\n").unwrap();
+    let layers = r##"[{"from": "line:Output", "fill": "none", "stroke": "#000000", "width": 2, "size": 6}]"##;
+    let ws = Workspace::from_json(&format!(
+        r##"{{
+      "nodes": [
+        {{"id": "line", "type": "Reader", "params": {{"path": "line.csv", "crs": "EPSG:3006"}}}},
+        {{"id": "screen", "type": "MapRenderer", "params": {{"width": "591", "margin": "10", "background": "#ffffff", "layers": {layers}}}}},
+        {{"id": "print", "type": "MapRenderer", "params": {{"size_as": "print", "print_mm": "50", "print_dpi": "300", "margin": "10", "background": "#ffffff", "layers": {layers}}}}},
+        {{"id": "jpg", "type": "Writer", "params": {{"path": "out/print.jpg"}}}},
+        {{"id": "png", "type": "Writer", "params": {{"path": "out/screen.png"}}}}
+      ],
+      "edges": [
+        {{"from": ["line", "Output"], "to": ["screen", "Layers"]}},
+        {{"from": ["line", "Output"], "to": ["print", "Layers"]}},
+        {{"from": ["print", "Map"], "to": ["jpg", "Input"]}},
+        {{"from": ["screen", "Map"], "to": ["png", "Input"]}}
+      ]
+    }}"##
+    ))
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    assert_eq!(r.errors, 0);
+    // 50 mm at 300 to the inch: 591 pixels, as the screen map was asked to be.
+    let print = r.output("print", "Map").unwrap();
+    let screen = r.output("screen", "Map").unwrap();
+    let (pi, si) = (print.image.as_ref().unwrap(), screen.image.as_ref().unwrap());
+    assert_eq!((pi.width, si.width), (591, 591));
+    // The lines are as wide on paper as 2 pixels on a screen: 300 / 96 times as wide.
+    let dark = |img: &og_engine::model::RasterImage| img.rgba.chunks_exact(4).filter(|p| p[0] < 128).count() as f64;
+    let ratio = dark(pi) / dark(si);
+    assert!((2.6..3.6).contains(&ratio), "{}", ratio);
+    // The file tells its resolution, though Output was not asked for one; the screen map none.
+    let dpi =
+        |f: &str| gdal::Dataset::open(dir.join("out").join(f)).unwrap().metadata_item("TIFFTAG_XRESOLUTION", "").map(|v| v.parse::<f64>().unwrap().round());
+    assert_eq!(dpi("print.jpg"), Some(300.0));
+    assert_eq!(dpi("screen.png"), None);
     let _ = std::fs::remove_dir_all(&dir);
 }

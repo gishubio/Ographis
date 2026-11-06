@@ -24,7 +24,7 @@ pub(super) const POSTGIS_PARAMS: &[ParamSpec] = &[
         label: "Password",
         kind: ParamKind::Secret,
         default: "",
-        hint: "Stored in the model file as it is. Write $(password) and set the variable to keep it out of the file",
+        hint: "Stored in the model file as it is, for anyone the model is given to to read. Better: a connection from Edit → Settings, or $(password) with the variable set",
     },
     ParamSpec {
         key: "tables",
@@ -39,6 +39,13 @@ pub(super) const POSTGIS_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Text,
         default: "",
         hint: "A condition in SQL, such as kommun = 'Skövde', so that the database sends only those rows",
+    },
+    ParamSpec {
+        key: "bbox",
+        label: "Only within",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "A rectangle, west, south, east, north in degrees, such as 11.95, 57.69, 11.99, 57.71, or chosen on the map: the database sends only the rows that reach into it, found through its spatial index",
     },
     ParamSpec {
         key: "sql",
@@ -122,6 +129,27 @@ pub(super) const POSTGIS_WRITE_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Attribute("Input"),
         default: "",
         hint: "Its values must all be different and none empty",
+    },
+    ParamSpec {
+        key: "sql_before",
+        label: "SQL before",
+        kind: ParamKind::Code("Input"),
+        default: "",
+        hint: "Run in the same transaction before the rows are written. {table} is the table, as schema.table. A fault undoes all",
+    },
+    ParamSpec {
+        key: "sql_after",
+        label: "SQL after",
+        kind: ParamKind::Code("Input"),
+        default: "",
+        hint: "Run when the rows are written, such as GRANT SELECT ON {table} TO readers, or REFRESH MATERIALIZED VIEW. In the same transaction as the rows, or after the last part",
+    },
+    ParamSpec {
+        key: "analyze",
+        label: "Statistics for the planner",
+        kind: ParamKind::Choice(&[("true", "Updated when done: ANALYZE, or UPDATE STATISTICS in SQL Server"), ("false", "Left to the database")]),
+        default: "true",
+        hint: "So that queries on the new rows find the quickest way at once",
     },
 ];
 
@@ -255,6 +283,10 @@ pub(super) fn run_postgis(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Out
     let sql = p.get("sql");
     let tables = p.list("tables");
     let filter = p.get("where");
+    let within = match p.get("bbox") {
+        Some(b) => Some((parse_bbox(&b)?, Some(4326))),
+        None => None,
+    };
     let (progress, gate) = (ctx.progress, ctx.gate);
     let going = |done, total| {
         progress("read", done, total);
@@ -263,7 +295,7 @@ pub(super) fn run_postgis(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Out
     let path = Path::new(&conn);
     let mut read: Vec<(Table, Option<String>)> = Vec::new();
     if let Some(q) = sql {
-        let opts = ReadOpts { crs, limit, sql: Some(q), ..Default::default() };
+        let opts = ReadOpts { crs, limit, sql: Some(q), within, ..Default::default() };
         let t = b.read_with(path, &opts, &mut ctx.notes, &going).map_err(|e| clean(e, &conn, &shown))?;
         read.push((t, None));
     } else {
@@ -273,8 +305,8 @@ pub(super) fn run_postgis(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Out
         for table in &tables {
             // A condition is sent to the database as a query, so that only those rows come.
             let opts = match &filter {
-                Some(w) => ReadOpts { crs, limit, sql: Some(format!("SELECT * FROM {} WHERE {}", sql_name(table), w)), ..Default::default() },
-                None => ReadOpts { crs, limit, layer: Some(table.clone()), ..Default::default() },
+                Some(w) => ReadOpts { crs, limit, within, sql: Some(format!("SELECT * FROM {} WHERE {}", sql_name(table), w)), ..Default::default() },
+                None => ReadOpts { crs, limit, within, layer: Some(table.clone()), ..Default::default() },
             };
             let t = b.read_with(path, &opts, &mut ctx.notes, &going).map_err(|e| clean(e, &conn, &shown))?;
             read.push((t, Some(table.clone())));
@@ -315,6 +347,9 @@ pub(super) fn run_postgis_writer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Resu
         } else {
             None
         },
+        sql_before: p.get("sql_before").filter(|s| !s.trim().is_empty()),
+        sql_after: p.get("sql_after").filter(|s| !s.trim().is_empty()),
+        analyze: p.get("analyze").as_deref() != Some("false"),
     };
     if table.image.is_some() || table.grid.is_some() {
         return err("A picture or a grid cannot be written to PostGIS. Write it to a file.");
@@ -601,6 +636,19 @@ pub(super) const TYPES: &[NodeType] = &[
         },
     },
 ];
+
+/// A rectangle as west, south, east, north in degrees.
+fn parse_bbox(text: &str) -> Result<[f64; 4]> {
+    let v: Vec<f64> = text.split([',', ';', ' ']).filter(|t| !t.trim().is_empty()).filter_map(|t| t.trim().parse().ok()).collect();
+    match v.as_slice() {
+        [w, s, e, n]
+            if w < e && s < n && (-180.0..=180.0).contains(w) && (-180.0..=180.0).contains(e) && (-90.0..=90.0).contains(s) && (-90.0..=90.0).contains(n) =>
+        {
+            Ok([*w, *s, *e, *n])
+        }
+        _ => err(format!("Only within is west, south, east and north in degrees, such as 11.95, 57.69, 11.99, 57.71, not \"{}\".", text)),
+    }
+}
 
 #[cfg(test)]
 mod tests {

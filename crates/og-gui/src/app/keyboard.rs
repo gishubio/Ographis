@@ -31,21 +31,33 @@ impl App {
         self.say("Click two opposite corners on the map, and press Enter. Escape stops.".to_string());
     }
 
-    /// While a rectangle is chosen: the rectangle the download has, or Sweden, to show on the
-    /// map when there is nothing else to show.
-    pub(super) fn area_table(&self) -> Option<Arc<og_engine::Table>> {
-        let id = self.area_for.as_ref()?;
-        let node = self.snarl.nodes().find(|n| &n.id == id)?;
+    /// While a rectangle is chosen, and there is nothing else to show: a map to choose it on.
+    /// The rectangle the download has is drawn as its outline; without one, the map shows
+    /// Sweden, framed by two points at its corners out at sea rather than an area over it.
+    pub fn area_table(&self) -> Option<Arc<og_engine::Table>> {
+        // While a rectangle is chosen; or, once chosen, while its download is the one
+        // selected and has nothing else to show, so that the map stays.
+        let choosing = self.area_for.is_some();
+        let node = match &self.area_for {
+            Some(id) => self.snarl.nodes().find(|n| &n.id == id)?,
+            None => match self.selected.as_slice() {
+                [one] => self.snarl.get_node(*one).filter(|n| matches!(n.kind.as_str(), "OsmDownloader" | "OvertureDownloader" | "PostgisReader"))?,
+                _ => return None,
+            },
+        };
         let given: Vec<f64> =
             node.params.get("bbox").and_then(|v| v.as_str()).unwrap_or("").split([',', ';', ' ']).filter_map(|t| t.trim().parse().ok()).collect();
-        let r =
-            if given.len() == 4 && given[0] < given[2] && given[1] < given[3] { [given[0], given[1], given[2], given[3]] } else { [10.5, 55.2, 24.2, 69.1] };
-        let poly = geo::Rect::new(geo::coord! { x: r[0], y: r[1] }, geo::coord! { x: r[2], y: r[3] }).to_polygon();
-        Some(Arc::new(og_engine::Table {
-            crs: Some(4326),
-            features: vec![og_engine::Feature::new(vec![], Some(geo::Geometry::Polygon(poly)))],
-            ..Default::default()
-        }))
+        let set = given.len() == 4 && given[0] < given[2] && given[1] < given[3];
+        if !choosing && !set {
+            return None;
+        }
+        let geom = if set {
+            let ring = geo::Rect::new(geo::coord! { x: given[0], y: given[1] }, geo::coord! { x: given[2], y: given[3] }).to_polygon().exterior().clone();
+            geo::Geometry::LineString(ring)
+        } else {
+            geo::Geometry::MultiPoint(geo::MultiPoint::new(vec![geo::point! { x: 10.5, y: 55.2 }, geo::point! { x: 24.2, y: 69.1 }]))
+        };
+        Some(Arc::new(og_engine::Table { crs: Some(4326), features: vec![og_engine::Feature::new(vec![], Some(geom))], ..Default::default() }))
     }
 
     /// Takes a rectangle chosen on the map into the download that asked for it.
@@ -95,6 +107,12 @@ impl App {
         }
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::F)) {
             self.picker = Some(Picker::default());
+            return;
+        }
+        // F joins the selected nodes from left to right: the first output of each into the
+        // first free input of the next.
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F)) {
+            self.connect_selected();
             return;
         }
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::L)) {
@@ -158,7 +176,9 @@ impl App {
             }
             return;
         }
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Enter)) {
+        // Enter takes a rectangle drawn on the map; the map sees it after the canvas.
+        let rectangle_drawn = self.map.measuring.as_ref().is_some_and(|m| m.what == crate::maptools::Measure::Rectangle && m.points.len() == 2);
+        if !rectangle_drawn && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Enter)) {
             // To the form: the first field of the selected node gets the keyboard.
             self.focus_form = 1;
         }
@@ -307,6 +327,39 @@ impl App {
                 let s = self.transform.scaling;
                 self.fit = Some(TSTransform::new(self.canvas_rect.center().to_vec2() - target.to_vec2() * s, s));
             }
+        }
+    }
+}
+
+impl App {
+    /// Connects the selected nodes in a row, as they stand from left to right.
+    pub(super) fn connect_selected(&mut self) {
+        let mut nodes: Vec<(egui_snarl::NodeId, f32)> = self.selected.iter().filter_map(|id| self.snarl.get_node_info(*id).map(|n| (*id, n.pos.x))).collect();
+        if nodes.len() < 2 {
+            self.say("Select two or more nodes to connect them from left to right, then F.");
+            return;
+        }
+        nodes.sort_by(|a, b| a.1.total_cmp(&b.1));
+        let mut made = 0;
+        for w in nodes.windows(2) {
+            let (from, to) = (w[0].0, w[1].0);
+            if self.snarl[from].outputs().is_empty() {
+                continue;
+            }
+            let inputs = self.snarl[to].inputs().len();
+            let taken = |k: usize| self.snarl.wires().any(|(_, i)| i.node == to && i.input == k);
+            // An input that is free, or the first, which takes several connections.
+            let Some(k) = (0..inputs).find(|k| !taken(*k)).or((inputs > 0).then_some(0)) else { continue };
+            let (o, i) = (egui_snarl::OutPinId { node: from, output: 0 }, egui_snarl::InPinId { node: to, input: k });
+            if self.snarl.wires().any(|(a, b)| a == o && b == i) {
+                continue;
+            }
+            self.snarl.connect(o, i);
+            made += 1;
+        }
+        if made > 0 {
+            self.changed(true);
+            self.say(format!("{} {} made.", made, if made == 1 { "connection" } else { "connections" }));
         }
     }
 }

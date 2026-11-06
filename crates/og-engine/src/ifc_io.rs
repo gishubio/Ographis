@@ -2571,6 +2571,7 @@ pub(crate) fn from_step(step: &Step, opts: &IfcOpts, notes: &mut Notes, going: &
 
     // Relations: storey, type, material, properties, openings and parts.
     let mut storey_of: HashMap<u64, String> = HashMap::new();
+    let mut storey_ref_of: HashMap<u64, u64> = HashMap::new();
     let mut parent_of: HashMap<u64, u64> = HashMap::new();
     let mut type_of: HashMap<u64, u64> = HashMap::new();
     let mut material_of: HashMap<u64, u64> = HashMap::new();
@@ -2586,6 +2587,7 @@ pub(crate) fn from_step(step: &Step, opts: &IfcOpts, notes: &mut Notes, going: &
                     let name = s.arg(st, 2).and_then(|v| v.text()).unwrap_or_default();
                     for x in refs(4) {
                         storey_of.insert(x, name.clone());
+                        storey_ref_of.insert(x, st);
                     }
                 }
             }
@@ -2841,6 +2843,7 @@ pub(crate) fn from_step(step: &Step, opts: &IfcOpts, notes: &mut Notes, going: &
         }
         // The storey: its own, or that of what it is a part of.
         let mut storey = storey_of.get(id).cloned();
+        let mut storey_ref = storey_ref_of.get(id).copied();
         let mut up = *id;
         for _ in 0..8 {
             if storey.is_some() {
@@ -2848,15 +2851,19 @@ pub(crate) fn from_step(step: &Step, opts: &IfcOpts, notes: &mut Notes, going: &
             }
             match parent_of.get(&up) {
                 Some(p) => {
-                    storey = storey_of
-                        .get(p)
-                        .cloned()
-                        .or_else(|| (s.ty(*p) == "IFCBUILDINGSTOREY").then(|| s.arg(*p, 2).and_then(|v| v.text()).unwrap_or_default()));
+                    let own = s.ty(*p) == "IFCBUILDINGSTOREY";
+                    storey = storey_of.get(p).cloned().or_else(|| own.then(|| s.arg(*p, 2).and_then(|v| v.text()).unwrap_or_default()));
+                    storey_ref = storey_ref_of.get(p).copied().or(own.then_some(*p));
                     up = *p;
                 }
                 None => break,
             }
         }
+        // The height of the floor of the storey: where its placement puts it.
+        let storey_z = storey_ref
+            .filter(|st| s.ty(*st) == "IFCBUILDINGSTOREY")
+            .and_then(|st| s.get(st).and_then(|se| se.args.get(5)).and_then(|v| v.r()))
+            .map(|pl| ifc.placement(pl).apply([0.0; 3])[2] * length);
         let type_name = type_of.get(id).and_then(|t| s.arg(*t, 2)).and_then(|v| v.text());
         let text = |k: usize| e.args.get(k).and_then(|v| v.text()).map_or(Value::Null, Value::Text);
         let round = |v: f64| (v * 1000.0).round() / 1000.0;
@@ -2873,6 +2880,7 @@ pub(crate) fn from_step(step: &Step, opts: &IfcOpts, notes: &mut Notes, going: &
             if zlo.is_finite() { Value::Real(round(zlo)) } else { Value::Null },
             if zhi.is_finite() { Value::Real(round(zhi)) } else { Value::Null },
             if zlo.is_finite() { Value::Real(round(zhi - zlo)) } else { Value::Null },
+            storey_z.map_or(Value::Null, |z| Value::Real(round(z))),
         ];
         // Property sets of the element, and of its type.
         let mut own: HashMap<String, Value> = HashMap::new();
@@ -2914,6 +2922,7 @@ pub(crate) fn from_step(step: &Step, opts: &IfcOpts, notes: &mut Notes, going: &
         Field::new("z_min", FieldType::Real),
         Field::new("z_max", FieldType::Real),
         Field::new("height", FieldType::Real),
+        Field::new("storey_z", FieldType::Real),
     ];
     pset_fields.sort();
     for k in &pset_fields {
@@ -3029,8 +3038,9 @@ pub fn place(model: &mut IfcModel, origin: Option<([f64; 3], f64)>) {
     }
     let i = t.field_index("z_min").unwrap_or(0);
     for f in &mut t.features {
-        for k in [i, i + 1] {
-            if let Value::Real(v) = f.attrs[k] {
+        // The lowest and highest point, and the floor of the storey.
+        for k in [i, i + 1, i + 3] {
+            if let Some(Value::Real(v)) = f.attrs.get(k).cloned() {
                 f.attrs[k] = Value::Real(((v + o[2]) * 1000.0).round() / 1000.0);
             }
         }
@@ -3105,6 +3115,7 @@ END-ISO-10303-21;
         assert_eq!(col("Name"), Value::Text("Vägg A".into()));
         assert_eq!(col("Tag"), Value::Text("W-1".into()));
         assert_eq!(col("storey"), Value::Text("Plan 1".into()));
+        assert!(matches!(col("storey_z"), Value::Real(_)), "{:?}", col("storey_z"));
         assert_eq!(col("Pset_WallCommon.IsExternal"), Value::Bool(true));
         assert_eq!(col("Pset_WallCommon.FireRating"), Value::Text("EI 60".into()));
         assert_eq!(col("height"), Value::Real(3.0));

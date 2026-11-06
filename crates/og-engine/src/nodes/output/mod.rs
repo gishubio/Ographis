@@ -6,8 +6,10 @@ use std::path::Path;
 
 mod documents;
 mod packing;
+mod webmap;
 use documents::*;
 use packing::*;
+use webmap::*;
 
 // ---------- View (Viewer) ----------
 
@@ -107,6 +109,7 @@ pub const OUTPUT_FORMATS: &[(&str, &str)] = &[
     ("pmtiles", "PMTiles vector tiles (.pmtiles)"),
     ("postgis", "PostGIS table"),
     ("qgis", "QGIS project with its layers (.qgz)"),
+    ("webmap", "Web map with Leaflet or MapLibre (a folder)"),
     ("pptx", "PowerPoint slides (.pptx)"),
     ("odp", "LibreOffice Impress slides (.odp)"),
     ("shp", "Shapefile (.shp)"),
@@ -118,6 +121,7 @@ pub fn output_kind(format: &str) -> &'static str {
     match format {
         "geopdf" => "LayeredPdfWriter",
         "qgis" => "QgisProjectWriter",
+        "webmap" => "WebMapWriter",
         "postgis" => "PostgisWriter",
         "pptx" | "odp" => "SlideWriter",
         _ => "Writer",
@@ -157,6 +161,19 @@ pub(super) const PDF_SIZES: &[(&str, &str)] = &[
 pub(super) const PDF_COMPRESS: &[(&str, &str)] = &[("deflate", "Lossless: every pixel kept"), ("jpeg", "JPEG: smaller, for photos and shaded relief")];
 
 /// The page of a PDF from the parameters pdf_*.
+/// How a picture is written, from the form.
+fn image_opts(p: &P, table: &Table) -> Result<crate::io::ImageOpts> {
+    // Given here, or by the picture: a map drawn for print knows its resolution.
+    let own = table.field_index("dpi").and_then(|k| table.features.first().and_then(|f| f.attrs.get(k)).and_then(|v| v.as_f64()));
+    let dpi = number_param(p, "img_dpi", "Pixels to the inch")?.or(own);
+    if dpi.is_some_and(|d| d <= 0.0 || d > 10_000.0) {
+        return err("Pixels to the inch is a number from 1 to 10 000, such as 300.");
+    }
+    let quality = number_param(p, "img_quality", "JPEG quality")?.unwrap_or(92.0).clamp(1.0, 100.0) as u8;
+    let compress = p.get("tif_compress").filter(|c| matches!(c.as_str(), "deflate" | "lzw" | "jpeg" | "none")).unwrap_or_else(|| "deflate".into());
+    Ok(crate::io::ImageOpts { dpi, quality, compress })
+}
+
 pub(super) fn pdf_page(p: &P) -> Result<crate::io::PdfPage> {
     let d = crate::io::PdfPage::default();
     Ok(crate::io::PdfPage {
@@ -316,6 +333,34 @@ pub(super) const WRITER_PARAMS: &[ParamSpec] = &[
         default: "14",
         hint: "PMTiles: the largest, at most 16. 14 has tiles of about 2 km, and maps zoom in beyond it",
     },
+    ParamSpec {
+        key: "gpkg_version",
+        label: "GeoPackage version",
+        kind: ParamKind::Choice(&[("", "As GDAL chooses"), ("1.4", "1.4"), ("1.3", "1.3"), ("1.2", "1.2, for older programs")]),
+        default: "",
+        hint: "Of a new GeoPackage. GDAL chooses the oldest version that holds the data. A file that is there keeps its own",
+    },
+    ParamSpec {
+        key: "img_dpi",
+        label: "Pixels to the inch",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "PNG, JPEG and GeoTIFF: how large the picture prints, kept in the file, such as 300. It does not change the picture, and makes it no sharper: for that, draw it for print in Draw map, which then gives its resolution here by itself. Empty takes that of the picture, or none",
+    },
+    ParamSpec {
+        key: "img_quality",
+        label: "JPEG quality",
+        kind: ParamKind::Text,
+        default: "92",
+        hint: "1 to 100: more is sharper and larger. For JPEG, and GeoTIFF packed as JPEG",
+    },
+    ParamSpec {
+        key: "tif_compress",
+        label: "GeoTIFF packed as",
+        kind: ParamKind::Choice(&[("deflate", "Deflate, lossless"), ("lzw", "LZW, lossless, read by the most programs"), ("jpeg", "JPEG, small but lossy"), ("none", "Not packed")]),
+        default: "deflate",
+        hint: "For pictures, also Cloud Optimized. JPEG suits aerial photos, not maps with lines and text",
+    },
     ParamSpec { key: "pdf_size", label: "Page size", kind: ParamKind::Choice(PDF_SIZES), default: "a4", hint: "" },
     ParamSpec { key: "pdf_width", label: "Page width in mm", kind: ParamKind::Text, default: "210", hint: "" },
     ParamSpec { key: "pdf_height", label: "Page height in mm", kind: ParamKind::Text, default: "297", hint: "" },
@@ -369,6 +414,17 @@ pub fn writer_file(path: &str, format: Option<&str>) -> String {
         "qgis" => "qgz".to_string(),
         "cog" => "tif".to_string(),
         "citygml" => "gml".to_string(),
+        // A web map is a folder, or a page that ends in .html.
+        "webmap" => {
+            let ext = ext_of(Path::new(path));
+            return if matches!(ext.as_str(), "html" | "htm") {
+                path.to_string()
+            } else if WRITER_FORMATS.iter().any(|f| !f.0.is_empty() && f.0 == ext) || ext == "gml" {
+                Path::new(path).with_extension("").to_string_lossy().into_owned()
+            } else {
+                path.to_string()
+            };
+        }
         // A tileset is a folder: the name without an extension.
         "3dtiles" => {
             let ext = ext_of(Path::new(path));
@@ -783,14 +839,15 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
                 for (k, g) in series.iter().enumerate() {
                     let when = g.meta.time.as_deref().map(|t| t.get(..10).unwrap_or(t).replace(':', "-")).unwrap_or_else(|| (k + 1).to_string());
                     let one = path.with_file_name(format!("{}_{}.{}", stem, when, ext));
-                    let files = b.write(&g.clone().into_table(), &one, &WriteOpts { cog, ..Default::default() }, &mut ctx.notes)?;
+                    let one_table = g.clone().into_table();
+                    let files = b.write(&one_table, &one, &WriteOpts { cog, image: image_opts(p, &one_table)?, ..Default::default() }, &mut ctx.notes)?;
                     ctx.files.extend(files);
                 }
                 ctx.notes.info(format!("{} pictures, a file for each time", series.len()));
                 return Ok(Vec::new());
             }
         }
-        let files = b.write(table, &path, &WriteOpts { pdf, cog, ..Default::default() }, &mut ctx.notes)?;
+        let files = b.write(table, &path, &WriteOpts { pdf, cog, image: image_opts(p, table)?, ..Default::default() }, &mut ctx.notes)?;
         if cog {
             ctx.notes.info("written as a Cloud Optimized GeoTIFF, with overviews");
         }
@@ -846,7 +903,8 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         }
         let b = ctx.backend(&format!("The format .{}", ext))?;
         let key = if ext == "gpkg" { primary_key(p, "fid")? } else { None };
-        let opts = WriteOpts { layer: p.get("layer"), encoding: p.get("encoding"), sizes, append, key, ..Default::default() };
+        let gpkg_version = p.get("gpkg_version").filter(|v| matches!(v.as_str(), "1.2" | "1.3" | "1.4"));
+        let opts = WriteOpts { layer: p.get("layer"), encoding: p.get("encoding"), sizes, append, key, gpkg_version, ..Default::default() };
         let files = b.write(table, &path, &opts, &mut ctx.notes)?;
         ctx.files.extend(files);
     }
@@ -956,6 +1014,20 @@ pub(super) const TYPES: &[NodeType] = &[
         ports: None,
         params: QGIS_PARAMS,
         run: run_qgis,
+        summary: |p| file_name(p),
+    },
+    NodeType {
+        name: "WebMapWriter",
+        title: "Web map output",
+        hidden: true,
+        group: Group::Writer,
+        category: "",
+        desc: "Writes the streams connected to Layers as a web map: a folder with index.html, to open in a browser or put on a web server. Leaflet or MapLibre GL draws it, with each layer as it looks in the form, as in Draw map, with its classes of colour, sizes after a number and labels; a background map; a legend that turns the layers on and off; and the attributes of a feature when it is clicked. The features go in WGS 84 beside the page, as GeoJSON, which also opens from the disk, or for large layers with MapLibre as PMTiles, which need a web server.",
+        inputs: &["Layers"],
+        outputs: &[],
+        ports: None,
+        params: WEBMAP_PARAMS,
+        run: run_webmap,
         summary: |p| file_name(p),
     },
 ];

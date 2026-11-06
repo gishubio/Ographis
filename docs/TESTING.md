@@ -1,6 +1,6 @@
 # What is tested
 
-`cargo test` runs 496 tests: expressions, CSV, geometry, whole models, reading and
+`cargo test` runs 513 tests: expressions, CSV, geometry, whole models, reading and
 writing real files, fetching from a web server on the same computer, and the user
 interface. The interface tests run the program without a window, with simulated clicks,
 drags and keys: load, run, pick a row, sort the table, drag a connection between two
@@ -16,7 +16,7 @@ latest, add a tool through the menu of the canvas, move ports, draw 300,000 road
 map and zoom in to them, follow a large read in the log, page through the table, set
 variables, pause and resume a run, run from and to a node with the cache, stop a run with Shift+F5, move and resize comment boxes, resize a group box from
 every edge and corner, clear a search with its ×, order the layers of Draw map and see
-the drawn map, see the run history and a run refused while the model is running, pick a building by a click in 3D, and see
+the drawn map, see the run history and a run refused while the model is running, pick a building by a click in 3D, cut connections with a line drawn with Ctrl and the right button, connect nodes with F, lift a node out of its connections with Alt, fold a node, and see
 the settings of a CAD drawing and a city model. Further tests add to every format, and send web requests to a server on the
 same computer. They save screenshots in `target/screenshots`.
 
@@ -57,3 +57,6 @@ Beyond the tests, results from the engine have been compared with independent to
 | DXF written by ezdxf: polylines, lines, texts and blocks with attributes on four layers | read by the program | layers, colours, line types, texts and the block attributes as written |
 | GeoParquet written by pyarrow, uncompressed, Snappy and Zstandard, with and without a coordinate system | read by the program | same values, types and points |
 | FlatGeobuf and SpatiaLite written by the program | read back, and by `ogrinfo` | same features and attributes |
+| A TIN of 20 000 triangles on a sloping plane clipped by a circle of 4 000 corners | the area of the circle by *Calculate area* | within 0.5 m² of 314 000; every corner on the plane |
+| A house extruded 10 m and cut by a slanted edge | its walls, roof and floor worked out by hand | the same area to 0.0001 m² |
+| Web maps written by the program, with Leaflet 1.9.4 and MapLibre GL 4.7.1 | opened in Chromium 141 without a network, the libraries copied in | layers, legend, labels and points drawn as in the model |

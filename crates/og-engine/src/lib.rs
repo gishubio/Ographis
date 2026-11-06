@@ -8,6 +8,7 @@ pub mod basemap;
 pub mod chart;
 pub mod citygml_write;
 pub mod citymodel;
+pub mod clip3d;
 pub mod cloud;
 pub mod crash;
 pub mod csv_io;

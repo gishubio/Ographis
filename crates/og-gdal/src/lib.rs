@@ -992,11 +992,11 @@ impl Backend for GdalBackend {
                 let Some(image) = table.image.as_ref() else {
                     return Err(GbError(format!("There is no image in the stream to write as .{}.", ext)));
                 };
-                write_image(image, table.crs, path, &ext, &opts.pdf, opts.cog, notes)?
+                write_image(image, table.crs, path, &ext, &opts.pdf, opts.cog, &opts.image, notes)?
             }
             "gpkg" => {
                 let layer = opts.layer.clone().filter(|l| !l.trim().is_empty()).unwrap_or(stem);
-                write_gpkg(table, path, &layer, &opts.sizes, opts.append, opts.key.as_ref(), notes)?;
+                write_gpkg(table, path, &layer, &opts.sizes, opts.append, opts.key.as_ref(), opts.gpkg_version.as_deref(), notes)?;
                 vec![path.to_path_buf()]
             }
             "shp" => write_shp(table, path, &stem, opts.encoding.as_deref().unwrap_or("utf-8"), &opts.sizes, opts.append, notes)?,
@@ -1732,6 +1732,7 @@ pub(crate) fn pdf_text(text: &str) -> String {
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn write_image(
     image: &og_engine::model::RasterImage,
     crs: Option<u32>,
@@ -1739,6 +1740,7 @@ pub(crate) fn write_image(
     ext: &str,
     page: &og_engine::io::PdfPage,
     cog: bool,
+    img: &og_engine::io::ImageOpts,
     notes: &mut Notes,
 ) -> Result<Vec<PathBuf>> {
     use gdal::raster::{Buffer, ColorInterpretation};
@@ -1856,14 +1858,29 @@ pub(crate) fn write_image(
     } else {
         Vec::new()
     };
+    // The resolution for printing, kept in the file as TIFF tags, which the drivers of PNG
+    // and JPEG write as theirs too.
+    if let Some(dpi) = img.dpi.filter(|_| !pdf) {
+        use gdal::Metadata;
+        for (k, v) in [("TIFFTAG_XRESOLUTION", format!("{}", dpi)), ("TIFFTAG_YRESOLUTION", format!("{}", dpi)), ("TIFFTAG_RESOLUTIONUNIT", "2".to_string())] {
+            ds.set_metadata_item(k, &v, "").map_err(|e| gerr("Cannot write the resolution", e))?;
+        }
+    }
+    let tif_compress = img.compress.to_uppercase();
+    let quality = format!("QUALITY={}", img.quality);
+    let jpeg_quality = format!("JPEG_QUALITY={}", img.quality);
+    let tif_pack = format!("COMPRESS={}", tif_compress);
     let (driver, options): (&str, Vec<&str>) = if pdf {
         ("PDF", pdf_options.iter().map(|s| s.as_str()).collect())
     } else if tiff && cog {
-        ("COG", vec!["COMPRESS=DEFLATE", "OVERVIEWS=AUTO", "BLOCKSIZE=512"])
+        ("COG", vec![tif_pack.as_str(), quality.as_str(), "OVERVIEWS=AUTO", "BLOCKSIZE=512"])
+    } else if tiff && tif_compress == "JPEG" {
+        // JPEG in a GeoTIFF packs red, green and blue; the alpha band is a mask of its own.
+        ("GTiff", vec!["COMPRESS=JPEG", jpeg_quality.as_str(), "TILED=YES"])
     } else if tiff {
-        ("GTiff", vec!["COMPRESS=DEFLATE", "PHOTOMETRIC=RGB", "ALPHA=YES", "TILED=YES"])
+        ("GTiff", vec![tif_pack.as_str(), "PHOTOMETRIC=RGB", "ALPHA=YES", "TILED=YES"])
     } else if jpeg {
-        ("JPEG", vec!["QUALITY=92"])
+        ("JPEG", vec![quality.as_str()])
     } else {
         ("PNG", vec!["ZLEVEL=6"])
     };
@@ -2042,11 +2059,12 @@ fn append_to_layer(layer: &gdal::vector::Layer, table: &Table, features: &[&Feat
 }
 
 /// How the primary key of a new table is written.
-pub(crate) struct KeyPlan {
+pub(crate) struct KeyPlan<'a> {
     /// The name of the key column, for the layer option FID.
     pub column: String,
-    /// The table to write: without the attribute when its values are the key.
-    pub table: Table,
+    /// The table to write: without the attribute when its values are the key. Otherwise the
+    /// table itself, not a copy, which would double the memory of a large layer.
+    pub table: std::borrow::Cow<'a, Table>,
     /// The key of each feature, when an attribute of whole numbers is the key.
     pub fids: Option<Vec<i64>>,
     /// An attribute of other values that is the key: it stays, and is made unique.
@@ -2055,10 +2073,10 @@ pub(crate) struct KeyPlan {
 
 /// Plans the primary key: a new column of numbers, or an attribute whose values are all
 /// different and none empty.
-pub(crate) fn plan_key(table: &Table, key: Option<&og_engine::io::PrimaryKey>, default: &str) -> Result<KeyPlan> {
+pub(crate) fn plan_key<'a>(table: &'a Table, key: Option<&og_engine::io::PrimaryKey>, default: &str) -> Result<KeyPlan<'a>> {
     use og_engine::io::PrimaryKey;
     match key {
-        None => Ok(KeyPlan { column: default.to_string(), table: table.clone(), fids: None, unique: None }),
+        None => Ok(KeyPlan { column: default.to_string(), table: std::borrow::Cow::Borrowed(table), fids: None, unique: None }),
         Some(PrimaryKey::New(name)) => {
             let name = if name.trim().is_empty() { default } else { name.trim() };
             if let Some(bad) = table.fields.iter().find(|f| f.name.eq_ignore_ascii_case(name)) {
@@ -2067,7 +2085,7 @@ pub(crate) fn plan_key(table: &Table, key: Option<&og_engine::io::PrimaryKey>, d
                     bad.name
                 )));
             }
-            Ok(KeyPlan { column: name.to_string(), table: table.clone(), fids: None, unique: None })
+            Ok(KeyPlan { column: name.to_string(), table: std::borrow::Cow::Borrowed(table), fids: None, unique: None })
         }
         Some(PrimaryKey::Attribute(name)) => {
             let at = table.field_index(name).ok_or_else(|| GbError(format!("There is no attribute {} to be the primary key.", name)))?;
@@ -2094,9 +2112,9 @@ pub(crate) fn plan_key(table: &Table, key: Option<&og_engine::io::PrimaryKey>, d
                 for f in t.features.iter_mut() {
                     f.attrs.remove(at);
                 }
-                Ok(KeyPlan { column: name.clone(), table: t, fids: Some(whole.into_iter().flatten().collect()), unique: None })
+                Ok(KeyPlan { column: name.clone(), table: std::borrow::Cow::Owned(t), fids: Some(whole.into_iter().flatten().collect()), unique: None })
             } else {
-                Ok(KeyPlan { column: default.to_string(), table: table.clone(), fids: None, unique: Some(name.clone()) })
+                Ok(KeyPlan { column: default.to_string(), table: std::borrow::Cow::Borrowed(table), fids: None, unique: Some(name.clone()) })
             }
         }
     }
@@ -2110,6 +2128,7 @@ pub(crate) fn write_gpkg(
     sizes: &HashMap<String, FieldSize>,
     append: bool,
     key: Option<&og_engine::io::PrimaryKey>,
+    version: Option<&str>,
     notes: &mut Notes,
 ) -> Result<()> {
     let plan = plan_key(table, key, "fid")?;
@@ -2124,7 +2143,19 @@ pub(crate) fn write_gpkg(
         // The file exists: replace only this layer and leave the other layers alone.
         open(path, true, &[])?
     } else {
-        DriverManager::get_driver_by_name("GPKG").and_then(|d| d.create_vector_only(path)).map_err(|e| gerr(format!("Cannot create {}", path.display()), e))?
+        match version {
+            // VERSION is an option of the driver when the file is made.
+            Some(v) => {
+                let mut list = gdal::cpl::CslStringList::new();
+                list.set_name_value("VERSION", v).map_err(|e| gerr("Cannot set the version", e))?;
+                DriverManager::get_driver_by_name("GPKG")
+                    .and_then(|d| d.create_with_band_type_with_options::<u8, _>(path, 0, 0, 0, &list))
+                    .map_err(|e| gerr(format!("Cannot create {}", path.display()), e))?
+            }
+            None => DriverManager::get_driver_by_name("GPKG")
+                .and_then(|d| d.create_vector_only(path))
+                .map_err(|e| gerr(format!("Cannot create {}", path.display()), e))?,
+        }
     };
     let mut txn = ds.start_transaction().map_err(|e| gerr("Cannot start writing", e))?;
     let there = append && txn.layer_by_name(layer).is_ok();

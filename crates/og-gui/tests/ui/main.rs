@@ -13,4 +13,5 @@ mod map_and_data;
 mod release090;
 mod release091;
 mod release094;
+mod release095;
 mod running;

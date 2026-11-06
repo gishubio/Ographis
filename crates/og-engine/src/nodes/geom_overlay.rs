@@ -33,6 +33,9 @@ pub(super) fn run_clipper(_p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Out
             return Ok(vec![("Inside".into(), inside), ("Outside".into(), clippee.clone())]);
         }
     };
+    if let Some(mesh) = clippee.mesh.as_deref() {
+        return clip_model(clippee, mesh, &clipper, ctx);
+    }
     let mut unsupported = 0usize;
     for f in &clippee.features {
         let g = match &f.geom {
@@ -46,16 +49,74 @@ pub(super) fn run_clipper(_p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Out
         if !r.supported {
             unsupported += 1;
         }
+        // Heights go with the pieces: from the corners there were, along the edges and in
+        // the plane of each area.
+        let z_of = |part: &Geometry<f64>| -> Option<std::sync::Arc<[f64]>> {
+            let z = f.heights()?;
+            if part == g {
+                return f.z.clone();
+            }
+            Some(std::sync::Arc::from(geom::lift_heights(g, z, part)))
+        };
         if let Some(part) = r.inside {
-            inside.features.push(Feature { z: None, attrs: f.attrs.clone(), geom: Some(part) });
+            inside.features.push(Feature { z: z_of(&part), attrs: f.attrs.clone(), geom: Some(part) });
         }
         if let Some(part) = r.outside {
-            outside.features.push(Feature { z: None, attrs: f.attrs.clone(), geom: Some(part) });
+            outside.features.push(Feature { z: z_of(&part), attrs: f.attrs.clone(), geom: Some(part) });
         }
     }
     if unsupported > 0 {
         ctx.notes.warn(format!("{} geometry collections cannot be clipped and were sent to Outside.", unsupported));
     }
+    Ok(vec![("Inside".into(), inside), ("Outside".into(), outside)])
+}
+
+/// Clips a 3D model, such as a TIN, a surface or buildings, by the clip areas from above.
+/// Each object goes to the side where it has triangles, and to both when it is cut; its
+/// feature is clipped with it.
+fn clip_model(clippee: &Table, mesh: &crate::mesh::Mesh, clipper: &geom::Clipper, ctx: &mut NodeCtx) -> Result<Outputs> {
+    let (mesh_in, mesh_out) = crate::clip3d::clip_mesh(mesh, clipper);
+    let rows_with = |m: &crate::mesh::Mesh| -> Vec<usize> {
+        let mut has = vec![false; clippee.features.len().max(m.objects.len())];
+        for t in &m.tris {
+            if let Some(h) = has.get_mut(t.object as usize) {
+                *h = true;
+            }
+        }
+        (0..clippee.features.len()).filter(|r| has[*r]).collect()
+    };
+    let side = |m: &crate::mesh::Mesh, inside: bool| -> Table {
+        let rows = rows_with(m);
+        let mut out = clippee.like();
+        for r in &rows {
+            let f = &clippee.features[*r];
+            let geom_part = f.geom.as_ref().map(|g| (g, clipper.clip(g)));
+            let feature = match geom_part {
+                Some((g, c)) => {
+                    let part = if inside { c.inside } else { c.outside };
+                    match part {
+                        Some(part) => {
+                            let z = f.heights().map(|z| if &part == g { f.z.clone().unwrap() } else { std::sync::Arc::from(geom::lift_heights(g, z, &part)) });
+                            Feature { attrs: f.attrs.clone(), geom: Some(part), z }
+                        }
+                        // The model reaches over, but its outline does not: the outline is kept.
+                        None => f.clone(),
+                    }
+                }
+                None => f.clone(),
+            };
+            out.features.push(feature);
+        }
+        out.mesh = Some(std::sync::Arc::new(m.pick(&rows)));
+        out
+    };
+    let (inside, outside) = (side(&mesh_in, true), side(&mesh_out, false));
+    ctx.notes.info(format!(
+        "{} triangles inside and {} outside, from {}",
+        fmt_count(mesh_in.tris.len() as u64),
+        fmt_count(mesh_out.tris.len() as u64),
+        fmt_count(mesh.tris.len() as u64)
+    ));
     Ok(vec![("Inside".into(), inside), ("Outside".into(), outside)])
 }
 
@@ -1121,7 +1182,7 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Geometry",
-        desc: "Clips points, lines and areas against the clip areas. Lines and areas are split at the boundary. Points exactly on the boundary count as inside. All clip areas are merged into one before clipping.",
+        desc: "Clips points, lines and areas against the clip areas. Lines and areas are split at the boundary. Points exactly on the boundary count as inside. All clip areas are merged into one before clipping. Heights are kept: a new corner gets its height from the edge or the plane it was cut from. 3D models, such as a TIN, a surface or buildings, are cut from above, each triangle in its own plane, and walls by upright planes along the boundary.",
         inputs: &["Clipper", "Clippee"],
         outputs: &["Inside", "Outside"],
         ports: None,

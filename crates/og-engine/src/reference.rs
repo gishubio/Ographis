@@ -315,6 +315,16 @@ pub fn check(text: &str) -> Vec<Finding> {
     let mut ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
     for n in &ws.nodes {
         let at = Some(n.id.as_str());
+        // A password written into the model goes wherever the model goes.
+        if n.params.get("password").and_then(|v| v.as_str()).is_some_and(|p| !p.trim().is_empty() && !p.contains("$(")) {
+            out.push(warn(
+                at,
+                format!(
+                    "The node \"{}\" has a password written in the model, which anyone the model is given to can read. Use a connection from Edit → Settings, or a variable such as $(password).",
+                    n.id
+                ),
+            ));
+        }
         if n.id.trim().is_empty() {
             out.push(err(None, format!("A node of type {} has no id.", n.kind)));
         } else if !ids.insert(n.id.as_str()) {

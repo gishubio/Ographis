@@ -257,6 +257,9 @@ pub struct App {
     /// Point clouds as the features shown on the map and in the table: every n-th point, made
     /// once for each cloud.
     pub cloud_views: std::cell::RefCell<std::collections::HashMap<usize, Arc<og_engine::Table>>>,
+    /// The classes of the points of a stream with how many of each, for Filter point cloud,
+    /// counted once for each stream.
+    pub class_counts: std::cell::RefCell<std::collections::HashMap<usize, Vec<(i64, u64)>>>,
     /// Of a cloud shown by every n-th point: n, and how many points it has.
     pub cloud_totals: std::cell::RefCell<std::collections::HashMap<usize, (usize, usize)>>,
     /// A series of rasters as the map shows it with another row than the first picked: the
@@ -268,6 +271,9 @@ pub struct App {
     focus_form: u8,
     /// Frames in which a focus that egui gave on Tab is let go of.
     tab_surrender: u8,
+    /// Alt held while nodes are dragged: where they were at the last frame, and whether they
+    /// have been lifted out of their connections in this drag.
+    alt_drag: (Vec<(NodeId, egui::Pos2)>, bool),
     /// Whether the small map of the model is shown in a corner of the canvas.
     pub show_minimap: bool,
     /// The size of everything last set, to tell when Ctrl and + or − has changed it.
@@ -461,10 +467,12 @@ impl App {
             picker: None,
             area_for: None,
             cloud_views: Default::default(),
+            class_counts: Default::default(),
             cloud_totals: Default::default(),
             series_views: Default::default(),
             focus_form: 0,
             tab_surrender: 0,
+            alt_drag: (Vec::new(), false),
             show_minimap: true,
             applied_zoom: 0.0,
             notice: None,

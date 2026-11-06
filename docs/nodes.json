@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.94.1",
+  "version": "0.95.2",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a name that is shown, x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -1487,6 +1487,10 @@
               "label": "QGIS project with its layers (.qgz)"
             },
             {
+              "value": "webmap",
+              "label": "Web map with Leaflet or MapLibre (a folder)"
+            },
+            {
               "value": "pptx",
               "label": "PowerPoint slides (.pptx)"
             },
@@ -1887,6 +1891,74 @@
           "hint": "PMTiles: the largest, at most 16. 14 has tiles of about 2 km, and maps zoom in beyond it"
         },
         {
+          "key": "gpkg_version",
+          "label": "GeoPackage version",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "",
+              "label": "As GDAL chooses"
+            },
+            {
+              "value": "1.4",
+              "label": "1.4"
+            },
+            {
+              "value": "1.3",
+              "label": "1.3"
+            },
+            {
+              "value": "1.2",
+              "label": "1.2, for older programs"
+            }
+          ],
+          "default": "",
+          "hint": "Of a new GeoPackage. GDAL chooses the oldest version that holds the data. A file that is there keeps its own"
+        },
+        {
+          "key": "img_dpi",
+          "label": "Pixels to the inch",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "PNG, JPEG and GeoTIFF: how large the picture prints, kept in the file, such as 300. It does not change the picture, and makes it no sharper: for that, draw it for print in Draw map, which then gives its resolution here by itself. Empty takes that of the picture, or none"
+        },
+        {
+          "key": "img_quality",
+          "label": "JPEG quality",
+          "kind": "text",
+          "shape": "a string",
+          "default": "92",
+          "hint": "1 to 100: more is sharper and larger. For JPEG, and GeoTIFF packed as JPEG"
+        },
+        {
+          "key": "tif_compress",
+          "label": "GeoTIFF packed as",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "deflate",
+              "label": "Deflate, lossless"
+            },
+            {
+              "value": "lzw",
+              "label": "LZW, lossless, read by the most programs"
+            },
+            {
+              "value": "jpeg",
+              "label": "JPEG, small but lossy"
+            },
+            {
+              "value": "none",
+              "label": "Not packed"
+            }
+          ],
+          "default": "deflate",
+          "hint": "For pictures, also Cloud Optimized. JPEG suits aerial photos, not maps with lines and text"
+        },
+        {
           "key": "pdf_size",
           "label": "Page size",
           "kind": "choice",
@@ -2193,6 +2265,10 @@
               "label": "QGIS project with its layers (.qgz)"
             },
             {
+              "value": "webmap",
+              "label": "Web map with Leaflet or MapLibre (a folder)"
+            },
+            {
               "value": "pptx",
               "label": "PowerPoint slides (.pptx)"
             },
@@ -2406,6 +2482,10 @@
             {
               "value": "qgis",
               "label": "QGIS project with its layers (.qgz)"
+            },
+            {
+              "value": "webmap",
+              "label": "Web map with Leaflet or MapLibre (a folder)"
             },
             {
               "value": "pptx",
@@ -2861,6 +2941,10 @@
               "label": "QGIS project with its layers (.qgz)"
             },
             {
+              "value": "webmap",
+              "label": "Web map with Leaflet or MapLibre (a folder)"
+            },
+            {
               "value": "pptx",
               "label": "PowerPoint slides (.pptx)"
             },
@@ -2941,6 +3025,299 @@
       ]
     },
     {
+      "type": "WebMapWriter",
+      "title": "Web map output",
+      "group": "output",
+      "category": "",
+      "description": "Writes the streams connected to Layers as a web map: a folder with index.html, to open in a browser or put on a web server. Leaflet or MapLibre GL draws it, with each layer as it looks in the form, as in Draw map, with its classes of colour, sizes after a number and labels; a background map; a legend that turns the layers on and off; and the attributes of a feature when it is clicked. The features go in WGS 84 beside the page, as GeoJSON, which also opens from the disk, or for large layers with MapLibre as PMTiles, which need a web server.",
+      "inputs": [
+        "Layers"
+      ],
+      "outputs": [],
+      "outputs_follow_settings": false,
+      "offered": false,
+      "params": [
+        {
+          "key": "path",
+          "label": "Folder",
+          "kind": "path",
+          "shape": "a file to write; relative paths start at the folder of the model",
+          "default": "",
+          "hint": "The page is index.html in it, with the data in data. A name that ends in .html is the page, in the folder it is in"
+        },
+        {
+          "key": "format",
+          "label": "Format",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "",
+              "label": "From the file name"
+            },
+            {
+              "value": "csv",
+              "label": "CSV (.csv)"
+            },
+            {
+              "value": "xlsx",
+              "label": "Excel (.xlsx)"
+            },
+            {
+              "value": "fgb",
+              "label": "FlatGeobuf (.fgb)"
+            },
+            {
+              "value": "geojson",
+              "label": "GeoJSON (.geojson)"
+            },
+            {
+              "value": "parquet",
+              "label": "GeoParquet (.parquet)"
+            },
+            {
+              "value": "gpkg",
+              "label": "GeoPackage (.gpkg)"
+            },
+            {
+              "value": "gml",
+              "label": "GML 3.2 (.gml)"
+            },
+            {
+              "value": "gpx",
+              "label": "GPX for GPS units (.gpx)"
+            },
+            {
+              "value": "kml",
+              "label": "KML for Google Earth (.kml)"
+            },
+            {
+              "value": "kmz",
+              "label": "KMZ for Google Earth (.kmz)"
+            },
+            {
+              "value": "geopdf",
+              "label": "GeoSpatial PDF with layers (.pdf)"
+            },
+            {
+              "value": "tif",
+              "label": "GeoTIFF image (.tif)"
+            },
+            {
+              "value": "cog",
+              "label": "Cloud Optimized GeoTIFF (.tif)"
+            },
+            {
+              "value": "citygml",
+              "label": "CityGML 2.0 buildings (.gml)"
+            },
+            {
+              "value": "glb",
+              "label": "glTF 3D model (.glb)"
+            },
+            {
+              "value": "3dtiles",
+              "label": "3D Tiles 1.1 (a folder with tileset.json)"
+            },
+            {
+              "value": "jpg",
+              "label": "JPEG image (.jpg)"
+            },
+            {
+              "value": "las",
+              "label": "LAS point cloud (.las)"
+            },
+            {
+              "value": "laz",
+              "label": "LAZ point cloud (.laz)"
+            },
+            {
+              "value": "ods",
+              "label": "LibreOffice Calc (.ods)"
+            },
+            {
+              "value": "obj",
+              "label": "OBJ 3D model (.obj)"
+            },
+            {
+              "value": "pdf",
+              "label": "PDF (.pdf)"
+            },
+            {
+              "value": "png",
+              "label": "PNG image (.png)"
+            },
+            {
+              "value": "pmtiles",
+              "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
+              "value": "postgis",
+              "label": "PostGIS table"
+            },
+            {
+              "value": "qgis",
+              "label": "QGIS project with its layers (.qgz)"
+            },
+            {
+              "value": "webmap",
+              "label": "Web map with Leaflet or MapLibre (a folder)"
+            },
+            {
+              "value": "pptx",
+              "label": "PowerPoint slides (.pptx)"
+            },
+            {
+              "value": "odp",
+              "label": "LibreOffice Impress slides (.odp)"
+            },
+            {
+              "value": "shp",
+              "label": "Shapefile (.shp)"
+            },
+            {
+              "value": "txt",
+              "label": "Text (.txt)"
+            }
+          ],
+          "default": "webmap"
+        },
+        {
+          "key": "title",
+          "label": "Title",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Of the page and over the legend. Empty: the name of the folder"
+        },
+        {
+          "key": "library",
+          "label": "Drawn with",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "leaflet",
+              "label": "Leaflet: small and simple, for some ten thousand features"
+            },
+            {
+              "value": "maplibre",
+              "label": "MapLibre GL: drawn by the graphics card, for large data"
+            }
+          ],
+          "default": "leaflet",
+          "hint": "Loaded from unpkg.com when the page opens"
+        },
+        {
+          "key": "layers",
+          "label": "Layers",
+          "kind": "list",
+          "shape": "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}",
+          "port": "Layers",
+          "default": "",
+          "hint": "The top row is on top. A layer that is not ticked can be turned on in the legend"
+        },
+        {
+          "key": "basemap",
+          "label": "Background map",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "None"
+            },
+            {
+              "value": "osm",
+              "label": "OpenStreetMap"
+            },
+            {
+              "value": "carto_light",
+              "label": "Light grey (CARTO Positron)"
+            },
+            {
+              "value": "carto_voyager",
+              "label": "Soft colours (CARTO Voyager)"
+            },
+            {
+              "value": "carto_dark",
+              "label": "Dark (CARTO Dark Matter)"
+            },
+            {
+              "value": "own",
+              "label": "One of my own, or an address"
+            }
+          ],
+          "default": "osm",
+          "hint": "Tiles from the web under the layers"
+        },
+        {
+          "key": "basemap_own",
+          "label": "Name or address",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The name of one of your background maps under Settings, of tiles or WMS, or an address with {z}, {x} and {y}. One that needs a password or a key is left out, so that it is not written into the page"
+        },
+        {
+          "key": "web_data",
+          "label": "The features as",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "auto",
+              "label": "As fits: PMTiles for large layers with MapLibre"
+            },
+            {
+              "value": "geojson",
+              "label": "GeoJSON beside the page, opens from the disk"
+            },
+            {
+              "value": "pmtiles",
+              "label": "PMTiles, vector tiles: MapLibre, on a web server"
+            }
+          ],
+          "default": "auto"
+        },
+        {
+          "key": "popups",
+          "label": "Attributes when clicked",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "true",
+              "label": "Shown"
+            },
+            {
+              "value": "false",
+              "label": "Not shown"
+            }
+          ],
+          "default": "true",
+          "hint": "A click on a feature shows its attributes"
+        },
+        {
+          "key": "legend",
+          "label": "Legend",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "true",
+              "label": "Shown, with the layers to turn on and off"
+            },
+            {
+              "value": "false",
+              "label": "Not shown"
+            }
+          ],
+          "default": "true"
+        }
+      ]
+    },
+    {
       "type": "PostgisReader",
       "title": "PostGIS input",
       "group": "input",
@@ -2996,7 +3373,7 @@
           "kind": "secret",
           "shape": "a string; better a $(variable) or a connection in the settings than the secret itself",
           "default": "",
-          "hint": "Stored in the model file as it is. Write $(password) and set the variable to keep it out of the file"
+          "hint": "Stored in the model file as it is, for anyone the model is given to to read. Better: a connection from Edit → Settings, or $(password) with the variable set"
         },
         {
           "key": "tables",
@@ -3013,6 +3390,14 @@
           "shape": "a string",
           "default": "",
           "hint": "A condition in SQL, such as kommun = 'Skövde', so that the database sends only those rows"
+        },
+        {
+          "key": "bbox",
+          "label": "Only within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "A rectangle, west, south, east, north in degrees, such as 11.95, 57.69, 11.99, 57.71, or chosen on the map: the database sends only the rows that reach into it, found through its spatial index"
         },
         {
           "key": "sql",
@@ -3267,6 +3652,10 @@
               "label": "QGIS project with its layers (.qgz)"
             },
             {
+              "value": "webmap",
+              "label": "Web map with Leaflet or MapLibre (a folder)"
+            },
+            {
               "value": "pptx",
               "label": "PowerPoint slides (.pptx)"
             },
@@ -3328,7 +3717,7 @@
           "kind": "secret",
           "shape": "a string; better a $(variable) or a connection in the settings than the secret itself",
           "default": "",
-          "hint": "Stored in the model file as it is. Write $(password) and set the variable to keep it out of the file"
+          "hint": "Stored in the model file as it is, for anyone the model is given to to read. Better: a connection from Edit → Settings, or $(password) with the variable set"
         },
         {
           "key": "schema",
@@ -3483,6 +3872,42 @@
           "port": "Input",
           "default": "",
           "hint": "Its values must all be different and none empty"
+        },
+        {
+          "key": "sql_before",
+          "label": "SQL before",
+          "kind": "code",
+          "shape": "text over several lines, such as SQL, with {attribute} put in from the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "Run in the same transaction before the rows are written. {table} is the table, as schema.table. A fault undoes all"
+        },
+        {
+          "key": "sql_after",
+          "label": "SQL after",
+          "kind": "code",
+          "shape": "text over several lines, such as SQL, with {attribute} put in from the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "Run when the rows are written, such as GRANT SELECT ON {table} TO readers, or REFRESH MATERIALIZED VIEW. In the same transaction as the rows, or after the last part"
+        },
+        {
+          "key": "analyze",
+          "label": "Statistics for the planner",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "true",
+              "label": "Updated when done: ANALYZE, or UPDATE STATISTICS in SQL Server"
+            },
+            {
+              "value": "false",
+              "label": "Left to the database"
+            }
+          ],
+          "default": "true",
+          "hint": "So that queries on the new rows find the quickest way at once"
         }
       ]
     },
@@ -4757,7 +5182,7 @@
       "title": "Clip",
       "group": "tool",
       "category": "Geometry",
-      "description": "Clips points, lines and areas against the clip areas. Lines and areas are split at the boundary. Points exactly on the boundary count as inside. All clip areas are merged into one before clipping.",
+      "description": "Clips points, lines and areas against the clip areas. Lines and areas are split at the boundary. Points exactly on the boundary count as inside. All clip areas are merged into one before clipping. Heights are kept: a new corner gets its height from the edge or the plane it was cut from. 3D models, such as a TIN, a surface or buildings, are cut from above, each triangle in its own plane, and walls by upright planes along the boundary.",
       "inputs": [
         "Clipper",
         "Clippee"
@@ -7513,12 +7938,45 @@
           "hint": "Each stream connected to Layers is a layer. The top row is drawn on top"
         },
         {
+          "key": "size_as",
+          "label": "Size",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "pixels",
+              "label": "In pixels, for the screen"
+            },
+            {
+              "value": "print",
+              "label": "For print: width in mm and pixels to the inch"
+            }
+          ],
+          "default": "pixels"
+        },
+        {
           "key": "width",
           "label": "Width in pixels",
           "kind": "text",
           "shape": "a string",
           "default": "1600",
           "hint": "The height follows from the area that is drawn"
+        },
+        {
+          "key": "print_mm",
+          "label": "Width in mm",
+          "kind": "text",
+          "shape": "a string",
+          "default": "180",
+          "hint": "On paper, such as 180 for an A4 page with margins. The height follows from the area that is drawn"
+        },
+        {
+          "key": "print_dpi",
+          "label": "Pixels to the inch",
+          "kind": "text",
+          "shape": "a string",
+          "default": "300",
+          "hint": "300 for print, 150 for a draft. Lines, points and labels keep the size they have on the screen, measured on paper, and the picture tells Output its resolution"
         },
         {
           "key": "margin",
@@ -12215,6 +12673,80 @@
       ]
     },
     {
+      "type": "OutlineFromAbove",
+      "title": "Outline from above",
+      "group": "tool",
+      "category": "3D models and views",
+      "description": "Makes 3D objects, such as walls, doors and furniture read from IFC, into areas in 2D: the shadow each object casts when lit from straight above, as one area with all that sticks out, such as the handle of a door. Seen from a height, such as 1 m above the floor of the storey, what is above it is left out, so that the wall over a door leaves a gap, as in a plan. Or only what the cut at that height goes through.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Outlines",
+        "Other"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "cut",
+          "label": "Seen from the height",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "In metres, such as 1 to leave out what is above doors and windows. Empty sees all of the object, as its shadow from above"
+        },
+        {
+          "key": "height_from",
+          "label": "Height from",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "storey",
+              "label": "The floor of its storey, as IFC gives it"
+            },
+            {
+              "value": "bottom",
+              "label": "The lowest point of the object"
+            },
+            {
+              "value": "absolute",
+              "label": "The heights of the coordinate system"
+            }
+          ],
+          "default": "storey",
+          "hint": "An object without a storey is measured from its lowest point"
+        },
+        {
+          "key": "shows",
+          "label": "Shows",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "below",
+              "label": "All of the object below the cut, seen from above"
+            },
+            {
+              "value": "section",
+              "label": "Only what the cut goes through, as in a plan drawing"
+            }
+          ],
+          "default": "below",
+          "hint": "Below a window, the wall under it is there; through the cut, the window leaves a gap"
+        },
+        {
+          "key": "min_area",
+          "label": "Smallest part",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "In square metres: parts of an outline smaller than this are left out, and objects with nothing left go to Other. Empty keeps all"
+        }
+      ]
+    },
+    {
       "type": "PointCloudRasterizer",
       "title": "Point cloud to raster",
       "group": "tool",
@@ -12350,7 +12882,7 @@
       "title": "Filter point cloud",
       "group": "tool",
       "category": "Point clouds",
-      "description": "Keeps the points of some classes, of some returns (first, last or single), between two heights, and inside the areas on Areas when they are connected. The rest go to Other.",
+      "description": "Keeps the points of some classes, of some returns (first, last or single), between two heights, and inside the areas on Areas when they are connected. The rest go to Other. The classes can be ticked from those the data has, and each can get a port of its own.",
       "inputs": [
         "Points",
         "Areas"
@@ -12359,7 +12891,7 @@
         "Points",
         "Other"
       ],
-      "outputs_follow_settings": false,
+      "outputs_follow_settings": true,
       "offered": true,
       "params": [
         {
@@ -12368,7 +12900,24 @@
           "kind": "text",
           "shape": "a string",
           "default": "",
-          "hint": "The class numbers to keep, such as 2 for ground or 3, 4, 5 for vegetation and 6 for buildings. Empty keeps all"
+          "hint": "The class numbers to keep, such as 2 for ground or 3, 4, 5 for vegetation and 6 for buildings, or ticked below from the data of the latest run. Empty keeps all"
+        },
+        {
+          "key": "class_ports",
+          "label": "Out on",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "yes",
+              "label": "A port for each class ticked, and the rest on Other"
+            },
+            {
+              "value": "no",
+              "label": "All classes ticked on Points, the rest on Other"
+            }
+          ],
+          "default": "yes"
         },
         {
           "key": "returns",

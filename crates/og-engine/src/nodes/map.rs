@@ -36,7 +36,28 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
         default: "",
         hint: "Each stream connected to Layers is a layer. The top row is drawn on top",
     },
+    ParamSpec {
+        key: "size_as",
+        label: "Size",
+        kind: ParamKind::Choice(&[("pixels", "In pixels, for the screen"), ("print", "For print: width in mm and pixels to the inch")]),
+        default: "pixels",
+        hint: "",
+    },
     ParamSpec { key: "width", label: "Width in pixels", kind: ParamKind::Text, default: "1600", hint: "The height follows from the area that is drawn" },
+    ParamSpec {
+        key: "print_mm",
+        label: "Width in mm",
+        kind: ParamKind::Text,
+        default: "180",
+        hint: "On paper, such as 180 for an A4 page with margins. The height follows from the area that is drawn",
+    },
+    ParamSpec {
+        key: "print_dpi",
+        label: "Pixels to the inch",
+        kind: ParamKind::Text,
+        default: "300",
+        hint: "300 for print, 150 for a draft. Lines, points and labels keep the size they have on the screen, measured on paper, and the picture tells Output its resolution",
+    },
     ParamSpec { key: "margin", label: "Margin in %", kind: ParamKind::Text, default: "5", hint: "Room around the features, as a share of the larger side" },
     ParamSpec { key: "background", label: "Background", kind: ParamKind::Choice(MAP_BACKGROUNDS), default: "#ffffff", hint: "" },
     ParamSpec { key: "background_colour", label: "Colour", kind: ParamKind::Text, default: "#e8eef2", hint: "Such as #e8eef2, or with opacity as #e8eef280" },
@@ -351,13 +372,37 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
     if drawn.is_empty() {
         return err("Every layer is hidden. Tick at least one to draw.");
     }
-    let width = match p.get("width") {
-        None => 1600,
-        Some(t) => match t.trim().parse::<u32>() {
-            Ok(w) if (1..=crate::mapdraw::MAX_SIDE).contains(&w) => w,
-            _ => return err(format!("The width must be a whole number of pixels from 1 to {}, not \"{}\".", crate::mapdraw::MAX_SIDE, t)),
-        },
+    // For print, the width on paper and the resolution give the pixels, and what is drawn
+    // in pixels on the screen, at 96 to the inch, is made as large on paper.
+    let print = p.get("size_as").as_deref() == Some("print");
+    let (width, dpi) = if print {
+        let mm = number_param(p, "print_mm", "Width in mm")?.unwrap_or(180.0);
+        let dpi = number_param(p, "print_dpi", "Pixels to the inch")?.unwrap_or(300.0);
+        if !(1.0..=10_000.0).contains(&dpi) {
+            return err("Pixels to the inch is a number from 1 to 10 000, such as 300.");
+        }
+        let w = (mm / 25.4 * dpi).round();
+        if w < 1.0 || w > crate::mapdraw::MAX_SIDE as f64 {
+            return err(format!(
+                "{} mm at {} to the inch is {} pixels, and a map can be at most {} wide. Make it narrower or lower the resolution.",
+                crate::model::fmt_real(mm),
+                crate::model::fmt_real(dpi),
+                fmt_count(w.max(0.0) as u64),
+                fmt_count(crate::mapdraw::MAX_SIDE as u64)
+            ));
+        }
+        (w as u32, Some(dpi))
+    } else {
+        let w = match p.get("width") {
+            None => 1600,
+            Some(t) => match t.trim().parse::<u32>() {
+                Ok(w) if (1..=crate::mapdraw::MAX_SIDE).contains(&w) => w,
+                _ => return err(format!("The width must be a whole number of pixels from 1 to {}, not \"{}\".", crate::mapdraw::MAX_SIDE, t)),
+            },
+        };
+        (w, None)
     };
+    let scale = dpi.map_or(1.0, |d| (d / 96.0) as f32);
     let margin = match p.get("margin") {
         None => 0.05,
         Some(t) => match parse_number(&t) {
@@ -473,6 +518,28 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
                 .collect(),
         }),
     };
+    // For print, every size in pixels is made larger by as much as the pixels are smaller.
+    // The legend and the credit of the background map grow with the picture already.
+    if scale != 1.0 {
+        let look = |l: &mut crate::thematic::Look| l.size *= scale;
+        for (_, style) in tables.iter_mut() {
+            style.width *= scale;
+            style.size *= scale;
+        }
+        for th in themes.iter_mut() {
+            th.classes.iter_mut().for_each(|(_, l)| look(l));
+            th.looks.iter_mut().flatten().for_each(look);
+            th.keys.iter_mut().for_each(|k| look(&mut k.look));
+            th.size_keys.iter_mut().for_each(|k| look(&mut k.look));
+            th.cluster *= scale;
+        }
+        for l in labels.iter_mut().flatten() {
+            l.spec.size *= scale;
+            l.spec.size_max *= scale;
+            l.spec.halo_width *= scale;
+            l.items.iter_mut().for_each(|i| i.size *= scale);
+        }
+    }
     let count: usize = tables.iter().map(|(t, _)| t.len()).sum();
     let placed = labels.iter().flatten().map(|l| l.items.len()).sum::<usize>();
     // Under the layers: a background map or a picture, made as large as the map.
@@ -549,11 +616,18 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
         fmt_count(image.width as u64),
         fmt_count(image.height as u64)
     ));
-    Ok(vec![("Map".into(), image.into_table(Some(crs)))])
+    let mut out = image.into_table(Some(crs));
+    // The resolution goes with the picture, for Output to write into the file.
+    if let Some(d) = dpi {
+        out.fields.push(crate::model::Field::new("dpi", crate::model::FieldType::Real));
+        out.features.iter_mut().for_each(|f| f.attrs.push(Value::Real(d)));
+        ctx.notes.info(format!("{} mm wide at {} pixels to the inch", crate::model::fmt_real(width as f64 / d * 25.4), crate::model::fmt_real(d)));
+    }
+    Ok(vec![("Map".into(), out)])
 }
 
 /// The labels of a layer: the text, size and priority of each feature that has a text.
-fn prepare_labels(t: &Table, spec: &crate::mapdraw::LabelSpec, ctx: &NodeCtx) -> Result<Option<crate::mapdraw::Labels>> {
+pub(in crate::nodes) fn prepare_labels(t: &Table, spec: &crate::mapdraw::LabelSpec, ctx: &NodeCtx) -> Result<Option<crate::mapdraw::Labels>> {
     let src = spec.text.trim();
     if src.is_empty() {
         return Ok(None);

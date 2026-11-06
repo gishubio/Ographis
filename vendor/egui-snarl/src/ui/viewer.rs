@@ -385,6 +385,15 @@ pub trait SnarlViewer<T> {
         self.disconnect(from, to, snarl);
     }
 
+    /// Ographis: a line drawn with Ctrl and the secondary button crossed these connections.
+    /// By default they are removed.
+    #[inline]
+    fn cut_wires(&mut self, wires: &[(OutPinId, InPinId)], snarl: &mut Snarl<T>) {
+        for (from, to) in wires {
+            snarl.disconnect(*from, *to);
+        }
+    }
+
     /// Ographis: how a connection is drawn. `default` is what the canvas would use.
     #[inline]
     fn wire_stroke(&mut self, from: OutPinId, to: InPinId, default: egui::Stroke, snarl: &Snarl<T>) -> egui::Stroke {

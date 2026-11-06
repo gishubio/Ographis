@@ -123,6 +123,28 @@ pub struct WriteOpts {
     /// A GeoTIFF as a Cloud Optimized GeoTIFF: tiled, with overviews, in the order that
     /// lets a map on the web read only the parts it shows.
     pub cog: bool,
+    /// The version of a new GeoPackage, such as "1.2". None: what GDAL writes, 1.4.
+    pub gpkg_version: Option<String>,
+    /// How a picture, PNG, JPEG or GeoTIFF, is written.
+    pub image: ImageOpts,
+}
+
+/// How a picture is written: its resolution for printing, kept in the file, and how it is
+/// packed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImageOpts {
+    /// Pixels to the inch, which programs print the picture by. None: none is said.
+    pub dpi: Option<f64>,
+    /// JPEG, also inside a GeoTIFF: 1 to 100.
+    pub quality: u8,
+    /// GeoTIFF: deflate, lzw, jpeg or none.
+    pub compress: String,
+}
+
+impl Default for ImageOpts {
+    fn default() -> Self {
+        ImageOpts { dpi: None, quality: 92, compress: "deflate".into() }
+    }
 }
 
 /// Where and how a stream is written to a table in a PostgreSQL database with PostGIS.
@@ -145,6 +167,17 @@ pub struct DbWrite {
     /// Commit after every so many rows, so that a long write is not undone from the start
     /// when it fails. None: all or nothing, in one transaction.
     pub commit_every: Option<usize>,
+    /// SQL run before the rows are written and after, with {table} for the table.
+    pub sql_before: Option<String>,
+    pub sql_after: Option<String>,
+    /// Update the statistics of the table for the planner when done.
+    pub analyze: bool,
+}
+
+/// A name as PostgreSQL likes it, and as the columns of a table written to a database get
+/// it: in lower case, with spaces, hyphens, # and dots as _.
+pub fn db_name(s: &str) -> String {
+    s.trim().to_lowercase().chars().map(|c| if matches!(c, ' ' | '-' | '#' | '.') { '_' } else { c }).collect()
 }
 
 /// One layer of a PDF with layers: features, or a picture, with how they look.

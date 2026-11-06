@@ -1248,6 +1248,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
+name = "e57"
+version = "0.11.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcfee41a50fbd70278c70cc477b8671ffe03951cba028cc2c057777a9ee6a3cc"
+dependencies = [
+ "roxmltree 0.21.2",
+]
+
+[[package]]
 name = "earcut"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3344,7 +3353,7 @@ dependencies = [
 
 [[package]]
 name = "og-cli"
-version = "0.94.1"
+version = "0.95.2"
 dependencies = [
  "chrono",
  "og-engine",
@@ -3354,12 +3363,13 @@ dependencies = [
 
 [[package]]
 name = "og-engine"
-version = "0.94.1"
+version = "0.95.2"
 dependencies = [
  "ab_glyph",
  "acadrust",
  "bytes",
  "chrono",
+ "e57",
  "encoding_rs",
  "flate2",
  "geo",
@@ -3384,7 +3394,7 @@ dependencies = [
 
 [[package]]
 name = "og-gdal"
-version = "0.94.1"
+version = "0.95.2"
 dependencies = [
  "flate2",
  "gdal",
@@ -3401,7 +3411,7 @@ dependencies = [
 
 [[package]]
 name = "og-gui"
-version = "0.94.1"
+version = "0.95.2"
 dependencies = [
  "arboard",
  "chrono",
@@ -4223,6 +4233,15 @@ name = "roxmltree"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
+
+[[package]]
+name = "roxmltree"
+version = "0.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9da7f59328b09405b181fee1018925fad50f157afb43c0c0f5c522c256dd5907"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "rstar"
@@ -5243,7 +5262,7 @@ dependencies = [
  "kurbo 0.11.3",
  "log",
  "pico-args",
- "roxmltree",
+ "roxmltree 0.20.0",
  "simplecss",
  "siphasher",
  "strict-num",

@@ -70,6 +70,21 @@ pub fn decode(bytes: &[u8], encoding: Option<&str>, notes: &mut Notes) -> Result
     }
 }
 
+/// As `decode`, but takes the bytes, so that a file in UTF-8, as most are, becomes its text
+/// without a copy.
+pub fn decode_owned(mut bytes: Vec<u8>, encoding: Option<&str>, notes: &mut Notes) -> Result<String> {
+    if encoding.map(|s| s.trim()).is_none_or(|s| s.is_empty()) {
+        if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+            bytes.drain(..3);
+        }
+        return match String::from_utf8(bytes) {
+            Ok(s) => Ok(s),
+            Err(e) => decode(e.as_bytes(), None, notes),
+        };
+    }
+    decode(&bytes, encoding, notes)
+}
+
 fn detect_delimiter(line: &str) -> char {
     let mut best = (',', 0usize);
     for d in [';', ',', '\t', '|'] {
@@ -94,38 +109,106 @@ fn split_line_count(line: &str, d: char) -> usize {
 }
 
 fn parse_rows(text: &str, d: char) -> Vec<Vec<String>> {
-    let mut rows = Vec::new();
-    let (mut row, mut cur, mut quoted) = (Vec::new(), String::new(), false);
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        if quoted {
-            if c == '"' {
-                if chars.peek() == Some(&'"') {
-                    cur.push('"');
-                    chars.next();
-                } else {
-                    quoted = false;
+    let rows = Rows::parse(text, d);
+    (0..rows.len()).map(|r| rows.row(r).iter().map(|c| c.to_string()).collect()).collect()
+}
+
+/// The cells of a CSV text, row by row, in one list. A cell is a slice of the text where it
+/// can be, and a text of its own only where quotes had to be taken out; a large file then
+/// takes little more memory than the text itself.
+struct Rows<'a> {
+    cells: Vec<std::borrow::Cow<'a, str>>,
+    /// Where each row starts in `cells`, and where the last ends.
+    starts: Vec<usize>,
+}
+
+impl<'a> Rows<'a> {
+    fn parse(text: &'a str, d: char) -> Rows<'a> {
+        use std::borrow::Cow;
+        let mut cells: Vec<Cow<'a, str>> = Vec::new();
+        let mut starts = vec![0usize];
+        let bytes = text.as_bytes();
+        // The cell at work: where it starts in the text, and its own text once a quote or a
+        // carriage return has made it differ from the slice.
+        let (mut start, mut own, mut quoted) = (0usize, None::<String>, false);
+        let end_cell = |cells: &mut Vec<Cow<'a, str>>, own: &mut Option<String>, start: usize, end: usize| match own.take() {
+            Some(o) => cells.push(Cow::Owned(o)),
+            None => cells.push(Cow::Borrowed(&text[start..end])),
+        };
+        let mut it = text.char_indices().peekable();
+        while let Some((i, c)) = it.next() {
+            if quoted {
+                if c == '"' {
+                    if it.peek().map(|x| x.1) == Some('"') {
+                        own.get_or_insert_with(String::new).push('"');
+                        it.next();
+                    } else {
+                        quoted = false;
+                    }
+                } else if let Some(o) = own.as_mut() {
+                    o.push(c);
                 }
-            } else {
-                cur.push(c);
+            } else if c == '"' {
+                // From here the cell is its own text, without the quotes.
+                own.get_or_insert_with(|| text[start..i].to_string());
+                quoted = true;
+            } else if c == d {
+                end_cell(&mut cells, &mut own, start, i);
+                start = i + c.len_utf8();
+            } else if c == '\n' {
+                let end = if i > start && bytes[i - 1] == b'\r' && own.is_none() { i - 1 } else { i };
+                end_cell(&mut cells, &mut own, start, end);
+                start = i + 1;
+                starts.push(cells.len());
+            } else if c == '\r' {
+                // A carriage return before a line break ends the slice; one elsewhere is left out.
+                if it.peek().map(|x| x.1) != Some('\n') {
+                    own.get_or_insert_with(|| text[start..i].to_string());
+                }
+            } else if let Some(o) = own.as_mut() {
+                o.push(c);
             }
-        } else if c == '"' {
-            quoted = true;
-        } else if c == d {
-            row.push(std::mem::take(&mut cur));
-        } else if c == '\n' {
-            row.push(std::mem::take(&mut cur));
-            rows.push(std::mem::take(&mut row));
-        } else if c != '\r' {
-            cur.push(c);
         }
+        if own.is_some() || start < text.len() || cells.len() > *starts.last().unwrap_or(&0) {
+            let end = if text.ends_with('\r') && own.is_none() { text.len() - 1 } else { text.len() };
+            end_cell(&mut cells, &mut own, start, end.max(start));
+            starts.push(cells.len());
+        }
+        let mut rows = Rows { cells, starts };
+        rows.drop_empty();
+        rows
     }
-    if !cur.is_empty() || !row.is_empty() {
-        row.push(cur);
-        rows.push(row);
+
+    fn len(&self) -> usize {
+        self.starts.len() - 1
     }
-    rows.retain(|r| r.len() > 1 || r.first().is_some_and(|s| !s.trim().is_empty()));
-    rows
+
+    fn row(&self, r: usize) -> &[std::borrow::Cow<'a, str>] {
+        &self.cells[self.starts[r]..self.starts[r + 1]]
+    }
+
+    /// Rows that are empty or hold only spaces are left out.
+    fn drop_empty(&mut self) {
+        let keep: Vec<bool> = (0..self.len()).map(|r| self.row(r).len() > 1 || self.row(r).first().is_some_and(|s| !s.trim().is_empty())).collect();
+        if keep.iter().all(|k| *k) {
+            return;
+        }
+        let mut cells = Vec::with_capacity(self.cells.len());
+        let mut starts = vec![0];
+        let old = std::mem::take(&mut self.cells);
+        let mut old = old.into_iter();
+        for (r, k) in keep.iter().enumerate() {
+            let n = self.starts[r + 1] - self.starts[r];
+            if *k {
+                cells.extend(old.by_ref().take(n));
+                starts.push(cells.len());
+            } else {
+                old.by_ref().take(n).for_each(drop);
+            }
+        }
+        self.cells = cells;
+        self.starts = starts;
+    }
 }
 
 /// A column of texts as values: whole numbers or decimal numbers when every text in it
@@ -179,7 +262,7 @@ pub fn read_csv(path: &Path, opts: &CsvReadOpts, notes: &mut Notes) -> Result<Ta
 /// Reads as `read_csv` does, and tells `progress` how many rows have become features.
 pub fn read_csv_with(path: &Path, opts: &CsvReadOpts, notes: &mut Notes, progress: &dyn Fn(u64, Option<u64>) -> bool) -> Result<Table> {
     let bytes = std::fs::read(path).map_err(|e| GbError(format!("Cannot read {}: {}", path.display(), e)))?;
-    let text = decode(&bytes, opts.encoding.as_deref(), notes)?;
+    let text = decode_owned(bytes, opts.encoding.as_deref(), notes)?;
     parse_csv_with(&text, opts, notes, progress)
 }
 
@@ -190,12 +273,14 @@ pub fn parse_csv(text: &str, opts: &CsvReadOpts, notes: &mut Notes) -> Result<Ta
 fn parse_csv_with(text: &str, opts: &CsvReadOpts, notes: &mut Notes, progress: &dyn Fn(u64, Option<u64>) -> bool) -> Result<Table> {
     let first = text.lines().find(|l| !l.trim().is_empty()).ok_or_else(|| GbError("The file is empty.".into()))?;
     let d = opts.delimiter.unwrap_or_else(|| detect_delimiter(first));
-    let mut rows = parse_rows(text, d);
-    if rows.is_empty() {
+    let all = Rows::parse(text, d);
+    if all.len() == 0 {
         return err("The file is empty.");
     }
+    // The rows below the header.
+    let rows: Vec<&[std::borrow::Cow<str>]> = (1..all.len()).map(|r| all.row(r)).collect();
     let mut names: Vec<String> = Vec::new();
-    for (i, h) in rows.remove(0).into_iter().enumerate() {
+    for (i, h) in all.row(0).iter().enumerate() {
         let base = if h.trim().is_empty() { format!("column_{}", i + 1) } else { h.trim().to_string() };
         let mut name = base.clone();
         let mut k = 2;
@@ -380,67 +465,89 @@ fn free_name(table: &Table, wanted: &str, fallback: &str) -> String {
 /// The table without geometry, with the geometry as ordinary columns instead: x and y
 /// for points, WKT for anything else. For formats that have no geometry of their own.
 pub fn geometry_as_columns(table: &Table, mode: GeomMode, geographic: Option<bool>) -> Table {
-    let mode = match mode {
-        GeomMode::Auto if !table.has_geometry() => GeomMode::None,
-        GeomMode::Auto => {
-            if table.features.iter().all(|f| matches!(f.geom, None | Some(Geometry::Point(_)))) {
-                GeomMode::Xy
-            } else {
-                GeomMode::Wkt
+    let flat = Flat::new(table, mode, geographic);
+    let features = table.features.iter().map(|f| Feature { z: None, attrs: flat.row(f), geom: None }).collect();
+    Table { mesh: None, points: None, series: None, fields: flat.fields, crs: None, features, raster: false, image: None, grid: None }
+}
+
+/// The geometry as columns, worked out once for a table and then made row by row, so that
+/// a large table is written without a copy of it.
+struct Flat {
+    fields: Vec<Field>,
+    mode: GeomMode,
+    decimals: i32,
+}
+
+impl Flat {
+    fn new(table: &Table, mode: GeomMode, geographic: Option<bool>) -> Flat {
+        let mode = match mode {
+            GeomMode::Auto if !table.has_geometry() => GeomMode::None,
+            GeomMode::Auto => {
+                if table.features.iter().all(|f| matches!(f.geom, None | Some(Geometry::Point(_)))) {
+                    GeomMode::Xy
+                } else {
+                    GeomMode::Wkt
+                }
             }
+            m => m,
+        };
+        let decimals = match geographic {
+            Some(true) => 7,
+            Some(false) => 3,
+            None => 6,
+        };
+        let mut fields = table.fields.clone();
+        match mode {
+            GeomMode::Xy => {
+                fields.push(Field::new(free_name(table, "x", "geom_x"), FieldType::Real));
+                fields.push(Field::new(free_name(table, "y", "geom_y"), FieldType::Real));
+            }
+            GeomMode::Wkt => fields.push(Field::new(free_name(table, "wkt", "geom_wkt"), FieldType::Text)),
+            _ => {}
         }
-        m => m,
-    };
-    let decimals = match geographic {
-        Some(true) => 7,
-        Some(false) => 3,
-        None => 6,
-    };
-    let round = |v: f64| {
-        let k = 10f64.powi(decimals);
-        (v * k).round() / k
-    };
-    let mut fields = table.fields.clone();
-    match mode {
-        GeomMode::Xy => {
-            fields.push(Field::new(free_name(table, "x", "geom_x"), FieldType::Real));
-            fields.push(Field::new(free_name(table, "y", "geom_y"), FieldType::Real));
-        }
-        GeomMode::Wkt => fields.push(Field::new(free_name(table, "wkt", "geom_wkt"), FieldType::Text)),
-        _ => {}
+        Flat { fields, mode, decimals }
     }
-    let features = table
-        .features
-        .iter()
-        .map(|f| {
-            let mut attrs = f.attrs.clone();
-            match mode {
-                GeomMode::Xy => match &f.geom {
-                    Some(Geometry::Point(p)) => attrs.extend([Value::Real(round(p.x())), Value::Real(round(p.y()))]),
-                    _ => attrs.extend([Value::Null, Value::Null]),
-                },
-                GeomMode::Wkt => attrs.push(f.geom.as_ref().map_or(Value::Null, |g| Value::Text(geom::rounded(g, decimals).wkt_string()))),
-                _ => {}
-            }
-            Feature { z: None, attrs, geom: None }
-        })
-        .collect();
-    Table { mesh: None, points: None, series: None, fields, crs: None, features, raster: false, image: None, grid: None }
+
+    /// The values of a feature, with its geometry as columns.
+    fn row(&self, f: &Feature) -> Vec<Value> {
+        let k = 10f64.powi(self.decimals);
+        let round = |v: f64| (v * k).round() / k;
+        let mut attrs = f.attrs.clone();
+        match self.mode {
+            GeomMode::Xy => match &f.geom {
+                Some(Geometry::Point(p)) => attrs.extend([Value::Real(round(p.x())), Value::Real(round(p.y()))]),
+                _ => attrs.extend([Value::Null, Value::Null]),
+            },
+            GeomMode::Wkt => attrs.push(f.geom.as_ref().map_or(Value::Null, |g| Value::Text(geom::rounded(g, self.decimals).wkt_string()))),
+            _ => {}
+        }
+        attrs
+    }
 }
 
 pub fn csv_text(table: &Table, opts: &CsvWriteOpts) -> Result<String> {
+    let mut out = String::new();
+    csv_rows(table, opts, &mut |text| {
+        out.push_str(text);
+        Ok(())
+    })?;
+    Ok(out)
+}
+
+/// The header and the rows of a table as CSV, handed to `sink` a part at a time.
+fn csv_rows(table: &Table, opts: &CsvWriteOpts, sink: &mut dyn FnMut(&str) -> Result<()>) -> Result<()> {
     let d = opts.delimiter;
     if opts.decimal_comma && d == ',' {
         return err("A decimal comma does not work with a comma as the delimiter. Choose semicolon.");
     }
-    let flat = geometry_as_columns(table, opts.geometry, opts.geographic);
+    let flat = Flat::new(table, opts.geometry, opts.geographic);
     let real = |r: f64| if opts.decimal_comma { fmt_real(r).replace('.', ",") } else { fmt_real(r) };
     let sep = d.to_string();
     let mut out = flat.fields.iter().map(|f| quote(&f.name, d)).collect::<Vec<_>>().join(&sep);
     out.push('\n');
-    for f in &flat.features {
-        let row: Vec<String> = f
-            .attrs
+    for f in &table.features {
+        let row: Vec<String> = flat
+            .row(f)
             .iter()
             .map(|v| match v {
                 Value::Real(r) => real(*r),
@@ -449,14 +556,32 @@ pub fn csv_text(table: &Table, opts: &CsvWriteOpts) -> Result<String> {
             .collect();
         out.push_str(&row.join(&sep));
         out.push('\n');
+        if out.len() >= 1 << 20 {
+            sink(&out)?;
+            out.clear();
+        }
     }
-    Ok(out)
+    sink(&out)
 }
 
 pub fn write_csv(table: &Table, path: &Path, opts: &CsvWriteOpts, notes: &mut Notes) -> Result<()> {
-    let text = csv_text(table, opts)?;
-    let bytes = encode(text, &opts.encoding, true, notes)?;
-    std::fs::write(path, bytes).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))
+    use std::io::Write;
+    let named = |e: std::io::Error| GbError(format!("Cannot write {}: {}", path.display(), e));
+    let mut file = std::io::BufWriter::new(std::fs::File::create(path).map_err(named)?);
+    let mut start = true;
+    let mut warned = Notes::default();
+    csv_rows(table, opts, &mut |text| {
+        let bytes = encode(text.to_string(), &opts.encoding, start, &mut warned)?;
+        start = false;
+        file.write_all(&bytes).map_err(named)
+    })?;
+    file.flush().map_err(named)?;
+    // The same warning from each part, once.
+    warned.warnings.dedup();
+    for w in warned.warnings {
+        notes.warn(w);
+    }
+    Ok(())
 }
 
 /// Adds the rows of the table to the end of a file that is there, under the names in its

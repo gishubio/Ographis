@@ -168,6 +168,13 @@ pub const FORMATS: &[Format] = &[
         note: "The layers with their look, the features in a GeoPackage beside it and pictures as GeoTIFF",
     },
     Format {
+        name: "Web maps",
+        files: "index.html",
+        read: "",
+        write: OWN,
+        note: "A folder to open in a browser or put on a web server: Leaflet or MapLibre GL, the layers with their look, a legend and popups, the features as GeoJSON or PMTiles",
+    },
+    Format {
         name: "Reports",
         files: ".html, .pdf",
         read: "",
@@ -199,6 +206,7 @@ pub const FORMATS: &[Format] = &[
         note: "Batched and instanced models, from a folder or the web. Written as 3D Tiles 1.1 with glTF tiles, placed on the globe",
     },
     Format { name: "Point clouds", files: ".las, .laz, .copc.laz", read: "Ographis (las, laz-rs)", write: "Ographis (las, laz-rs)", note: "COPC read from the web part by part. Written as LAS 1.4 with classes, intensity, returns and colours" },
+    Format { name: "E57 scans", files: ".e57", read: "Ographis (e57)", write: "", note: "Terrestrial and mobile laser scans: every scan placed by its pose, with colours and intensity, read as one point cloud" },
     Format {
         name: "Charts as web pages",
         files: ".html",
@@ -325,6 +333,7 @@ mod tests {
                 "citygml" => assert!(listed("gml")),
                 "3dtiles" => assert!(listed("tileset.json")),
                 "qgis" => assert!(listed("qgz")),
+                "webmap" => assert!(listed("index.html")),
                 e => assert!(listed(e), "{} is not on the page", e),
             }
         }

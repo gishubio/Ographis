@@ -393,6 +393,8 @@ fn run_model_inner(file: &Path, opts: &mut RunArgs, started: chrono::NaiveDateTi
     let backend = GdalBackend::new();
     // The log is printed as it is written, so that a long run shows how far it has come.
     let sample = opts.sample;
+    // Without anything to look at afterwards, what each step made is let go when it is used.
+    let lean = opts.inspect.is_empty();
     let report = &mut |p: Progress| {
         if let Progress::Log { entry } = p {
             let tag = match entry.level {
@@ -403,7 +405,7 @@ fn run_model_inner(file: &Path, opts: &mut RunArgs, started: chrono::NaiveDateTi
             opts.say(tag, &entry.msg);
         }
     };
-    let result = og_engine::run_opts(&ws, Some(&backend), &base, report, og_engine::RunOptions { sample, ..Default::default() });
+    let result = og_engine::run_opts(&ws, Some(&backend), &base, report, og_engine::RunOptions { sample, lean, ..Default::default() });
     let rows = opts.rows;
     for spec in &opts.inspect {
         let (id, port) = match spec.split_once(':') {
@@ -679,6 +681,7 @@ fn cmd_nodes() -> ExitCode {
             (true, "PostgisWriter") => ", in the program the PostGIS button of Output",
             (true, "LayeredPdfWriter") => ", in the program the format GeoSpatial PDF of Output",
             (true, "QgisProjectWriter") => ", in the program the format QGIS project of Output",
+            (true, "WebMapWriter") => ", in the program the format Web map of Output",
             (true, _) => ", kept for older models and not offered in the program",
             _ => "",
         };
