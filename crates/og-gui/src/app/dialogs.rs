@@ -564,6 +564,62 @@ impl App {
         }
     }
 
+    /// Moves the server, database, user and password written in a PostGIS node to a
+    /// connection in the settings, and lets the node name it. A connection that is the same
+    /// is used again; otherwise the new one gets a name of its own.
+    pub fn save_as_connection(&mut self, node_id: NodeId) {
+        let n = &self.snarl[node_id];
+        let param = |k: &str| n.params.get(k).and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let mut c = og_engine::settings::Connection {
+            name: String::new(),
+            kind: "postgis".into(),
+            host: param("host"),
+            port: param("port"),
+            database: param("database"),
+            user: param("user"),
+            password: param("password"),
+        };
+        if c.host.is_empty() {
+            c.host = "localhost".into();
+        }
+        if c.port.is_empty() {
+            c.port = "5432".into();
+        }
+        if c.database.is_empty() {
+            self.say("Write the database first, and then save it as a connection.".to_string());
+            return;
+        }
+        let same = |a: &og_engine::settings::Connection| {
+            a.kind == c.kind && a.host == c.host && a.port == c.port && a.database == c.database && a.user == c.user && a.password == c.password
+        };
+        let name = match self.settings.connections.iter().find(|a| same(a)) {
+            Some(a) => a.name.clone(),
+            None => {
+                let base = format!("{} on {}", c.database, c.host);
+                let mut name = base.clone();
+                let mut i = 2;
+                while self.settings.connections.iter().any(|a| a.name.trim().eq_ignore_ascii_case(&name)) {
+                    name = format!("{} {}", base, i);
+                    i += 1;
+                }
+                c.name = name.clone();
+                self.settings.connections.push(c);
+                if let Err(e) = self.settings.save() {
+                    self.say(format!("The connection could not be saved: {}", e.0));
+                    return;
+                }
+                name
+            }
+        };
+        let n = &mut self.snarl[node_id];
+        for k in ["host", "port", "database", "user", "password"] {
+            n.params.remove(k);
+        }
+        n.params.insert("connection".into(), serde_json::Value::String(name.clone()));
+        self.changed(true);
+        self.say(format!("Saved as the connection {}. The model keeps only its name; the password is in the settings.", name));
+    }
+
     pub fn open_settings(&mut self) {
         self.settings_window = Some(crate::settings::SettingsWindow::new(&self.settings));
     }

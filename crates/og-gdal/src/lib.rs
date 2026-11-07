@@ -112,6 +112,11 @@ impl GdalBackend {
     }
 
     fn start() {
+        // GDAL loads libspatialite into every SQLite and GeoPackage connection, and when one is
+        // closed libspatialite cleans up libxml2 for the whole process. Another thread reading
+        // GML, KML or XML at that moment can then crash, as a double free. Ographis uses none
+        // of the SQL functions of SpatiaLite: GDAL reads its files without the library.
+        let _ = gdal::config::set_config_option("SPATIALITE_LOAD", "FALSE");
         gdal::config::set_error_handler(|class, _num, msg| {
             if matches!(class, CplErrType::Warning | CplErrType::Failure) {
                 GDAL_MESSAGES.with(|m| {

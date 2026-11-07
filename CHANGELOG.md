@@ -3,6 +3,26 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.95.3
+
+- **Save as a connection**: a PostGIS input or output with the server, database, user and
+  password written in it, as models from before 0.63 have, moves them to a connection in the
+  settings with one click, and then names only the connection. The password leaves the
+  model. A connection that is the same is used again.
+- **More**: the settings that are seldom changed wait under *More* at the end of the form, in
+  PostGIS output (transaction, geometry column, primary key, SQL before and after,
+  statistics), PostGIS input (coordinate system, largest number), Output (primary key,
+  GeoPackage version, JPEG quality, how a GeoTIFF or PDF is packed, 3D Tiles) and *Draw
+  map* (margin, paler background). *More* is open when one of them is set, and says how many.
+- *Draw map* for print says, before it is run, how many pixels wide the map becomes, such as
+  180 mm at 300 to the inch gives 2 126, and warns when it is wider than a map can be. The
+  node on the canvas shows 180 mm at 300 dpi instead of the width in pixels.
+- Fixed: Ographis could crash, as a double free, when a GeoPackage was closed while another
+  part of the run read GML, KML or another XML at the same moment. GDAL loaded libspatialite
+  into every GeoPackage, and libspatialite cleans up libxml2 for the whole program when one is
+  closed. Ographis no longer loads libspatialite; SpatiaLite files are read as before, by GDAL
+  itself. The check on GitHub stopped on this.
+
 ## 0.95.2
 
 - **Outline from above** is a new tool: 3D objects, such as walls and doors read from IFC,

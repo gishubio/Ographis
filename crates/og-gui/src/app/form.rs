@@ -351,6 +351,9 @@ impl App {
             if edited.open_settings {
                 self.open_settings();
             }
+            if edited.save_connection {
+                self.save_as_connection(node_id);
+            }
             if edited.pick_area {
                 let id = self.snarl[node_id].id.clone();
                 self.start_area_pick(&id);

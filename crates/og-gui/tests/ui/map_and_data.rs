@@ -905,6 +905,7 @@ fn blocks_and_a_tin_at_dusk_and_keys_and_print_settings() {
     // A GeoPackage gets a primary key; a PDF its print settings.
     h.state_mut().focus_node("gpkg");
     settle(&mut h);
+    open_more(&mut h);
     assert!(h.query_by_label("Primary key").is_some() && h.query_by_label("Key column").is_some());
     assert!(h.query_by_label("Key attribute").is_none(), "only when an attribute is the key");
     let set = |h: &mut Harness<'_, App>, id: &str, key: &str, value: &str| {

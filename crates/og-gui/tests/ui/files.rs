@@ -989,6 +989,9 @@ fn postgis_is_reached_from_input_and_output() {
     let n = &h.state().snarl[writer];
     assert_eq!(n.kind, "PostgisWriter");
     assert_eq!((n.params.get("schema"), n.params.get("table")), (Some(&serde_json::json!("vgr")), Some(&serde_json::json!("sites_2026"))));
+    // The geometry column is among what is seldom changed, under More.
+    assert!(h.query_by_label("Geometry column").is_none());
+    open_more(&mut h);
     for label in ["Schema", "Table", "If the table is there", "Geometry type", "Coordinate system", "Geometry column"] {
         assert!(h.query_by_label(label).is_some(), "{} should be in the form of PostGIS output", label);
     }

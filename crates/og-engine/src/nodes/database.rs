@@ -24,7 +24,7 @@ pub(super) const POSTGIS_PARAMS: &[ParamSpec] = &[
         label: "Password",
         kind: ParamKind::Secret,
         default: "",
-        hint: "Stored in the model file as it is, for anyone the model is given to to read. Better: a connection from Edit → Settings, or $(password) with the variable set",
+        hint: "Stored in the model file as it is, for anyone the model is given to to read. Better: Save as a connection, or $(password) with the variable set",
     },
     ParamSpec {
         key: "tables",

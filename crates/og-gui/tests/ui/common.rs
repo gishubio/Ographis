@@ -486,3 +486,13 @@ pub(crate) fn pin_at(h: &Harness<'_, App>, node: &str, port: &str, input: bool) 
     let y = h.get_all_by_label(port).map(|n| n.rect().center()).find(|c| r.contains(*c)).unwrap_or_else(|| panic!("no port {} on {}", port, node)).y;
     h.state().graph_to_screen(egui::pos2(if input { r.left() } else { r.right() }, y))
 }
+
+/// Opens More at the end of the form, where the settings seldom changed are.
+pub(crate) fn open_more(h: &mut Harness<'_, App>) {
+    if h.query_by_label("More").is_some() {
+        h.get_by_label("More").scroll_to_me();
+        settle(h);
+        h.get_by_label("More").click();
+        settle(h);
+    }
+}

@@ -74,6 +74,9 @@ pub struct Edited {
     pub open_settings: bool,
     /// The rectangle of a download is to be chosen on the map.
     pub pick_area: bool,
+    /// The server, database, user and password written in the node are to become a
+    /// connection in the settings, which the node then names.
+    pub save_connection: bool,
 }
 
 /// The file extensions of formats that keep their data in sheets.
@@ -475,6 +478,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
     let mut postgis = false;
     let mut open_settings = false;
     let mut pick_area = false;
+    let mut save_connection = false;
     ui.label(RichText::new("Name").small().color(cx.pal.muted));
     noted |= ui.add(TextEdit::singleline(&mut node.name).desired_width(f32::INFINITY)).changed();
     if node.name.trim().is_empty() {
@@ -511,7 +515,40 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
     } else {
         "layers"
     };
+    // What is seldom changed goes last, under More, which is open when any of it is set.
+    let (main, more): (Vec<&ParamSpec>, Vec<&ParamSpec>) = specs.into_iter().partition(|s| !is_more(&node.kind, s.key));
+    let more_id = egui::Id::new(("more-settings", node.id.clone()));
+    let more_set = more.iter().filter(|s| is_set(node, s)).count();
+    let mut more_open = ui.data(|d| d.get_temp::<bool>(more_id)).unwrap_or(more_set > 0);
+    let more_keys: Vec<&str> = more.iter().map(|s| s.key).collect();
+    let specs: Vec<&ParamSpec> = main.into_iter().chain(more).collect();
+    let mut header_drawn = false;
     for spec in specs {
+        if more_keys.contains(&spec.key) {
+            if !header_drawn {
+                header_drawn = true;
+                ui.add_space(6.0);
+                let arrow = if more_open { "▾" } else { "▸" };
+                let count = if more_set > 0 { format!(" · {} set", more_set) } else { String::new() };
+                let what = more_keys.iter().filter_map(|k| ty.params.iter().find(|p| p.key == *k)).map(|p| p.label).collect::<Vec<_>>().join(", ");
+                let clicked = ui
+                    .horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        // The arrow in the monospace font, which has it.
+                        let a = ui.add(egui::Button::new(RichText::new(arrow).font(theme::mono(12.0)).color(cx.pal.muted)).frame(false));
+                        let b = ui.add(egui::Button::new(RichText::new(format!("More{}", count)).strong()).frame(false)).on_hover_text(&what);
+                        a.clicked() || b.clicked()
+                    })
+                    .inner;
+                if clicked {
+                    more_open = !more_open;
+                    ui.data_mut(|d| d.insert_temp(more_id, more_open));
+                }
+            }
+            if !more_open {
+                continue;
+            }
+        }
         ui.add_space(2.0);
         // A tick box carries its own label.
         if !matches!(spec.kind, ParamKind::OptionalName(_)) {
@@ -527,6 +564,14 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                 ui.add(TextEdit::singleline(&mut value).password(!plain).desired_width(f32::INFINITY));
                 if !plain && !value.trim().is_empty() {
                     ui.label(RichText::new("⚠ Written in the model, for anyone it is given to").small().color(cx.pal.warn));
+                }
+                if matches!(node.kind.as_str(), "PostgisReader" | "PostgisWriter") {
+                    save_connection |= ui
+                        .button("Save as a connection")
+                        .on_hover_text(
+                            "Moves the server, database, user and password to a connection in the settings, which this node then names. The password leaves the model",
+                        )
+                        .clicked();
                 }
             }
             ParamKind::OptionalName(suggested) => {
@@ -611,6 +656,12 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
             ParamKind::Text if spec.key == "table" && node.kind == "PostgisWriter" => {
                 ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
                 db_names(ui, &value, &(cx.fields)("Input"), &cx.pal);
+            }
+            ParamKind::Text if spec.key == "print_dpi" && node.kind == "MapRenderer" => {
+                ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
+                if let Some(line) = print_pixels(node.params.get("print_mm").and_then(|v| v.as_str()).unwrap_or("180"), &value) {
+                    hint = line;
+                }
             }
             ParamKind::Text if spec.key == "classes" && node.kind == "PointCloudFilter" => {
                 ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
@@ -1041,7 +1092,59 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
             changed = true;
         }
     }
-    Edited { any: changed || noted, run: changed, postgis, open_settings, pick_area }
+    Edited { any: changed || noted, run: changed, postgis, open_settings, pick_area, save_connection }
+}
+
+/// Settings that are seldom changed, shown under More at the end of the form.
+fn is_more(kind: &str, key: &str) -> bool {
+    match kind {
+        "PostgisWriter" => {
+            matches!(key, "commit" | "commit_rows" | "geom_column" | "key" | "key_name" | "key_attribute" | "sql_before" | "sql_after" | "analyze")
+        }
+        "PostgisReader" => matches!(key, "crs" | "limit"),
+        "Writer" => matches!(
+            key,
+            "key" | "key_name" | "key_attribute" | "gpkg_version" | "img_quality" | "tif_compress" | "pdf_compress" | "pdf_quality" | "t3_most" | "t3_dz"
+        ),
+        "MapRenderer" => matches!(key, "margin" | "background_fade"),
+        _ => false,
+    }
+}
+
+/// A setting given a value of its own, other than the default.
+fn is_set(node: &GNode, spec: &ParamSpec) -> bool {
+    match node.params.get(spec.key) {
+        None | Some(Json::Null) => false,
+        Some(Json::String(v)) => !v.trim().is_empty() && v.trim() != spec.default,
+        Some(Json::Array(a)) => !a.is_empty(),
+        Some(_) => true,
+    }
+}
+
+/// The pixels a map for print gets: the width on paper at the resolution, as Draw map
+/// counts it, or why it cannot be drawn.
+pub fn print_pixels(mm: &str, dpi: &str) -> Option<String> {
+    let mm: f64 = og_engine::model::parse_number(if mm.trim().is_empty() { "180" } else { mm })?;
+    let dpi: f64 = og_engine::model::parse_number(if dpi.trim().is_empty() { "300" } else { dpi })?;
+    if mm <= 0.0 || dpi <= 0.0 {
+        return None;
+    }
+    let w = (mm / 25.4 * dpi).round();
+    let most = og_engine::mapdraw::MAX_SIDE as f64;
+    Some(if w > most {
+        format!(
+            "{} pixels wide, more than the {} a map can be. Make it narrower or lower the resolution",
+            og_engine::model::fmt_count(w as u64),
+            og_engine::model::fmt_count(most as u64)
+        )
+    } else {
+        format!(
+            "{} mm at {} to the inch gives {} pixels in width; the height follows from the area drawn",
+            og_engine::model::fmt_real(mm),
+            og_engine::model::fmt_real(dpi),
+            og_engine::model::fmt_count(w as u64)
+        )
+    })
 }
 
 /// The names the table and its columns get in the database, where they differ from those

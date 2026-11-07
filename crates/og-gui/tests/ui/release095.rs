@@ -264,3 +264,89 @@ fn postgis_output_shows_the_names_in_the_database_and_warns_of_a_password() {
     let text = std::fs::read_to_string(dir.join("pg.json")).unwrap();
     assert!(og_engine::reference::check(&text).iter().any(|f| !f.error && f.message.contains("password written in the model")));
 }
+
+/// A PostGIS node with the server written in it saves it as a connection, and the seldom
+/// changed settings wait under More, which is open when one of them is set.
+#[test]
+fn a_postgis_node_saves_its_server_as_a_connection_and_keeps_the_rest_under_more() {
+    let dir = example_copy();
+    std::fs::write(
+        dir.join("pg.json"),
+        r#"{
+      "format": "ographis/1", "name": "PG",
+      "nodes": [
+        {"id": "in", "type": "Reader", "name": "Towns", "x": 0, "y": 0, "params": {"path": "towns.csv"}},
+        {"id": "pg", "type": "PostgisWriter", "name": "To the database", "x": 350, "y": 0,
+         "params": {"format": "postgis", "host": "db.invalid", "database": "og953", "user": "me", "password": "secret", "table": "towns"}},
+        {"id": "pg2", "type": "PostgisWriter", "name": "With SQL after", "x": 350, "y": 200,
+         "params": {"format": "postgis", "connection": "Somewhere", "table": "towns", "sql_after": "GRANT SELECT ON {table} TO readers"}}
+      ],
+      "edges": [{"from": ["in", "Output"], "to": ["pg", "Input"]}, {"from": ["in", "Output"], "to": ["pg2", "Input"]}]
+    }"#,
+    )
+    .unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("pg.json")).unwrap();
+    app.quiet = true;
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(4);
+    let pg = graph_id(&h, "pg");
+    h.state_mut().set_selection(vec![pg]);
+    settle(&mut h);
+    // Nothing under More is set, so it is closed.
+    assert!(h.query_by_label("More").is_some());
+    assert!(h.query_by_label("SQL before").is_none());
+    h.get_by_label("More").scroll_to_me();
+    settle(&mut h);
+    h.get_by_label("More").click();
+    settle(&mut h);
+    shot(&mut h, "95-more-open");
+    assert!(h.query_by_label("SQL before").is_some());
+    shot(&mut h, "95-more-open");
+    h.get_by_label("Save as a connection").scroll_to_me();
+    settle(&mut h);
+    h.get_by_label("Save as a connection").click();
+    settle(&mut h);
+    assert_eq!(param(&h, "pg", "connection"), "og953 on db.invalid");
+    assert_eq!(param(&h, "pg", "password"), "");
+    assert_eq!(param(&h, "pg", "host"), "");
+    let c = h.state().settings.connection("og953 on db.invalid").cloned().expect("the connection is in the settings");
+    assert_eq!((c.host.as_str(), c.port.as_str(), c.user.as_str(), c.password.as_str()), ("db.invalid", "5432", "me", "secret"));
+    assert!(h.query_by_label_contains("Written in the model").is_none());
+    // The other has SQL after, so More is open and says so.
+    let pg2 = graph_id(&h, "pg2");
+    h.state_mut().set_selection(vec![pg2]);
+    settle(&mut h);
+    assert!(h.query_by_label("More · 1 set").is_some());
+    assert!(h.query_by_label("SQL after").is_some());
+}
+
+/// Draw map for print says how many pixels wide the map becomes, before it is run.
+#[test]
+fn draw_map_for_print_says_how_wide_the_map_becomes() {
+    let dir = example_copy();
+    std::fs::write(
+        dir.join("print.json"),
+        r#"{
+      "format": "ographis/1", "name": "Print",
+      "nodes": [
+        {"id": "map", "type": "MapRenderer", "name": "Map", "x": 0, "y": 0,
+         "params": {"size_as": "print", "print_mm": "180", "print_dpi": "300"}}
+      ],
+      "edges": []
+    }"#,
+    )
+    .unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("print.json")).unwrap();
+    app.quiet = true;
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(4);
+    let map = graph_id(&h, "map");
+    h.state_mut().set_selection(vec![map]);
+    settle(&mut h);
+    shot(&mut h, "95-print-pixels");
+    let line = h.query_by_label_contains("pixels in width").expect("the width is shown");
+    let text = format!("{:?}", line);
+    assert!(text.contains("2") && text.contains("126"), "{}", text);
+}

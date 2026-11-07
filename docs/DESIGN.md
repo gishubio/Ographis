@@ -302,6 +302,9 @@ Why Ographis works as it does, and what it does not do yet.
 - Extrude makes flat tops: no pitched roofs. Generate TIN from a raster places the corners
   on the middles of cells, and leaves out triangles over cells without a value by their
   middle, so the edge along such cells is ragged.
+- libspatialite is not loaded (SPATIALITE_LOAD=FALSE). When a GeoPackage or SQLite file is
+  closed it cleans up libxml2 for the whole process, which crashes another thread reading
+  XML. GDAL reads SpatiaLite files without it; only its SQL functions are lost.
 - Outline from above: the shadow of each object is the union of its triangles seen from
   above, so a surface open at the top, such as a mesh without a top face, still gives its
   whole area; a section only gives areas where the cut goes through closed solids. Objects

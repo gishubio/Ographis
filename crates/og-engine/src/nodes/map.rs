@@ -738,6 +738,12 @@ pub(super) const TYPES: &[NodeType] = &[
         ports: None,
         params: MAP_PARAMS,
         run: run_map,
-        summary: |p| format!("{} px wide", p.get("width").unwrap_or_else(|| "1600".into())),
+        summary: |p| {
+            if p.get("size_as").as_deref() == Some("print") {
+                format!("{} mm at {} dpi", p.get("print_mm").unwrap_or_else(|| "180".into()), p.get("print_dpi").unwrap_or_else(|| "300".into()))
+            } else {
+                format!("{} px wide", p.get("width").unwrap_or_else(|| "1600".into()))
+            }
+        },
     },
 ];

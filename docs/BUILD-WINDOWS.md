@@ -265,6 +265,10 @@ Not yet checked on Windows:
   in MapLibre, and opened in QGIS; glTF with groups, materials, sun and camera imported into
   Blender 4 and 5, and BlenderGIS reading where it lies; GPX from a GPS and photos from a
   phone; PostGIS *Empty it and fill it again* against a table with views on it.
+- Version 0.95.3, all built and tested only on Linux: *Save as a connection* with the
+  Windows Credential Manager, where the password is to land; *More* in the forms with a real
+  mouse; reading a SpatiaLite file from QGIS now that libspatialite is not loaded, if the GDAL
+  of the Windows build has it.
 - Version 0.95.2, all built and tested only on Linux: *Outline from above* on a real IFC
   from an architect, with doors, windows and walls over several storeys; *SQL before* and
   *SQL after*, *Only within* and the new statistics against SQL Server through ODBC (they

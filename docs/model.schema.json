@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.95.2. Written by og schema.",
+  "description": "A model of Ographis 0.95.3. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -2124,7 +2124,7 @@
                   },
                   "password": {
                     "title": "Password",
-                    "description": "a string; better a $(variable) or a connection in the settings than the secret itself. Stored in the model file as it is, for anyone the model is given to to read. Better: a connection from Edit → Settings, or $(password) with the variable set"
+                    "description": "a string; better a $(variable) or a connection in the settings than the secret itself. Stored in the model file as it is, for anyone the model is given to to read. Better: Save as a connection, or $(password) with the variable set"
                   },
                   "tables": {
                     "title": "Tables",
@@ -2308,7 +2308,7 @@
                   },
                   "password": {
                     "title": "Password",
-                    "description": "a string; better a $(variable) or a connection in the settings than the secret itself. Stored in the model file as it is, for anyone the model is given to to read. Better: a connection from Edit → Settings, or $(password) with the variable set"
+                    "description": "a string; better a $(variable) or a connection in the settings than the secret itself. Stored in the model file as it is, for anyone the model is given to to read. Better: Save as a connection, or $(password) with the variable set"
                   },
                   "schema": {
                     "title": "Schema",

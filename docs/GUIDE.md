@@ -29,6 +29,8 @@ five models.
 | Switch a connection off | Right-click it and choose *Disable connection*, or click it and use the button in the panel. It is drawn faint and lets nothing through, until it is enabled again |
 | Set up database connections | Edit → *Settings…*, or Ctrl+, and *Database connections*: a name, the server, port, database, user and password, and *Test connection*. Inputs and outputs choose a connection by its name; the model keeps only the name |
 | Run SQL around a database write | In an Output to PostGIS or SQL Server, *SQL before* and *SQL after*, such as `DELETE FROM {table} WHERE kommun = '1480'` before; `{table}` is the table written. It runs in the same transaction as the write. *Only within* on a database Input reads only what lies in a rectangle chosen on the map |
+| Move a password out of a model | A PostGIS input or output with the server written in it has *Save as a connection* under the password. The server, database, user and password become a connection in the settings, and the model keeps only its name |
+| Find a setting that is seldom changed | Under *More* at the end of the form. It is open when one of them is set |
 | Avoid connections that cross | Right-click the name of a port and choose *Move up* or *Move down*. The port moves with its connections, and its name is marked for a moment |
 | Set up a node | Click it. The form appears on the right |
 | Switch a node off | Right-click it and choose *Disable*. It does not run and lets nothing through |

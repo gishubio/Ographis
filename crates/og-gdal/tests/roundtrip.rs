@@ -2688,21 +2688,10 @@ fn flatgeobuf_and_spatialite() {
     // Added to: read and written again with the new ones after.
     b.write(&sample(), &path, &WriteOpts { append: true, ..Default::default() }, &mut notes).unwrap();
     assert_eq!(b.read(&path, &ReadOpts::default(), &mut notes).unwrap().len(), 4);
-    // SpatiaLite, made by GDAL, read with its layers.
+    // SpatiaLite, made by ogr2ogr with the library, read without it: Ographis does not load
+    // libspatialite, whose cleaning up of libxml2 can crash another thread.
     let lite = dir.join("data.sqlite");
-    {
-        let drv = gdal::DriverManager::get_driver_by_name("SQLite").unwrap();
-        let mut opts = gdal::cpl::CslStringList::new();
-        opts.set_name_value("SPATIALITE", "YES").unwrap();
-        let mut ds = drv.create_with_band_type_with_options::<u8, _>(&lite, 0, 0, 0, &opts).unwrap();
-        let srs = gdal::spatial_ref::SpatialRef::from_epsg(3006).unwrap();
-        let l = ds.create_layer(LayerOptions { name: "stops", srs: Some(&srs), ty: OGRwkbGeometryType::wkbPoint, options: None }).unwrap();
-        gdal::vector::FieldDefn::new("name", gdal::vector::OGRFieldType::OFTString).unwrap().add_to_layer(&l).unwrap();
-        let mut f = gdal::vector::Feature::new(l.defn()).unwrap();
-        f.set_field_string(0, "Brunnsparken").unwrap();
-        f.set_geometry(gdal::vector::Geometry::from_wkt("POINT (319758 6400326)").unwrap()).unwrap();
-        f.create(&l).unwrap();
-    }
+    std::fs::copy(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/stops.sqlite"), &lite).unwrap();
     let t = b.read(&lite, &ReadOpts::default(), &mut notes).unwrap();
     assert_eq!((t.crs, t.len()), (Some(3006), 1));
     assert_eq!(col(&t, "name"), [text("Brunnsparken")]);
