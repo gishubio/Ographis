@@ -110,8 +110,9 @@ impl App {
             return;
         }
         // F joins the selected nodes from left to right: the first output of each into the
-        // first free input of the next.
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F)) {
+        // first free input of the next. With fewer than two selected, F is a letter typed on
+        // the canvas, which opens the quick-add box (see canvas).
+        if self.selected.len() >= 2 && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F)) {
             self.connect_selected();
             return;
         }

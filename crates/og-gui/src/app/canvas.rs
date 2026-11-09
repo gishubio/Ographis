@@ -80,13 +80,30 @@ impl App {
                 }
             }
         }
-        // So does / with the pointer over the canvas; with one node selected, the new tool
-        // comes after it, connected.
-        if self.quick_add.is_none()
-            && !ui.ctx().egui_wants_keyboard_input()
-            && self.pointer_on_canvas.is_some()
-            && ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "/")))
-        {
+        // So does / with the pointer over the canvas, and so does a letter or a digit, which is
+        // then the start of what is looked for, as in FME; with one node selected, the new
+        // tool comes after it, connected. F with two or more nodes selected connects them
+        // instead (see canvas_keys).
+        let typed = if self.quick_add.is_none() && !ui.ctx().egui_wants_keyboard_input() && self.pointer_on_canvas.is_some() {
+            let joining = self.selected.len() >= 2;
+            ui.input(|i| {
+                // A letter with Alt, Ctrl or Cmd held is a shortcut, not typing.
+                let plain = !(i.modifiers.alt || i.modifiers.ctrl || i.modifiers.command || i.modifiers.mac_cmd);
+                i.events.iter().find_map(|e| match e {
+                    egui::Event::Text(t) if t == "/" => Some(String::new()),
+                    egui::Event::Text(t) if plain && t.chars().next().is_some_and(|c| c.is_alphanumeric()) && !(joining && t.eq_ignore_ascii_case("f")) => {
+                        Some(t.clone())
+                    }
+                    _ => None,
+                })
+            })
+        } else {
+            None
+        };
+        if let Some(start) = typed {
+            if !start.is_empty() {
+                ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("quick_add_box"), (start, 0usize)));
+            }
             let p = self.pointer_on_canvas.unwrap_or(self.canvas_rect.center());
             let after = (self.selected.len() == 1)
                 .then(|| self.selected[0])

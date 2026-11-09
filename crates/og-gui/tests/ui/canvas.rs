@@ -1653,6 +1653,65 @@ fn double_click(h: &mut Harness<'_, App>, pos: egui::Pos2) {
     h.run_steps(2);
 }
 
+/// A key as the keyboard sends it: the key, then the text it types.
+fn keystroke(h: &mut Harness<'_, App>, key: egui::Key, text: &str) {
+    h.key_press(key);
+    h.event(egui::Event::Text(text.into()));
+}
+
+/// Quick add as in FME: a letter typed with the pointer over the canvas opens the box with
+/// that letter already written, and the rest of the name follows it. F still connects two
+/// or more selected nodes.
+#[test]
+fn typing_on_the_canvas_opens_quick_add() {
+    let (mut h, _dir) = two_nodes();
+    let empty = on_canvas(&h, 350.0, 220.0);
+    pointer(&mut h, empty, None);
+    h.state_mut().set_selection(vec![]);
+    h.run_steps(2);
+    keystroke(&mut h, egui::Key::B, "b");
+    h.run_steps(2);
+    assert!(h.state().quick_add.is_some(), "a letter opens the box");
+    h.event(egui::Event::Text("uff".into()));
+    h.run_steps(2);
+    shot(&mut h, "089-typed-on-canvas");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert!(h.state().quick_add.is_none());
+    assert!(h.state().snarl.nodes().any(|n| n.kind == "Bufferer"), "b then uff finds the buffer, not bbuff");
+
+    // F with one node selected is a letter too: the box opens, and nothing is connected.
+    let before = wires(&h);
+    let elsewhere = on_canvas(&h, 350.0, -150.0);
+    pointer(&mut h, elsewhere, None);
+    h.run_steps(1);
+    assert_eq!(h.state().selected.len(), 1);
+    keystroke(&mut h, egui::Key::F, "f");
+    h.run_steps(2);
+    assert!(h.state().quick_add.is_some(), "f opens the box with one node selected");
+    assert_eq!(wires(&h), before);
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    assert!(h.state().quick_add.is_none());
+
+    // With Alt held, a letter is a shortcut and not typed.
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::ALT));
+    h.run_steps(1);
+    keystroke(&mut h, egui::Key::B, "b");
+    h.run_steps(2);
+    assert!(h.state().quick_add.is_none(), "Alt and a letter do not open the box");
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    h.run_steps(1);
+
+    // F with two nodes selected connects them, and the box stays closed.
+    let ids: Vec<egui_snarl::NodeId> = ["in", "out"].iter().map(|id| graph_id(&h, id)).collect();
+    h.state_mut().set_selection(ids);
+    h.run_steps(2);
+    keystroke(&mut h, egui::Key::F, "f");
+    h.run_steps(3);
+    assert!(h.state().quick_add.is_none(), "F joins two selected nodes instead");
+}
+
 /// Quick add: a double click on empty canvas opens a box where a few letters find the tool,
 /// / puts the tool after the selected node, connected, and a connection let go on empty
 /// canvas asks for the tool to connect.

@@ -1,6 +1,6 @@
 //! Quick add: a search box on the canvas where a tool is put by typing a few letters of its
-//! name, opened by a double click on the canvas, by / , or by a connection let go on empty
-//! canvas.
+//! name, opened by a letter or a digit typed over the canvas (which starts the search), by a
+//! double click on the canvas, by / , or by a connection let go on empty canvas.
 
 use crate::theme::Palette;
 use eframe::egui::{self, Key, RichText, Ui};
