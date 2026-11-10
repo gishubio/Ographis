@@ -1,0 +1,454 @@
+{
+  "format": "ographis/1",
+  "name": "Proximity to care",
+  "nodes": [
+    {
+      "id": "roads",
+      "type": "Reader",
+      "name": "Streets",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "analysis/roads.geojson"
+      },
+      "comment": "A made-up small town, from tools/make_analysis_example.py. Speeds in km/h"
+    },
+    {
+      "id": "walk",
+      "type": "AttributeCreator",
+      "name": "On foot",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "name": "walk_kmh",
+        "expression": "5"
+      },
+      "comment": "Walking at 5 km/h on every street"
+    },
+    {
+      "id": "net",
+      "type": "NetworkBuilder",
+      "name": "Streets as a network",
+      "x": 540,
+      "y": -180,
+      "params": {}
+    },
+    {
+      "id": "people",
+      "type": "Reader",
+      "name": "People",
+      "x": 20,
+      "y": 220,
+      "params": {
+        "path": "analysis/people.geojson"
+      },
+      "comment": "People in squares of 250 m"
+    },
+    {
+      "id": "districts",
+      "type": "Reader",
+      "name": "Districts",
+      "x": 20,
+      "y": 420,
+      "params": {
+        "path": "analysis/districts.geojson"
+      }
+    },
+    {
+      "id": "centres",
+      "type": "Reader",
+      "name": "Health centres",
+      "x": 20,
+      "y": 620,
+      "params": {
+        "path": "analysis/health_centres.geojson"
+      }
+    },
+    {
+      "id": "cands",
+      "type": "Reader",
+      "name": "Places for a new one",
+      "x": 20,
+      "y": 820,
+      "params": {
+        "path": "analysis/candidates.geojson"
+      }
+    },
+    {
+      "id": "areas",
+      "type": "ServiceAreas",
+      "name": "Within 10, 20 and 30 minutes on foot",
+      "x": 540,
+      "y": 20,
+      "params": {
+        "cost": "time",
+        "speed": "walk_kmh",
+        "breaks": "10, 20, 30",
+        "shape": "outline",
+        "width": "60"
+      },
+      "comment": "Walking to the nearest health centre at 5 km/h, as an outline over the blocks between the streets"
+    },
+    {
+      "id": "alloc",
+      "type": "NetworkAllocation",
+      "name": "Minutes on foot to the nearest",
+      "x": 540,
+      "y": 260,
+      "params": {
+        "cost": "time",
+        "speed": "walk_kmh"
+      }
+    },
+    {
+      "id": "near",
+      "type": "AttributeCreator",
+      "name": "People within 20 minutes",
+      "x": 800,
+      "y": 260,
+      "params": {
+        "name": "people_near",
+        "expression": "if(minutes <= 20, people, 0)"
+      }
+    },
+    {
+      "id": "realloc",
+      "type": "AreaReallocator",
+      "name": "People in each district",
+      "x": 1060,
+      "y": 360,
+      "params": {
+        "counts": "people, people_near"
+      },
+      "comment": "The squares that a border cuts are shared by area"
+    },
+    {
+      "id": "share",
+      "type": "AttributeCreator",
+      "name": "Share within 20 minutes",
+      "x": 1320,
+      "y": 360,
+      "params": {
+        "name": "share_near",
+        "expression": "round(100 * people_near / people, 1)"
+      }
+    },
+    {
+      "id": "share_out",
+      "type": "Writer",
+      "name": "Districts",
+      "x": 1580,
+      "y": 360,
+      "params": {
+        "path": "out/analysis/districts_near_care.csv"
+      }
+    },
+    {
+      "id": "choose",
+      "type": "LocationChooser",
+      "name": "Three health centres",
+      "x": 540,
+      "y": 700,
+      "params": {
+        "cost": "time",
+        "speed": "walk_kmh",
+        "count": "3",
+        "weight": "people",
+        "required": "there"
+      },
+      "comment": "The two there are, and the best of the eight places for a third, by the least walking for all"
+    },
+    {
+      "id": "chosen_out",
+      "type": "Writer",
+      "name": "The chosen",
+      "x": 800,
+      "y": 700,
+      "params": {
+        "path": "out/analysis/chosen_health_centres.geojson"
+      }
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "name": "Map",
+      "x": 1580,
+      "y": 60,
+      "params": {
+        "width": "1400",
+        "background": "#ffffff",
+        "legend": "bottom-right",
+        "legend_title": "Share within 20 minutes on foot, %",
+        "layers": [
+          {
+            "from": "choose:Chosen",
+            "fill": "#e31a1c",
+            "stroke": "#ffffff",
+            "width": 1.5,
+            "size": 12,
+            "label": "name",
+            "label_place": "auto"
+          },
+          {
+            "from": "net:Network",
+            "fill": "none",
+            "stroke": "#7a7a7a",
+            "width": 0.6,
+            "size": 4
+          },
+          {
+            "from": "areas:Areas",
+            "fill": "#1f78b440",
+            "stroke": "#1f78b4",
+            "width": 1,
+            "size": 4
+          },
+          {
+            "from": "share:Output",
+            "fill": "#cccccc",
+            "stroke": "#ffffff",
+            "width": 1,
+            "size": 4,
+            "color_by": "share_near",
+            "ramp": "greens",
+            "classes": 3,
+            "method": "equal",
+            "label": "district"
+          }
+        ]
+      }
+    },
+    {
+      "id": "map_out",
+      "type": "Writer",
+      "name": "Map as PNG",
+      "x": 1840,
+      "y": 60,
+      "params": {
+        "path": "out/analysis/proximity.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "roads",
+        "Output"
+      ],
+      "to": [
+        "walk",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "walk",
+        "Output"
+      ],
+      "to": [
+        "net",
+        "Lines"
+      ]
+    },
+    {
+      "from": [
+        "net",
+        "Network"
+      ],
+      "to": [
+        "areas",
+        "Network"
+      ]
+    },
+    {
+      "from": [
+        "centres",
+        "Output"
+      ],
+      "to": [
+        "areas",
+        "Facilities"
+      ]
+    },
+    {
+      "from": [
+        "net",
+        "Network"
+      ],
+      "to": [
+        "alloc",
+        "Network"
+      ]
+    },
+    {
+      "from": [
+        "centres",
+        "Output"
+      ],
+      "to": [
+        "alloc",
+        "Facilities"
+      ]
+    },
+    {
+      "from": [
+        "people",
+        "Output"
+      ],
+      "to": [
+        "alloc",
+        "Demand"
+      ]
+    },
+    {
+      "from": [
+        "alloc",
+        "Demand"
+      ],
+      "to": [
+        "near",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "near",
+        "Output"
+      ],
+      "to": [
+        "realloc",
+        "From"
+      ]
+    },
+    {
+      "from": [
+        "districts",
+        "Output"
+      ],
+      "to": [
+        "realloc",
+        "To"
+      ]
+    },
+    {
+      "from": [
+        "realloc",
+        "Output"
+      ],
+      "to": [
+        "share",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "share",
+        "Output"
+      ],
+      "to": [
+        "share_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "net",
+        "Network"
+      ],
+      "to": [
+        "choose",
+        "Network"
+      ]
+    },
+    {
+      "from": [
+        "centres",
+        "Output"
+      ],
+      "to": [
+        "choose",
+        "Candidates"
+      ]
+    },
+    {
+      "from": [
+        "cands",
+        "Output"
+      ],
+      "to": [
+        "choose",
+        "Candidates"
+      ]
+    },
+    {
+      "from": [
+        "people",
+        "Output"
+      ],
+      "to": [
+        "choose",
+        "Demand"
+      ]
+    },
+    {
+      "from": [
+        "choose",
+        "Chosen"
+      ],
+      "to": [
+        "chosen_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "choose",
+        "Chosen"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "net",
+        "Network"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "areas",
+        "Areas"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "share",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "map_out",
+        "Input"
+      ]
+    }
+  ]
+}

@@ -87,6 +87,10 @@ pub enum ParamKind {
     Mapping(&'static str, &'static str),
     /// The data type and size of chosen attributes from the stream on the named input port.
     Schema(&'static str),
+    /// A model of its own, as the inside of a tool made of other tools.
+    Model,
+    /// Files and folders, one on each row: a list of paths, or one text separated by ;.
+    Files,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -123,6 +127,16 @@ pub struct NodeType {
 }
 
 impl NodeType {
+    /// The input ports of a node of this type with the given parameters: those of a tool made
+    /// of other tools follow the model inside it.
+    pub fn inputs_for(&self, params: &Params) -> Vec<&'static str> {
+        if self.name == "CustomTool" {
+            custom096::input_ports(params)
+        } else {
+            self.inputs.to_vec()
+        }
+    }
+
     /// The output ports of a node of this type with the given parameters.
     pub fn outputs_for(&self, params: &Params) -> Vec<String> {
         match self.ports {
@@ -160,6 +174,8 @@ pub struct NodeCtx<'a> {
     /// The files the outputs have written so far in the run, with the names of the outputs.
     /// Make zip file runs last and packs them.
     pub written: Vec<(String, PathBuf)>,
+    /// The variables of the model, for a tool that runs a model of its own inside.
+    pub variables: &'a [crate::run::Variable],
 }
 
 /// The flags by which a run is stopped and paused from outside, such as from the window.
@@ -527,6 +543,13 @@ impl<'a> P<'a> {
             _ => self.get(key).map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default(),
         }
     }
+    /// Paths of files and folders: a JSON list, or one text separated by ; as in older models.
+    pub fn paths(&self, key: &str) -> Vec<String> {
+        match self.values.get(key) {
+            Some(serde_json::Value::Array(a)) => a.iter().filter_map(|v| v.as_str().map(|s| s.trim().to_string())).filter(|s| !s.is_empty()).collect(),
+            _ => self.get(key).map(|s| s.split(';').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default(),
+        }
+    }
     /// A list of values that may hold commas: a JSON list, or one value per line.
     pub fn list_exact(&self, key: &str) -> Vec<String> {
         match self.values.get(key) {
@@ -625,7 +648,7 @@ pub fn is_spreadsheet(ext: &str) -> bool {
 
 /// The formats an output writes as a picture: the image of the stream, not its features.
 pub fn is_image_format(ext: &str) -> bool {
-    matches!(ext, "png" | "jpg" | "jpeg" | "tif" | "tiff" | "pdf")
+    matches!(ext, "png" | "jpg" | "jpeg" | "tif" | "tiff" | "pdf" | "svg")
 }
 
 /// A choice of yes or no, stored as true or false.
@@ -684,14 +707,21 @@ mod output;
 mod overture_dl;
 mod pointcloud089;
 pub use pointcloud089::class_port;
+mod audit;
+mod custom096;
+mod lengths096;
+mod locate096;
+mod movement096;
 mod pointcloud090;
 mod props;
 mod raster;
 mod raster089;
 mod raster090;
+mod raster096;
 mod remote;
 mod scene;
 mod solid;
+mod stats096;
 #[cfg(test)]
 mod tests086;
 #[cfg(test)]
@@ -700,6 +730,7 @@ mod tools088;
 mod tools091;
 mod tools094;
 mod tools095;
+pub use custom096::inner_model;
 mod vector093;
 pub mod vector_tiles;
 #[cfg(test)]
@@ -759,6 +790,12 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         vector093::TYPES,
         tools094::TYPES,
         tools095::TYPES,
+        stats096::TYPES,
+        movement096::TYPES,
+        locate096::TYPES,
+        lengths096::TYPES,
+        raster096::TYPES,
+        custom096::TYPES,
         pointcloud089::TYPES,
         pointcloud090::TYPES,
         osm::TYPES,
@@ -787,7 +824,7 @@ pub(crate) fn run_for_test_with(kind: &str, values: Params, given: Vec<(&'static
     let t = node_type(kind).expect("a tool of that name");
     let p = P::new(&values, t.params);
     let mut inp: Inputs = HashMap::new();
-    for port in t.inputs {
+    for port in t.inputs_for(&values) {
         inp.insert(port, Arc::new(Table::default()));
     }
     // The streams also come as parts, as the run gives them to tools that keep them apart.
@@ -812,6 +849,7 @@ pub(crate) fn run_for_test_with(kind: &str, values: Params, given: Vec<(&'static
         parts,
         open_ports: Vec::new(),
         written: Vec::new(),
+        variables: &[],
     };
     let out = (t.run)(&p, &inp, &mut ctx)?;
     Ok((out, ctx.notes))

@@ -1428,6 +1428,11 @@ where
         viewer.wire_clicked(&OutPin::new(snarl, out_pin), &InPin::new(snarl, in_pin), snarl);
     }
 
+    // Ographis: the viewer may say something about the connection the pointer is on.
+    if carried.is_none() && let Some(wire) = hovered_wire {
+        viewer.wire_hovered(wire.out_pin, wire.in_pin, snarl);
+    }
+
     // Ographis: a click with the secondary button on a connection goes to the viewer, which
     // shows a menu. Upstream removes the connection at once.
     if hovered_wire_disconnect && let Some(wire) = hovered_wire {

@@ -22,7 +22,20 @@ fn hex(c: [u8; 4]) -> String {
 fn style(s: &LayerStyle) -> String {
     let mut parts = Vec::new();
     match s.stroke {
-        Some(c) => parts.push(format!("PEN(c:{},w:{:.2}pt)", hex(c), (s.width * 0.75).max(0.1))),
+        Some(c) => {
+            let w = (s.width * 0.75).max(0.1);
+            let pattern = match s.dash.as_str() {
+                "dash" => format!(",p:\"{:.1}pt {:.1}pt\"", w.max(0.75) * 4.0, w.max(0.75) * 2.5),
+                "dot" => format!(",p:\"{:.1}pt {:.1}pt\"", w.max(0.75), w.max(0.75) * 2.0),
+                "dashdot" => format!(",p:\"{:.1}pt {:.1}pt {:.1}pt {:.1}pt\"", w.max(0.75) * 4.0, w.max(0.75) * 2.0, w.max(0.75), w.max(0.75) * 2.0),
+                _ => String::new(),
+            };
+            // The edge of a road first, under the line.
+            if let Some(e) = s.casing.filter(|_| s.casing_width > 0.0) {
+                parts.push(format!("PEN(c:{},w:{:.2}pt)", hex(e), w + 2.0 * s.casing_width * 0.75));
+            }
+            parts.push(format!("PEN(c:{},w:{:.2}pt{})", hex(c), w, pattern))
+        }
         None => parts.push("PEN(c:#00000000,w:0pt)".to_string()),
     }
     if let Some(c) = s.fill {
@@ -217,7 +230,7 @@ mod tests {
 
     #[test]
     fn styles_are_written_as_ogr_wants_them() {
-        let s = LayerStyle { fill: Some([255, 0, 0, 255]), stroke: Some([0, 0, 255, 128]), width: 2.0, size: 8.0 };
+        let s = LayerStyle { fill: Some([255, 0, 0, 255]), stroke: Some([0, 0, 255, 128]), width: 2.0, size: 8.0, ..LayerStyle::default() };
         assert_eq!(style(&s), "PEN(c:#0000FF80,w:1.50pt);BRUSH(fc:#FF0000FF);SYMBOL(id:\"ogr-sym-3\",c:#FF0000FF,s:6.00pt)");
         assert_eq!(xml("a<b & \"c\""), "a&lt;b &amp; &quot;c&quot;");
     }

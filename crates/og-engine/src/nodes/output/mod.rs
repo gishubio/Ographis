@@ -75,6 +75,7 @@ pub const WRITER_FORMATS: &[(&str, &str)] = &[
     ("png", "PNG image (.png)"),
     ("pmtiles", "PMTiles vector tiles (.pmtiles)"),
     ("shp", "Shapefile (.shp)"),
+    ("svg", "SVG drawing of a map (.svg)"),
     ("txt", "Text (.txt)"),
 ];
 
@@ -107,6 +108,7 @@ pub const OUTPUT_FORMATS: &[(&str, &str)] = &[
     ("pdf", "PDF (.pdf)"),
     ("png", "PNG image (.png)"),
     ("pmtiles", "PMTiles vector tiles (.pmtiles)"),
+    ("svg", "SVG drawing of a map (.svg)"),
     ("postgis", "PostGIS table"),
     ("qgis", "QGIS project with its layers (.qgz)"),
     ("webmap", "Web map with Leaflet or MapLibre (a folder)"),
@@ -334,6 +336,13 @@ pub(super) const WRITER_PARAMS: &[ParamSpec] = &[
         hint: "PMTiles: the largest, at most 16. 14 has tiles of about 2 km, and maps zoom in beyond it",
     },
     ParamSpec {
+        key: "geojson_crs",
+        label: "Coordinates",
+        kind: ParamKind::Choice(&[("wgs84", "In WGS 84, as GeoJSON is to be"), ("keep", "In the coordinate system of the stream")]),
+        default: "wgs84",
+        hint: "GeoJSON is in degrees in WGS 84 (RFC 7946), which web maps take for granted. Other coordinate systems are named in the file in the older way",
+    },
+    ParamSpec {
         key: "gpkg_version",
         label: "GeoPackage version",
         kind: ParamKind::Choice(&[("", "As GDAL chooses"), ("1.4", "1.4"), ("1.3", "1.3"), ("1.2", "1.2, for older programs")]),
@@ -360,6 +369,16 @@ pub(super) const WRITER_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Choice(&[("deflate", "Deflate, lossless"), ("lzw", "LZW, lossless, read by the most programs"), ("jpeg", "JPEG, small but lossy"), ("none", "Not packed")]),
         default: "deflate",
         hint: "For pictures, also Cloud Optimized. JPEG suits aerial photos, not maps with lines and text",
+    },
+    ParamSpec {
+        key: "pdf_as",
+        label: "A map as",
+        kind: ParamKind::Choice(&[
+            ("shapes", "Lines, areas and text as shapes, sharp at any size, placed on the map"),
+            ("picture", "A picture of pixels, placed on the map"),
+        ]),
+        default: "shapes",
+        hint: "For a map from Draw map or a chart. As shapes it prints sharp and can be edited in Illustrator or Inkscape; as a picture a GIS can place it",
     },
     ParamSpec { key: "pdf_size", label: "Page size", kind: ParamKind::Choice(PDF_SIZES), default: "a4", hint: "" },
     ParamSpec { key: "pdf_width", label: "Page width in mm", kind: ParamKind::Text, default: "210", hint: "" },
@@ -829,6 +848,49 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         if p.get("mode").as_deref() == Some("append") {
             ctx.notes.warn("A picture cannot be added to, so it was written over.".to_string());
         }
+        // A map from Draw map as shapes: written here, without GDAL.
+        let shapes = table.image.as_ref().and_then(|i| i.vector.clone());
+        if ext == "svg" || (ext == "pdf" && shapes.is_some() && p.get("pdf_as").as_deref() != Some("picture")) {
+            let Some(pic) = shapes else {
+                return err(
+                    "Only a map from Draw map or a chart can be written as .svg, since they are kept as lines and areas. Other pictures are written as .png.",
+                );
+            };
+            let bytes = if ext == "svg" {
+                crate::vector::svg(&pic).into_bytes()
+            } else {
+                let page = pdf_page(p)?;
+                let l = page.layout(pic.width as usize, pic.height as usize);
+                let heading = page.title.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(|t| (t, l.title_at.0, l.page_h - l.title_at.1));
+                let geo = vector_geo(ctx, table, &pic);
+                if geo.is_none() && table.crs.is_some() {
+                    ctx.notes
+                        .warn("The corners of the map could not be put in degrees, so the PDF has no coordinates. Choose PDF as picture for one that has.");
+                }
+                crate::vector::pdf(&pic, l.page_w, l.page_h, l.left, l.top, l.scale, heading, geo.as_ref())
+            };
+            std::fs::write(&path, bytes).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))?;
+            let n = pic.ops.len();
+            let placed = ext == "pdf" && table.crs.is_some() && table.image.as_ref().is_some_and(|i| i.geotransform[1] != 0.0);
+            ctx.notes.info(format!(
+                "drawn as {} shapes{}",
+                fmt_count(n as u64),
+                if ext == "pdf" {
+                    if placed {
+                        ", sharp at any size, with coordinates"
+                    } else {
+                        ", sharp at any size"
+                    }
+                } else {
+                    ""
+                }
+            ));
+            ctx.files.push(path.clone());
+            return Ok(Vec::new());
+        }
+        if ext == "pdf" && table.image.is_some() && p.get("pdf_as").as_deref() != Some("picture") {
+            ctx.notes.info("the picture is not a map from Draw map, so the PDF holds it as pixels");
+        }
         let b = ctx.backend(&format!("The format .{}", ext))?;
         let pdf = pdf_page(p)?;
         let cog = p.get("format").as_deref() == Some("cog") && matches!(ext.as_str(), "tif" | "tiff");
@@ -896,11 +958,20 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         let files = b.write(&flat, &path, &WriteOpts { layer: p.get("layer"), encoding: None, sizes, sheet, append, ..Default::default() }, &mut ctx.notes)?;
         ctx.files.extend(files);
     } else {
-        if matches!(ext.as_str(), "geojson" | "json") && table.crs.is_some_and(|c| c != 4326) {
-            // Nothing wrong with it, but web maps and many other programs take for granted
-            // that GeoJSON is in WGS 84.
-            ctx.notes.info(format!("the coordinates are in {}, not in WGS 84 as GeoJSON usually is", crs_label(table.crs)));
-        }
+        // GeoJSON is in WGS 84 (RFC 7946), unless the coordinate system is to be kept.
+        let wgs84;
+        let table = if matches!(ext.as_str(), "geojson" | "json") && table.crs.is_some_and(|c| c != 4326) {
+            if p.get("geojson_crs").as_deref() == Some("keep") {
+                ctx.notes.info(format!("the coordinates are in {}, not in WGS 84 as GeoJSON is to be", crs_label(table.crs)));
+                table
+            } else {
+                ctx.notes.info(format!("reprojected from {} to WGS 84, as GeoJSON is to be", crs_label(table.crs)));
+                wgs84 = reproject(table, 4326, ctx.backend)?;
+                &wgs84
+            }
+        } else {
+            table
+        };
         let b = ctx.backend(&format!("The format .{}", ext))?;
         let key = if ext == "gpkg" { primary_key(p, "fid")? } else { None };
         let gpkg_version = p.get("gpkg_version").filter(|v| matches!(v.as_str(), "1.2" | "1.3" | "1.4"));
@@ -1031,3 +1102,28 @@ pub(super) const TYPES: &[NodeType] = &[
         summary: |p| file_name(p),
     },
 ];
+
+/// Where a map drawn as shapes lies, for a PDF with coordinates: its corners from the
+/// placement of the picture, in degrees. None when the map has no coordinate system, or no
+/// backend can put the corners in degrees.
+fn vector_geo(ctx: &mut NodeCtx, table: &Table, pic: &crate::vector::Picture) -> Option<crate::vector::Geo> {
+    let epsg = table.crs?;
+    let gt = table.image.as_ref()?.geotransform;
+    if gt[1] == 0.0 || gt[5] == 0.0 {
+        return None;
+    }
+    let (w, h) = (pic.width as f64, pic.height as f64);
+    let at = |col: f64, row: f64| (gt[0] + col * gt[1] + row * gt[2], gt[3] + col * gt[4] + row * gt[5]);
+    // Lower left, upper left, upper right, lower right.
+    let corners = [at(0.0, h), at(0.0, 0.0), at(w, 0.0), at(w, h)];
+    let mut xs: Vec<f64> = corners.iter().map(|c| c.0).collect();
+    let mut ys: Vec<f64> = corners.iter().map(|c| c.1).collect();
+    let b = ctx.backend("A PDF with coordinates").ok()?;
+    if epsg != 4326 {
+        b.transform(epsg, 4326, &mut xs, &mut ys).ok()?;
+    }
+    let wkt = b.crs_wkt(epsg);
+    // Degrees as x is longitude and y latitude; the PDF wants latitude first.
+    let corners = [(ys[0], xs[0]), (ys[1], xs[1]), (ys[2], xs[2]), (ys[3], xs[3])];
+    corners.iter().all(|(la, lo)| la.is_finite() && lo.is_finite()).then_some(crate::vector::Geo { epsg, wkt, corners })
+}

@@ -715,7 +715,7 @@ impl App {
             ui.set_width(720.0);
             ui.label(RichText::new("Variables").font(theme::strong(17.0)).color(pal.ink));
             ui.label(
-                RichText::new("Named values for the settings of the model. Write $(name) in a path, an expression or any other setting, and the value is put in its place when the model runs. From the command line: og run model.json --var name=value")
+                RichText::new("Named values for the settings of the model. Write $(name) in a path, an expression or any other setting, and the value is put in its place when the model runs. Those marked Ask are asked for before each run. From the command line: og run model.json --var name=value")
                     .color(pal.muted),
             );
             ui.add_space(6.0);
@@ -731,8 +731,9 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.add(egui::TextEdit::singleline(&mut v.name).id_salt(("var-name", i)).desired_width(236.0).font(theme::mono(12.5)).hint_text("name"));
                     let secret = og_engine::run::is_secret(&v.name);
-                    let w = (ui.available_width() - 30.0).max(120.0);
+                    let w = (ui.available_width() - 80.0).max(120.0);
                     ui.add(egui::TextEdit::singleline(&mut v.value).id_salt(("var-value", i)).password(secret).desired_width(w).hint_text("value"));
+                    ui.checkbox(&mut v.ask, "Ask").on_hover_text("Asked for before each run in the program, with this value offered");
                     if ui.small_button("×").on_hover_text("Remove this variable").clicked() {
                         remove = Some(i);
                     }
@@ -775,6 +776,59 @@ impl App {
         if vars != self.variables {
             self.variables = vars;
             self.changed(true);
+        }
+    }
+
+    /// The variables marked Ask, asked for before a run. Run takes the values and runs.
+    pub(super) fn ask_dialog(&mut self, ctx: &egui::Context, pal: &Palette) {
+        let Some(mut vars) = self.asking.take() else { return };
+        let (mut run, mut cancel) = (false, false);
+        let modal = egui::Modal::new(egui::Id::new("ask-before-run")).show(ctx, |ui| {
+            ui.set_width(520.0);
+            ui.label(RichText::new(format!("Run {}", self.name)).font(theme::strong(17.0)).color(pal.ink));
+            ui.label(RichText::new("The values to run with. They are kept in the model for the next time.").color(pal.muted));
+            ui.add_space(6.0);
+            for (i, v) in vars.iter_mut().enumerate() {
+                ui.label(RichText::new(&v.name).small().color(pal.muted));
+                let secret = og_engine::run::is_secret(&v.name);
+                let r = ui.add(egui::TextEdit::singleline(&mut v.value).id_salt(("ask-value", i)).password(secret).desired_width(f32::INFINITY));
+                if i == 0 && !self.ask_focused {
+                    r.request_focus();
+                    self.ask_focused = true;
+                }
+                if r.lost_focus() && ui.input(|k| k.key_pressed(Key::Enter)) {
+                    run = true;
+                }
+            }
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    run |= ui.button(RichText::new("Run").strong()).clicked();
+                    cancel = ui.button("Cancel").clicked();
+                });
+            });
+        });
+        if modal.should_close() {
+            cancel = true;
+        }
+        if run {
+            let mut all = self.variables.clone();
+            for v in &vars {
+                if let Some(w) = all.iter_mut().find(|w| w.name == v.name) {
+                    w.value = v.value.clone();
+                }
+            }
+            if all != self.variables {
+                self.variables = all;
+                self.changed(true);
+            }
+            self.asked = true;
+            self.ask_focused = false;
+            self.run(ctx);
+        } else if cancel {
+            self.ask_focused = false;
+        } else {
+            self.asking = Some(vars);
         }
     }
 

@@ -172,6 +172,11 @@ pub struct DbWrite {
     pub sql_after: Option<String>,
     /// Update the statistics of the table for the planner when done.
     pub analyze: bool,
+    /// Update the rows of the table that is there whose value of this attribute is the same,
+    /// and add the others, instead of replacing the table.
+    pub update_key: Option<String>,
+    /// With an update: delete the rows of the table whose key is not in the stream.
+    pub delete_missing: bool,
 }
 
 /// A name as PostgreSQL likes it, and as the columns of a table written to a database get

@@ -161,6 +161,13 @@ pub const FORMATS: &[Format] = &[
         note: "Maps, charts and 3D scenes, with a world file when they have coordinates",
     },
     Format {
+        name: "SVG drawings",
+        files: ".svg",
+        read: "",
+        write: OWN,
+        note: "Maps and charts as shapes, sharp at any size",
+    },
+    Format {
         name: "QGIS projects",
         files: ".qgz, .qgs",
         read: "",

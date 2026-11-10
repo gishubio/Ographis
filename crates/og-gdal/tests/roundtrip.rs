@@ -856,13 +856,15 @@ fn geojson_is_read_and_written() {
         {"id": "points", "type": "Tester", "params": {"test": "id < 3"}},
         {"id": "wgs", "type": "Writer", "params": {"path": "copy", "format": "geojson"}},
         {"id": "tm", "type": "Reprojector", "params": {"to": "EPSG:3006"}},
-        {"id": "sweref", "type": "Writer", "params": {"path": "sweref.geojson"}}
+        {"id": "sweref", "type": "Writer", "params": {"path": "sweref.geojson", "geojson_crs": "keep"}},
+        {"id": "default", "type": "Writer", "params": {"path": "back_to_wgs.geojson"}}
       ],
       "edges": [
         {"from": ["in", "Output"], "to": ["points", "Input"]},
         {"from": ["points", "Passed"], "to": ["wgs", "Input"]},
         {"from": ["points", "Passed"], "to": ["tm", "Input"]},
-        {"from": ["tm", "Reprojected"], "to": ["sweref", "Input"]}
+        {"from": ["tm", "Reprojected"], "to": ["sweref", "Input"]},
+        {"from": ["tm", "Reprojected"], "to": ["default", "Input"]}
       ]
     }"#,
     )
@@ -876,12 +878,16 @@ fn geojson_is_read_and_written() {
         assert_eq!(r.nodes["wgs"].files, [dir.join("copy.geojson")]);
         assert!(!r.log.iter().any(|l| l.msg.contains("not in WGS 84") && l.node.as_deref() == Some("wgs")));
         assert!(
-            r.log.iter().any(|l| l.msg.contains("SWEREF 99 TM") && l.msg.contains("not in WGS 84 as GeoJSON usually is")),
+            r.log.iter().any(|l| l.msg.contains("SWEREF 99 TM") && l.msg.contains("not in WGS 84 as GeoJSON is to be")),
             "the writer says which coordinate system the file has"
         );
+        assert!(r.log.iter().any(|l| l.msg.contains("reprojected from SWEREF 99 TM") && l.node.as_deref() == Some("default")));
     }
     let copy = b.read(&dir.join("copy.geojson"), &ReadOpts::default(), &mut notes).unwrap();
     assert_eq!((copy.len(), copy.crs), (2, Some(4326)));
+    // Without the choice to keep it, GeoJSON is written in WGS 84.
+    let back = b.read(&dir.join("back_to_wgs.geojson"), &ReadOpts::default(), &mut notes).unwrap();
+    assert_eq!((back.len(), back.crs), (2, Some(4326)));
     let tm = b.read(&dir.join("sweref.geojson"), &ReadOpts::default(), &mut notes).unwrap();
     assert_eq!((tm.len(), tm.crs), (2, Some(3006)));
     assert!(
@@ -1139,7 +1145,7 @@ fn features_are_added_to_layers_and_sheets_that_are_there() {
         {{"id": "in", "type": "Reader", "params": {{"path": "{}", "crs": "{}"}}}},
         {{"id": "gpkg", "type": "Writer", "params": {{"path": "out/all.gpkg", "layer": "places", "mode": "append"}}}},
         {{"id": "shp", "type": "Writer", "params": {{"path": "out/all.shp", "mode": "append"}}}},
-        {{"id": "json", "type": "Writer", "params": {{"path": "out/all.geojson", "mode": "append"}}}},
+        {{"id": "json", "type": "Writer", "params": {{"path": "out/all.geojson", "mode": "append", "geojson_crs": "keep"}}}},
         {{"id": "xlsx", "type": "Writer", "params": {{"path": "out/all.xlsx", "layer": "Places", "mode": "append", "colors": "blue", "bold_header": "true"}}}},
         {{"id": "ods", "type": "Writer", "params": {{"path": "out/all.ods", "layer": "Places", "mode": "append", "colors": "blue", "freeze": "true"}}}},
         {{"id": "over", "type": "Writer", "params": {{"path": "out/over.gpkg", "layer": "places"}}}}
@@ -1420,12 +1426,12 @@ fn a_map_is_written_as_a_pdf_page_with_a_title() {
       "nodes": [
         {"id": "areas", "type": "Reader", "params": {"path": "areas.csv", "crs": "EPSG:3006"}},
         {"id": "map", "type": "MapRenderer", "params": {"width": "800", "layers": [{"from": "areas:Output", "fill": "#a6cee3"}]}},
-        {"id": "a4", "type": "Writer", "params": {"path": "out/a4.pdf", "pdf_title": "Vårdcentraler i Västra Götaland"}},
-        {"id": "a3", "type": "Writer", "params": {"path": "out/a3", "format": "pdf", "pdf_size": "a3", "pdf_orientation": "portrait", "pdf_margin": "20"}},
-        {"id": "fit", "type": "Writer", "params": {"path": "out/fit.pdf", "pdf_size": "fit", "pdf_margin": "0"}},
-        {"id": "fit300", "type": "Writer", "params": {"path": "out/fit300.pdf", "pdf_size": "fit", "pdf_margin": "0", "pdf_dpi": "300"}},
-        {"id": "own", "type": "Writer", "params": {"path": "out/own.pdf", "pdf_size": "custom", "pdf_width": "500", "pdf_height": "300", "pdf_compress": "jpeg", "pdf_quality": "60"}},
-        {"id": "a0", "type": "Writer", "params": {"path": "out/a0.pdf", "pdf_size": "a0"}},
+        {"id": "a4", "type": "Writer", "params": {"pdf_as": "picture", "path": "out/a4.pdf", "pdf_title": "Vårdcentraler i Västra Götaland"}},
+        {"id": "a3", "type": "Writer", "params": {"pdf_as": "picture", "path": "out/a3", "format": "pdf", "pdf_size": "a3", "pdf_orientation": "portrait", "pdf_margin": "20"}},
+        {"id": "fit", "type": "Writer", "params": {"pdf_as": "picture", "path": "out/fit.pdf", "pdf_size": "fit", "pdf_margin": "0"}},
+        {"id": "fit300", "type": "Writer", "params": {"pdf_as": "picture", "path": "out/fit300.pdf", "pdf_size": "fit", "pdf_margin": "0", "pdf_dpi": "300"}},
+        {"id": "own", "type": "Writer", "params": {"pdf_as": "picture", "path": "out/own.pdf", "pdf_size": "custom", "pdf_width": "500", "pdf_height": "300", "pdf_compress": "jpeg", "pdf_quality": "60"}},
+        {"id": "a0", "type": "Writer", "params": {"pdf_as": "picture", "path": "out/a0.pdf", "pdf_size": "a0"}},
         {"id": "nothing", "type": "Writer", "params": {"path": "out/areas.pdf"}}
       ],
       "edges": [
@@ -1441,6 +1447,7 @@ fn a_map_is_written_as_a_pdf_page_with_a_title() {
     }"##,
     )
     .unwrap();
+    // A picture, to test the pixels, page sizes and coordinates; shapes are tested in flows.
     let r = run(&ws, Some(&b), &dir);
     for l in &r.log {
         println!("{:?} {}", l.level, l.msg);
@@ -2635,6 +2642,72 @@ fn a_postgis_table_is_written_with_sql_around_it_and_read_within_a_rectangle() {
     let _ = sql("DROP TABLE IF EXISTS og_sql_log");
 }
 
+/// Rows updated by a key: the same key updates the row, a new one adds it, and rows that are
+/// not in the stream are kept or deleted. Needs OG_TEST_PG, as above.
+#[test]
+fn postgis_rows_are_updated_by_a_key_and_new_ones_added() {
+    use og_engine::io::DbWrite;
+    let Ok(conn) = std::env::var("OG_TEST_PG") else { return };
+    let b = GdalBackend::new();
+    let mut notes = Notes::default();
+    let sql = |q: &str| -> Option<String> {
+        let ds = gdal::Dataset::open_ex(
+            &conn,
+            gdal::DatasetOptions { open_flags: gdal::GdalOpenFlags::GDAL_OF_VECTOR | gdal::GdalOpenFlags::GDAL_OF_UPDATE, ..Default::default() },
+        )
+        .unwrap();
+        let mut rs = ds.execute_sql(q, None, gdal::vector::sql::Dialect::DEFAULT).unwrap()?;
+        let v = rs.features().next().and_then(|f| f.field_as_string(0).ok().flatten());
+        v
+    };
+    let _ = sql("DROP TABLE IF EXISTS og_upsert");
+    let write = |t: &Table, mode: Option<bool>, notes: &mut Notes| {
+        let opts = DbWrite {
+            schema: "public".into(),
+            table: "og_upsert".into(),
+            geometry: "auto".into(),
+            geom_column: "geom".into(),
+            update_key: mode.map(|_| "muni_code".into()),
+            delete_missing: mode == Some(true),
+            ..Default::default()
+        };
+        b.write_postgis(t, &conn, &opts, notes)
+    };
+    // The first time the table is made.
+    let base = sample();
+    write(&base, Some(false), &mut notes).unwrap();
+    assert!(notes.info.iter().any(|n| n.contains("was not there, so it was made")), "{:?}", notes.info);
+    assert_eq!(sql("SELECT count(*) FROM og_upsert").as_deref(), Some("2"));
+    // One row changed and one new: one updated, one added, the other kept.
+    let mut next = sample();
+    next.features.truncate(1);
+    let name = next.field_index("name").unwrap();
+    next.features[0].attrs[name] = Value::Text("Changed".into());
+    let mut new = next.features[0].clone();
+    new.attrs[next.field_index("muni_code").unwrap()] = Value::Text("9999".into());
+    new.attrs[name] = Value::Text("New".into());
+    next.features.push(new);
+    let mut notes = Notes::default();
+    write(&next, Some(false), &mut notes).unwrap();
+    assert!(notes.info.iter().any(|n| n.contains("updated 1 rows and added 1")), "{:?}", notes.info);
+    assert_eq!(sql("SELECT count(*) FROM og_upsert").as_deref(), Some("3"));
+    let kept = base.features[1].attrs[name].to_text();
+    assert_eq!(sql(&format!("SELECT count(*) FROM og_upsert WHERE name IN ('Changed', 'New', '{}')", kept)).as_deref(), Some("3"));
+    assert_eq!(sql("SELECT count(*) FROM pg_tables WHERE tablename LIKE 'og_update_%'").as_deref(), Some("0"), "the table the rows came through is gone");
+    // With the rows that are not in the stream deleted, the table holds what the stream holds.
+    let mut notes = Notes::default();
+    write(&next, Some(true), &mut notes).unwrap();
+    assert!(notes.info.iter().any(|n| n.contains("deleted 1 that were not in the stream")), "{:?}", notes.info);
+    assert_eq!(sql("SELECT string_agg(name, ', ' ORDER BY name) FROM og_upsert").as_deref(), Some("Changed, New"));
+    // A key twice is an error, and nothing is written.
+    let mut twice = next.clone();
+    twice.features.push(next.features[0].clone());
+    let e = write(&twice, Some(false), &mut Notes::default()).unwrap_err();
+    assert!(e.0.contains("in two features"), "{}", e.0);
+    assert_eq!(sql("SELECT count(*) FROM og_upsert").as_deref(), Some("2"));
+    let _ = sql("DROP TABLE IF EXISTS og_upsert");
+}
+
 #[test]
 fn a_cad_drawing_is_read_with_layers_colours_text_and_blocks() {
     let b = GdalBackend::new();
@@ -3797,4 +3870,95 @@ fn a_map_drawn_for_print_is_sharper_and_tells_its_resolution() {
     assert_eq!(dpi("print.jpg"), Some(300.0));
     assert_eq!(dpi("screen.png"), None);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The examples of the analysis tools of 0.96, on the made-up town: how near care is on foot,
+/// where a third health centre goes, hot spots, a walk, wind and the hollows of the terrain.
+#[test]
+fn the_analysis_examples_run_on_the_made_up_town() {
+    let b = GdalBackend::new();
+    let dir = tmp("analysis-examples");
+    std::fs::create_dir_all(dir.join("analysis")).unwrap();
+    for f in std::fs::read_dir(root().join("examples/analysis")).unwrap().flatten() {
+        std::fs::copy(f.path(), dir.join("analysis").join(f.file_name())).unwrap();
+    }
+    std::fs::copy(root().join("examples/terrain.tif"), dir.join("terrain.tif")).unwrap();
+    let load = |name: &str| og_engine::Workspace::from_json(&std::fs::read_to_string(root().join("examples").join(name)).unwrap()).unwrap();
+    let errors = |r: &og_engine::RunResult| r.nodes.iter().filter_map(|(k, n)| n.error.clone().map(|e| (k.clone(), e))).collect::<Vec<_>>();
+
+    let r = og_engine::run(&load("proximity.ographis"), Some(&b), &dir);
+    assert!(errors(&r).is_empty(), "{:?}", errors(&r));
+    let share = r.output("share", "Output").unwrap();
+    let pct: Vec<f64> = col(share, "share_near").iter().map(|v| v.as_f64().unwrap()).collect();
+    assert!(pct.iter().all(|p| *p > 0.0 && *p <= 100.0) && pct.iter().any(|p| *p < 90.0), "{:?}", pct);
+    let people: f64 = col(share, "people").iter().map(|v| v.as_f64().unwrap()).sum();
+    let squares: f64 = col(r.output("people", "Output").unwrap(), "people").iter().map(|v| v.as_f64().unwrap()).sum();
+    assert!((people - squares).abs() < 1.0, "the people are all shared out: {} of {}", people, squares);
+    let chosen = col(r.output("choose", "Chosen").unwrap(), "name");
+    assert!(chosen.contains(&text("Centre health centre")) && chosen.contains(&text("West health centre")) && chosen.len() == 3, "{:?}", chosen);
+    assert!(dir.join("out/analysis/proximity.png").exists());
+
+    let r = og_engine::run(&load("analysis.ographis"), Some(&b), &dir);
+    assert!(errors(&r).is_empty(), "{:?}", errors(&r));
+    assert_eq!(r.output("tracks", "Tracks").unwrap().len(), 2);
+    assert_eq!(r.output("tracks", "Stops").unwrap().len(), 1);
+    let summary = r.output("moran", "Summary").unwrap();
+    assert!(col(summary, "morans_i")[0].as_f64().unwrap() > 0.5);
+    assert!(col(r.output("hot", "Output").unwrap(), "hot_spot").iter().any(|v| v.to_text().starts_with("Hot spot, 99")));
+    assert!(!r.output("hollows", "Hollows").unwrap().is_empty());
+    for f in ["hot_spots.png", "walk.png", "wind.png", "hollows.gpkg", "terrain_classes.tif"] {
+        assert!(dir.join("out/analysis").join(f).exists(), "{}", f);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A map written as a PDF of shapes says where it lies, so that GDAL, and with it QGIS,
+/// places it on the map like the PDF of a picture.
+#[test]
+fn a_map_of_shapes_in_a_pdf_has_coordinates_and_layers() {
+    let dir = tmp("pdf_shapes");
+    let b = GdalBackend::new();
+    std::fs::write(dir.join("areas.csv"), "name;wkt\nA;POLYGON ((400000 6400000, 402000 6400000, 402000 6401000, 400000 6401000, 400000 6400000))\n").unwrap();
+    let ws = Workspace::from_json(
+        r##"{
+      "nodes": [
+        {"id": "areas", "type": "Reader", "params": {"path": "areas.csv", "crs": "EPSG:3006"}},
+        {"id": "map", "type": "MapRenderer", "params": {"width": "800", "layers": [{"from": "areas:Output", "fill": "#a6cee3"}]}},
+        {"id": "pdf", "type": "Writer", "params": {"path": "out/map.pdf", "pdf_size": "fit", "pdf_margin": "0"}}
+      ],
+      "edges": [
+        {"from": ["areas", "Output"], "to": ["map", "Layers"]},
+        {"from": ["map", "Map"], "to": ["pdf", "Input"]}
+      ]
+    }"##,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    assert!(r.log.iter().any(|l| l.msg.contains("sharp at any size, with coordinates")), "{:?}", r.log);
+    let img = r.output("map", "Map").unwrap().image.clone().unwrap();
+    let text = String::from_utf8_lossy(&std::fs::read(dir.join("out/map.pdf")).unwrap()).into_owned();
+    assert!(text.contains("/Subtype /GEO") && text.contains("/EPSG 3006"), "the page has coordinates");
+    // GDAL reads where the page lies: the corners of the map, in SWEREF 99 TM.
+    let ds = gdal::Dataset::open(dir.join("out/map.pdf")).unwrap();
+    assert_eq!(ds.spatial_ref().unwrap().auth_code().unwrap(), 3006);
+    // And its layers, which QGIS lets one turn off and on.
+    let layers: Vec<String> = {
+        use gdal::Metadata;
+        ds.metadata_domain("LAYERS").unwrap_or_default()
+    };
+    assert!(layers.iter().any(|l| l.ends_with("=Input")) && layers.iter().any(|l| l.ends_with("=Background")), "{:?}", layers);
+    let gt = ds.geo_transform().unwrap();
+    let (w, h) = ds.raster_size();
+    let (left, top) = (gt[0], gt[3]);
+    let (right, bottom) = (gt[0] + w as f64 * gt[1], gt[3] + h as f64 * gt[5]);
+    let want = img.geotransform;
+    let (want_right, want_bottom) = (want[0] + img.width as f64 * want[1], want[3] + img.height as f64 * want[5]);
+    let close = |a: f64, b: f64| (a - b).abs() < (want_right - want[0]) * 0.01;
+    assert!(
+        close(left, want[0]) && close(top, want[3]) && close(right, want_right) && close(bottom, want_bottom),
+        "{:?} for {:?}",
+        (left, top, right, bottom),
+        (want[0], want[3], want_right, want_bottom)
+    );
 }

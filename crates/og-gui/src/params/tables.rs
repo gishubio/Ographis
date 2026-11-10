@@ -361,6 +361,9 @@ pub(super) fn symbol(ui: &mut Ui, text: &str, enabled: bool, hint: &str) -> bool
     ui.add_enabled(enabled, egui::Button::new(RichText::new(text).font(theme::mono(11.0))).small().frame(false)).on_hover_text(hint).clicked()
 }
 
+/// Narrower than this, a row of Manage attributes has its lists on a line under the name.
+const NARROW_ATTRIBUTE_ROWS: f32 = 330.0;
+
 /// Manage attributes: every attribute that comes in, with Keep, Rename or Remove, and arrows
 /// to change the order. What is stored is the whole list as it is shown, once something in
 /// it has been changed.
@@ -457,64 +460,49 @@ pub(super) fn attribute_table(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec, f
     for (i, (name, action, listed)) in rows.iter_mut().enumerate() {
         let here = names.contains(name);
         let ty = fields.iter().find(|f| &f.0 == name).map_or("", |f| f.1);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            let mut on = chosen.contains(name);
-            if ui.checkbox(&mut on, "").on_hover_text("Tick to change several at once").changed() {
-                if on {
-                    chosen.push(name.clone());
-                } else {
-                    chosen.retain(|n| n != name);
-                }
+        // Each row has a place of its own, as wide as the form, and what does not fit is cut
+        // off: a row that took more would make the panel wider, over the model. In a narrow
+        // form the lists are on a line of their own under the name.
+        let line = ui.spacing().interact_size.y;
+        let width = ui.available_width();
+        let narrow = width < NARROW_ATTRIBUTE_ROWS;
+        let height = if narrow { 2.0 * line + 2.0 } else { line };
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+        let clip = rect.intersect(ui.clip_rect());
+        let top = egui::Rect::from_min_size(rect.min, egui::vec2(width, line));
+        let mut first = ui.new_child(egui::UiBuilder::new().max_rect(top).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        first.set_clip_rect(clip);
+        first.spacing_mut().item_spacing.x = 0.0;
+        let mut on = chosen.contains(name);
+        if first.checkbox(&mut on, "").on_hover_text("Tick to change several at once").changed() {
+            if on {
+                chosen.push(name.clone());
+            } else {
+                chosen.retain(|n| n != name);
             }
-            if symbol(ui, "▲", i > 0, "Move up") {
-                moved = Some((i, i - 1));
+        }
+        if symbol(&mut first, "▲", i > 0, "Move up") {
+            moved = Some((i, i - 1));
+        }
+        if symbol(&mut first, "▼", i + 1 < count, "Move down") {
+            moved = Some((i, i + 1));
+        }
+        first.add_space(4.0);
+        // The lists, laid out from the right edge, the last one first: on the line of the
+        // name, or on the line under it.
+        let place = if narrow { egui::Rect::from_min_max(egui::pos2(rect.left() + 28.0, top.bottom() + 2.0), rect.max) } else { top };
+        let mut lists_ui = ui.new_child(egui::UiBuilder::new().max_rect(place).layout(egui::Layout::right_to_left(egui::Align::Center)));
+        lists_ui.set_clip_rect(clip);
+        {
+            let ui = &mut lists_ui;
+            ui.spacing_mut().item_spacing.x = 4.0;
+            if !here && symbol(ui, "×", true, "Take it out of the list") {
+                dropped = Some(i);
             }
-            if symbol(ui, "▼", i + 1 < count, "Move down") {
-                moved = Some((i, i + 1));
-            }
-            ui.add_space(4.0);
-            // The name takes what the lists of actions and types leave.
-            let width = (ui.available_width() - 176.0).max(40.0);
-            ui.allocate_ui_with_layout(egui::vec2(width, ui.spacing().interact_size.y), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                ui.set_width(width);
-                ui.spacing_mut().item_spacing.x = 4.0;
-                let text = RichText::new(name.as_str()).color(if here { pal.ink } else { pal.muted });
-                let text = if *action == AttrAction::Remove { text.strikethrough() } else { text };
-                let hover = match (here, *listed) {
-                    (false, _) => "Not in the stream that comes in".to_string(),
-                    (true, false) => format!("{}. Not in the list yet, so it is treated as the attributes that are not listed", ty),
-                    (true, true) => ty.to_string(),
-                };
-                ui.add(egui::Label::new(text).truncate()).on_hover_text(hover);
-                let note = match (here, *listed) {
-                    (false, _) => "gone",
-                    (true, false) => "new",
-                    (true, true) => "",
-                };
-                if !note.is_empty() {
-                    ui.label(RichText::new(note).font(theme::mono(10.5)).color(pal.muted));
-                }
-            });
-            let label = match action {
-                AttrAction::Keep => "Keep",
-                AttrAction::Rename(_) => "Rename",
-                AttrAction::Remove => "Remove",
-            };
-            egui::ComboBox::from_id_salt(("attr_action", spec.key, i)).selected_text(label).width(78.0).show_ui(ui, |ui| {
-                let renamed = match action {
-                    AttrAction::Rename(to) => to.clone(),
-                    _ => String::new(),
-                };
-                ui.selectable_value(action, AttrAction::Keep, "Keep");
-                ui.selectable_value(action, AttrAction::Rename(renamed), "Rename");
-                ui.selectable_value(action, AttrAction::Remove, "Remove");
-            });
             // The type: as it comes in, or another that the values are made into.
             let names_of = [("integer", "integer"), ("decimal", "decimal"), ("text", "text")];
             let current = types[i].clone();
             let shown = if current.is_empty() { ty.to_string() } else { format!("→ {}", current) };
-            ui.add_space(4.0);
             egui::ComboBox::from_id_salt(("attr_type", spec.key, i))
                 .selected_text(shown)
                 .width(76.0)
@@ -530,8 +518,41 @@ pub(super) fn attribute_table(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec, f
                 .on_hover_text(
                     "The type of the attribute. Another type makes the values into it; those that cannot be, such as text that is not a number, are left empty",
                 );
-            if !here && symbol(ui, "×", true, "Take it out of the list") {
-                dropped = Some(i);
+            let label = match action {
+                AttrAction::Keep => "Keep",
+                AttrAction::Rename(_) => "Rename",
+                AttrAction::Remove => "Remove",
+            };
+            egui::ComboBox::from_id_salt(("attr_action", spec.key, i)).selected_text(label).width(78.0).show_ui(ui, |ui| {
+                let renamed = match action {
+                    AttrAction::Rename(to) => to.clone(),
+                    _ => String::new(),
+                };
+                ui.selectable_value(action, AttrAction::Keep, "Keep");
+                ui.selectable_value(action, AttrAction::Rename(renamed), "Rename");
+                ui.selectable_value(action, AttrAction::Remove, "Remove");
+            });
+        }
+        // The name takes what the lists leave.
+        let w = if narrow { first.available_width() } else { (lists_ui.min_rect().left() - first.cursor().left() - 4.0).max(0.0) };
+        first.allocate_ui_with_layout(egui::vec2(w, line), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.set_width(w);
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let text = RichText::new(name.as_str()).color(if here { pal.ink } else { pal.muted });
+            let text = if *action == AttrAction::Remove { text.strikethrough() } else { text };
+            let hover = match (here, *listed) {
+                (false, _) => "Not in the stream that comes in".to_string(),
+                (true, false) => format!("{}. Not in the list yet, so it is treated as the attributes that are not listed", ty),
+                (true, true) => ty.to_string(),
+            };
+            ui.add(egui::Label::new(text).truncate()).on_hover_text(hover);
+            let note = match (here, *listed) {
+                (false, _) => "gone",
+                (true, false) => "new",
+                (true, true) => "",
+            };
+            if !note.is_empty() {
+                ui.label(RichText::new(note).font(theme::mono(10.5)).color(pal.muted));
             }
         });
         if let AttrAction::Rename(to) = action {
@@ -638,6 +659,54 @@ pub(super) fn new_attribute_rows(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec
             .map(|(n, v, t)| if t.is_empty() { serde_json::json!({ "name": n, "value": v }) } else { serde_json::json!({ "name": n, "value": v, "type": t }) })
             .collect();
         node.params.insert(spec.key.to_string(), Json::Array(list));
+    }
+    true
+}
+
+/// Files and folders, one on each row, each with buttons to choose a file or a folder. There
+/// is always an empty row at the end: filled in, it gets a new one below it.
+pub(super) fn file_rows(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec, base: &Path, relative: bool) -> bool {
+    let before: Vec<String> = match node.params.get(spec.key) {
+        Some(serde_json::Value::Array(a)) => a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(),
+        Some(serde_json::Value::String(s)) => s.split(';').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect(),
+        _ => Vec::new(),
+    };
+    let mut rows = before.clone();
+    rows.push(String::new());
+    let mut remove = None;
+    let last = rows.len() - 1;
+    let shown = |p: &Path| if relative { relative_to(base, p) } else { p.to_string_lossy().into_owned() };
+    for (i, row) in rows.iter_mut().enumerate() {
+        let size = egui::vec2(ui.available_width(), ui.spacing().interact_size.y);
+        ui.allocate_ui_with_layout(size, egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if symbol(ui, "×", i != last, "Leave out of the zip file") {
+                remove = Some(i);
+            }
+            if ui.small_button("Folder…").on_hover_text("Choose a folder, which goes in with all it holds").clicked() {
+                if let Some(p) = rfd::FileDialog::new().set_directory(base).pick_folder() {
+                    *row = shown(&p);
+                }
+            }
+            if ui.small_button("File…").on_hover_text("Choose a file").clicked() {
+                if let Some(p) = rfd::FileDialog::new().set_directory(base).pick_file() {
+                    *row = shown(&p);
+                }
+            }
+            let hint = if i == 0 { "Such as README.txt, docs/terms.pdf or a folder" } else { "Another file or folder" };
+            ui.add(TextEdit::singleline(row).id_salt(("file-row", spec.key, i)).hint_text(hint).desired_width(ui.available_width()));
+        });
+    }
+    if let Some(i) = remove {
+        rows.remove(i);
+    }
+    let rows: Vec<String> = rows.into_iter().map(|r| r.trim().to_string()).filter(|r| !r.is_empty()).collect();
+    if rows == before {
+        return false;
+    }
+    if rows.is_empty() {
+        node.params.remove(spec.key);
+    } else {
+        node.params.insert(spec.key.to_string(), serde_json::Value::Array(rows.into_iter().map(serde_json::Value::String).collect()));
     }
     true
 }

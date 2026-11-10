@@ -213,7 +213,7 @@ fn a_chart_is_also_written_as_a_web_page() {
 
 fn picture(w: usize, h: usize, rgb: [u8; 3]) -> Table {
     let rgba = (0..w * h).flat_map(|_| [rgb[0], rgb[1], rgb[2], 255]).collect();
-    crate::model::RasterImage { width: w, height: h, rgba, geotransform: [0.0, 1.0, 0.0, h as f64, 0.0, -1.0] }.into_table(None)
+    crate::model::RasterImage { vector: None, width: w, height: h, rgba, geotransform: [0.0, 1.0, 0.0, h as f64, 0.0, -1.0] }.into_table(None)
 }
 
 #[test]

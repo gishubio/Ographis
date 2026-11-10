@@ -8,8 +8,45 @@ use geo::Geometry;
 
 // ---------- Calculate area (AreaCalculator) and Calculate length (LengthCalculator) ----------
 
-pub(super) const AREA_UNITS: &[(&str, &str)] = &[("m2", "m²"), ("ha", "hectares"), ("km2", "km²")];
-pub(super) const LENGTH_UNITS: &[(&str, &str)] = &[("m", "m"), ("km", "km")];
+pub(super) const AREA_UNITS: &[(&str, &str)] =
+    &[("m2", "m²"), ("a", "ares (100 m²)"), ("ha", "hectares"), ("km2", "km²"), ("ft2", "square feet"), ("ac", "acres"), ("mi2", "square miles")];
+pub(super) const LENGTH_UNITS: &[(&str, &str)] = &[
+    ("mm", "mm"),
+    ("cm", "cm"),
+    ("dm", "dm"),
+    ("m", "m"),
+    ("km", "km"),
+    ("mil", "Swedish miles (10 km)"),
+    ("in", "inches"),
+    ("ft", "feet"),
+    ("yd", "yards"),
+    ("mi", "miles"),
+    ("nmi", "nautical miles"),
+];
+
+/// How many metres, or square metres, a unit of length or area is.
+pub(super) fn unit_size(unit: &str) -> Option<f64> {
+    Some(match unit {
+        "mm" => 1e-3,
+        "cm" => 1e-2,
+        "dm" => 0.1,
+        "m" | "m2" => 1.0,
+        "km" => 1e3,
+        "mil" => 1e4,
+        "in" => 0.0254,
+        "ft" => 0.3048,
+        "yd" => 0.9144,
+        "mi" => 1609.344,
+        "nmi" => 1852.0,
+        "a" => 100.0,
+        "ha" => 1e4,
+        "km2" => 1e6,
+        "ft2" => 0.3048 * 0.3048,
+        "ac" => 4046.8564224,
+        "mi2" => 1609.344 * 1609.344,
+        _ => return None,
+    })
+}
 
 pub(super) const AREA_PARAMS: &[ParamSpec] = &[
     ParamSpec { key: "name", label: "Attribute", kind: ParamKind::Text, default: "_area", hint: "" },
@@ -26,12 +63,9 @@ pub(super) fn measure(p: &P, inp: &Inputs, ctx: &mut NodeCtx, area: bool) -> Res
     let table = input(inp, "Input");
     let name = p.get("name").unwrap_or_else(|| if area { "_area" } else { "_length" }.to_string());
     let unit = p.get("unit").unwrap_or_default();
-    let div = match (area, unit.as_str()) {
-        (true, "m2") | (false, "m") => 1.0,
-        (true, "ha") => 1e4,
-        (true, "km2") => 1e6,
-        (false, "km") => 1e3,
-        _ => return err(format!("Unknown unit: {}.", unit)),
+    let units = if area { AREA_UNITS } else { LENGTH_UNITS };
+    let Some(div) = unit_size(&unit).filter(|_| units.iter().any(|u| u.0 == unit)) else {
+        return err(format!("Unknown unit: {}. It may be {}.", unit, units.iter().map(|u| u.0).collect::<Vec<_>>().join(", ")));
     };
     // The value is rounded to a number of decimals, if one is given.
     let scale = match p.get("decimals") {

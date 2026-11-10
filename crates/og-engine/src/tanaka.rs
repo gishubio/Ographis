@@ -210,7 +210,7 @@ pub fn draw(g: &Grid, t: &Tanaka, pieces: &[Piece]) -> RasterImage {
     }
     let gt = g.geotransform;
     let (sx, sy) = (gt[1] * g.width as f64 / w as f64, gt[5] * g.height as f64 / h as f64);
-    RasterImage { width: w, height: h, rgba, geotransform: [gt[0], sx, 0.0, gt[3], 0.0, sy] }
+    RasterImage { vector: None, width: w, height: h, rgba, geotransform: [gt[0], sx, 0.0, gt[3], 0.0, sy] }
 }
 
 #[cfg(test)]

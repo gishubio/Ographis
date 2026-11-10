@@ -91,7 +91,13 @@ fn area_and_length_are_rounded_to_the_decimals_that_are_asked_for() {
 
     // The form of both tools asks for the number of decimals.
     assert!(h.query_all_by_label("Calculate area").count() >= 2, "the node and its form are headed by what the tool does");
-    assert!(h.query_by_label("Decimals").is_some() && h.query_by_label("Rounds to this many decimals. Empty keeps them all").is_some());
+    // The help is shown when the pointer rests on a setting, or under every setting when asked.
+    assert!(h.query_by_label("Decimals").is_some() && h.query_by_label("Rounds to this many decimals. Empty keeps them all").is_none());
+    h.state_mut().settings.other.insert("hints_always".into(), serde_json::json!(true));
+    settle(&mut h);
+    assert!(h.query_by_label("Rounds to this many decimals. Empty keeps them all").is_some());
+    h.state_mut().settings.other.insert("hints_always".into(), serde_json::json!(false));
+    settle(&mut h);
     let field = h.get_by_label("Decimals").rect().center() + egui::vec2(40.0, 24.0);
     type_at(&mut h, field, "1");
     assert_eq!(param(&h, "area", "decimals"), "1");
@@ -431,7 +437,8 @@ fn the_data_tab_has_statistics() {
     h.state_mut().focus_node("towns");
     h.state_mut().view = og_gui::app::View { node: Some("towns".into()), port: None, feature: None, ..Default::default() };
     h.run_steps(4);
-    h.get_by_label("Statistics").click();
+    // The button of the data tab, not the list of tools by that name on the left.
+    h.query_all_by_label("Statistics").max_by(|a, b| a.rect().min.x.total_cmp(&b.rect().min.x)).unwrap().click();
     h.run_steps(4);
     assert!(h.state().show_stats);
     for head in ["attribute", "values", "empty", "unique", "min", "max", "mean", "sum"] {
@@ -439,7 +446,8 @@ fn the_data_tab_has_statistics() {
     }
     assert!(h.query_by_label("geometry").is_some() && h.query_by_label("population").is_some());
     shot(&mut h, "204-statistics");
-    h.get_by_label("Statistics").click();
+    // The button of the data tab, not the list of tools by that name on the left.
+    h.query_all_by_label("Statistics").max_by(|a, b| a.rect().min.x.total_cmp(&b.rect().min.x)).unwrap().click();
     h.run_steps(3);
     assert!(!h.state().show_stats && h.query_by_label("mean").is_none());
 }

@@ -135,7 +135,7 @@ impl App {
             return;
         }
         self.taken_in = self.revision;
-        let now = self.workspace();
+        let now = self.canvas_workspace();
         if now.to_json() == self.undo_base.to_json() {
             return;
         }

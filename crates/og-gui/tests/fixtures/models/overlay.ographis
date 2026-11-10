@@ -18,7 +18,8 @@
 
     { "id": "routes", "type": "Reader", "name": "Routes", "x": 20, "y": 480, "params": { "path": "routes.shp" } },
     { "id": "buffer", "type": "Bufferer", "name": "2 km on each side", "x": 232, "y": 480, "params": { "distance": "2000" } },
-    { "id": "dissolve", "type": "Dissolver", "name": "One corridor per type", "x": 444, "y": 480, "params": { "group_by": "type" } },
+    { "id": "dissolve", "type": "Dissolver", "name": "One corridor per type", "x": 444, "y": 480, "params": { "group_by": "type",
+        "parts": "together" } },
     { "id": "corridor_area", "type": "AreaCalculator", "name": "Corridor area", "x": 656, "y": 480, "params": { "name": "area_km2", "unit": "km2" } },
     { "id": "out_corridors", "type": "Writer", "name": "Corridors", "x": 868, "y": 480, "params": { "path": "out/overlay.gpkg", "layer": "corridors" } }
   ],

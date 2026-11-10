@@ -608,8 +608,10 @@ fn cached_nodes_are_marked_and_the_command_line_is_copied() {
     let mut empty = App::new();
     assert!(empty.command_line().is_none(), "an unsaved model has no command line");
     let file = h.state().path.clone().unwrap();
-    h.state_mut().variables =
-        vec![og_engine::Variable { name: "year".into(), value: "2026".into() }, og_engine::Variable { name: "place".into(), value: "Västra Götaland".into() }];
+    h.state_mut().variables = vec![
+        og_engine::Variable { name: "year".into(), value: "2026".into(), ask: false },
+        og_engine::Variable { name: "place".into(), value: "Västra Götaland".into(), ask: false },
+    ];
     let cmd = h.state().command_line().unwrap();
     assert!(cmd.contains(" run ") && cmd.contains(&*file.file_name().unwrap().to_string_lossy()), "{}", cmd);
     assert!(cmd.ends_with(" --var year=2026 --var \"place=Västra Götaland\""), "{}", cmd);

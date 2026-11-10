@@ -54,6 +54,8 @@ five models.
 | See how long each step took | After a run each node shows its time in its header. The one that took most of the run stands out in orange |
 | See what a port gives | After a run the shape of an output port tells: a circle for features, a square for a raster or a picture, a triangle for a 3D model, a star for a point cloud |
 | Group nodes | Select them and press Ctrl+G. Drag the box by its name and the nodes in it follow. Resize it by any edge or corner. Ten colours to choose from in its panel, or one of its own from the square beside them |
+| Make a tool of your own | Select the nodes and choose *Make into a tool* in their menu, or *Make a tool* in the panel. They become one node, with what came in and went out as its ports. Double-click it, or press Enter, to go inside and change it; *Back* above the canvas, or Escape, goes out again. *Unpack* in its panel or menu puts the nodes back in a group box. A group box stays only a box: a tool is made only when asked |
+| Sum the length of roads in each municipality | *Sum line lengths in areas*: the municipalities on *Areas*, the roads on *Lines*. Choose the kind of road under *For each* to get a length for each kind |
 | Set up a group | Click its name. Name, colour and the lock are in the panel on the right. Unlocked, the box moves without the nodes |
 | Duplicate or delete | Ctrl+D and Delete act on the selection. So does a right-click on a node |
 | Copy nodes to another model | Ctrl+C copies the selected nodes with the connections between them, Ctrl+X cuts them, and Ctrl+V pastes them where the pointer is, in this window or another window of Ographis. Paths are made whole when copied, so they still point to the same files. Also in the Edit menu, and Paste in the menu of the canvas |
@@ -105,12 +107,16 @@ five models.
 | Give a workbook a look | Choose Excel or LibreOffice Calc in the output. Font, bold and locked top row, and colours are set in its form |
 | Send features to different outputs by value | *Filter by value*: choose the attribute, write the values or click *Use the values in the data*. Each value gets an output |
 | Use the same value in many settings | Model → *Variables…*. Write `$(name)` in any setting, and the value is put in its place when the model runs |
+| Be asked for a value at each run | Tick *Ask* beside the variable. Run then asks for it first, with the value offered, and keeps what is given for the next time |
+| Take a setting from the data | Write `$(node.attribute)` in a setting, such as `population > $(limits.least)`: the value of the attribute in the first feature that the node with that id gives. The node runs after it, as if connected |
+| See what goes through a connection | Point at it: how many features, of which kind, the coordinate system and the attributes, from the latest run. A connection drawn in orange goes between ports that do not fit, such as features into a tool that needs a raster; `og check` says the same |
 | Copy from the log | Mark text in the Log tab with the mouse, also across lines, and copy it with Ctrl+C. *Copy log* copies all of it. A click on a line about a node selects the node |
 | Pick attributes in a new tool | Connect it after a tool that has run: its attributes can be picked at once, without running again |
 | Name a layer in the legend | Write the name in the row of the layer in Draw map. Empty gives the name of the stream |
 | Put OpenStreetMap under a map | Set *Background* of Draw map to *A background map*, and choose which. *Paler by %* at 30 to 50 lets the layers stand out. A picture of one's own goes under it in the same way, in its place when it has a world file |
 | Make a web map | Choose *Web map with Leaflet or MapLibre* as the format of an Output, and connect the streams to *Layers*. Open index.html in the folder in a browser. Set the look of each layer as in Draw map; the legend turns them on and off and a click shows the attributes. For large layers choose MapLibre: they go as PMTiles, and the folder is then to be put on a web server, or opened through one such as `python -m http.server` |
 | Go on in QGIS | Choose *QGIS project with its layers* as the format of an Output, and connect the streams to *Layers*. The project opens in QGIS with the layers in the order and with the colours, classes and labels of the form, and the data in a GeoPackage beside it |
+| Print a map | Draw it with *Draw map* (a scale bar, a north arrow and a grid are in its form) and write it with an Output to a `.pdf`. The PDF is of shapes, sharp at any size, placed on the map in QGIS and with a layer for each layer of the map, named as in the form. *A map as: a picture of pixels* gives the PDF of pixels instead. See `examples/print_map.ographis` |
 | Write a report | Connect maps, charts and tables to *Sections* of *Report*, in the order they are to come, and name the tools as the sections should be called. Write a text first and last, and choose a web page or a PDF |
 | Choose where to fetch OpenStreetMap or Overture | Click *Choose on the map* beside the rectangle, click two corners on the map and press Enter |
 | Read a large point cloud | Drop the LAS or LAZ on the window: every point is read. Filter it by class, thin it or make a raster of it before tools that are not for point clouds, which get every point as a feature |
@@ -168,6 +174,8 @@ og picture <model> <file.png|.jpg|.pdf>
                                        the model drawn as on the canvas, for documentation
 og formats [--html file]               the formats read and written, and whether GDAL or Ographis handles them
 og doctor                              tests GDAL and PROJ in the installation
+og report [model] [file.zip]           a zip with the versions, the system, the model without its
+                                       passwords and keys, and the latest log, to attach to an issue
 ```
 
 File → *Save the model as a picture…* draws the open model to PNG, JPEG or PDF in the
@@ -264,7 +272,9 @@ tests made for the purpose, and will be replaced when such tests are in place.
 ## When something goes wrong
 
 Help → *Report a problem…* writes a report with the version, the system and the errors of the
-latest run, to read through and send as an issue on GitHub. Help → *Check for updates* asks
+latest run, to read through and send as an issue on GitHub. *Save a zip to attach* packs the
+report with the model, without its passwords and keys; `og report model.ographis` does the
+same from the command line. Help → *Check for updates* asks
 GitHub whether a newer version is out.
 
 

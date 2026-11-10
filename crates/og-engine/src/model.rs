@@ -454,6 +454,9 @@ pub struct RasterImage {
     /// Where it lies, as in GDAL: x of the upper left corner, pixel width, 0, y of the upper
     /// left corner, 0, pixel height (negative, since rows go south).
     pub geotransform: [f64; 6],
+    /// The same picture as shapes, for a map drawn by Draw map, so that it can be written
+    /// as a PDF or an SVG of lines and areas. None for a picture of pixels only.
+    pub vector: Option<std::sync::Arc<crate::vector::Picture>>,
 }
 
 impl RasterImage {

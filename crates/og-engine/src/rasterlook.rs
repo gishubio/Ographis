@@ -230,7 +230,7 @@ pub fn picture(g: &Grid, paint: &Paint) -> RasterImage {
             rgba[i * 4..i * 4 + 4].copy_from_slice(&c);
         }
     }
-    RasterImage { width: g.width, height: g.height, rgba, geotransform: g.geotransform }
+    RasterImage { vector: None, width: g.width, height: g.height, rgba, geotransform: g.geotransform }
 }
 
 /// How a grid is shown in the map under the canvas, before anyone has chosen: classes in a
@@ -345,6 +345,8 @@ mod tests {
             background: Some([255, 255, 255, 255]),
             backdrop: None,
             attribution: None,
+            furniture: Default::default(),
+            names: Vec::new(),
         };
         let img = crate::mapdraw::draw(&req, &|| true).unwrap();
         let at = |x: usize, y: usize| img.rgba[(y * img.width + x) * 4..][..3].to_vec();

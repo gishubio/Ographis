@@ -399,6 +399,26 @@ pub(super) enum NavAct {
     /// The new order of the ids in one of the two lists.
     Reorder(Group, Vec<String>),
 }
+/// Opens a file with the program the system opens such files with, such as a web page in the
+/// browser.
+pub(super) fn open_with_system(file: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // Explorer opens a file with the program Windows has for it, without a shell between.
+        let path = file.to_string_lossy().replace('/', "\\");
+        std::process::Command::new("explorer.exe").raw_arg(format!("\"{}\"", path)).spawn().map(|_| ())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(file).spawn().map(|_| ())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open").arg(file).spawn().map(|_| ())
+    }
+}
+
 /// Opens the file manager of the system at a folder, or with a file marked in its folder.
 pub(super) fn open_file_manager(target: &Path, select: bool) -> std::io::Result<()> {
     #[cfg(windows)]

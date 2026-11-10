@@ -54,6 +54,9 @@ pub struct Variable {
     pub name: String,
     #[serde(default)]
     pub value: String,
+    /// Asked for in the program before each run, with the value as it is offered.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub ask: bool,
 }
 
 /// Whether a text can be the name of a variable: letters, digits and _, not starting with a digit.
@@ -74,7 +77,7 @@ pub fn expand_variables(text: &str, vars: &[Variable]) -> Result<String> {
         out.push_str(&rest[..at]);
         let after = &rest[at + 2..];
         match after.find(')') {
-            Some(end) if is_variable_name(after[..end].trim()) => {
+            Some(end) if is_variable_name(after[..end].trim()) || vars.iter().any(|v| v.name == after[..end].trim()) => {
                 let name = after[..end].trim();
                 match vars.iter().find(|v| v.name == name) {
                     Some(v) => out.push_str(&v.value),
@@ -112,6 +115,7 @@ pub fn expand_params(params: &Params, vars: &[Variable]) -> Result<Params> {
 
 fn expand_params_as_they_are(params: &Params, vars: &[Variable]) -> Result<Params> {
     fn walk(v: &serde_json::Value, vars: &[Variable]) -> Result<serde_json::Value> {
+        // The model inside a tool puts in its own variables when it runs.
         Ok(match v {
             serde_json::Value::String(s) => serde_json::Value::String(expand_variables(s, vars)?),
             serde_json::Value::Array(a) => serde_json::Value::Array(a.iter().map(|x| walk(x, vars)).collect::<Result<_>>()?),
@@ -119,7 +123,92 @@ fn expand_params_as_they_are(params: &Params, vars: &[Variable]) -> Result<Param
             other => other.clone(),
         })
     }
-    params.iter().map(|(k, v)| Ok((k.clone(), walk(v, vars)?))).collect()
+    params.iter().map(|(k, v)| Ok((k.clone(), if k == "tool" && v.is_object() { v.clone() } else { walk(v, vars)? }))).collect()
+}
+
+/// The values a node takes from the data of other nodes: $(node.attribute) in its settings,
+/// as the id of the other node and the name of the attribute. The node runs after the other,
+/// and the value is that of the first feature that has the attribute.
+pub fn data_refs(n: &Node, ws: &Workspace) -> Vec<(String, String)> {
+    fn texts<'a>(v: &'a serde_json::Value, out: &mut Vec<&'a str>) {
+        match v {
+            serde_json::Value::String(s) => out.push(s),
+            serde_json::Value::Array(a) => a.iter().for_each(|x| texts(x, out)),
+            serde_json::Value::Object(o) => o.values().for_each(|x| texts(x, out)),
+            _ => {}
+        }
+    }
+    let mut all = Vec::new();
+    for (k, v) in &n.params {
+        if k != "tool" {
+            texts(v, &mut all);
+        }
+    }
+    let mut out: Vec<(String, String)> = Vec::new();
+    for text in all {
+        let mut rest = text;
+        while let Some(at) = rest.find("$(") {
+            let after = &rest[at + 2..];
+            let Some(end) = after.find(')') else { break };
+            if let Some((id, attr)) = after[..end].trim().split_once('.') {
+                let pair = (id.trim().to_string(), attr.trim().to_string());
+                if !attr.trim().is_empty() && id.trim() != n.id && ws.nodes.iter().any(|m| m.id == pair.0) && !out.contains(&pair) {
+                    out.push(pair);
+                }
+            }
+            rest = &after[end + 1..];
+        }
+    }
+    out
+}
+
+/// The value of an attribute in what a node gave: the first feature of the first of its
+/// outputs that has the attribute.
+fn value_from(r: &NodeResult, ports: &[String], attr: &str) -> std::result::Result<String, String> {
+    let mut seen = false;
+    for port in ports {
+        let Some(t) = r.outputs.get(port) else { continue };
+        let Some(col) = t.field_index(attr) else { continue };
+        seen = true;
+        if let Some(f) = t.features.first() {
+            return Ok(f.attrs.get(col).map(|v| v.to_text()).unwrap_or_default());
+        }
+    }
+    Err(if seen { "it gave no features".to_string() } else { format!("it has no attribute {}", attr) })
+}
+
+/// The variables with the values a node takes from the data of other nodes, as far as an
+/// earlier run tells them; a value not known yet is 1, so that an expression can be checked.
+pub fn variables_with_data(n: &Node, ws: &Workspace, earlier: Option<&RunResult>) -> Vec<Variable> {
+    let mut out = ws.variables.clone();
+    for (from, attr) in data_refs(n, ws) {
+        let other = ws.nodes.iter().find(|m| m.id == from).expect("a node that is there");
+        let ports = node_type(&other.kind).map(|t| t.outputs_for(&other.params)).unwrap_or_default();
+        let value = earlier.and_then(|r| r.nodes.get(&from)).and_then(|r| value_from(r, &ports, &attr).ok()).unwrap_or_else(|| "1".into());
+        out.push(Variable { name: format!("{}.{}", from, attr), value, ask: false });
+    }
+    out
+}
+
+/// The variables, and with them the values a node takes from the data of other nodes.
+fn with_data_values(n: &Node, ws: &Workspace, results: &HashMap<String, NodeResult>, vars: &[Variable]) -> Result<Vec<Variable>> {
+    let refs = data_refs(n, ws);
+    if refs.is_empty() {
+        return Ok(vars.to_vec());
+    }
+    let mut out = vars.to_vec();
+    for (from, attr) in refs {
+        let other = ws.nodes.iter().find(|m| m.id == from).expect("a node that is there");
+        let ports = node_type(&other.kind).map(|t| t.outputs_for(&other.params)).unwrap_or_default();
+        let Some(r) = results.get(&from) else {
+            return Err(GbError(format!("$({}.{}) needs {} to run first, and it did not.", from, attr, other.label())));
+        };
+        match value_from(r, &ports, &attr) {
+            Ok(value) => out.push(Variable { name: format!("{}.{}", from, attr), value, ask: false }),
+            Err(why) => return Err(GbError(format!("$({}.{}) takes a value from {}, but {}.", from, attr, other.label(), why))),
+        }
+    }
+    Ok(out)
 }
 
 /// Is a variable by this name a password or something like it, which is not shown in logs?
@@ -134,7 +223,7 @@ impl Workspace {
     pub fn set_variable(&mut self, name: &str, value: &str) {
         match self.variables.iter_mut().find(|v| v.name == name) {
             Some(v) => v.value = value.to_string(),
-            None => self.variables.push(Variable { name: name.to_string(), value: value.to_string() }),
+            None => self.variables.push(Variable { name: name.to_string(), value: value.to_string(), ask: false }),
         }
     }
 }
@@ -413,6 +502,17 @@ impl RunResult {
     }
 }
 
+/// Every input of a node is connected to something, and nothing came in on any of them.
+fn starved_of_all(inputs: &HashMap<&str, Arc<Table>>, parts: &[nodes::Part]) -> bool {
+    (!inputs.is_empty() || !parts.is_empty()) && inputs.values().all(|t| t.count() == 0) && parts.iter().all(|p| p.table.count() == 0)
+}
+
+/// An error about an attribute or a picture that is not there, as when nothing came in to
+/// bring it.
+fn is_missing_attribute(msg: &str) -> bool {
+    msg.starts_with("There is no attribute") || msg.contains("nothing came in") || msg.starts_with("The stream has no image")
+}
+
 fn finish(results: &mut HashMap<String, NodeResult>, report: &RefCell<&mut dyn FnMut(Progress)>, id: &str, result: NodeResult) {
     (report.borrow_mut())(Progress::Finished { id, result: &result });
     results.insert(id.to_string(), result);
@@ -544,9 +644,13 @@ pub fn upstream_of(ws: &Workspace, of: &HashSet<String>) -> HashSet<String> {
     let mut found: HashSet<String> = HashSet::new();
     let mut todo: Vec<String> = of.iter().cloned().collect();
     while let Some(id) = todo.pop() {
-        for e in ws.edges.iter().filter(|e| e.to.0 == id) {
-            if !of.contains(&e.from.0) && found.insert(e.from.0.clone()) {
-                todo.push(e.from.0.clone());
+        let mut from: Vec<String> = ws.edges.iter().filter(|e| e.to.0 == id).map(|e| e.from.0.clone()).collect();
+        if let Some(n) = ws.nodes.iter().find(|n| n.id == id) {
+            from.extend(data_refs(n, ws).into_iter().map(|r| r.0));
+        }
+        for f in from {
+            if !of.contains(&f) && found.insert(f.clone()) {
+                todo.push(f);
             }
         }
     }
@@ -559,9 +663,10 @@ pub fn downstream_of(ws: &Workspace, id: &str) -> HashSet<String> {
     let mut found: HashSet<String> = HashSet::new();
     let mut todo = vec![id.to_string()];
     while let Some(id) = todo.pop() {
-        for e in ws.edges.iter().filter(|e| e.from.0 == id) {
-            if e.to.0 != id && found.insert(e.to.0.clone()) {
-                todo.push(e.to.0.clone());
+        let takers: Vec<&str> = ws.nodes.iter().filter(|n| data_refs(n, ws).iter().any(|r| r.0 == id)).map(|n| n.id.as_str()).collect();
+        for to in ws.edges.iter().filter(|e| e.from.0 == id).map(|e| e.to.0.as_str()).chain(takers) {
+            if to != id && found.insert(to.to_string()) {
+                todo.push(to.to_string());
             }
         }
     }
@@ -599,6 +704,11 @@ pub fn node_keys(ws: &Workspace, base_dir: &Path) -> HashMap<String, u64> {
         for e in ws.edges.iter().filter(|e| e.to.0 == id && !e.disabled) {
             let k = key_of(&e.from.0, ws, base_dir, keys, busy);
             incoming.push((e.to.1.as_str(), e.from.1.as_str(), k));
+        }
+        for (from, attr) in data_refs(n, ws) {
+            let k = key_of(&from, ws, base_dir, keys, busy);
+            incoming.push(("$", "", k));
+            attr.hash(&mut h);
         }
         incoming.sort();
         incoming.hash(&mut h);
@@ -679,7 +789,7 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
                 let (ft, tt) = (node_type(&ws.nodes[f].kind), node_type(&ws.nodes[t].kind));
                 if ft.is_some_and(|x| !x.outputs_for(&ws.nodes[f].params).contains(&e.from.1)) {
                     Some(format!("There is no output port {} on {}.", e.from.1, ws.nodes[f].label()))
-                } else if tt.is_some_and(|x| !x.inputs.contains(&e.to.1.as_str())) {
+                } else if tt.is_some_and(|x| !x.inputs_for(&ws.nodes[t].params).contains(&e.to.1.as_str())) {
                     Some(format!("There is no input port {} on {}.", e.to.1, ws.nodes[t].label()))
                 } else {
                     None
@@ -694,6 +804,14 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
         }
     }
 
+    // A node that takes a value from the data of another runs after it, as if connected.
+    let ref_edges: Vec<Edge> = ws
+        .nodes
+        .iter()
+        .filter(|n| !n.disabled)
+        .flat_map(|n| data_refs(n, ws).into_iter().map(move |(from, _)| Edge::new((from, String::new()), (n.id.clone(), String::new()))))
+        .collect();
+    live.extend(ref_edges.iter());
     // Topological order. Nodes that are left over are part of a loop.
     let mut indeg: Vec<usize> = vec![0; ws.nodes.len()];
     for e in &live {
@@ -859,7 +977,7 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
             progress: &progress,
             gate,
             parts: Vec::new(),
-            open_ports: ty.inputs.iter().copied().filter(|port| !live.iter().any(|e| e.to.0 == n.id && e.to.1 == *port)).collect(),
+            open_ports: ty.inputs_for(&n.params).into_iter().filter(|port| !live.iter().any(|e| e.to.0 == n.id && e.to.1 == *port)).collect(),
             written: if n.kind == "ZipWriter" {
                 ws.nodes
                     .iter()
@@ -870,6 +988,7 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
             } else {
                 Vec::new()
             },
+            variables: &ws.variables,
         };
         let started = Instant::now();
         let mut inputs: Inputs = HashMap::new();
@@ -879,7 +998,8 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
         // A port of a writer that nothing is connected to.
         let mut unfed: Option<&str> = None;
         let mut failure: Option<String> = None;
-        for port in ty.inputs {
+        let in_ports = ty.inputs_for(&n.params);
+        for port in &in_ports {
             // A port of an input, such as Paths, is only there when something is connected:
             // otherwise the input reads its own file.
             if ty.group == nodes::Group::Reader && !live.iter().any(|e| e.to.0 == n.id && e.to.1 == *port) {
@@ -978,9 +1098,10 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
                 }
             }
         }
+        let merge_failed = failure.is_some();
         let outcome = match failure {
             Some(msg) => Err(GbError(msg)),
-            None => match expand_params(&n.params, &ws.variables) {
+            None => match with_data_values(n, ws, &results, &ws.variables).and_then(|vars| expand_params(&n.params, &vars)) {
                 Ok(params) => crate::crash::guarded(n.label(), || (ty.run)(&P::new(&params, ty.params), &inputs, &mut ctx)),
                 Err(e) => Err(e),
             },
@@ -1004,6 +1125,23 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
                 finish(&mut results, report, &n.id, r);
                 idle.insert(n.id.as_str());
                 not_run += 1;
+            }
+            // Nothing came in, and the node stopped on an attribute that only the features
+            // would have brought: it passes nothing on, as if it had run, so that a request that
+            // went to Failed does not turn into a row of errors further on.
+            Err(e) if !merge_failed && starved_of_all(&inputs, &ctx.parts) && is_missing_attribute(&e.0) => {
+                // What it said is kept, in case the name is wrong also when features come.
+                let msg = format!("{}: nothing came in, so nothing went out. It said: {}", n.label(), e.0);
+                log.push(LogEntry { level: Level::Info, node: Some(n.id.clone()), msg });
+                let outputs: HashMap<String, Arc<Table>> =
+                    ty.outputs_for(&n.params).into_iter().map(|p| (p, Arc::new(inputs.values().next().map(|t| t.like()).unwrap_or_default()))).collect();
+                let mut r = nothing(Status::Ok, "");
+                r.error = None;
+                r.outputs = outputs;
+                r.inputs = kept_inputs;
+                r.ms = took;
+                r.warnings = ctx.notes.warnings;
+                finish(&mut results, report, &n.id, r);
             }
             Err(e) => {
                 push_error(&mut log, e.0.clone());
@@ -1056,9 +1194,9 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
                 let mut wrote = String::new();
                 // The ports something came in on: an input with nothing on Paths has none.
                 let fed: Vec<&str> = if ty.group == nodes::Group::Reader {
-                    ty.inputs.iter().copied().filter(|p| kept_inputs.contains_key(*p)).collect()
+                    in_ports.iter().copied().filter(|p| kept_inputs.contains_key(*p)).collect()
                 } else {
-                    ty.inputs.to_vec()
+                    in_ports.clone()
                 };
                 if writer {
                     // An output says how much it wrote.
@@ -1105,6 +1243,30 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
                 if writer {
                     let to = if names.is_empty() { String::new() } else { format!(" to {}", names.join(", ")) };
                     written.push(LogEntry { level: Level::Info, node: Some(n.id.clone()), msg: format!("{} wrote {}{}", n.label(), wrote, to) });
+                }
+                // Data that vanishes without a word is the hardest to find: features came in
+                // and nothing went out, or an input read nothing, and the tool said nothing
+                // about it. Then the log says so, at the first node where it happens.
+                if ctx.notes.warnings.is_empty() && n.kind != "Viewer" {
+                    let came: usize = fed.iter().filter_map(|p| kept_inputs.get(*p)).map(|t| t.count()).sum();
+                    let held_more = |t: &Table| t.image.is_some() || t.grid.is_some() || t.mesh.is_some() || t.series.is_some();
+                    let went: usize = outputs.values().map(|t| t.count()).sum::<usize>() + parts.iter().map(|x| x.table.count()).sum::<usize>();
+                    let other = outputs.values().any(|t| held_more(t)) || parts.iter().any(|x| held_more(&x.table));
+                    if writer {
+                        let input = kept_inputs.get("Input");
+                        if input.is_some_and(|t| t.count() == 0 && !held_more(t)) && ty.inputs == ["Input"] {
+                            ctx.notes.warn("Nothing came in, so nothing was written.".to_string());
+                        }
+                    } else if !ports.is_empty() && went == 0 && !other {
+                        if came > 0 {
+                            ctx.notes.warn(format!(
+                                "{} came in, but nothing went out. Look at the settings, or at the attributes and coordinate system of what came in.",
+                                if came == 1 { "1 feature".to_string() } else { format!("{} features", fmt_count(came as u64)) }
+                            ));
+                        } else if ty.group == nodes::Group::Reader && fed.is_empty() {
+                            ctx.notes.warn("Nothing was read. Is the file, layer or answer empty, or does a filter or an extent leave nothing?".to_string());
+                        }
+                    }
                 }
                 // What a node keeps in memory, when it is much, so that it can be found.
                 let held: usize = outputs.values().map(|t| t.approx_bytes()).sum();

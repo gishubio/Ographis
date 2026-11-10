@@ -77,7 +77,7 @@ pub(super) fn run_model(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
             None => ctx.notes.warn(format!("{} has no variable {}; it is given to it all the same.", name, k)),
         }
         if !ws.variables.iter().any(|x| x.name == *k) {
-            ws.variables.push(crate::run::Variable { name: k.clone(), value: v.clone() });
+            ws.variables.push(crate::run::Variable { name: k.clone(), value: v.clone(), ask: false });
         }
     }
     let base = full.parent().map(|d| d.to_path_buf()).unwrap_or_else(|| ctx.base_dir.to_path_buf());

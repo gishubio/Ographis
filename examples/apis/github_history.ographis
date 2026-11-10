@@ -1,0 +1,611 @@
+{
+  "format": "ographis/1",
+  "name": "Ographis on GitHub over time",
+  "variables": [
+    {
+      "name": "owner",
+      "value": "gishubio"
+    },
+    {
+      "name": "repo",
+      "value": "Ographis"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "repo",
+      "type": "Reader",
+      "name": "Repository history",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "out/github/repository_history.csv"
+      },
+      "comment": "A line for each run of github_statistics.ographis"
+    },
+    {
+      "id": "repo_day",
+      "type": "AttributeCreator",
+      "name": "Day",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "name": "day",
+        "expression": "date"
+      }
+    },
+    {
+      "id": "stars_what",
+      "type": "AttributeCreator",
+      "name": "Stars",
+      "x": 540,
+      "y": -115.0,
+      "params": {
+        "name": "what",
+        "expression": "'Stars'"
+      }
+    },
+    {
+      "id": "stars_n",
+      "type": "AttributeCreator",
+      "name": "Count",
+      "x": 800,
+      "y": -115.0,
+      "params": {
+        "name": "n",
+        "expression": "stars"
+      }
+    },
+    {
+      "id": "watching_what",
+      "type": "AttributeCreator",
+      "name": "Watching",
+      "x": 540,
+      "y": -25.0,
+      "params": {
+        "name": "what",
+        "expression": "'Watching'"
+      }
+    },
+    {
+      "id": "watching_n",
+      "type": "AttributeCreator",
+      "name": "Count",
+      "x": 800,
+      "y": -25.0,
+      "params": {
+        "name": "n",
+        "expression": "watching"
+      }
+    },
+    {
+      "id": "forks_what",
+      "type": "AttributeCreator",
+      "name": "Forks",
+      "x": 540,
+      "y": 65.0,
+      "params": {
+        "name": "what",
+        "expression": "'Forks'"
+      }
+    },
+    {
+      "id": "forks_n",
+      "type": "AttributeCreator",
+      "name": "Count",
+      "x": 800,
+      "y": 65.0,
+      "params": {
+        "name": "n",
+        "expression": "forks"
+      }
+    },
+    {
+      "id": "open_issues_and_prs_what",
+      "type": "AttributeCreator",
+      "name": "Open issues and pull requests",
+      "x": 540,
+      "y": 155.0,
+      "params": {
+        "name": "what",
+        "expression": "'Open issues and pull requests'"
+      }
+    },
+    {
+      "id": "open_issues_and_prs_n",
+      "type": "AttributeCreator",
+      "name": "Count",
+      "x": 800,
+      "y": 155.0,
+      "params": {
+        "name": "n",
+        "expression": "open_issues_and_prs"
+      }
+    },
+    {
+      "id": "repo_chart",
+      "type": "ChartDrawer",
+      "name": "The repository over time",
+      "x": 1060,
+      "y": 20,
+      "params": {
+        "kind": "lines",
+        "x": "day",
+        "series": "what",
+        "value": "n",
+        "combine": "max",
+        "from_zero": "yes",
+        "markers": "yes",
+        "note": "Source: GitHub, saved by github_statistics.ographis",
+        "format": "en",
+        "width": "1200",
+        "title": "$(owner)/$(repo) on GitHub",
+        "subtitle": "Counted at each run"
+      }
+    },
+    {
+      "id": "repo_chart_png",
+      "type": "Writer",
+      "name": "The repository over time as PNG",
+      "x": 1320,
+      "y": 20,
+      "params": {
+        "path": "out/github/repository_over_time.png"
+      }
+    },
+    {
+      "id": "clones",
+      "type": "Reader",
+      "name": "Clones history",
+      "x": 20,
+      "y": 360,
+      "params": {
+        "path": "out/github/clones_history.csv"
+      },
+      "comment": "The days of each run. A day that came in several runs is taken at its highest count, as the last run saw it whole"
+    },
+    {
+      "id": "clones_all",
+      "type": "AttributeCreator",
+      "name": "Clones",
+      "x": 280,
+      "y": 310,
+      "params": {
+        "name": "what",
+        "expression": "'Clones'"
+      }
+    },
+    {
+      "id": "clones_all_n",
+      "type": "AttributeCreator",
+      "name": "Count",
+      "x": 540,
+      "y": 310,
+      "params": {
+        "name": "n",
+        "expression": "count"
+      }
+    },
+    {
+      "id": "clones_uniq",
+      "type": "AttributeCreator",
+      "name": "Unique cloners",
+      "x": 280,
+      "y": 410,
+      "params": {
+        "name": "what",
+        "expression": "'Unique cloners'"
+      }
+    },
+    {
+      "id": "clones_uniq_n",
+      "type": "AttributeCreator",
+      "name": "Count",
+      "x": 540,
+      "y": 410,
+      "params": {
+        "name": "n",
+        "expression": "uniques"
+      }
+    },
+    {
+      "id": "clones_chart",
+      "type": "ChartDrawer",
+      "name": "Clones over time",
+      "x": 800,
+      "y": 360,
+      "params": {
+        "kind": "lines",
+        "x": "day",
+        "series": "what",
+        "value": "n",
+        "combine": "max",
+        "from_zero": "yes",
+        "markers": "yes",
+        "note": "Source: GitHub, saved by github_statistics.ographis",
+        "format": "en",
+        "width": "1200",
+        "title": "Clones per day",
+        "subtitle": "$(owner)/$(repo), all days saved"
+      }
+    },
+    {
+      "id": "clones_chart_png",
+      "type": "Writer",
+      "name": "Clones over time as PNG",
+      "x": 1060,
+      "y": 360,
+      "params": {
+        "path": "out/github/clones_over_time.png"
+      }
+    },
+    {
+      "id": "views",
+      "type": "Reader",
+      "name": "Views history",
+      "x": 20,
+      "y": 620,
+      "params": {
+        "path": "out/github/views_history.csv"
+      },
+      "comment": "The days of each run. A day that came in several runs is taken at its highest count, as the last run saw it whole"
+    },
+    {
+      "id": "views_all",
+      "type": "AttributeCreator",
+      "name": "Views",
+      "x": 280,
+      "y": 570,
+      "params": {
+        "name": "what",
+        "expression": "'Views'"
+      }
+    },
+    {
+      "id": "views_all_n",
+      "type": "AttributeCreator",
+      "name": "Count",
+      "x": 540,
+      "y": 570,
+      "params": {
+        "name": "n",
+        "expression": "count"
+      }
+    },
+    {
+      "id": "views_uniq",
+      "type": "AttributeCreator",
+      "name": "Unique visitors",
+      "x": 280,
+      "y": 670,
+      "params": {
+        "name": "what",
+        "expression": "'Unique visitors'"
+      }
+    },
+    {
+      "id": "views_uniq_n",
+      "type": "AttributeCreator",
+      "name": "Count",
+      "x": 540,
+      "y": 670,
+      "params": {
+        "name": "n",
+        "expression": "uniques"
+      }
+    },
+    {
+      "id": "views_chart",
+      "type": "ChartDrawer",
+      "name": "Views over time",
+      "x": 800,
+      "y": 620,
+      "params": {
+        "kind": "lines",
+        "x": "day",
+        "series": "what",
+        "value": "n",
+        "combine": "max",
+        "from_zero": "yes",
+        "markers": "yes",
+        "note": "Source: GitHub, saved by github_statistics.ographis",
+        "format": "en",
+        "width": "1200",
+        "title": "Views per day",
+        "subtitle": "$(owner)/$(repo), all days saved"
+      }
+    },
+    {
+      "id": "views_chart_png",
+      "type": "Writer",
+      "name": "Views over time as PNG",
+      "x": 1060,
+      "y": 620,
+      "params": {
+        "path": "out/github/views_over_time.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "repo",
+        "Output"
+      ],
+      "to": [
+        "repo_day",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "repo_day",
+        "Output"
+      ],
+      "to": [
+        "stars_what",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "stars_what",
+        "Output"
+      ],
+      "to": [
+        "stars_n",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "stars_n",
+        "Output"
+      ],
+      "to": [
+        "repo_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "repo_day",
+        "Output"
+      ],
+      "to": [
+        "watching_what",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "watching_what",
+        "Output"
+      ],
+      "to": [
+        "watching_n",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "watching_n",
+        "Output"
+      ],
+      "to": [
+        "repo_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "repo_day",
+        "Output"
+      ],
+      "to": [
+        "forks_what",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "forks_what",
+        "Output"
+      ],
+      "to": [
+        "forks_n",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "forks_n",
+        "Output"
+      ],
+      "to": [
+        "repo_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "repo_day",
+        "Output"
+      ],
+      "to": [
+        "open_issues_and_prs_what",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "open_issues_and_prs_what",
+        "Output"
+      ],
+      "to": [
+        "open_issues_and_prs_n",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "open_issues_and_prs_n",
+        "Output"
+      ],
+      "to": [
+        "repo_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "repo_chart",
+        "Chart"
+      ],
+      "to": [
+        "repo_chart_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones",
+        "Output"
+      ],
+      "to": [
+        "clones_all",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_all",
+        "Output"
+      ],
+      "to": [
+        "clones_all_n",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones",
+        "Output"
+      ],
+      "to": [
+        "clones_uniq",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_uniq",
+        "Output"
+      ],
+      "to": [
+        "clones_uniq_n",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_chart",
+        "Chart"
+      ],
+      "to": [
+        "clones_chart_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_all_n",
+        "Output"
+      ],
+      "to": [
+        "clones_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_uniq_n",
+        "Output"
+      ],
+      "to": [
+        "clones_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views",
+        "Output"
+      ],
+      "to": [
+        "views_all",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_all",
+        "Output"
+      ],
+      "to": [
+        "views_all_n",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views",
+        "Output"
+      ],
+      "to": [
+        "views_uniq",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_uniq",
+        "Output"
+      ],
+      "to": [
+        "views_uniq_n",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_chart",
+        "Chart"
+      ],
+      "to": [
+        "views_chart_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_all_n",
+        "Output"
+      ],
+      "to": [
+        "views_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_uniq_n",
+        "Output"
+      ],
+      "to": [
+        "views_chart",
+        "Input"
+      ]
+    }
+  ]
+}

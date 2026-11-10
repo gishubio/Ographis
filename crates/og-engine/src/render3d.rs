@@ -1177,7 +1177,7 @@ pub fn render(meshes: &[&Mesh], terrain: Option<&Grid>, drape: Option<&RasterIma
         let c = tone(c);
         rgba.extend_from_slice(&[c[0], c[1], c[2], if s.background == Background::Clear { (a * 255.0).round() as u8 } else { 255 }]);
     }
-    Some(RasterImage { width: s.width, height: s.height, rgba, geotransform: [0.0, 1.0, 0.0, s.height as f64, 0.0, -1.0] })
+    Some(RasterImage { vector: None, width: s.width, height: s.height, rgba, geotransform: [0.0, 1.0, 0.0, s.height as f64, 0.0, -1.0] })
 }
 
 /// The sun and the sky, as the rays see them.

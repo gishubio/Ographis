@@ -1,0 +1,241 @@
+{
+  "format": "ographis/1",
+  "name": "Schools within walking distance",
+  "description": "How far one walks to the nearest school in Skövde, in 5, 10 and 15 minutes along the streets and paths of OpenStreetMap. The roads and the schools are fetched from Overpass when the model runs.",
+  "nodes": [
+    {
+      "id": "roads",
+      "type": "OsmDownloader",
+      "name": "Roads in Skövde",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "what": "roads",
+        "bbox": "13.820, 58.380, 13.870, 58.405",
+        "crs": "EPSG:3006"
+      },
+      "comment": "Streets, paths and roads from OpenStreetMap, © OpenStreetMap contributors, ODbL. Needs the internet"
+    },
+    {
+      "id": "walkable",
+      "type": "Tester",
+      "name": "Not motorways",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "test": "highway is not null and highway not in ('motorway', 'motorway_link', 'trunk', 'trunk_link')"
+      },
+      "comment": "Where one may walk: every road but motorways"
+    },
+    {
+      "id": "net",
+      "type": "NetworkBuilder",
+      "name": "Roads as a network",
+      "x": 540,
+      "y": 20,
+      "params": {},
+      "comment": "Lines from OpenStreetMap are split where they cross or meet, so that routes can turn there"
+    },
+    {
+      "id": "schools",
+      "type": "OsmDownloader",
+      "name": "Schools in Skövde",
+      "x": 20,
+      "y": 260,
+      "params": {
+        "what": "custom",
+        "filter": "[\"amenity\"=\"school\"]",
+        "bbox": "13.820, 58.380, 13.870, 58.405",
+        "crs": "EPSG:3006"
+      },
+      "comment": "The schools, as points or as the areas of their grounds"
+    },
+    {
+      "id": "middle",
+      "type": "CenterPointReplacer",
+      "name": "Schools",
+      "x": 280,
+      "y": 260,
+      "params": {}
+    },
+    {
+      "id": "areas",
+      "type": "ServiceAreas",
+      "name": "Within 5, 10 and 15 minutes on foot",
+      "x": 800,
+      "y": 140,
+      "params": {
+        "cost": "time",
+        "speed": "5",
+        "breaks": "5, 10, 15",
+        "shape": "outline",
+        "width": "40"
+      },
+      "comment": "Walking at 5 km/h to the nearest school, as an outline over the blocks between the streets"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Areas",
+      "x": 1060,
+      "y": 260,
+      "params": {
+        "path": "out/apis/schools_on_foot.gpkg"
+      }
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "name": "Map",
+      "x": 1060,
+      "y": 20,
+      "params": {
+        "width": "1400",
+        "background": "#ffffff",
+        "legend": "bottom-right",
+        "legend_title": "Minutes on foot to a school",
+        "layers": [
+          {
+            "from": "middle:Point",
+            "fill": "#e31a1c",
+            "stroke": "#ffffff",
+            "width": 1.5,
+            "size": 10,
+            "label": "name",
+            "label_place": "auto"
+          },
+          {
+            "from": "net:Network",
+            "fill": "none",
+            "stroke": "#9a9a9a",
+            "width": 0.5,
+            "size": 4
+          },
+          {
+            "from": "areas:Areas",
+            "fill": "#cccccc",
+            "stroke": "#ffffff",
+            "width": 0.5,
+            "size": 4,
+            "color_by": "minutes",
+            "ramp": "blues",
+            "reverse": true,
+            "classes": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "map_out",
+      "type": "Writer",
+      "name": "Map as PNG",
+      "x": 1320,
+      "y": 20,
+      "params": {
+        "path": "out/apis/schools_on_foot.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "roads",
+        "Output"
+      ],
+      "to": [
+        "walkable",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "walkable",
+        "Passed"
+      ],
+      "to": [
+        "net",
+        "Lines"
+      ]
+    },
+    {
+      "from": [
+        "schools",
+        "Output"
+      ],
+      "to": [
+        "middle",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "net",
+        "Network"
+      ],
+      "to": [
+        "areas",
+        "Network"
+      ]
+    },
+    {
+      "from": [
+        "middle",
+        "Point"
+      ],
+      "to": [
+        "areas",
+        "Facilities"
+      ]
+    },
+    {
+      "from": [
+        "areas",
+        "Areas"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "middle",
+        "Point"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "net",
+        "Network"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "areas",
+        "Areas"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "map_out",
+        "Input"
+      ]
+    }
+  ]
+}

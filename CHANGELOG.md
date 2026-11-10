@@ -3,6 +3,215 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.96
+
+Tools of your own made of other tools, variables that are asked for, no data that vanishes
+without a word, and maps for print as sharp PDFs with coordinates and layers. The betas
+below say all that came in; these are the last changes since beta 3.
+
+**PDF and SVG of shapes, placed and in layers**
+
+- A map from *Draw map* written to PDF as shapes now says where it lies, as a PDF of pixels
+  does: QGIS and other programs that read GeoSpatial PDF place it on the map, and it stays
+  sharp at any size.
+- Each layer of the map is a **layer of the PDF**, by its name in the form or that of its
+  stream, with its labels in a layer of their own, and the background and the frame in
+  theirs: turned off and on in Acrobat Reader, and kept as layers in QGIS. An SVG gets the
+  same layers, as Inkscape shows them.
+
+**Fixed**
+
+- *Manage attributes*: with many attributes ticked and removed at once, the panel on the
+  right could grow over the whole model and not be dragged back. Each row now keeps to the
+  width of the form, with its lists on a line under the name when the form is narrow, and
+  the panel is at most 60 % of the window.
+
+## 0.96 beta 3
+
+Maps for print, before 0.98 takes the rest of the cartography.
+
+**Draw map**
+
+- **Lines** solid, dashed, dotted or dash and dot, and an **edge** under a line in a colour
+  of its own, as roads have on a road map. Edges are drawn under all the lines of a layer,
+  so that roads that meet run into each other.
+- **Names that bend** along roads and rivers, letter by letter, where the line does not
+  turn too sharply; *straight along lines* keeps the old way. Names **spread out** over an
+  area, as the name of a lake or a district.
+- **A scale bar**, **a north arrow** and **a grid** of lines or marks in the edge, with the
+  coordinates written in it, each in a corner of one's choice; the coordinates keep clear
+  of the scale bar and the arrow.
+- **Source**: a text such as © Lantmäteriet, written small in the corner after the credit
+  of the background map.
+- The legend shows lines with their edge and dashes.
+
+**PDF and SVG of shapes**
+
+- A map from *Draw map*, and a chart, is kept as shapes as it is drawn, and Output writes
+  it to **PDF as lines, areas and text**, sharp at any size and editable in Inkscape or
+  Illustrator. Rasters, background maps, icons and heatmaps are pictures in it, and the
+  letters are their outlines. A PDF of pixels placed on the map is a choice.
+- Output writes the same as **SVG**.
+
+**Terrain**
+
+- *Shade terrain* and *Quick terrain view* can light the terrain from **several
+  directions**, as a multidirectional hillshade: slopes turned from the sun keep their
+  form. The shadows are still cast by the sun.
+
+**Examples**
+
+- `print_map.ographis`: the made-up town as a map for print, A3, with relief lit from
+  several directions, roads with edges and their names along them, districts spread out,
+  a scale bar, a north arrow and coordinates in the edge.
+
+## 0.96 beta 2
+
+What came up when beta 1 was tried.
+
+**Nothing vanishes without a word**
+
+- When features come in and nothing goes out, when an input reads nothing, or when an output
+  gets nothing to write, and the tool has not said why, the log now says so, at the node
+  where it happens.
+- *Service areas* warns when the limits are in metres but look like minutes, such as the
+  5, 10, 15 it starts with when *By* is the length, which gave areas too small to see. It
+  says how much road was reached, and warns when nothing was. By time without a speed,
+  every road is at the speed where none is given, such as 5 km/h for walking, instead of
+  stopping.
+- A test runs every tool on a mixed stream and fails if one gives nothing without saying
+  why; `CONTRIBUTING.md` and `AGENTS.md` say that every tool, also new ones, tells what it
+  left out.
+
+**Changed**
+
+- *Dissolve* keeps areas that do not touch apart, each a feature of its own with the
+  number merged into it. Before, everything in a group became one multi-area; that is now a
+  choice. Models that rely on the old way should choose *One multi-area for each group*.
+- GeoJSON is written in WGS 84, as RFC 7946 says, and as web maps take for granted. The
+  coordinate system of the stream can be kept as a choice.
+
+**Faster IFC**
+
+- A file with many cut-outs, such as pipes and fittings from Tekla, read about forty times
+  faster: whether a point lies inside a solid is looked up in a grid of its triangles
+  instead of against all of them.
+- Revolved solids (`IfcRevolvedAreaSolid`), such as the elbows of pipes, are read.
+
+**New**
+
+- *Sum line lengths in areas* (`LineLengthInAreas`): the length of the lines in each area,
+  such as the road network in each municipality, in all or for each kind of road.
+- *Calculate length* has mm, cm, dm, Swedish miles, inches, feet, yards, miles and nautical
+  miles; *Calculate area* ares, square feet, acres and square miles.
+- *Concatenate attributes* can use fixed texts as separators of their own, so that
+  different ones go between different attributes, such as *12 - Main street, Skövde*.
+- *Make zip file* takes its other files and folders one on each row, with buttons to
+  choose them, and a new row comes when one is filled in.
+- *Draw map* gives a number with no more values than classes, such as 5, 10 and 15 minutes,
+  a class for each value instead of ranges between them.
+
+**Examples**
+
+- `apis/osm_service_areas.ographis`: how far one walks to the nearest school in Skövde, on
+  streets and paths from OpenStreetMap, fetched when it runs.
+- `cost_distance.ographis`: minutes on foot across the made-up terrain from the health
+  centres, by the slope and Tobler's hiking function.
+
+## 0.96 beta 1
+
+A beta: everything of 0.96 is in, to be tried before 0.96 is released.
+
+**Tools of your own**
+
+- **Make into a tool**: selected nodes become one node, a *Tool* with a model inside. What
+  came into them from other nodes comes in on its ports, and what went out goes out on its
+  ports, named after the nodes. A double-click on the tool, or Enter, opens the model inside
+  on the canvas, with the path back above it; *Back*, the names in the path or Escape go out
+  again, and what was changed inside is one step to undo. Saving and running take the whole
+  model also while a tool is open.
+- A tool runs once, **once for each value** of an attribute, with `$(value)` inside, or
+  **repeated** a number of times with what comes out going in again, with `$(round)` inside.
+  The variables of the model count inside.
+- *Tool input* and *Tool output* are its ports inside, in the order they lie from the top.
+- **Unpack** puts the nodes of a tool back in the model, connected as before, in a group box
+  with its name. Group boxes stay boxes: nodes become a tool only when asked.
+- `og check` checks the model inside a tool too.
+
+**The model**
+
+- **Asked before the run**: a variable with *Ask* ticked is asked for when Run is pressed,
+  with its value offered, and the value given is kept for the next time.
+- **A setting can take its value from data**: `$(node.attribute)` is the value of the
+  attribute in the first feature the node with that id gives, such as
+  `population > $(limits.least)`. The node runs after it, as if connected, and the cache
+  knows when the value has changed.
+- **Point at a connection** to see what went through it in the latest run: how many
+  features, of which kind, the coordinate system and the attributes.
+- **Ports that do not fit**: a connection between ports that surely do not go together, such
+  as features into a tool that needs a raster, or a raster into one for point clouds, is drawn
+  in orange before the run and says why when pointed at. `og check` warns of it too. A GeoTIFF
+  read as points counts as features.
+
+**Analysis**
+
+- **Hot spots** (`HotSpots`): Getis-Ord Gi*, with gi_z, gi_p, hot_spot and hot_class from
+  -3 to 3 for a map.
+- **Spatial autocorrelation** (`SpatialAutocorrelation`): Moran's I with a p-value from
+  permutations, and Local Moran (LISA) for each feature.
+- **Point clusters** (`PointClusters`): DBSCAN, with an area around each cluster.
+- **Reallocate areas** (`AreaReallocator`): counts moved from one set of areas to another by
+  the share of the area, such as people in squares to districts.
+- **Tracks and stops** (`TrackBuilder`): GPS points into tracks by device and time, jumps
+  left out, and the stops with when and how long.
+- **Choose locations** (`LocationChooser`): the best places among candidates for a number of
+  facilities along a network, as least travel in all or as many as possible within a limit,
+  with places that must be kept.
+- **Classify image** (`ImageClassifier`): the cells of a raster or picture into classes, by
+  themselves (k-means) or from example areas.
+- **Hollows** (`Depressions`): where water collects on a terrain model, with depth, volume
+  and area.
+- *Service areas* can give an **outline** of what is reached instead of the roads, with or
+  without holes: isochrones on a network of one's own.
+- *Zonal statistics* counts a series of rasters over time: a row for each zone and time.
+- *Draw map* draws **arrows** turned by an attribute, such as wind, and sized by another, and
+  a **heatmap** of points, each counting by an attribute when one is given. The legend shows
+  both.
+
+**Databases**
+
+- Output to PostGIS can **update the rows by a key** and add the new ones, and delete those
+  not in the stream as a choice, in one transaction. A key that is empty or comes twice is an
+  error before anything is written.
+
+**Smaller things**
+
+- A tool that gets nothing in now lets nothing out, with a note in the log, instead of
+  stopping because an attribute is missing, such as *Create attribute* after a test that
+  passed nothing.
+- The help of a setting is shown when the pointer is on its name, so the forms are shorter.
+  *Show the help under every setting* in the settings shows it as before.
+- *Filter point cloud* says from which run the classes it lists come.
+- Output has **Open folder** and **Open**, or *Open in browser* for a web page, once it has
+  written its file.
+- Arrows and other signs that the font of the program lacks are drawn from Hack, so that no
+  boxes are shown on any system.
+- Help → *Report a problem…* can **save a zip to attach**, with the model without its
+  passwords and keys; `og report` makes the same from the command line.
+- `.github/labels.json` and `tools/github_labels.py` set the labels of the issues on GitHub.
+
+**Examples**
+
+- `proximity.ographis`: proximity to care in a made-up town, with service areas, the
+  minutes to the nearest health centre, the share within 20 minutes per district, and three
+  new health centres chosen.
+- `analysis.ographis`: hot spots, Moran's I, a GPS walk into tracks and stops, clusters, wind
+  as arrows, hollows and *Classify image*, on the same town (`examples/analysis`, made by
+  `tools/make_analysis_example.py`).
+- `apis/github_statistics.ographis` draws charts of a repository on GitHub, its issues,
+  stars, forks, downloads per release, clones, views and referrers, and adds the counts to
+  history files at each run; `apis/github_history.ographis` draws them over time.
+
 ## 0.95.3
 
 - **Save as a connection**: a PostGIS input or output with the server, database, user and

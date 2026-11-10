@@ -1771,7 +1771,7 @@ pub(crate) fn write_image(
             gt[2] /= k as f64;
             gt[4] /= k as f64;
             gt[5] /= k as f64;
-            grown = og_engine::model::RasterImage { width: w, height: h, rgba, geotransform: gt };
+            grown = og_engine::model::RasterImage { vector: None, width: w, height: h, rgba, geotransform: gt };
             (&grown, k)
         }
         None => (image, 1),

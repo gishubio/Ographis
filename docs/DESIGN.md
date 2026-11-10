@@ -163,6 +163,32 @@ Why Ographis works as it does, and what it does not do yet.
   scripts from the disk but not files. The libraries are loaded from unpkg.com at a fixed
   version, so that the folder stays small. PMTiles need a web server, since they are read in
   parts; MapLibre is then the one to use.
+- **No data vanishes without a word.** Every tool says what it made and warns about what it
+  left out, and when its settings are allowed but surely not meant. Where a tool has not
+  said why features came in and nothing went out, the runner says so, and a test runs every
+  tool on a mixed stream to find those that give nothing without a word.
+- **A map is kept as shapes as it is drawn.** Draw map and the charts draw on a surface that
+  keeps each path, colour and picture as well as the pixels, so that the same map becomes a
+  PNG, a PDF of shapes or an SVG with one drawing. The PDF is written by Ographis itself,
+  without GDAL, with the corners of the map in degrees as ISO 32000-2 says, so that it is
+  placed on the map, and each layer of the map as a layer of the PDF. A map too large to keep, beyond some twenty million pieces, is kept as
+  pixels only.
+- **GeoJSON is in WGS 84.** RFC 7946 says so and web maps take it for granted; keeping
+  another coordinate system is a choice, named in the file in the older way.
+- **A tool of one's own is a model inside a node.** The model inside is kept whole in the
+  setting `tool` of a `CustomTool` node, so that a model file is still one file and can be
+  read without the program. Its ports are its Tool input and Tool output nodes, in the order
+  they lie from the top. A group box stays only a box: nodes become a tool only when that is
+  asked for, and a tool can be unpacked into a box again. While the inside of a tool is on
+  the canvas, saving and running take the whole model, so nothing is lost by forgetting to go
+  out first.
+- **A connection is judged only when it is sure.** Before a run, a connection is marked when
+  its ports surely do not go together, such as features into a tool that needs a raster. A
+  port that passes on what came in, or an input whose path is a pattern or a variable, is not
+  judged, so the mark is never wrong, only sometimes missing.
+- **A setting can take a value from data.** `$(node.attribute)` is the value of the attribute
+  in the first feature the node gives. It is put in as a variable is, and the node runs after
+  the one it takes it from, as if they were connected. A connection is not drawn for it.
 - **The command line lets go of what it has used.** `og run` drops what a step made once
   every step after it has used it, so that the largest step, not all of them, sets the peak
   of memory. The program keeps everything, to show it.
@@ -500,3 +526,15 @@ Why Ographis works as it does, and what it does not do yet.
   another one nearby.
 - The icons are drawn by the program in one style. They do not follow a theme of Windows.
 - Which lists on the left are folded out is not remembered between sessions.
+- A value taken from data, `$(node.attribute)`, is that of the first feature only; to use a
+  sum or a mean, make it first with *Calculate statistics*. Such a dependency is not drawn on
+  the canvas.
+- The inside of a tool shows no results of its own after a run: the run is of the whole
+  model, and the tool is shown as one node.
+- *Choose locations* is greedy with swaps, not an exact solver: on large problems it finds a
+  good answer, not always the best.
+- A PDF of shapes is placed on the map, as ISO 32000-2 says, and has the layers of the map
+  as optional content; what is in a layer is drawn, not kept as features with attributes,
+  which the format *GeoSpatial PDF with layers* gives, drawn by GDAL.
+  The letters in it are outlines, so the text cannot be searched or copied.
+- Names bend along a line letter by letter, without kerning between the letters.

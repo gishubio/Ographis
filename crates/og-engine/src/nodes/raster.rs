@@ -47,7 +47,7 @@ pub fn mosaic_images(images: &[&RasterImage], max_pixels: usize) -> Option<Raste
             }
         }
     }
-    Some(RasterImage { width: w, height: h, rgba, geotransform: [x0, size, 0.0, y1, 0.0, -size] })
+    Some(RasterImage { vector: None, width: w, height: h, rgba, geotransform: [x0, size, 0.0, y1, 0.0, -size] })
 }
 
 pub(super) fn run_mosaic(_p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
@@ -285,7 +285,7 @@ fn generalize_image(img: &RasterImage, n: usize) -> RasterImage {
     }
     let t = &img.geotransform;
     let k = n as f64;
-    RasterImage { width: w, height: h, rgba, geotransform: [t[0], t[1] * k, t[2] * k, t[3], t[4] * k, t[5] * k] }
+    RasterImage { vector: None, width: w, height: h, rgba, geotransform: [t[0], t[1] * k, t[2] * k, t[3], t[4] * k, t[5] * k] }
 }
 
 pub(super) fn run_raster_generalizer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {

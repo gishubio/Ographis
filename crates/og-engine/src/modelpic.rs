@@ -94,7 +94,7 @@ fn ports(ws: &Workspace, id: &str, kind: &str, params: &crate::nodes::Params) ->
                 Some(f) => f(&p),
                 None => t.outputs.iter().map(|s| s.to_string()).collect(),
             };
-            (t.inputs.iter().map(|s| s.to_string()).collect(), outs)
+            (t.inputs_for(params).iter().map(|s| s.to_string()).collect(), outs)
         }
         None => (Vec::new(), Vec::new()),
     };
@@ -280,7 +280,7 @@ pub fn draw(ws: &Workspace, scale: f32) -> Result<RasterImage> {
         }
     }
     // Opaque all through: the pixmap holds colours times opacity, and here all is opaque.
-    Ok(RasterImage { width: pw as usize, height: ph as usize, rgba: pm.data().to_vec(), geotransform: [0.0, 1.0, 0.0, ph as f64, 0.0, -1.0] })
+    Ok(RasterImage { vector: None, width: pw as usize, height: ph as usize, rgba: pm.data().to_vec(), geotransform: [0.0, 1.0, 0.0, ph as f64, 0.0, -1.0] })
 }
 
 /// A picture as a PDF page of its own size, at a resolution: the pixels laid on white and

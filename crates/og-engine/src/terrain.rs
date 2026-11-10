@@ -36,6 +36,9 @@ pub struct Look {
     pub sun_azimuth: f64,
     /// How high the sun is above the horizon.
     pub sun_altitude: f64,
+    /// Light also from three other directions around the sun, as in a multidirectional
+    /// hillshade: slopes turned away from the sun keep their form.
+    pub several: bool,
     /// Heights are multiplied by this, to make the terrain stand out.
     pub exaggeration: f64,
     pub shadows: Shadows,
@@ -55,6 +58,7 @@ impl Default for Look {
         Look {
             sun_azimuth: 315.0,
             sun_altitude: 35.0,
+            several: false,
             exaggeration: 1.5,
             shadows: Shadows::Soft,
             shadow_darkness: 0.6,
@@ -280,6 +284,13 @@ pub fn light(g: &Grid, look: &Look) -> Vec<f32> {
     let e = look.exaggeration.max(0.01);
     let (az, alt) = (look.sun_azimuth.to_radians(), look.sun_altitude.clamp(1.0, 90.0).to_radians());
     let sun = [az.sin() * alt.cos(), az.cos() * alt.cos(), alt.sin()];
+    let suns: Vec<(f64, [f64; 3])> = [(-90.0, 0.15), (-45.0, 0.3), (0.0, 0.4), (45.0, 0.15)]
+        .iter()
+        .map(|(d, w)| {
+            let a = az + f64::to_radians(*d);
+            (*w, [a.sin() * alt.cos(), a.cos() * alt.cos(), alt.sin()])
+        })
+        .collect();
     let top = g.range().map_or(0.0, |r| r.1 as f64);
     let dir_sun = step_toward(look.sun_azimuth, sx, sy);
     let cell = sx.min(sy);
@@ -290,7 +301,7 @@ pub fn light(g: &Grid, look: &Look) -> Vec<f32> {
     (0..g.height)
         .into_par_iter()
         .flat_map_iter(|row| {
-            let sky_view = &sky_view;
+            let (sky_view, suns) = (&sky_view, &suns);
             (0..g.width).map(move |col| {
                 let Some(h0) = g.get(col, row).map(|v| v as f64) else { return f32::NAN };
                 let at = |c: isize, r: isize| -> f64 {
@@ -305,7 +316,13 @@ pub fn light(g: &Grid, look: &Look) -> Vec<f32> {
                     ((at(c - 1, r - 1) + 2.0 * at(c, r - 1) + at(c + 1, r - 1)) - (at(c - 1, r + 1) + 2.0 * at(c, r + 1) + at(c + 1, r + 1))) / (8.0 * sy) * e;
                 let n = [-dzdx, -dzdy, 1.0];
                 let len = (n[0] * n[0] + n[1] * n[1] + 1.0).sqrt();
-                let facing = ((n[0] * sun[0] + n[1] * sun[1] + n[2] * sun[2]) / len).max(0.0);
+                let facing = if look.several {
+                    // The sun and three lights around it, most from near the sun, as maps of
+                    // relief are lit: each slope gets some light from one of them.
+                    suns.iter().map(|(w, s)| w * ((n[0] * s[0] + n[1] * s[1] + n[2] * s[2]) / len).max(0.0)).sum::<f64>()
+                } else {
+                    ((n[0] * sun[0] + n[1] * sun[1] + n[2] * sun[2]) / len).max(0.0)
+                };
                 let lit = match look.shadows {
                     Shadows::None => 1.0,
                     Shadows::Sharp => {
@@ -426,7 +443,7 @@ fn paint(g: &Grid, light: &[f32], look: &Look, map: Option<&RasterImage>) -> Ras
         .enumerate()
         .flat_map_iter(|(k, l)| if l.is_nan() { [0, 0, 0, 0] } else { lit_colour(cell_colour(g, look, map, range, k % w, k / w), *l, look) })
         .collect();
-    RasterImage { width: g.width, height: g.height, rgba, geotransform: g.geotransform }
+    RasterImage { vector: None, width: g.width, height: g.height, rgba, geotransform: g.geotransform }
 }
 
 /// Where the camera of a 3D view is, and what it sees.
@@ -734,7 +751,7 @@ pub fn render(g: &Grid, look: &Look, map: Option<&RasterImage>, view: &View) -> 
             })
         })
         .collect();
-    RasterImage { width: ow, height: oh, rgba, geotransform: [0.0, 1.0, 0.0, oh as f64, 0.0, -1.0] }
+    RasterImage { vector: None, width: ow, height: oh, rgba, geotransform: [0.0, 1.0, 0.0, oh as f64, 0.0, -1.0] }
 }
 
 /// The largest part of the grid, cut from its sides, whose edge cells all have a height.

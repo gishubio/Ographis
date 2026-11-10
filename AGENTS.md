@@ -73,13 +73,15 @@ The program draws it on a canvas, and `og run model.ographis` runs it from the c
 | Call a web API for each feature, take values out of the JSON, make points | `examples/apis/nominatim_addresses.ographis` |
 | Explode a JSON list into features, encoded lines, a planned trip | `examples/apis/otp_routes_and_departures.ographis` |
 | Read pages of an API and statistics in JSON-stat | `examples/apis/kolada_inhabitants.ographis`, `examples/apis/scb_population.ographis` |
-| Draw a map as a picture or a PDF | `examples/map.ographis`, `examples/village.ographis` |
+| Draw a map as a picture or a PDF | `examples/map.ographis`, `examples/village.ographis`, `examples/print_map.ographis` |
 | A web map with Leaflet or MapLibre | `examples/web_map.ographis` |
 | Charts | `examples/chart.ographis` |
 | Terrain, rasters and 3D | `examples/terrain.ographis`, `examples/raster_tools.ographis`, `examples/extrude_tin.ographis`, `examples/house.ographis` |
 | Point clouds: ground, terrain models, buildings | `examples/point_cloud.ographis` |
 | 3D models for Blender: terrain with a picture, buildings grouped and named | `examples/blender.ographis` |
 | A folder of files read as one | `examples/stops.ographis` |
+| Analysis: service areas, hot spots, tracks, locations | `examples/proximity.ographis`, `examples/analysis.ographis`, `examples/apis/osm_service_areas.ographis` |
+| Cost distance over a raster | `examples/cost_distance.ographis` |
 
 Every example passes `og check`; a test makes sure of it.
 
@@ -99,6 +101,8 @@ Every example passes `og check`; a test makes sure of it.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`ARCHITECTURE.md`](ARCHITECTURE.md). In short:
 `cargo fmt --all`, `cargo clippy --workspace --all-targets` with no warnings, and
-`cargo test`. A new node type goes in the registry in `crates/og-engine/src/nodes/mod.rs`,
+`cargo test`. Every tool says in the log what it did, and warns when it leaves anything
+out or when its settings make the result empty: no data may vanish without a word (see
+*Adding a tool* in `CONTRIBUTING.md`). A new node type goes in the registry in `crates/og-engine/src/nodes/mod.rs`,
 with a test; then write `docs/nodes.json` and `docs/model.schema.json` again with
 `og nodes --json` and `og schema`, which a test checks.

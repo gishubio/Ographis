@@ -256,6 +256,18 @@ On Windows 11, by the first user:
 
 Not yet checked on Windows:
 
+- Version 0.96, all built and tested only on Linux: *Open* and *Open folder* of Output
+  (`explorer.exe`, and the program Windows opens the file with); the fonts, now with Hack as a
+  fallback for arrows and other signs that Segoe UI may lack; *update the rows by a key* to
+  **SQL Server**, which uses a staging table and UPDATE and INSERT as for PostGIS but has
+  only been tried against PostGIS; a double-click on a tool made of other tools, which counts
+  half a second as Windows does; and the zip of *Report a problem*, written beside the model.
+- Version 0.96 beta 2: the buttons *File…* and *Folder…* on the rows of *Make zip file*, and
+  the speed of reading IFC with many cut-outs, measured here only in a debug build.
+- Version 0.96 beta 3: the PDF of shapes opened in Acrobat Reader, Edge and Illustrator, and
+  the SVG in Inkscape; here they were checked with qpdf and drawn with Poppler.
+- Version 0.96: the layers of a PDF of shapes in Acrobat Reader and QGIS, the layers of the
+  SVG in Inkscape, and the coordinates of the PDF in QGIS; here GDAL read both.
 - Version 0.91, all built and tested only on Linux: Model → *Schedule…* making, finding and
   removing a task with `schtasks`, and the scheduled run starting `scheduled run.cmd` (with
   OSGeo4W's GDAL found through og.cmd); the notice of Windows when a long run ends (a toast

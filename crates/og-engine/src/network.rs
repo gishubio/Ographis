@@ -234,6 +234,35 @@ impl Network {
         Search { cost, via, source, backwards }
     }
 
+    /// The cost from a place to the nearest start of a backward search, or from the start of
+    /// a forward search to a place, without the line: for many places at once.
+    pub fn cost_to(&self, s: &Search, p: &Place, places: &[(Place, usize)]) -> Option<f64> {
+        let e = &self.edges[p.edge];
+        let mut best = f64::INFINITY;
+        if s.backwards {
+            if let Some(r) = self.rate(p.edge, true) {
+                best = best.min((e.length - p.at) * r + s.cost[e.to]);
+            }
+            if let Some(r) = self.rate(p.edge, false) {
+                best = best.min(p.at * r + s.cost[e.from]);
+            }
+        } else {
+            if let Some(r) = self.rate(p.edge, true) {
+                best = best.min(s.cost[e.from] + p.at * r);
+            }
+            if let Some(r) = self.rate(p.edge, false) {
+                best = best.min(s.cost[e.to] + (e.length - p.at) * r);
+            }
+        }
+        for (q, _) in places.iter().filter(|x| x.0.edge == p.edge) {
+            let (from, to) = if s.backwards { (p.at, q.at) } else { (q.at, p.at) };
+            if let Some(r) = self.rate(p.edge, to >= from) {
+                best = best.min((to - from).abs() * r);
+            }
+        }
+        best.is_finite().then_some(best)
+    }
+
     /// The way from a place to the nearest start of a backward search, or from the start of
     /// a forward search to a place: its cost, the start it ends or begins at, and its line.
     /// `places` are the places the search started from, by source.

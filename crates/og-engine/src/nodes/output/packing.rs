@@ -28,9 +28,9 @@ pub(in crate::nodes) const ZIP_PARAMS: &[ParamSpec] = &[
     ParamSpec {
         key: "extra",
         label: "Other files and folders",
-        kind: ParamKind::Text,
+        kind: ParamKind::Files,
         default: "",
-        hint: "Separated by ;, such as README.txt; docs/terms.pdf; styles. A folder goes in with all it holds",
+        hint: "Such as README.txt, docs/terms.pdf or the folder styles, which goes in with all it holds. A new row comes when one is filled in",
     },
     ParamSpec { key: "places", label: "In the zip file", kind: ParamKind::Choice(PLACES), default: "folders", hint: "" },
 ];
@@ -123,8 +123,8 @@ pub(in crate::nodes) fn run_zip(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Resu
             }
         }
     }
-    for item in p.get("extra").unwrap_or_default().split(';').map(str::trim).filter(|s| !s.is_empty()) {
-        let at = ctx.resolve(item);
+    for item in p.paths("extra") {
+        let at = ctx.resolve(&item);
         if at.is_dir() {
             let mut inside = Vec::new();
             walk(&at, &mut inside).map_err(|e| GbError(format!("Cannot read the folder {}: {}", at.display(), e)))?;

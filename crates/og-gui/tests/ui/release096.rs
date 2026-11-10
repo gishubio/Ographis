@@ -1,0 +1,324 @@
+//! What came in 0.96.
+
+use crate::common::*;
+use og_gui::App;
+
+/// An output that has written its file can show it in its folder and open it.
+#[test]
+fn an_output_opens_what_it_wrote() {
+    let dir = example_copy();
+    std::fs::write(
+        dir.join("open.json"),
+        r#"{
+      "format": "ographis/1", "name": "Open",
+      "nodes": [
+        {"id": "in", "type": "Reader", "name": "Towns", "x": 0, "y": 0, "params": {"path": "towns.csv"}},
+        {"id": "out", "type": "Writer", "name": "Towns out", "x": 350, "y": 0, "params": {"path": "out/towns_open.csv"}}
+      ],
+      "edges": [{"from": ["in", "Output"], "to": ["out", "Input"]}]
+    }"#,
+    )
+    .unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("open.json")).unwrap();
+    app.quiet = true;
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(4);
+    let out = graph_id(&h, "out");
+    h.state_mut().set_selection(vec![out]);
+    settle(&mut h);
+    // Nothing is written before the run.
+    assert!(h.query_by_label("Open folder").is_none());
+    let opens = h.query_all_by_label("Open").count();
+    h.state_mut().run_blocking();
+    settle(&mut h);
+    assert!(h.query_by_label("Open folder").is_some());
+    assert_eq!(h.query_all_by_label("Open").count(), opens + 1, "one file, so it can be opened");
+    h.get_by_label("Open folder").scroll_to_me();
+    settle(&mut h);
+    shot(&mut h, "96-open-what-was-written");
+    h.get_by_label("Open folder").click();
+    settle(&mut h);
+    assert!(h.state().shown.last().is_some_and(|p| p.ends_with("towns_open.csv") || p.ends_with("out")), "{:?}", h.state().shown);
+
+    // Help → Report a problem saves a zip with the model, without its secrets, to attach.
+    h.state_mut().open_report();
+    settle(&mut h);
+    h.get_by_label("Save a zip to attach").click();
+    settle(&mut h);
+    let zip = h.state().shown.last().cloned().unwrap();
+    assert!(zip.extension().is_some_and(|e| e == "zip") && zip.exists(), "{}", zip.display());
+}
+
+/// Every character the interface writes has a glyph in the fonts, also where the fonts of
+/// Windows are not there, as on Mac and Linux: no boxes for → or ⚠.
+#[test]
+fn every_character_the_interface_writes_has_a_glyph() {
+    // The characters outside ASCII in the texts of the program: what is between quotes on the
+    // lines that are not comments.
+    let mut chars = std::collections::BTreeSet::new();
+    let mut files = vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")];
+    while let Some(path) = files.pop() {
+        if path.is_dir() {
+            files.extend(std::fs::read_dir(&path).unwrap().flatten().map(|e| e.path()));
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            for line in std::fs::read_to_string(&path).unwrap().lines() {
+                let code = line.trim_start();
+                if code.starts_with("//") {
+                    continue;
+                }
+                let mut quoted = false;
+                for c in code.chars() {
+                    if c == '"' {
+                        quoted = !quoted;
+                    } else if quoted && !c.is_ascii() {
+                        chars.insert(c);
+                    }
+                }
+            }
+        }
+    }
+    assert!(chars.contains(&'→') && chars.contains(&'å'), "{:?}", chars);
+    // Each kind of text looks in its fonts in turn; one of them must have the character.
+    let defs = og_gui::theme::fonts();
+    for (family, list) in &defs.families {
+        let faces: Vec<ttf_parser::Face> =
+            list.iter().filter_map(|name| defs.font_data.get(name)).filter_map(|d| ttf_parser::Face::parse(&d.font, d.index).ok()).collect();
+        let missing: String = chars.iter().filter(|c| !faces.iter().any(|f| f.glyph_index(**c).is_some())).collect();
+        assert!(missing.is_empty(), "{:?} has no glyph for {:?}", family, missing);
+    }
+}
+
+/// Nodes are made into a tool, which is opened with a double click, changed inside, closed
+/// with Escape, run and unpacked again into a box of nodes.
+#[test]
+fn nodes_become_a_tool_that_opens_and_unpacks() {
+    let dir = example_copy();
+    std::fs::write(
+        dir.join("tool.json"),
+        r#"{
+      "format": "ographis/1", "name": "Tools",
+      "nodes": [
+        {"id": "in", "type": "Reader", "name": "Towns", "x": 0, "y": 0, "params": {"path": "towns.csv"}},
+        {"id": "size", "type": "AttributeCreator", "name": "Size", "x": 300, "y": 0, "params": {"name": "big", "expression": "population > 50000"}},
+        {"id": "keep", "type": "Tester", "name": "Big ones", "x": 600, "y": 0, "params": {"test": "big = 1"}},
+        {"id": "out", "type": "Writer", "name": "Big towns", "x": 900, "y": 0, "params": {"path": "out/big_towns.csv"}}
+      ],
+      "edges": [{"from": ["in", "Output"], "to": ["size", "Input"]}, {"from": ["size", "Output"], "to": ["keep", "Input"]},
+                {"from": ["keep", "Passed"], "to": ["out", "Input"]}]
+    }"#,
+    )
+    .unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("tool.json")).unwrap();
+    app.quiet = true;
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(4);
+    let (size, keep) = (graph_id(&h, "size"), graph_id(&h, "keep"));
+    h.state_mut().make_tool_of(&[size, keep]);
+    settle(&mut h);
+    let ws = h.state().workspace();
+    assert_eq!(ws.nodes.len(), 3);
+    assert!(ws.edges.iter().any(|e| e.from.0 == "in" && e.to == ("new_tool".to_string(), "Towns".to_string())), "{:?}", ws.edges);
+    assert!(h.query_by_label("Unpack").is_some(), "the form of the tool");
+    shot(&mut h, "96-a-tool-made-of-nodes");
+
+    // A double click opens it: the nodes inside and a path back above the canvas.
+    let p = place_of(&h, "New tool", 0, true);
+    double_click(&mut h, p);
+    settle(&mut h);
+    assert!(h.state().in_tool(), "opened by a double click");
+    assert_eq!(h.state().snarl.nodes().count(), 4, "two nodes and a port each way");
+    assert!(h.query_by_label("Back").is_some());
+    shot(&mut h, "96-inside-a-tool");
+    // A change inside, and the whole model is what is saved and run.
+    let keep = graph_id(&h, "keep");
+    h.state_mut().snarl.get_node_mut(keep).unwrap().params.insert("test".into(), serde_json::json!("big = 1 and population > 100000"));
+    h.key_press(egui::Key::Escape);
+    settle(&mut h);
+    assert!(!h.state().in_tool(), "Escape goes back out");
+    let ws = h.state().workspace();
+    let inner = og_engine::nodes::inner_model(&ws.nodes.iter().find(|n| n.id == "new_tool").unwrap().params).unwrap();
+    assert!(inner.nodes.iter().any(|n| n.params.get("test").and_then(|v| v.as_str()) == Some("big = 1 and population > 100000")));
+    h.state_mut().run_blocking();
+    settle(&mut h);
+    let written = std::fs::read_to_string(dir.join("out/big_towns.csv")).unwrap();
+    assert!(written.contains("Göteborg") && !written.contains("Borås"), "{}", written);
+    // Undo takes back what was changed inside as one step.
+    h.state_mut().undo();
+    let ws = h.state().workspace();
+    let inner = og_engine::nodes::inner_model(&ws.nodes.iter().find(|n| n.id == "new_tool").unwrap().params).unwrap();
+    assert!(inner.nodes.iter().any(|n| n.params.get("test").and_then(|v| v.as_str()) == Some("big = 1")));
+
+    // Unpacked, the nodes are back in a box with the name of the tool.
+    h.state_mut().unpack_tool("new_tool");
+    settle(&mut h);
+    let ws = h.state().workspace();
+    assert_eq!(ws.nodes.len(), 4);
+    assert_eq!(ws.groups.last().unwrap().name, "New tool");
+    let pairs: Vec<(String, String)> = ws.edges.iter().map(|e| (e.from.0.clone(), e.to.0.clone())).collect();
+    for (a, b) in [("in", "size"), ("size", "keep"), ("keep", "out")] {
+        assert!(pairs.contains(&(a.into(), b.into())), "{:?}", pairs);
+    }
+}
+
+/// With the pointer on a connection, what went through it in the latest run is shown.
+#[test]
+fn a_connection_tells_what_goes_through_it() {
+    let mut h = harness_with("buildtest.ographis", egui::Theme::Light, NO_TILES);
+    h.run_steps(4);
+    h.state_mut().run_blocking();
+    settle(&mut h);
+    // The connection out of Reproject: looked for to the right of the name of its port.
+    let out = place_of(&h, "Reprojected", 0, true);
+    let mut found = false;
+    'look: for dx in (20..=90).step_by(10) {
+        for dy in (-20..=30).step_by(4) {
+            pointer(&mut h, out + egui::vec2(dx as f32, dy as f32), None);
+            if h.query_all_by_label_contains("features").next().is_some() {
+                found = true;
+                break 'look;
+            }
+        }
+    }
+    shot(&mut h, "96-what-goes-through-a-connection");
+    assert!(found, "a count on the connection");
+}
+
+/// A variable marked Ask is asked for before a run, and the value given is the one used.
+#[test]
+fn a_variable_is_asked_for_before_the_run() {
+    let dir = example_copy();
+    std::fs::write(
+        dir.join("ask.json"),
+        r#"{
+      "format": "ographis/1", "name": "Ask",
+      "variables": [{"name": "least", "value": "50000", "ask": true}],
+      "nodes": [
+        {"id": "in", "type": "Reader", "name": "Towns", "x": 0, "y": 0, "params": {"path": "towns.csv"}},
+        {"id": "big", "type": "Tester", "name": "Big", "x": 300, "y": 0, "params": {"test": "population > $(least)"}},
+        {"id": "out", "type": "Writer", "name": "Big towns", "x": 600, "y": 0, "params": {"path": "out/asked.csv"}}
+      ],
+      "edges": [{"from": ["in", "Output"], "to": ["big", "Input"]}, {"from": ["big", "Passed"], "to": ["out", "Input"]}]
+    }"#,
+    )
+    .unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("ask.json")).unwrap();
+    app.quiet = true;
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(4);
+    h.key_press(egui::Key::F5);
+    settle(&mut h);
+    assert!(h.state().asking.is_some(), "asked before the run");
+    assert!(!h.state().is_running());
+    shot(&mut h, "96-asked-before-the-run");
+    h.state_mut().asking.as_mut().unwrap()[0].value = "300000".into();
+    h.query_all_by_label("Run").last().unwrap().click();
+    for _ in 0..40 {
+        settle(&mut h);
+        if !h.state().is_running() && h.state().result.is_some() {
+            break;
+        }
+    }
+    assert!(h.state().asking.is_none());
+    assert_eq!(h.state().variables[0].value, "300000", "kept for the next time");
+    let written = std::fs::read_to_string(dir.join("out/asked.csv")).unwrap();
+    assert!(written.contains("Göteborg") && !written.contains("Borås"), "{}", written);
+}
+
+/// The other files of a zip file are written one on each row, with a new empty row below the
+/// last one filled in.
+#[test]
+fn the_files_of_a_zip_file_get_a_row_each() {
+    let mut h = harness_for(App::new(), egui::Theme::Light);
+    h.run_steps(4);
+    h.state_mut().add_node("ZipWriter");
+    settle(&mut h);
+    let zip = h.state().selected[0];
+    let rows = |h: &Harness<'_, App>| h.query_all_by_label("File…").count();
+    assert_eq!(rows(&h), 1, "an empty row to start with");
+    // The text field on the row of the button.
+    let button = h.get_by_label("File…").rect();
+    let field =
+        h.query_all_by_role(egui::accesskit::Role::TextInput).find(|f| (f.rect().center().y - button.center().y).abs() < 6.0).expect("a field on the row");
+    field.click();
+    h.run_steps(2);
+    h.query_all_by_role(egui::accesskit::Role::TextInput).find(|f| (f.rect().center().y - button.center().y).abs() < 6.0).unwrap().type_text("README.txt");
+    settle(&mut h);
+    assert_eq!(rows(&h), 2, "a new row below the one filled in");
+    shot(&mut h, "96-files-of-a-zip-file");
+    let params = &h.state().snarl.get_node(zip).unwrap().params;
+    assert_eq!(params.get("extra"), Some(&serde_json::json!(["README.txt"])));
+}
+
+/// Many attributes removed at once in Manage attributes leave the form as wide as it was: the
+/// lists in each row keep to the edge, and the panel does not grow over the model.
+#[test]
+fn many_attributes_removed_at_once_keep_the_form_its_width() {
+    let dir = example_copy();
+    let names: Vec<String> = (0..40).map(|i| format!("BaseQuantities.GrossSideArea_{i}")).collect();
+    let mut csv = format!("name;{};wkt\n", names.join(";"));
+    for row in 0..3 {
+        let values: Vec<String> = (0..40).map(|i| format!("{}.5", row * 100 + i)).collect();
+        csv.push_str(&format!("Door {row};{};POINT ({} 6400000)\n", values.join(";"), 400000 + row * 10));
+    }
+    std::fs::write(dir.join("doors.csv"), csv).unwrap();
+    std::fs::write(
+        dir.join("doors.json"),
+        r#"{
+      "format": "ographis/1", "name": "Doors",
+      "nodes": [
+        {"id": "in", "type": "Reader", "x": 0, "y": 0, "params": {"path": "doors.csv", "crs": "EPSG:3006"}},
+        {"id": "manage", "type": "AttributeManager", "x": 400, "y": 0, "params": {}}
+      ],
+      "edges": [{"from": ["in", "Output"], "to": ["manage", "Input"]}]
+    }"#,
+    )
+    .unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("doors.json")).unwrap();
+    app.map.set_tile_source(NO_TILES);
+    app.quiet = true;
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(6);
+    h.state_mut().run_blocking();
+    h.state_mut().focus_node("manage");
+    settle(&mut h);
+    let edge = |h: &Harness<'_, App>| h.get_all_by_label("Attributes").map(|n| n.rect().left()).fold(f32::MIN, f32::max);
+    let untouched = edge(&h);
+    let id = egui::Id::new(("attributes chosen", "manage", "attributes"));
+    let mut all = vec!["name".to_string()];
+    all.extend(names.iter().cloned());
+    h.ctx.data_mut(|d| d.insert_temp(id, all));
+    h.run_steps(3);
+    let left = |h: &Harness<'_, App>| h.get_by_label("41 ticked:").rect().left();
+    let before = left(&h);
+    h.get_all_by_label("Remove").next().unwrap().click();
+    h.run_steps(3);
+    let rules = h.state().snarl.nodes().find(|n| n.id == "manage").unwrap().params["attributes"].clone();
+    assert_eq!(rules.as_array().unwrap().iter().filter(|r| r["action"] == "remove").count(), 41);
+    // Frame after frame the form stays where it was.
+    for _ in 0..40 {
+        h.run_steps(1);
+        assert!((edge(&h) - untouched).abs() < 1.0, "the panel grew from {} to {}", untouched, edge(&h));
+    }
+    shot(&mut h, "96-many-attributes-removed");
+    let after = left(&h);
+    assert!((after - before).abs() < 1.0, "the form moved from {before} to {after}");
+    // Each row ends at the same edge, inside the window.
+    let rights: Vec<f32> = h.get_all_by_value("decimal").map(|n| n.rect().right()).collect();
+    assert!(rights.len() >= 10, "{} type lists", rights.len());
+    let (lo, hi) = rights.iter().fold((f32::MAX, f32::MIN), |(lo, hi), r| (lo.min(*r), hi.max(*r)));
+    assert!(hi - lo < 1.0 && hi <= h.ctx.content_rect().right(), "the rows end between {lo} and {hi}");
+    // A wider panel has the lists on the line of the name.
+    let panel = egui::Id::new("params");
+    let mut state = egui::containers::panel::PanelState::load(&h.ctx, panel).expect("the panel has a size");
+    state.outer_rect.min.x -= 260.0;
+    h.ctx.data_mut(|d| d.insert_persisted(panel, state));
+    h.run_steps(4);
+    shot(&mut h, "96-many-attributes-wide");
+    let name_y = h.get_all_by_label("name").max_by(|a, b| a.rect().left().total_cmp(&b.rect().left())).unwrap().rect().center().y;
+    let list_y = h.get_all_by_value("text").next().unwrap().rect().center().y;
+    assert!((name_y - list_y).abs() < 3.0, "the lists are beside the name: {name_y} and {list_y}");
+}

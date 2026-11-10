@@ -32,6 +32,7 @@ fn palette_search_and_all_node_types() {
         "Network",
         "Point clouds",
         "Raster",
+        "Statistics",
         "Terrain",
         "Web",
         "Workflow",
@@ -120,7 +121,7 @@ fn palette_search_and_all_node_types() {
     h.get_by_label("Attributes").click();
     h.run_steps(3);
     assert!(h.query_by_label("Sort").is_none() && h.query_by_label("Buffer").is_some());
-    assert!(!h.state().open_sections.contains("Attributes") && h.state().open_sections.len() == 14);
+    assert!(!h.state().open_sections.contains("Attributes") && h.state().open_sections.len() == 15);
     shot(&mut h, "21-palette-one-folded-in");
 
     // A search narrows the list, whatever is folded in. A word from a description finds

@@ -66,7 +66,19 @@ docs/PERFORMANCE.md:
    and a hint. The function gets the settings (`P`), the tables that came in (`Inputs`) and
    the context (`NodeCtx`, with the log as `ctx.notes`), and returns a table per output.
    Tell the user in the log what it did: `ctx.notes.info(...)`, and warn about what was left
-   out.
+   out. **No tool may lose data without a word.** Every feature left out, every setting
+   that makes the result empty or tiny, every value that could not be read is told in the
+   log, from the first version of the tool:
+   - an error (`err(...)`) when nothing sensible can come out, saying what to do about it:
+     *"The network is in degrees. Reproject it to metres first"*;
+   - a warning (`ctx.notes.warn(...)`) when some of it was left out, with how many and why:
+     *"12 features have no geometry and went to Remnants"*;
+   - a warning when the settings are allowed but surely not meant, such as limits in
+     metres that look like minutes;
+   - info (`ctx.notes.info(...)`) with what was made, in the units the user thinks in.
+
+   The runner adds a warning of its own when features come in and nothing goes out, or an
+   input reads nothing, and the tool has not said why; a tool should say it better itself.
 3. **Register it** in the `TYPES` list at the end of the file: a name for model files (never
    change it later), a title as a verb, the category, a description, the ports, the settings,
    the function and a one-line summary. The palette, the form and `og nodes` follow from this.

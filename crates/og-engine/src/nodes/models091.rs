@@ -680,7 +680,13 @@ mod tests {
             meta: Default::default(),
         };
         let heights = Table { crs: Some(3006), grid: Some(Arc::new(g)), raster: true, ..Default::default() };
-        let img = crate::model::RasterImage { width: 40, height: 20, rgba: vec![200; 40 * 20 * 4], geotransform: [1000.0, 5.0, 0.0, 2000.0, 0.0, -5.0] };
+        let img = crate::model::RasterImage {
+            vector: None,
+            width: 40,
+            height: 20,
+            rgba: vec![200; 40 * 20 * 4],
+            geotransform: [1000.0, 5.0, 0.0, 2000.0, 0.0, -5.0],
+        };
         let picture = Table { crs: Some(3006), image: Some(Arc::new(img)), raster: true, ..Default::default() };
         let (out, _) = run_for_test_with(
             "TerrainModel",

@@ -49,6 +49,8 @@ pub fn kind_of(kind: &ParamKind) -> Kind {
             Some(p),
         ),
         ParamKind::Schema(p) => k("object", "an object {attribute: {\"type\": \"text\" | \"integer\" | \"decimal\", \"length\", \"decimals\"}}", Some(p)),
+        ParamKind::Files => k("paths", "files and folders: a list of strings, or one string separated by ;; relative paths start at the folder of the model", None),
+        ParamKind::Model => k("model", "a model as an object, with nodes and edges as in a model file, whose ToolInput and ToolOutput nodes are the ports", None),
         ParamKind::MapLayers(p) => k(
             "list",
             "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}",
@@ -311,6 +313,15 @@ pub fn check(text: &str) -> Vec<Finding> {
             return out;
         }
     };
+    // Values taken from the data of other nodes, $(node.attribute), are known first when the
+    // model runs. A number stands in for them, so that expressions can be checked.
+    let mut ws = ws;
+    let refs: Vec<String> = ws.nodes.iter().flat_map(|n| crate::run::data_refs(n, &ws)).map(|(a, b)| format!("{}.{}", a, b)).collect();
+    for name in refs {
+        if !ws.variables.iter().any(|v| v.name == name) {
+            ws.variables.push(crate::run::Variable { name, value: "1".into(), ask: false });
+        }
+    }
     let defined: Vec<&str> = ws.variables.iter().map(|v| v.name.as_str()).collect();
     let mut ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
     for n in &ws.nodes {
@@ -393,7 +404,7 @@ pub fn check(text: &str) -> Vec<Finding> {
             };
             let Some(t) = node_type(&n.kind) else { continue };
             let ports: Vec<String> = if input {
-                t.inputs.iter().map(|p| p.to_string()).collect()
+                t.inputs_for(&n.params).iter().map(|p| p.to_string()).collect()
             } else if n.params.values().any(|v| v.as_str().is_some_and(|s| s.contains("$("))) && t.ports.is_some() {
                 // Ports from settings with variables are known first when the model runs.
                 continue;
@@ -407,18 +418,24 @@ pub fn check(text: &str) -> Vec<Finding> {
             }
         }
     }
+    // Connections between ports that surely do not go together, such as features into a
+    // tool that needs a raster.
+    for e in &ws.edges {
+        let (Some(a), Some(b)) = (ws.nodes.iter().find(|n| n.id == e.from.0), ws.nodes.iter().find(|n| n.id == e.to.0)) else { continue };
+        if let Some(said) = crate::portkinds::mismatch((&a.kind, &a.params, &e.from.1), a.label(), (&b.kind, &e.to.1), b.label()) {
+            out.push(warn(Some(&b.id), said));
+        }
+    }
     // Inputs left open, on tools that need them.
     for n in &ws.nodes {
         let Some(t) = node_type(&n.kind) else { continue };
         if n.disabled || t.group == Group::Reader {
             continue;
         }
-        for port in t.inputs {
+        let ins = t.inputs_for(&n.params);
+        for port in &ins {
             let connected = ws.edges.iter().any(|e| e.to.0 == n.id && e.to.1 == *port);
-            if !connected
-                && t.inputs.len() == 1
-                && *port == "Input"
-                && !matches!(t.name, "HttpCaller" | "SqlExecutor" | "ModelRunner" | "OsmDownloader" | "Viewer")
+            if !connected && ins.len() == 1 && *port == "Input" && !matches!(t.name, "HttpCaller" | "SqlExecutor" | "ModelRunner" | "OsmDownloader" | "Viewer")
             {
                 out.push(warn(Some(&n.id), format!("The input \"{}\" of \"{}\" ({}) is not connected, so the node gets nothing.", port, n.id, t.name)));
             }
@@ -433,6 +450,28 @@ fn check_value(id: &str, t: &NodeType, spec: &ParamSpec, value: &Value, ws: &Wor
     let k = kind_of(&spec.kind);
     let scalar = matches!(value, Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null);
     match spec.kind {
+        // The model inside a tool is checked as a model of its own.
+        ParamKind::Model => {
+            let Some(o) = value.as_object() else {
+                out.push(bad("must be a model as an object, with nodes and edges.".into()));
+                return;
+            };
+            let mut inner = o.clone();
+            inner.entry("format").or_insert_with(|| Value::String("ographis/1".into()));
+            // The variables of the outer model count inside too.
+            let vars: Vec<Value> = ws.variables.iter().map(|v| serde_json::json!({"name": v.name, "value": v.value})).collect();
+            let list = inner.entry("variables").or_insert_with(|| Value::Array(Vec::new()));
+            if let Value::Array(a) = list {
+                for v in vars {
+                    if !a.iter().any(|x| x.get("name") == v.get("name")) {
+                        a.push(v);
+                    }
+                }
+            }
+            for f in check(&Value::Object(inner).to_string()) {
+                out.push(Finding { error: f.error, node: at.clone(), message: format!("Inside the tool \"{}\": {}", id, f.message) });
+            }
+        }
         ParamKind::Choice(list) => {
             let v = match value {
                 Value::String(s) => s.clone(),
@@ -529,7 +568,7 @@ fn check_value(id: &str, t: &NodeType, spec: &ParamSpec, value: &Value, ws: &Wor
                 out.push(bad(format!("must be {}.", k.shape)));
             }
         }
-        ParamKind::Values(..) | ParamKind::Attributes(_) => {
+        ParamKind::Values(..) | ParamKind::Attributes(_) | ParamKind::Files => {
             let ok = match value {
                 Value::Array(a) => a.iter().all(|x| x.is_string()),
                 _ => scalar,

@@ -234,8 +234,16 @@ pub fn mono(size: f32) -> FontId {
     FontId::new(size, FontFamily::Monospace)
 }
 
-fn fonts() -> FontDefinitions {
+/// The fonts of the program and the order they are looked in for each kind of text.
+pub fn fonts() -> FontDefinitions {
     let mut defs = FontDefinitions::default();
+    // The text font of egui lacks arrows such as → and some signs that the monospace font has,
+    // so that one is looked in after it. On Windows Segoe UI comes first and has them all.
+    if let Some(list) = defs.families.get_mut(&FontFamily::Proportional) {
+        if let Some(at) = list.iter().position(|f| f == "Ubuntu-Light") {
+            list.insert(at + 1, "Hack".to_owned());
+        }
+    }
     let base = defs.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
     defs.families.insert(strong_family(), base);
     // On Windows the system's own fonts are used, so that the program looks at home there.

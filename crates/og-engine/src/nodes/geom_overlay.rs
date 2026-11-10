@@ -123,8 +123,21 @@ fn clip_model(clippee: &Table, mesh: &crate::mesh::Mesh, clipper: &geom::Clipper
 // ---------- Dissolve (Dissolver) ----------
 
 pub(super) const DISSOLVER_PARAMS: &[ParamSpec] = &[
-    ParamSpec { key: "group_by", label: "Group by", kind: ParamKind::Attributes("Input"), default: "", hint: "Empty dissolves all areas into one" },
+    ParamSpec {
+        key: "group_by",
+        label: "Group by",
+        kind: ParamKind::Attributes("Input"),
+        default: "",
+        hint: "Only areas with the same values are merged. Empty merges all that touch",
+    },
     ParamSpec { key: "count", label: "Count attribute", kind: ParamKind::Text, default: "_count", hint: "The number of areas that were merged" },
+    ParamSpec {
+        key: "parts",
+        label: "Areas apart",
+        kind: ParamKind::Choice(&[("apart", "Each a feature of its own"), ("together", "One multi-area for each group")]),
+        default: "apart",
+        hint: "What is left apart after merging, such as buildings that do not touch",
+    },
 ];
 
 /// The values that make two features belong together. Null is a group of its own.
@@ -157,6 +170,7 @@ pub(super) fn run_dissolver(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Ou
     let table = input(inp, "Input");
     let by = p.list("group_by");
     let count_name = p.get("count");
+    let apart = p.get("parts").as_deref() != Some("together");
     let mut remnants = table.like();
     remnants.features = table.features.iter().filter(|f| !is_area(f)).cloned().collect();
     if table.fields.is_empty() && table.is_empty() {
@@ -188,9 +202,26 @@ pub(super) fn run_dissolver(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Ou
         if count_name.is_some() {
             attrs.push(Value::Int(members.len() as i64));
         }
-        if merged.is_some() {
-            out.features.push(Feature { z: None, attrs, geom: merged });
+        match merged {
+            // Areas that do not touch stay apart, each a feature with what it was made of.
+            Some(Geometry::MultiPolygon(mp)) if apart && mp.0.len() > 1 => {
+                for part in mp.0 {
+                    let mut attrs = attrs.clone();
+                    if count_name.is_some() {
+                        let n = members.iter().filter(|i| table.features[**i].geom.as_ref().is_some_and(|g| g.intersects(&part))).count();
+                        *attrs.last_mut().expect("the count") = Value::Int(n.max(1) as i64);
+                    }
+                    out.features.push(Feature { z: None, attrs, geom: Some(Geometry::Polygon(part)) });
+                }
+            }
+            Some(g) => out.features.push(Feature { z: None, attrs, geom: Some(g) }),
+            None => {}
         }
+    }
+    if out.features.is_empty() && remnants.is_empty() {
+        ctx.notes.warn("No areas came in, so there is nothing to dissolve.".to_string());
+    } else if out.features.is_empty() {
+        ctx.notes.warn(format!("None of the {} features that came in are areas, so they all went to Remnants.", fmt_count(remnants.len() as u64)));
     }
     if !remnants.is_empty() {
         ctx.notes.info(format!("{} features that are not areas went to Remnants", fmt_count(remnants.len() as u64)));
@@ -1196,7 +1227,7 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Geometry",
-        desc: "Merges areas into one per group. Shared boundaries disappear and overlaps count once. Only the group-by attributes are kept. Features that are not areas go to Remnants.",
+        desc: "Merges areas that touch or overlap, in each group. Shared boundaries disappear and overlaps count once. Areas that do not touch stay features of their own, or become one multi-area for each group as a choice. Only the group-by attributes are kept. Features that are not areas go to Remnants.",
         inputs: &["Input"],
         outputs: &["Dissolved", "Remnants"],
         ports: None,
@@ -1204,10 +1235,12 @@ pub(super) const TYPES: &[NodeType] = &[
         run: run_dissolver,
         summary: |p| {
             let by = p.list("group_by");
-            if by.is_empty() {
-                "everything into one".to_string()
-            } else {
-                format!("by {}", by.join(", "))
+            let together = p.get("parts").as_deref() == Some("together");
+            match (by.is_empty(), together) {
+                (true, true) => "everything into one".to_string(),
+                (true, false) => "all that touch".to_string(),
+                (false, true) => format!("one for each {}", by.join(", ")),
+                (false, false) => format!("by {}, all that touch", by.join(", ")),
             }
         },
     },

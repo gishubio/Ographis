@@ -1,0 +1,259 @@
+{
+  "format": "ographis/1",
+  "name": "Cost distance on foot",
+  "description": "How many minutes it takes to walk across the made-up terrain, without roads, from the nearest health centre: the slope of each cell makes the cost by Tobler's hiking function, and Cost distance finds the quickest way to every cell.",
+  "nodes": [
+    {
+      "id": "terrain",
+      "type": "Reader",
+      "name": "Terrain",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      },
+      "comment": "The made-up terrain, a height every 20 m"
+    },
+    {
+      "id": "slope",
+      "type": "TerrainAnalyzer",
+      "name": "Slope",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "measure": "slope"
+      },
+      "comment": "The slope of each cell in degrees"
+    },
+    {
+      "id": "cost",
+      "type": "RasterCalculator",
+      "name": "Minutes a metre on foot",
+      "x": 540,
+      "y": 20,
+      "params": {
+        "expression": "60 / (6000 * exp(-3.5 * abs(tan(radians(A)) + 0.05)))"
+      },
+      "comment": "Tobler's hiking function: about 5 km/h on flat ground, slower up and down steep slopes. As minutes for each metre"
+    },
+    {
+      "id": "centres",
+      "type": "Reader",
+      "name": "Health centres",
+      "x": 20,
+      "y": 260,
+      "params": {
+        "path": "analysis/health_centres.geojson"
+      }
+    },
+    {
+      "id": "reach",
+      "type": "CostDistance",
+      "name": "Minutes on foot from them",
+      "x": 800,
+      "y": 140,
+      "params": {
+        "reach": "90"
+      },
+      "comment": "The quickest way across the terrain from the nearest health centre, without roads, up to an hour and a half"
+    },
+    {
+      "id": "lines",
+      "type": "ContourGenerator",
+      "name": "Every 15 minutes",
+      "x": 1060,
+      "y": 20,
+      "params": {
+        "interval": "15",
+        "name": "minutes"
+      }
+    },
+    {
+      "id": "bands",
+      "type": "ContourGenerator",
+      "name": "Bands of 15 minutes",
+      "x": 1060,
+      "y": 260,
+      "params": {
+        "interval": "15",
+        "kind": "areas",
+        "name": "minutes"
+      }
+    },
+    {
+      "id": "raster_out",
+      "type": "Writer",
+      "name": "Minutes as a GeoTIFF",
+      "x": 1060,
+      "y": 500,
+      "params": {
+        "path": "out/cost_distance/minutes_on_foot.tif"
+      }
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "name": "Map",
+      "x": 1320,
+      "y": 140,
+      "params": {
+        "width": "1400",
+        "background": "#ffffff",
+        "legend": "bottom-right",
+        "legend_title": "Minutes on foot across the terrain",
+        "layers": [
+          {
+            "from": "centres:Output",
+            "fill": "#e31a1c",
+            "stroke": "#ffffff",
+            "width": 1.5,
+            "size": 12,
+            "label": "name",
+            "label_place": "auto"
+          },
+          {
+            "from": "lines:Contours",
+            "fill": "none",
+            "stroke": "#404040",
+            "width": 0.8,
+            "size": 4
+          },
+          {
+            "from": "bands:Contours",
+            "fill": "#cccccc",
+            "stroke": "none",
+            "width": 0,
+            "size": 4,
+            "color_by": "minutes_max",
+            "ramp": "greens",
+            "reverse": true,
+            "classes": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "map_out",
+      "type": "Writer",
+      "name": "Map as PNG",
+      "x": 1580,
+      "y": 140,
+      "params": {
+        "path": "out/cost_distance/minutes_on_foot.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "terrain",
+        "Output"
+      ],
+      "to": [
+        "slope",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "slope",
+        "Raster"
+      ],
+      "to": [
+        "cost",
+        "Rasters"
+      ]
+    },
+    {
+      "from": [
+        "cost",
+        "Raster"
+      ],
+      "to": [
+        "reach",
+        "Cost"
+      ]
+    },
+    {
+      "from": [
+        "centres",
+        "Output"
+      ],
+      "to": [
+        "reach",
+        "From"
+      ]
+    },
+    {
+      "from": [
+        "reach",
+        "Raster"
+      ],
+      "to": [
+        "lines",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "reach",
+        "Raster"
+      ],
+      "to": [
+        "bands",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "reach",
+        "Raster"
+      ],
+      "to": [
+        "raster_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "centres",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "lines",
+        "Contours"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "bands",
+        "Contours"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "map_out",
+        "Input"
+      ]
+    }
+  ]
+}

@@ -178,7 +178,7 @@ pub(super) const CONCAT_PARAMS: &[ParamSpec] = &[
         label: "Attributes",
         kind: ParamKind::Attributes("Input"),
         default: "",
-        hint: "Joined in the order they are chosen. A fixed text is written in single quotes: '0', kod",
+        hint: "Joined in the order they are chosen. A fixed text is written in single quotes: code, ' - ', name, ', ', town",
     },
     ParamSpec {
         key: "separator",
@@ -193,6 +193,13 @@ pub(super) const CONCAT_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Choice(YES_NO),
         default: "true",
         hint: "An empty value then gives no separator either",
+    },
+    ParamSpec {
+        key: "fixed",
+        label: "Fixed texts are",
+        kind: ParamKind::Choice(&[("parts", "Parts, with the separator around them too"), ("separators", "Separators of their own, each between two values")]),
+        default: "parts",
+        hint: "As separators of their own, different ones can go between different attributes, such as code, ' - ', name, ', ', town",
     },
     ParamSpec { key: "name", label: "New attribute", kind: ParamKind::Text, default: "_concatenated", hint: "" },
 ];
@@ -223,6 +230,43 @@ pub(super) fn run_concat(p: &P, inp: &Inputs, _ctx: &mut NodeCtx) -> Result<Outp
         })
         .collect::<Result<_>>()?;
     let (separator, skip) = (p.exact("separator"), p.flag("skip_empty"));
+    if p.get("fixed").as_deref() == Some("separators") {
+        // The fixed texts go between the values, and the separator only between two values
+        // with no fixed text between them. A fixed text with nothing on one side goes too.
+        let values = table
+            .features
+            .iter()
+            .map(|f| {
+                let mut out = String::new();
+                let mut pending: Option<String> = None;
+                let mut any = false;
+                for part in &parts {
+                    match part {
+                        Part::Fixed(t) => {
+                            pending = Some(pending.take().unwrap_or_default() + t);
+                        }
+                        Part::Attr(i) => {
+                            let v = f.attrs[*i].to_text();
+                            if skip && v.is_empty() {
+                                continue;
+                            }
+                            if any {
+                                out.push_str(&pending.take().unwrap_or_else(|| separator.clone()));
+                            }
+                            pending = None;
+                            out.push_str(&v);
+                            any = true;
+                        }
+                    }
+                }
+                Value::Text(out)
+            })
+            .collect();
+        let mut out = with_column(table, &name, values);
+        let at = out.field_index(&name).expect("the column was just added");
+        out.fields[at].ty = FieldType::Text;
+        return Ok(vec![("Output".into(), out)]);
+    }
     let values = table
         .features
         .iter()
@@ -408,7 +452,7 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Attributes",
-        desc: "Joins several attributes, and fixed texts if you want, into one new text attribute, with a separator between them if you want one.",
+        desc: "Joins several attributes, and fixed texts if you want, into one new text attribute, with a separator between them if you want one. The fixed texts can also be separators of their own, so that different ones go between different attributes, such as 12 - Main street, Skövde.",
         inputs: &["Input"],
         outputs: &["Output"],
         ports: None,

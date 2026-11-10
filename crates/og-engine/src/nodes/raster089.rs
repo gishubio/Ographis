@@ -326,9 +326,9 @@ const ZONAL_PARAMS: &[ParamSpec] = &[
 const ZONAL_STATS: &[&str] = &["count", "mean", "min", "max", "sum", "median", "std", "range", "majority", "area"];
 
 fn run_zonal(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    use rayon::prelude::*;
     let t = input(inp, "Zones");
-    let g = grid_on(input(inp, "Raster"), "Raster")?;
+    let raster = input(inp, "Raster");
+    let g = grid_on(raster, "Raster")?;
     let stats: Vec<String> = p.list("stats").into_iter().map(|s| s.to_lowercase()).collect();
     let stats = if stats.is_empty() { vec!["count".to_string(), "mean".into(), "min".into(), "max".into()] } else { stats };
     if let Some(bad) = stats.iter().find(|s| !ZONAL_STATS.contains(&s.as_str())) {
@@ -336,6 +336,65 @@ fn run_zonal(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     }
     let classes = p.get("classes").unwrap_or_default();
     let prefix = p.get("prefix").unwrap_or_default();
+    // A series of pictures over time, such as from Read satellite bands: each zone gets a row
+    // for each time, so that the change over time can be drawn or compared.
+    let series = super::remote::grids_of(raster);
+    if series.len() > 1 {
+        let mut out: Option<Table> = None;
+        let mut empty = 0;
+        for (k, grid) in series.iter().enumerate() {
+            let (mut part, e) = zonal_of(t, grid, &stats, &classes, &prefix, ctx)?;
+            empty += e;
+            let time = grid.meta.time.clone().map_or(Value::Int(k as i64 + 1), Value::Text);
+            let slot = column(&mut part, "time", if matches!(time, Value::Text(_)) { FieldType::Text } else { FieldType::Int });
+            for f in part.features.iter_mut() {
+                f.attrs[slot] = time.clone();
+            }
+            out = Some(match out {
+                None => part,
+                Some(mut all) => {
+                    // A class that only one time has gets a column in all.
+                    for f in &part.fields {
+                        if all.field_index(&f.name).is_none() {
+                            column(&mut all, &f.name, f.ty);
+                        }
+                    }
+                    for f in part.features {
+                        let attrs = all
+                            .fields
+                            .iter()
+                            .map(|fd| part.fields.iter().position(|x| x.name == fd.name).map_or(Value::Null, |i| f.attrs[i].clone()))
+                            .collect();
+                        all.features.push(Feature { attrs, ..f });
+                    }
+                    all
+                }
+            });
+        }
+        let out = out.expect("a grid");
+        ctx.notes.info(format!("{} zones at {} times", fmt_count(t.len() as u64), series.len()));
+        if empty > 0 {
+            ctx.notes.warn(format!(
+                "{} times a zone had no cell with a value: outside the picture, under clouds that were masked, or smaller than a cell.",
+                fmt_count(empty as u64)
+            ));
+        }
+        return Ok(vec![("Output".into(), out)]);
+    }
+    let (out, empty) = zonal_of(t, g, &stats, &classes, &prefix, ctx)?;
+    ctx.notes.info(format!("{} zones counted", fmt_count(t.len() as u64)));
+    if empty > 0 {
+        ctx.notes.warn(format!(
+            "{} zones have no cell with a value: they lie outside the raster, or are smaller than a cell, whose middle must lie inside the zone.",
+            fmt_count(empty as u64)
+        ));
+    }
+    Ok(vec![("Output".into(), out)])
+}
+
+/// The statistics of one grid in each zone, and how many zones had no cell with a value.
+fn zonal_of(t: &Table, g: &Grid, stats: &[String], classes: &str, prefix: &str, ctx: &NodeCtx) -> Result<(Table, usize)> {
+    use rayon::prelude::*;
     let geoms = geoms_in(t, g.crs, ctx)?;
     let cells = Cells::of(g);
     let cell_area = (g.geotransform[1] * g.geotransform[5]).abs();
@@ -352,8 +411,7 @@ fn run_zonal(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let mut out = t.clone();
     let slots: Vec<usize> =
         stats.iter().map(|s| column(&mut out, &format!("{}{}", prefix, s), if s == "count" { FieldType::Int } else { FieldType::Real })).collect();
-    for (k, (f, values)) in out.features.iter_mut().zip(&per_zone).enumerate() {
-        let _ = k;
+    for (f, values) in out.features.iter_mut().zip(&per_zone) {
         let n = values.len();
         let sum: f64 = values.iter().map(|v| *v as f64).sum();
         let mean = (n > 0).then(|| sum / n as f64);
@@ -409,14 +467,7 @@ fn run_zonal(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         }
     }
     let empty = per_zone.iter().filter(|v| v.is_empty()).count();
-    ctx.notes.info(format!("{} zones, {} cells counted", fmt_count(t.len() as u64), fmt_count(per_zone.iter().map(|v| v.len() as u64).sum::<u64>())));
-    if empty > 0 {
-        ctx.notes.warn(format!(
-            "{} zones have no cell with a value: they lie outside the raster, or are smaller than a cell, whose middle must lie inside the zone.",
-            fmt_count(empty as u64)
-        ));
-    }
-    Ok(vec![("Output".into(), out)])
+    Ok((out, empty))
 }
 
 /// The most common of sorted values; between equally common, the smallest.
@@ -667,7 +718,7 @@ fn run_clip_raster(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
                     }
                 }
             }
-            RasterImage { width: w, height: h, rgba, geotransform: ngt }.into_table_with(r.crs, grid)
+            RasterImage { vector: None, width: w, height: h, rgba, geotransform: ngt }.into_table_with(r.crs, grid)
         }
         None => grid.expect("a grid").into_table(),
     };
@@ -1179,7 +1230,7 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Raster",
-        desc: "Counts the cells of the raster within each area: how many, the mean, the smallest and largest, sum, median, spread and the most common value, and for classes, such as land cover, the share or area of each. A cell counts when its middle lies in the area. The share of forest in each municipality, the mean height of each property, the people in each district from a population grid.",
+        desc: "Counts the cells of the raster within each area: how many, the mean, the smallest and largest, sum, median, spread and the most common value, and for classes, such as land cover, the share or area of each. A cell counts when its middle lies in the area. The share of forest in each municipality, the mean height of each property, the people in each district from a population grid. A series of pictures over time, such as from Read satellite bands, gives each area a row for each time, with the time: the NDVI of each field through a summer.",
         inputs: &["Zones", "Raster"],
         outputs: &["Output"],
         ports: None,
@@ -1314,6 +1365,23 @@ mod tests {
             features: geoms.into_iter().enumerate().map(|(i, g)| Feature::new(vec![Value::Int(i as i64)], Some(g))).collect(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn zones_are_counted_at_each_time_of_a_series() {
+        // The ramp in June, and twice as high in July.
+        let mut june = ramp();
+        june.meta.time = Some("2026-06-15".into());
+        let mut july = ramp();
+        july.values.iter_mut().for_each(|v| *v *= 2.0);
+        july.meta.time = Some("2026-07-15".into());
+        let series = crate::nodes::remote::series_table(vec![june, july], &[]);
+        let zone = table_of(vec![Geometry::Polygon(polygon![(x: 1002.0, y: 2000.0), (x: 1005.0, y: 2000.0), (x: 1005.0, y: 2010.0), (x: 1002.0, y: 2010.0)])]);
+        let (out, _) = run_for_test("ZonalStatistics", &[("stats", "mean")], vec![("Zones", zone), ("Raster", series)]).unwrap();
+        let t = &out[0].1;
+        let (m, time) = (t.field_index("mean").unwrap(), t.field_index("time").unwrap());
+        let rows: Vec<(Value, Value)> = t.features.iter().map(|f| (f.attrs[time].clone(), f.attrs[m].clone())).collect();
+        assert_eq!(rows, [(Value::Text("2026-06-15".into()), Value::Real(3.0)), (Value::Text("2026-07-15".into()), Value::Real(6.0))]);
     }
 
     #[test]

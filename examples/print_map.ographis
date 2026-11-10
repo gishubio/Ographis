@@ -1,0 +1,314 @@
+{
+  "format": "ographis/1",
+  "name": "A map for print",
+  "description": "The made-up town as a map for print: relief lit from several directions, roads with an edge and names that bend along them, the districts spread out over their areas, a scale bar, a north arrow, coordinates in the edge, and a PDF of shapes in A3.",
+  "nodes": [
+    {
+      "id": "terrain",
+      "type": "Reader",
+      "name": "Terrain",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "clip",
+      "type": "RasterClipper",
+      "name": "Around the town",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "crop": "yes"
+      },
+      "comment": "Only the terrain around the town"
+    },
+    {
+      "id": "frame",
+      "type": "Reader",
+      "name": "Districts",
+      "x": 20,
+      "y": 260,
+      "params": {
+        "path": "analysis/districts.geojson"
+      }
+    },
+    {
+      "id": "box",
+      "type": "BoundingBoxReplacer",
+      "name": "The extent",
+      "x": 280,
+      "y": 260,
+      "params": {}
+    },
+    {
+      "id": "wider",
+      "type": "Bufferer",
+      "name": "With room around",
+      "x": 540,
+      "y": 260,
+      "params": {
+        "distance": "1200"
+      }
+    },
+    {
+      "id": "square",
+      "type": "BoundingBoxReplacer",
+      "name": "As a rectangle",
+      "x": 700,
+      "y": 380,
+      "params": {}
+    },
+    {
+      "id": "relief",
+      "type": "TerrainShader",
+      "name": "Relief",
+      "x": 540,
+      "y": 20,
+      "params": {
+        "light": "several",
+        "colours": "land",
+        "shadows": "soft",
+        "exaggeration": "1.5",
+        "width": "3000"
+      },
+      "comment": "Light from several directions, as on a good relief map, with soft shadows from the sun"
+    },
+    {
+      "id": "roads",
+      "type": "Reader",
+      "name": "Roads",
+      "x": 20,
+      "y": 500,
+      "params": {
+        "path": "analysis/roads.geojson"
+      }
+    },
+    {
+      "id": "centres",
+      "type": "Reader",
+      "name": "Health centres",
+      "x": 20,
+      "y": 740,
+      "params": {
+        "path": "analysis/health_centres.geojson"
+      }
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "name": "Map for print",
+      "x": 860,
+      "y": 260,
+      "params": {
+        "size_as": "print",
+        "print_mm": "400",
+        "print_dpi": "200",
+        "margin": "2",
+        "background": "#ffffff",
+        "legend": "bottom-right",
+        "legend_title": "A made-up town",
+        "scale_bar": "bottom-left",
+        "north_arrow": "top-right",
+        "grid": "ticks",
+        "grid_every": "1000",
+        "source": "Made-up data, made by Ographis",
+        "layers": [
+          {
+            "from": "centres:Output",
+            "name": "Health centres",
+            "fill": "#e31a1c",
+            "stroke": "#ffffff",
+            "width": 1.5,
+            "size": 12,
+            "label": "name",
+            "label_size": 13,
+            "label_bold": true
+          },
+          {
+            "from": "frame:Output",
+            "name": "Districts",
+            "fill": "#00000000",
+            "stroke": "#6a3d9a",
+            "width": 2,
+            "size": 4,
+            "dash": "dashdot",
+            "label": "district",
+            "label_spaced": true,
+            "label_upper": true,
+            "label_size": 26,
+            "label_colour": "#6a3d9a"
+          },
+          {
+            "from": "roads:Output",
+            "name": "Streets and roads",
+            "fill": "none",
+            "stroke": "#ffffff",
+            "width": 2.2,
+            "size": 4,
+            "casing": "#7a7a7a",
+            "casing_width": 0.8,
+            "label": "name",
+            "label_size": 10,
+            "label_priority": "speed"
+          },
+          {
+            "from": "relief:Image",
+            "name": "Terrain",
+            "fill": "none",
+            "stroke": "none",
+            "width": 0,
+            "size": 4
+          }
+        ]
+      }
+    },
+    {
+      "id": "pdf",
+      "type": "Writer",
+      "name": "As a PDF of shapes, A3",
+      "x": 1120,
+      "y": 140,
+      "params": {
+        "path": "out/print_map/town.pdf",
+        "pdf_size": "a3",
+        "pdf_title": "A made-up town"
+      },
+      "comment": "Lines, areas and text stay sharp at any size, and can be edited in Inkscape or Illustrator. The relief is a picture in it"
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "name": "As a PNG",
+      "x": 1120,
+      "y": 380,
+      "params": {
+        "path": "out/print_map/town.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "frame",
+        "Output"
+      ],
+      "to": [
+        "box",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "box",
+        "Output"
+      ],
+      "to": [
+        "wider",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "terrain",
+        "Output"
+      ],
+      "to": [
+        "clip",
+        "Raster"
+      ]
+    },
+    {
+      "from": [
+        "wider",
+        "Buffered"
+      ],
+      "to": [
+        "square",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "square",
+        "Output"
+      ],
+      "to": [
+        "clip",
+        "Areas"
+      ]
+    },
+    {
+      "from": [
+        "clip",
+        "Raster"
+      ],
+      "to": [
+        "relief",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "relief",
+        "Image"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "frame",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "roads",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "centres",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "pdf",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    }
+  ]
+}

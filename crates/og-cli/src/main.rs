@@ -55,6 +55,10 @@ Usage:
       itself handles them. --html writes them as a web page.
   og doctor
       Tests that GDAL and PROJ work in this installation.
+  og report [model.ographis] [file.zip]
+      Makes a zip to attach to an issue on GitHub: the versions of Ographis and GDAL,
+      the operating system, the model with its passwords and keys taken out, the log
+      of its latest run and the latest faults. Look in it before it is sent.
   og version
 ";
 
@@ -73,6 +77,7 @@ fn main() -> ExitCode {
         "check" => cmd_check(&args[1..]),
         "schema" => print_out(&serde_json::to_string_pretty(&og_engine::reference::model_schema()).expect("JSON")),
         "doctor" => cmd_doctor(),
+        "report" => cmd_report(&args[1..]),
         "picture" => cmd_picture(&args[1..]),
         "formats" => cmd_formats(&args[1..]),
         "connections" => cmd_connections(),
@@ -106,6 +111,32 @@ fn cmd_picture(args: &[String]) -> ExitCode {
     match og_engine::modelpic::export(&ws, Path::new(out)) {
         Ok(()) => {
             println!("{} drawn to {}", model, out);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{}", e.0);
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn cmd_report(args: &[String]) -> ExitCode {
+    let model = args.iter().find(|a| a.ends_with(".ographis") || a.ends_with(".json")).map(Path::new);
+    let out =
+        args.iter().find(|a| a.ends_with(".zip")).cloned().unwrap_or_else(|| format!("ographis-report-{}.zip", chrono::Local::now().format("%Y%m%d-%H%M")));
+    if let Some(m) = model.filter(|m| !m.exists()) {
+        eprintln!("There is no model {}.", m.display());
+        return ExitCode::from(1);
+    }
+    let version = env!("CARGO_PKG_VERSION");
+    let about = format!("Ographis {} · {}", version.strip_suffix(".0").unwrap_or(version), GdalBackend::new().describe());
+    match og_engine::bugreport::bundle(model, Path::new(&out), &about) {
+        Ok(b) => {
+            println!("Written to {}, with:", b.file.display());
+            for p in &b.parts {
+                println!("  - {}", p);
+            }
+            println!("Look in it before you attach it to an issue: https://github.com/gishubio/Ographis/issues/new/choose");
             ExitCode::SUCCESS
         }
         Err(e) => {

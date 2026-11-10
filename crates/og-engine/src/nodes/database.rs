@@ -78,6 +78,7 @@ pub(super) const WRITE_MODES: &[(&str, &str)] = &[
     ("replace", "Replace the table"),
     ("empty", "Empty it and fill it again: it keeps its indexes, rights and the views on it"),
     ("append", "Add to the table"),
+    ("update", "Update the rows by a key, and add the new ones"),
 ];
 pub(super) const COMMITS: &[(&str, &str)] = &[("all", "All or nothing: one transaction"), ("every", "In parts: commit every so many rows")];
 
@@ -98,6 +99,20 @@ pub(super) const POSTGIS_WRITE_PARAMS: &[ParamSpec] = &[
         hint: "Made lower case, with spaces as _, as PostgreSQL prefers. The names of the columns too",
     },
     ParamSpec { key: "mode", label: "If the table is there", kind: ParamKind::Choice(WRITE_MODES), default: "replace", hint: "" },
+    ParamSpec {
+        key: "update_key",
+        label: "Rows are the same when",
+        kind: ParamKind::Attribute("Input"),
+        default: "",
+        hint: "An attribute whose value tells a row apart, such as an id. A row of the table with the same value is updated; the others are added",
+    },
+    ParamSpec {
+        key: "delete_missing",
+        label: "Rows that are not in the stream",
+        kind: ParamKind::Choice(&[("keep", "Are kept"), ("delete", "Are deleted, so that the table holds what the stream holds")]),
+        default: "keep",
+        hint: "",
+    },
     ParamSpec {
         key: "commit",
         label: "Transaction",
@@ -350,6 +365,12 @@ pub(super) fn run_postgis_writer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Resu
         sql_before: p.get("sql_before").filter(|s| !s.trim().is_empty()),
         sql_after: p.get("sql_after").filter(|s| !s.trim().is_empty()),
         analyze: p.get("analyze").as_deref() != Some("false"),
+        update_key: if p.get("mode").as_deref() == Some("update") {
+            Some(p.need("update_key", "Say which attribute tells the rows apart, to update them by.")?)
+        } else {
+            None
+        },
+        delete_missing: p.get("mode").as_deref() == Some("update") && p.get("delete_missing").as_deref() == Some("delete"),
     };
     if table.image.is_some() || table.grid.is_some() {
         return err("A picture or a grid cannot be written to PostGIS. Write it to a file.");

@@ -95,6 +95,34 @@ impl App {
         }
         self.quick_add_box(ui.ctx(), pal);
         self.minimap(ui, pal);
+        if self.in_tool() {
+            let at = self.canvas_rect.min + egui::vec2(8.0, 8.0);
+            egui::Area::new(egui::Id::new("tool-path")).fixed_pos(at).order(egui::Order::Middle).show(ui.ctx(), |ui| self.tool_path_bar(ui, pal));
+        }
+        // A double click on a tool made of other tools opens it. Counted here, with the half
+        // second Windows gives a double click, as on empty canvas.
+        let releases = ui.input(|i| {
+            i.events.iter().filter(|e| matches!(e, egui::Event::PointerButton { button: egui::PointerButton::Primary, pressed: false, .. })).count()
+        });
+        if releases > 0 && !ui.input(|i| i.pointer.is_decidedly_dragging()) {
+            let hit = self.pointer_on_canvas.and_then(|p| {
+                let at = self.transform.inverse() * p;
+                events.rects.iter().find(|(_, r)| r.contains(at)).map(|(n, _)| *n)
+            });
+            let tool = hit.and_then(|n| self.snarl.get_node(n)).filter(|n| n.kind == "CustomTool").map(|n| n.id.clone());
+            match (tool, hit) {
+                (Some(id), Some(n)) => {
+                    let again = releases >= 2 || self.node_click.is_some_and(|(t, m)| m == n && now - t <= 0.55);
+                    if again {
+                        self.node_click = None;
+                        self.open_tool(&id);
+                        return;
+                    }
+                    self.node_click = Some((now, n));
+                }
+                _ => self.node_click = None,
+            }
+        }
         self.node_rects = std::mem::take(&mut events.rects);
         if background_clicked {
             self.selected_group = None;
@@ -103,6 +131,9 @@ impl App {
         // A connection that has been removed some other way is no longer selected.
         if self.selected_wire.is_some_and(|w| !self.snarl.wires().any(|x| x == w)) {
             self.selected_wire = None;
+        }
+        if let Some((from, to)) = events.wire_hover.filter(|_| self.wire_menu.is_none()) {
+            self.wire_tooltip(ui, from, to, pal);
         }
         if let Some(wire) = events.wire_clicked {
             self.set_selection(Vec::new());
@@ -206,6 +237,16 @@ impl App {
         }
         if let Some(n) = events.group_nodes {
             self.add_group(&self.targets(n), None);
+        }
+        if let Some(n) = events.make_tool {
+            self.make_tool_of(&self.targets(n));
+        }
+        if let Some(id) = events.open_tool.and_then(|n| self.snarl.get_node(n)).map(|n| n.id.clone()) {
+            self.open_tool(&id);
+            return;
+        }
+        if let Some(id) = events.unpack_tool.and_then(|n| self.snarl.get_node(n)).map(|n| n.id.clone()) {
+            self.unpack_tool(&id);
         }
         if let Some(id) = events.toggle_attributes.take() {
             if !self.expanded.remove(&id) {

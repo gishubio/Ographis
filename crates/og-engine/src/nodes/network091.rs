@@ -10,7 +10,7 @@ use super::network::{
 use super::*;
 use crate::model::{err, fmt_count, fmt_real};
 use crate::network::{cut, Network, Place, Search};
-use geo::{Coord, Geometry, LineString};
+use geo::{Coord, Geometry, Length, LineString};
 
 // ---------- Build network (NetworkBuilder) ----------
 
@@ -427,13 +427,24 @@ const P_REACH: ParamSpec = ParamSpec {
     hint: "Minutes or metres: farther than this belongs to no facility. Empty: no limit",
 };
 
+const P_SHAPE: ParamSpec = ParamSpec {
+    key: "shape",
+    label: "Shape",
+    kind: ParamKind::Choice(&[
+        ("roads", "Around the roads reached"),
+        ("outline", "The outline: what lies between the roads reached is within too, as on an isochrone map"),
+    ]),
+    default: "roads",
+    hint: "The outline fills the blocks and fields that the roads reached go round",
+};
+
 const SERVICE_PARAMS: &[ParamSpec] =
-    &[P_BREAKS, P_DIRECTION, P_EACH, P_WIDTH, P_COST, P_SPEED, P_SPEED_AGAINST, P_DEFAULT_SPEED, P_ALONG, P_AGAINST, P_SNAP, P_TOLERANCE];
+    &[P_BREAKS, P_DIRECTION, P_EACH, P_SHAPE, P_WIDTH, P_COST, P_SPEED, P_SPEED_AGAINST, P_DEFAULT_SPEED, P_ALONG, P_AGAINST, P_SNAP, P_TOLERANCE];
 const ALLOCATE_PARAMS: &[ParamSpec] =
     &[P_DIRECTION, P_REACH, P_WIDTH, P_COST, P_SPEED, P_SPEED_AGAINST, P_DEFAULT_SPEED, P_ALONG, P_AGAINST, P_SNAP, P_TOLERANCE];
 
 /// A table in the coordinate system of the network.
-fn in_crs(t: &Table, crs: u32, what: &str, ctx: &NodeCtx) -> Result<Table> {
+pub(super) fn in_crs(t: &Table, crs: u32, what: &str, ctx: &NodeCtx) -> Result<Table> {
     match t.crs {
         Some(c) if c != crs => reproject(t, crs, ctx.backend),
         None if !t.is_empty() => err(format!("{} has no coordinate system. Set it on the input.", what)),
@@ -442,7 +453,7 @@ fn in_crs(t: &Table, crs: u32, what: &str, ctx: &NodeCtx) -> Result<Table> {
 }
 
 /// The places of the features on the network, by their index, and how many are too far.
-fn places_of(net: &Network, t: &Table, snap: f64) -> (Vec<(Place, usize)>, usize) {
+pub(super) fn places_of(net: &Network, t: &Table, snap: f64) -> (Vec<(Place, usize)>, usize) {
     let mut out = Vec::new();
     let mut far = 0;
     for (k, f) in t.features.iter().enumerate() {
@@ -507,6 +518,32 @@ fn reached(net: &Network, s: &Search, starts: &[(Place, usize)], backwards: bool
     out
 }
 
+/// An area without its holes: the outline of what it covers.
+fn without_holes(g: Geometry<f64>) -> Geometry<f64> {
+    use geo::{MultiPolygon, Polygon};
+    let fill = |p: Polygon<f64>| Polygon::new(p.exterior().clone(), vec![]);
+    match g {
+        Geometry::Polygon(p) => Geometry::Polygon(fill(p)),
+        Geometry::MultiPolygon(m) => {
+            // A part inside the hole of another is within the outline of that one.
+            let filled: Vec<Polygon<f64>> = m.0.into_iter().map(fill).collect();
+            let mut keep: Vec<Polygon<f64>> = Vec::new();
+            for (i, p) in filled.iter().enumerate() {
+                let inside = filled.iter().enumerate().any(|(j, q)| j != i && geo::Contains::contains(q, p));
+                if !inside {
+                    keep.push(p.clone());
+                }
+            }
+            if keep.len() == 1 {
+                Geometry::Polygon(keep.pop().expect("one"))
+            } else {
+                Geometry::MultiPolygon(MultiPolygon::new(keep))
+            }
+        }
+        other => other,
+    }
+}
+
 /// The area around lines: each buffered, and all put together.
 fn area_around(lines: &[LineString<f64>], width: f64) -> Option<Geometry<f64>> {
     use geo::Buffer;
@@ -542,6 +579,7 @@ fn run_service(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let width = number_param(p, "width", "Area around the roads")?.unwrap_or(100.0).max(1.0);
     let backwards = p.get("direction").as_deref() != Some("from");
     let each = p.get("each").as_deref() == Some("each");
+    let outline = p.get("shape").as_deref() == Some("outline");
     let (starts, far) = places_of(&net, &fac, snap);
     if far > 0 {
         ctx.notes.warn(format!("{} facilities are more than {} m from the network and were left out.", fmt_count(far as u64), fmt_real(snap)));
@@ -550,8 +588,16 @@ fn run_service(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         return err("No facility is near the network. Are they in the same area and coordinate system?");
     }
     let unit = if time { "minutes" } else { "metres" };
+    // Limits that look like minutes, while the cost is the length in metres, reach a few steps.
+    if !time && breaks.iter().all(|b| *b < 100.0) {
+        ctx.notes.warn(format!(
+            "The limits {} are metres, since By is the length, and reach only a few steps along the roads. For minutes, set By to the quickest, with a speed such as 5 for walking.",
+            breaks.iter().map(|b| fmt_real(*b)).collect::<Vec<_>>().join(", ")
+        ));
+    }
     let mut areas = Table { fields: vec![Field::new(unit, FieldType::Real)], crs: Some(crs), ..Default::default() };
     let mut lines = Table { fields: vec![Field::new(unit, FieldType::Real)], crs: Some(crs), ..Default::default() };
+    let mut road_reached = 0.0;
     if each {
         for f in &fac.fields {
             areas.fields.push(f.clone());
@@ -575,14 +621,32 @@ fn run_service(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
                 attrs.extend(fac.features[group[0].1].attrs.iter().cloned());
             }
             for l in &ls {
+                if Some(b) == breaks.last() {
+                    road_reached += geo::Euclidean.length(l);
+                }
                 lines.features.push(Feature::new(attrs.clone(), Some(Geometry::LineString(l.clone()))));
             }
             if let Some(a) = area_around(&ls, width) {
+                let a = if outline { without_holes(a) } else { a };
                 areas.features.push(Feature::new(attrs, Some(a)));
             }
         }
     }
-    ctx.notes.info(format!("{} areas within {} {}", areas.len(), breaks.iter().map(|b| fmt_real(*b)).collect::<Vec<_>>().join(", "), unit));
+    let within = breaks.iter().map(|b| fmt_real(*b)).collect::<Vec<_>>().join(", ");
+    if areas.is_empty() {
+        ctx.notes.warn(format!(
+            "No road is reached within {} {} from the facilities. Are the roads joined to each other, and may they be travelled in the direction asked?",
+            within, unit
+        ));
+    }
+    let km = road_reached / 1000.0;
+    ctx.notes.info(format!(
+        "{} areas within {} {}, around {} of road",
+        areas.len(),
+        within,
+        unit,
+        if km >= 1.0 { format!("{} km", fmt_real((km * 10.0).round() / 10.0)) } else { format!("{} m", fmt_real(road_reached.round())) }
+    ));
     Ok(vec![("Areas".into(), areas), ("Roads".into(), lines)])
 }
 
@@ -810,11 +874,32 @@ mod tests {
                 })
                 .sum::<f64>()
         };
-        use geo::Length;
         // Within 300 m of a corner along a grid: the roads with x + y ≤ 300, from each shop.
         let near = within(300.0);
         assert!((near - 2.0 * 1200.0).abs() < 1.0, "{}", near);
         assert_eq!(out[0].1.len(), 2);
+        // As an outline, the blocks between the roads reached are within too: more area, and
+        // no holes.
+        use geo::Area;
+        let area_of = |t: &Table| t.features.iter().map(|f| f.geom.as_ref().unwrap().unsigned_area()).sum::<f64>();
+        let holes = |t: &Table| {
+            t.features
+                .iter()
+                .map(|f| match f.geom.as_ref().unwrap() {
+                    Geometry::Polygon(p) => p.interiors().len(),
+                    Geometry::MultiPolygon(m) => m.0.iter().map(|p| p.interiors().len()).sum(),
+                    _ => 0,
+                })
+                .sum::<usize>()
+        };
+        let (shaped, _) = run_for_test(
+            "ServiceAreas",
+            &[("breaks", "300, 600"), ("width", "20"), ("shape", "outline")],
+            vec![("Network", net.clone()), ("Facilities", shops.clone())],
+        )
+        .unwrap();
+        assert!(holes(&out[0].1) > 0 && holes(&shaped[0].1) == 0);
+        assert!(area_of(&shaped[0].1) > area_of(&out[0].1));
         // Allocation: the houses nearer each shop.
         let houses = Table {
             fields: vec![Field::new("house", FieldType::Int)],

@@ -55,7 +55,7 @@ impl GNode {
     }
     /// The input ports of the node, in the order they are shown.
     pub fn inputs(&self) -> Vec<String> {
-        ordered(self.ty().map(|t| t.inputs.iter().map(|p| p.to_string()).collect()).unwrap_or_default(), self.port_order("in"))
+        ordered(self.ty().map(|t| t.inputs_for(&self.params).iter().map(|p| p.to_string()).collect()).unwrap_or_default(), self.port_order("in"))
     }
     /// The order the user has given the ports on one side, if any. It is kept with the
     /// parameters, under a key the engine does not read.
@@ -658,12 +658,20 @@ pub struct CanvasEvents {
     pub show_folder: Option<NodeId>,
     /// "Group" in the menu of this node.
     pub group_nodes: Option<NodeId>,
+    /// "Make into a tool" in the menu of this node.
+    pub make_tool: Option<NodeId>,
+    /// "Open the tool" in the menu of a tool made of other tools.
+    pub open_tool: Option<NodeId>,
+    /// "Unpack" in the menu of a tool made of other tools.
+    pub unpack_tool: Option<NodeId>,
     /// The attribute list of this node was folded in or out.
     pub toggle_attributes: Option<String>,
     /// "Disable" or "Enable" in the menu of this node.
     pub toggle_disabled: Option<NodeId>,
     /// A connection was clicked.
     pub wire_clicked: Option<(OutPinId, InPinId)>,
+    /// The pointer is on this connection.
+    pub wire_hover: Option<(OutPinId, InPinId)>,
     /// A connection was clicked with the secondary button, at this place on the screen.
     pub wire_menu: Option<((OutPinId, InPinId), Pos2)>,
     /// A point of a connection was clicked with the secondary button: which, and where.
@@ -1468,6 +1476,27 @@ impl SnarlViewer<GNode> for Viewer<'_> {
             self.events.group_nodes = Some(node);
             ui.close();
         }
+        if !snarl[node].is_note() {
+            let make = if many { "Make the selected into a tool" } else { "Make into a tool" };
+            if ui
+                .button(make)
+                .on_hover_text("Puts the nodes in a tool of their own, one node with a model inside. What came in and went out become its ports")
+                .clicked()
+            {
+                self.events.make_tool = Some(node);
+                ui.close();
+            }
+        }
+        if !many && snarl[node].kind == "CustomTool" {
+            if ui.add(egui::Button::new("Open the tool").shortcut_text("Enter")).clicked() {
+                self.events.open_tool = Some(node);
+                ui.close();
+            }
+            if ui.button("Unpack").on_hover_text("Puts the nodes of the tool back in the model, in a box with its name").clicked() {
+                self.events.unpack_tool = Some(node);
+                ui.close();
+            }
+        }
         if ui.add(egui::Button::new(if many { "Copy selected" } else { "Copy" }).shortcut_text("Ctrl+C")).clicked() {
             self.events.copy = Some(node);
             ui.close();
@@ -1504,6 +1533,10 @@ impl SnarlViewer<GNode> for Viewer<'_> {
         self.events.rewired = true;
     }
 
+    fn wire_hovered(&mut self, from: OutPinId, to: InPinId, _snarl: &mut Snarl<GNode>) {
+        self.events.wire_hover = Some((from, to));
+    }
+
     fn wire_clicked(&mut self, from: &OutPin, to: &InPin, _snarl: &mut Snarl<GNode>) {
         self.events.wire_clicked = Some((from.id, to.id));
     }
@@ -1521,6 +1554,9 @@ impl SnarlViewer<GNode> for Viewer<'_> {
         } else if node_off(snarl, from.node) || node_off(snarl, to.node) {
             // To or from a disabled node, nothing flows: dashes, in a light grey.
             Stroke::new(default.width.max(2.0), self.pal.muted.gamma_multiply(0.55))
+        } else if wire_mismatch(snarl, from, to).is_some() {
+            // Ports that do not go together, such as features into a tool for rasters.
+            Stroke::new(default.width.max(2.0) * 1.3, self.pal.warn)
         } else {
             default
         }
@@ -1954,4 +1990,11 @@ pub fn data_kind(t: &og_engine::Table) -> DataKind {
     } else {
         DataKind::Features
     }
+}
+
+/// What is wrong with a connection whose ports surely do not go together, in words.
+pub fn wire_mismatch(snarl: &Snarl<GNode>, from: OutPinId, to: InPinId) -> Option<String> {
+    let (a, b) = (snarl.get_node(from.node)?, snarl.get_node(to.node)?);
+    let (out, inp) = (a.outputs().get(from.output)?.clone(), b.inputs().get(to.input)?.clone());
+    og_engine::portkinds::mismatch((&a.kind, &a.params, &out), &a.name, (&b.kind, &inp), &b.name)
 }

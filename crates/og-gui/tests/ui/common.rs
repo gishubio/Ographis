@@ -496,3 +496,13 @@ pub(crate) fn open_more(h: &mut Harness<'_, App>) {
         settle(h);
     }
 }
+
+/// Two clicks in the same moment, as a double click.
+pub(crate) fn double_click(h: &mut Harness<'_, App>, pos: egui::Pos2) {
+    pointer(h, pos, None);
+    // A frame each, a quarter of a second apart in the harness.
+    for pressed in [true, false, true, false] {
+        h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+    }
+    h.run_steps(2);
+}

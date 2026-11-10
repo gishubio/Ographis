@@ -22,6 +22,14 @@ macro_rules! look_params {
                 hint: "Degrees clockwise from north: 315 is from the north-west, as on most maps",
             },
             ParamSpec {
+                key: "light",
+                label: "Light",
+                kind: ParamKind::Choice(&[("one", "From the sun alone"), ("several", "From several directions, softer and clearer")]),
+                default: "one",
+                hint:
+                    "From several directions, slopes that face away from the sun are seen too, as on a good relief map. The shadows are still cast by the sun",
+            },
+            ParamSpec {
                 key: "sun_altitude",
                 label: "Sun height",
                 kind: ParamKind::Text,
@@ -69,16 +77,16 @@ macro_rules! look_params {
     };
 }
 
-pub(super) const LOOK: [ParamSpec; 9] = look_params!();
+pub(super) const LOOK: [ParamSpec; 10] = look_params!();
 
 pub(super) const SHADE_PARAMS: &[ParamSpec] = &{
-    let mut all = [LOOK[0]; 10];
+    let mut all = [LOOK[0]; 11];
     let mut i = 0;
-    while i < 9 {
+    while i < 10 {
         all[i] = LOOK[i];
         i += 1;
     }
-    all[9] = ParamSpec {
+    all[10] = ParamSpec {
         key: "width",
         label: "Width in pixels",
         kind: ParamKind::Text,
@@ -125,15 +133,15 @@ pub(super) const VIEW_PARAMS: &[ParamSpec] = &{
         },
         ParamSpec { key: "quality", label: "Edges", kind: ParamKind::Choice(QUALITY), default: "2", hint: "" },
     ];
-    let mut all = [LOOK[0]; 19];
+    let mut all = [LOOK[0]; 20];
     let mut i = 0;
-    while i < 9 {
+    while i < 10 {
         all[i] = LOOK[i];
         i += 1;
     }
     let mut k = 0;
     while k < 10 {
-        all[9 + k] = VIEW[k];
+        all[10 + k] = VIEW[k];
         k += 1;
     }
     all
@@ -147,6 +155,7 @@ pub(super) fn look(p: &P) -> Result<Look> {
     Ok(Look {
         sun_azimuth: number_param(p, "sun_azimuth", "Sun from")?.unwrap_or(315.0),
         sun_altitude: number_param(p, "sun_altitude", "Sun height")?.unwrap_or(35.0).clamp(1.0, 90.0),
+        several: p.get("light").as_deref() == Some("several"),
         exaggeration: number_param(p, "exaggeration", "The height exaggeration")?.unwrap_or(1.5).max(0.01),
         shadows: match p.get("shadows").as_deref() {
             Some("none") => Shadows::None,

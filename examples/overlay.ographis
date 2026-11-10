@@ -154,7 +154,8 @@
       "x": 444,
       "y": 480,
       "params": {
-        "group_by": "type"
+        "group_by": "type",
+        "parts": "together"
       },
       "comment": "One corridor per type"
     },

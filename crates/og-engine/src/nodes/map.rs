@@ -105,6 +105,35 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
     },
     ParamSpec { key: "legend_title", label: "Title of the legend", kind: ParamKind::Text, default: "", hint: "" },
     ParamSpec {
+        key: "scale_bar",
+        label: "Scale bar",
+        kind: ParamKind::Choice(LEGEND_PLACES),
+        default: "none",
+        hint: "A round length of about a fifth of the map, in metres or km",
+    },
+    ParamSpec { key: "north_arrow", label: "North arrow", kind: ParamKind::Choice(LEGEND_PLACES), default: "none", hint: "" },
+    ParamSpec {
+        key: "grid",
+        label: "Grid",
+        kind: ParamKind::Choice(&[("none", "None"), ("lines", "Lines across the map"), ("ticks", "Marks in the edge")]),
+        default: "none",
+        hint: "With the coordinates in the edge",
+    },
+    ParamSpec {
+        key: "grid_every",
+        label: "Grid every",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "In the units of the map, such as 1000 for every km in SWEREF 99 TM. Empty gives a round number by the size",
+    },
+    ParamSpec {
+        key: "source",
+        label: "Source",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Written small in the lower right corner, such as © Lantmäteriet, after the credit of the background map",
+    },
+    ParamSpec {
         key: "crs",
         label: "Coordinate system",
         kind: ParamKind::Crs,
@@ -154,6 +183,15 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
             if let Some(w) = r.get("size").and_then(|v| v.as_f64()) {
                 style.size = w.clamp(0.0, 200.0) as f32;
             }
+            if let Some(d) = r.get("dash").and_then(|v| v.as_str()) {
+                style.dash = d.to_string();
+            }
+            if let Some(Ok(c)) = color("casing") {
+                style.casing = c;
+            }
+            if let Some(w) = r.get("casing_width").and_then(|v| v.as_f64()) {
+                style.casing_width = w.clamp(0.0, 50.0) as f32;
+            }
             let show = r.get("show").and_then(|v| v.as_bool()).unwrap_or(true);
             let name = r.get("name").and_then(|v| v.as_str()).map(str::to_string).unwrap_or_default();
             let text = |k: &str| r.get(k).and_then(|v| v.as_str()).map(str::to_string).unwrap_or_default();
@@ -169,6 +207,10 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
                 order: text("order"),
                 order_by: text("order_by"),
                 cluster: num("cluster", 0.0).max(0.0) as f32,
+                arrow_by: text("arrow_by"),
+                arrow_from: r.get("arrow_from").and_then(|v| v.as_bool()).unwrap_or(false),
+                heat: num("heat", 0.0).max(0.0) as f32,
+                heat_by: text("heat_by"),
             };
             let d = crate::mapdraw::LabelSpec::default();
             let flag = |k: &str| r.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
@@ -193,6 +235,7 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
                     _ => d.halo,
                 },
                 halo_width: num("label_halo_width", d.halo_width as f64).clamp(0.0, 20.0) as f32,
+                spaced: flag("label_spaced"),
             };
             let icon = crate::mapdraw::IconSpec { name: text("icon"), by: text("icon_by"), style: text("icon_style") };
             let given = |k: &str| r.get(k).and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(crate::model::parse_number)));
@@ -236,6 +279,13 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                 if !r.show {
                     o["show"] = serde_json::Value::Bool(false);
                 }
+                if !r.style.dash.is_empty() {
+                    o["dash"] = serde_json::json!(r.style.dash);
+                }
+                if r.style.casing.is_some() {
+                    o["casing"] = serde_json::json!(crate::mapdraw::color_text(r.style.casing));
+                    o["casing_width"] = serde_json::json!(r.style.casing_width);
+                }
                 let t = &r.theme;
                 let mut put = |k: &str, v: serde_json::Value| {
                     o[k] = v;
@@ -262,6 +312,18 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                 if t.cluster > 0.0 {
                     put("cluster", serde_json::json!(t.cluster));
                 }
+                if !t.arrow_by.is_empty() {
+                    put("arrow_by", serde_json::Value::String(t.arrow_by.clone()));
+                    if t.arrow_from {
+                        put("arrow_from", serde_json::json!(true));
+                    }
+                }
+                if t.heat > 0.0 {
+                    put("heat", serde_json::json!(t.heat));
+                    if !t.heat_by.is_empty() {
+                        put("heat_by", serde_json::Value::String(t.heat_by.clone()));
+                    }
+                }
                 if !r.name.trim().is_empty() {
                     // As typed: a space at the end may be followed by another word.
                     o["name"] = serde_json::Value::String(r.name.clone());
@@ -286,7 +348,9 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                             put(k, serde_json::json!(v));
                         }
                     }
-                    for (k, v, dv) in [("label_all", l.all, d.all), ("label_bold", l.bold, d.bold), ("label_upper", l.upper, d.upper)] {
+                    for (k, v, dv) in
+                        [("label_all", l.all, d.all), ("label_bold", l.bold, d.bold), ("label_upper", l.upper, d.upper), ("label_spaced", l.spaced, d.spaced)]
+                    {
                         if v != dv {
                             put(k, serde_json::json!(v));
                         }
@@ -495,7 +559,15 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
                         Some(r) if r.keys.is_empty() => crate::mapdraw::LayerStyle { fill: Some([0xb4, 0xb2, 0xac, 255]), stroke: None, ..style.clone() },
                         _ => style.clone(),
                     },
-                    shape: if ra.is_some() { "area" } else { crate::mapdraw::shape_of(t) },
+                    shape: if ra.is_some() {
+                        "area"
+                    } else if th.heat > 0.0 {
+                        "heat"
+                    } else if th.angles.is_some() {
+                        "arrow"
+                    } else {
+                        crate::mapdraw::shape_of(t)
+                    },
                     heading: th.heading.clone(),
                     keys: match ra {
                         Some(r) => r.keys.clone(),
@@ -505,6 +577,7 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
                     size_keys: th.size_keys.clone(),
                     icon: (!row.icon.name.trim().is_empty() && row.icon.by.trim().is_empty()).then(|| crate::icons::icon_for(&row.icon.name)).flatten(),
                     icon_keys: icon_keys(t, &row.icon),
+                    heat_ramp: (th.heat > 0.0).then(|| th.heat_ramp.clone()),
                 })
                 .collect(),
             icon_styles: rows_drawn
@@ -532,6 +605,7 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
             th.keys.iter_mut().for_each(|k| look(&mut k.look));
             th.size_keys.iter_mut().for_each(|k| look(&mut k.look));
             th.cluster *= scale;
+            th.heat *= scale;
         }
         for l in labels.iter_mut().flatten() {
             l.spec.size *= scale;
@@ -588,7 +662,22 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
         }
         _ => (None, None),
     };
+    // Who the data is from, after who the background map is from.
+    let attribution = match (attribution, p.get("source").map(|s| s.trim().to_string()).filter(|s| !s.is_empty())) {
+        (Some(a), Some(s)) => Some(format!("{} · {}", a, s)),
+        (a, s) => a.or(s),
+    };
+    let furniture = crate::mapdraw::Furniture {
+        scale_bar: p.get("scale_bar").unwrap_or_default(),
+        north: p.get("north_arrow").unwrap_or_default(),
+        grid: p.get("grid").unwrap_or_default(),
+        grid_every: number_param(p, "grid_every", "Grid every")?,
+        geographic: ctx.geographic(Some(crs)).unwrap_or(false),
+    };
+    let names = rows_drawn.iter().map(|(part, row)| if row.name.trim().is_empty() { part.label.clone() } else { row.name.trim().to_string() }).collect();
     let req = crate::mapdraw::Request {
+        furniture,
+        names,
         layers: tables.iter().map(|(t, s)| (t.as_ref(), s.clone())).collect(),
         width,
         margin,

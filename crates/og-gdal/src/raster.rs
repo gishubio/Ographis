@@ -487,7 +487,7 @@ fn read_image(
             }
         }
     }
-    let image = og_engine::model::RasterImage { width: w, height: h, rgba, geotransform: gt };
+    let image = og_engine::model::RasterImage { vector: None, width: w, height: h, rgba, geotransform: gt };
     // The values of the bands go along, so that a click on the map tells the values of a
     // cell. A picture of red, green and blue carries its colours, which tell them already.
     let grid = if kept.is_empty() {
@@ -640,7 +640,7 @@ pub fn warp_image(img: &og_engine::model::RasterImage, from: u32, to: u32) -> Re
             rgba[k * 4 + b] = v;
         }
     }
-    Ok(og_engine::model::RasterImage { width: w, height: h, rgba, geotransform: gt })
+    Ok(og_engine::model::RasterImage { vector: None, width: w, height: h, rgba, geotransform: gt })
 }
 
 /// Contour lines of a grid, or the areas between them, through GDAL. They are made in a

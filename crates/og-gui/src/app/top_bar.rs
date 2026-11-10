@@ -90,6 +90,10 @@ impl App {
                     self.add_group(&self.selected.clone(), None);
                     ui.close();
                 }
+                if ui.add_enabled(n > 0, egui::Button::new("Make the selected into a tool")).clicked() {
+                    self.make_tool_of(&self.selected.clone());
+                    ui.close();
+                }
                 if ui.button("Add a note").clicked() {
                     self.add_node(NOTE);
                     ui.close();

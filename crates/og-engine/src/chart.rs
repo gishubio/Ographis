@@ -3,6 +3,7 @@
 //! and colour only on the data. The text is set in Inter, which is built into the program.
 
 use crate::model::{GbError, RasterImage, Result};
+use crate::vector::Canvas;
 use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Rect, Transform};
 
@@ -99,7 +100,7 @@ pub fn number(x: f64, decimals: usize, swedish: bool) -> String {
 }
 
 /// A step between grid lines that gives round numbers: 1, 2 or 5 times a power of ten.
-fn nice_step(span: f64, lines: f64) -> f64 {
+pub(crate) fn nice_step(span: f64, lines: f64) -> f64 {
     let raw = (span / lines).max(f64::MIN_POSITIVE);
     let p = 10f64.powf(raw.log10().floor());
     let f = raw / p;
@@ -255,21 +256,25 @@ impl Text {
         pb.finish()
     }
 
+    /// Draws a line of text as the outlines of its letters, as `draw` places it, so that a
+    /// PDF of the chart gets the letters as shapes.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn draw_on(&self, pm: &mut Canvas, s: &str, x: f32, y: f32, size: f32, bold: bool, rgb: [u8; 3], align: f32) {
+        if let Some(path) = self.path(s, size, bold) {
+            let w = self.width(s, size, bold);
+            pm.fill_path(&path, &paint(rgb), FillRule::Winding, Transform::from_translate(x - w * align, y), None);
+        }
+    }
+
     /// Draws a line of text turned by `degrees` counterclockwise, with the end of its baseline
     /// at (x, y): for names under columns that slant up to their column.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn draw_turned(&self, pm: &mut Pixmap, s: &str, x: f32, y: f32, size: f32, bold: bool, rgb: [u8; 3], degrees: f32) {
-        if degrees.abs() < 0.01 {
-            self.draw(pm, s, x, y, size, bold, rgb, 1.0);
-            return;
+    pub(crate) fn draw_turned(&self, pm: &mut Canvas, s: &str, x: f32, y: f32, size: f32, bold: bool, rgb: [u8; 3], degrees: f32) {
+        if let Some(path) = self.path(s, size, bold) {
+            let w = self.width(s, size, bold);
+            let t = Transform::from_translate(x, y).pre_rotate(-degrees).pre_translate(-w, 0.0);
+            pm.fill_path(&path, &paint(rgb), FillRule::Winding, t, None);
         }
-        let w = self.width(s, size, bold).ceil() + 4.0;
-        let h = (size * 1.4).ceil();
-        let Some(mut small) = Pixmap::new(w as u32, h as u32) else { return };
-        let base = size * 1.05;
-        self.draw(&mut small, s, 2.0, base, size, bold, rgb, 0.0);
-        let t = Transform::from_translate(x, y).pre_rotate(-degrees).pre_translate(-(w - 2.0), -base);
-        pm.draw_pixmap(0, 0, small.as_ref(), &tiny_skia::PixmapPaint { quality: tiny_skia::FilterQuality::Bilinear, ..Default::default() }, t, None);
     }
 }
 
@@ -280,7 +285,7 @@ fn paint(rgb: [u8; 3]) -> Paint<'static> {
     p
 }
 
-fn rect(pm: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, rgb: [u8; 3]) {
+fn rect(pm: &mut Canvas, x: f32, y: f32, w: f32, h: f32, rgb: [u8; 3]) {
     // As a path: tiny-skia's own way with thin smooth rectangles trips on some sizes.
     if let Some(r) = Rect::from_xywh(x, y, w.max(1.0), h.max(1.0)) {
         let path = PathBuilder::from_rect(r);
@@ -290,7 +295,7 @@ fn rect(pm: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, rgb: [u8; 3]) {
 
 /// A bar with its far end rounded and its foot square, from (x, y) by (w, h). `across`
 /// says the bar grows to the right; otherwise it grows upwards from its foot at y + h.
-fn bar(pm: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, across: bool, rgb: [u8; 3]) {
+fn bar(pm: &mut Canvas, x: f32, y: f32, w: f32, h: f32, across: bool, rgb: [u8; 3]) {
     let r = 4.0f32.min(if across { h / 2.0 } else { w / 2.0 }).min(if across { w } else { h }).max(0.0);
     let mut pb = PathBuilder::new();
     if across {
@@ -355,7 +360,7 @@ pub fn draw(c: &Chart) -> Result<RasterImage> {
         None => (c.width as f32 * 0.6).max(320.0 * k) + turned_room(&text, c, label_size, c.width as f32) - label_size * 2.4,
     };
     let (w, h) = (c.width as f32, height);
-    let mut pm = Pixmap::new(c.width, height.round() as u32).ok_or_else(|| GbError("There is not memory enough for a chart that large.".into()))?;
+    let mut pm = Canvas::new(c.width, height.round() as u32, true).ok_or_else(|| GbError("There is not memory enough for a chart that large.".into()))?;
     if let Some(bg) = c.background {
         pm.fill(Color::from_rgba8(bg[0], bg[1], bg[2], 255));
     }
@@ -396,7 +401,7 @@ pub fn draw(c: &Chart) -> Result<RasterImage> {
         while v <= s1 + step * 1e-9 {
             let x = at(v).round() + 0.5;
             rect(&mut pm, x - 0.5, plot_top, 1.0 * k.max(1.0), plot_bottom - plot_top, if v == 0.0 { BASELINE } else { GRID });
-            text.draw(&mut pm, &tick_text(v), x, plot_top - tick_size * 0.7, tick_size, false, MUTED, 0.5);
+            text.draw_on(&mut pm, &tick_text(v), x, plot_top - tick_size * 0.7, tick_size, false, MUTED, 0.5);
             v += step;
         }
         let thick = (band * 0.62).min(24.0 * k).max(4.0);
@@ -411,9 +416,9 @@ pub fn draw(c: &Chart) -> Result<RasterImage> {
                 rect(&mut pm, b, cy - thick / 2.0, a - b, thick, rgb);
             }
             let shown = text.fit(name, label_size, false, name_w - 12.0 * k);
-            text.draw(&mut pm, &shown, x0 - 10.0 * k, cy + label_size * 0.36, label_size, false, SECONDARY, 1.0);
+            text.draw_on(&mut pm, &shown, x0 - 10.0 * k, cy + label_size * 0.36, label_size, false, SECONDARY, 1.0);
             if show_label(i) {
-                text.draw(&mut pm, &value_text(*value), b.max(a) + 6.0 * k, cy + label_size * 0.36, label_size, false, INK, 0.0);
+                text.draw_on(&mut pm, &value_text(*value), b.max(a) + 6.0 * k, cy + label_size * 0.36, label_size, false, INK, 0.0);
             }
         }
         if c.mean_line {
@@ -421,7 +426,7 @@ pub fn draw(c: &Chart) -> Result<RasterImage> {
             let x = at(mean);
             rect(&mut pm, x - 0.75 * k, plot_top - 4.0 * k, 1.5 * k, plot_bottom - plot_top + 8.0 * k, INK);
             let label = format!("mean {}", value_text(mean));
-            text.draw(&mut pm, &label, x, plot_bottom + label_size * 1.4, label_size, true, INK, 0.5);
+            text.draw_on(&mut pm, &label, x, plot_bottom + label_size * 1.4, label_size, true, INK, 0.5);
         }
     } else {
         let tick_w = [s0, s1].iter().map(|v| text.width(&tick_text(*v), tick_size, false)).fold(0.0f32, f32::max) + 12.0 * k;
@@ -434,7 +439,7 @@ pub fn draw(c: &Chart) -> Result<RasterImage> {
         while v <= s1 + step * 1e-9 {
             let y = at(v).round() + 0.5;
             rect(&mut pm, x0, y - 0.5, x1 - x0, 1.0 * k.max(1.0), if v == 0.0 { BASELINE } else { GRID });
-            text.draw(&mut pm, &tick_text(v), x0 - 8.0 * k, y + tick_size * 0.35, tick_size, false, MUTED, 1.0);
+            text.draw_on(&mut pm, &tick_text(v), x0 - 8.0 * k, y + tick_size * 0.35, tick_size, false, MUTED, 1.0);
             v += step;
         }
         let slot = (x1 - x0) / n as f32;
@@ -460,10 +465,10 @@ pub fn draw(c: &Chart) -> Result<RasterImage> {
                 text.draw_turned(&mut pm, &shown, cx + dx, plot_bottom + dy, label_size, false, SECONDARY, c.label_angle);
             } else {
                 let shown = text.fit(name, label_size, false, slot * 0.96);
-                text.draw(&mut pm, &shown, cx, plot_bottom + label_size * 1.5, label_size, false, SECONDARY, 0.5);
+                text.draw_on(&mut pm, &shown, cx, plot_bottom + label_size * 1.5, label_size, false, SECONDARY, 0.5);
             }
             if show_label(i) {
-                text.draw(&mut pm, &value_text(*value), cx, b.min(a) - 6.0 * k, label_size, false, INK, 0.5);
+                text.draw_on(&mut pm, &value_text(*value), cx, b.min(a) - 6.0 * k, label_size, false, INK, 0.5);
             }
         }
         if c.mean_line {
@@ -471,7 +476,7 @@ pub fn draw(c: &Chart) -> Result<RasterImage> {
             let y = at(mean);
             rect(&mut pm, x0 - 4.0 * k, y - 0.75 * k, x1 - x0 + 8.0 * k, 1.5 * k, INK);
             let label = format!("mean {}", value_text(mean));
-            text.draw(&mut pm, &label, x1, y - 6.0 * k, label_size, true, INK, 1.0);
+            text.draw_on(&mut pm, &label, x1, y - 6.0 * k, label_size, true, INK, 1.0);
         }
     }
 
@@ -479,18 +484,18 @@ pub fn draw(c: &Chart) -> Result<RasterImage> {
     let mut y = pad + title_size * 0.95;
     if !c.title.is_empty() {
         let t = text.fit(&c.title, title_size, true, w - 2.0 * pad);
-        text.draw(&mut pm, &t, pad, y, title_size, true, INK, 0.0);
+        text.draw_on(&mut pm, &t, pad, y, title_size, true, INK, 0.0);
         y += sub_size * 1.6;
     } else {
         y = pad + sub_size;
     }
     if !c.subtitle.is_empty() {
         let t = text.fit(&c.subtitle, sub_size, false, w - 2.0 * pad);
-        text.draw(&mut pm, &t, pad, y, sub_size, false, SECONDARY, 0.0);
+        text.draw_on(&mut pm, &t, pad, y, sub_size, false, SECONDARY, 0.0);
     }
     if !c.note.is_empty() {
         let t = text.fit(&c.note, note_size, false, w - 2.0 * pad);
-        text.draw(&mut pm, &t, pad, h - pad * 0.7, note_size, false, MUTED, 0.0);
+        text.draw_on(&mut pm, &t, pad, h - pad * 0.7, note_size, false, MUTED, 0.0);
     }
 
     let mut rgba = Vec::with_capacity((pm.width() * pm.height() * 4) as usize);
@@ -498,7 +503,8 @@ pub fn draw(c: &Chart) -> Result<RasterImage> {
         let c = p.demultiply();
         rgba.extend_from_slice(&[c.red(), c.green(), c.blue(), c.alpha()]);
     }
-    Ok(RasterImage { width: pm.width() as usize, height: pm.height() as usize, rgba, geotransform: [0.0, 1.0, 0.0, pm.height() as f64, 0.0, -1.0] })
+    let vector = pm.picture().map(std::sync::Arc::new);
+    Ok(RasterImage { vector, width: pm.width() as usize, height: pm.height() as usize, rgba, geotransform: [0.0, 1.0, 0.0, pm.height() as f64, 0.0, -1.0] })
 }
 
 /// A line chart: one line per series through its points, x a number or a date.
@@ -550,7 +556,7 @@ pub fn draw_lines(c: &LineChart) -> Result<RasterImage> {
     let pad = 28.0 * k;
     let w = c.width as f32;
     let h = c.height.map_or(w * 0.56, |h| h as f32);
-    let mut pm = Pixmap::new(c.width, h.round() as u32).ok_or_else(|| GbError("There is not memory enough for a chart that large.".into()))?;
+    let mut pm = Canvas::new(c.width, h.round() as u32, true).ok_or_else(|| GbError("There is not memory enough for a chart that large.".into()))?;
     if let Some(bg) = c.background {
         pm.fill(Color::from_rgba8(bg[0], bg[1], bg[2], 255));
     }
@@ -597,7 +603,7 @@ pub fn draw_lines(c: &LineChart) -> Result<RasterImage> {
     while v <= y1 + ystep * 1e-9 {
         let y = at_y(v).round() + 0.5;
         rect(&mut pm, x0p, y - 0.5, x1p - x0p, 1.0 * k.max(1.0), if v == 0.0 { BASELINE } else { GRID });
-        text.draw(&mut pm, &ytick(v), x0p - 8.0 * k, y + tick_size * 0.35, tick_size, false, MUTED, 1.0);
+        text.draw_on(&mut pm, &ytick(v), x0p - 8.0 * k, y + tick_size * 0.35, tick_size, false, MUTED, 1.0);
         v += ystep;
     }
     // Ticks along x: round numbers, or years, months or days.
@@ -625,7 +631,7 @@ pub fn draw_lines(c: &LineChart) -> Result<RasterImage> {
             number(v, if xstep < 1.0 { (-xstep.log10()).ceil() as usize } else { 0 }, c.swedish)
                 .replace('\u{a0}', if v.abs() >= 10000.0 { "\u{a0}" } else { "" })
         };
-        text.draw(&mut pm, &label, x, ybot + tick_size * 1.6, tick_size, false, MUTED, 0.5);
+        text.draw_on(&mut pm, &label, x, ybot + tick_size * 1.6, tick_size, false, MUTED, 0.5);
         if c.dates && xstep >= 365.0 {
             // Whole years, also in leap years.
             let d = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("a date") + chrono::Duration::days(v as i64);
@@ -681,24 +687,24 @@ pub fn draw_lines(c: &LineChart) -> Result<RasterImage> {
         }
         for (y, name, rgb) in &ends {
             let shown = text.fit(name, label_size, true, name_w - 10.0 * k);
-            text.draw(&mut pm, &shown, x1p + 8.0 * k, y + label_size * 0.35, label_size, true, *rgb, 0.0);
+            text.draw_on(&mut pm, &shown, x1p + 8.0 * k, y + label_size * 0.35, label_size, true, *rgb, 0.0);
         }
     }
     let mut y = pad + title_size * 0.95;
     if !c.title.is_empty() {
         let t = text.fit(&c.title, title_size, true, w - 2.0 * pad);
-        text.draw(&mut pm, &t, pad, y, title_size, true, INK, 0.0);
+        text.draw_on(&mut pm, &t, pad, y, title_size, true, INK, 0.0);
         y += sub_size * 1.6;
     } else {
         y = pad + sub_size;
     }
     if !c.subtitle.is_empty() {
         let t = text.fit(&c.subtitle, sub_size, false, w - 2.0 * pad);
-        text.draw(&mut pm, &t, pad, y, sub_size, false, SECONDARY, 0.0);
+        text.draw_on(&mut pm, &t, pad, y, sub_size, false, SECONDARY, 0.0);
     }
     if !c.note.is_empty() {
         let t = text.fit(&c.note, note_size, false, w - 2.0 * pad);
-        text.draw(&mut pm, &t, pad, h - pad * 0.7, note_size, false, MUTED, 0.0);
+        text.draw_on(&mut pm, &t, pad, h - pad * 0.7, note_size, false, MUTED, 0.0);
     }
     let _ = c.decimals;
     let mut rgba = Vec::with_capacity((pm.width() * pm.height() * 4) as usize);
@@ -706,7 +712,8 @@ pub fn draw_lines(c: &LineChart) -> Result<RasterImage> {
         let c = p.demultiply();
         rgba.extend_from_slice(&[c.red(), c.green(), c.blue(), c.alpha()]);
     }
-    Ok(RasterImage { width: pm.width() as usize, height: pm.height() as usize, rgba, geotransform: [0.0, 1.0, 0.0, pm.height() as f64, 0.0, -1.0] })
+    let vector = pm.picture().map(std::sync::Arc::new);
+    Ok(RasterImage { vector, width: pm.width() as usize, height: pm.height() as usize, rgba, geotransform: [0.0, 1.0, 0.0, pm.height() as f64, 0.0, -1.0] })
 }
 
 /// The colour of the surface under a chart that has one.

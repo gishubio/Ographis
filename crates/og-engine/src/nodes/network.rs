@@ -104,8 +104,10 @@ pub(super) fn network_from(p: &P, net_t: &Table, ctx: &mut NodeCtx) -> Result<(N
     let time = p.get("cost").as_deref() == Some("time");
     let speed = compile("speed", "The speed")?;
     let speed_back = compile("speed_against", "The speed against the line")?;
+    let default_speed_given = number_param(p, "default_speed", "The speed where none is given")?;
     if time && speed.is_none() {
-        return err("Give the speed, an attribute of the network in km/h, for the quickest route. Or choose the shortest.");
+        // Without a speed of its own, every road is as quick: walking, or a rough guess.
+        ctx.notes.info(format!("every road at {} km/h, since no speed is given", fmt_real(default_speed_given.unwrap_or(50.0))));
     }
     let along_if = compile("along", "Along the line")?;
     let against_if = compile("against", "Against the line")?;

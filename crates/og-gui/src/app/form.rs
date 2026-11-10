@@ -296,7 +296,17 @@ impl App {
                 i
             };
             let backend_ref = &*self.backend;
-            let variables_ref = &self.variables;
+            // The variables, and the values the node takes from the data of other nodes.
+            let with_data = {
+                let ws = self.canvas_workspace();
+                let id = self.snarl[node_id].id.clone();
+                ws.nodes
+                    .iter()
+                    .find(|n| n.id == id)
+                    .map(|n| og_engine::run::variables_with_data(n, &ws, self.result.as_deref()))
+                    .unwrap_or_else(|| self.variables.clone())
+            };
+            let variables_ref = &with_data;
             let preview = |port: &str, src: &str| -> Option<String> {
                 let tables = incoming(port);
                 let table = tables.iter().find(|t| !t.features.is_empty())?;
@@ -320,6 +330,14 @@ impl App {
                 stream_fields: &stream_fields,
                 stream_raster: &stream_raster,
                 suggest: crate::settings::suggestions(&self.settings),
+                hints_always: crate::settings::hints_always(&self.settings),
+                ran_at: self.result_at.map(|t| {
+                    if t.date() == chrono::Local::now().date_naive() {
+                        t.format("%H:%M").to_string()
+                    } else {
+                        t.format("%Y-%m-%d %H:%M").to_string()
+                    }
+                }),
                 db_connections: &db_connections,
                 api_connections: &api_connections,
                 crs_list: &crs_list,
@@ -335,7 +353,7 @@ impl App {
                     .or_else(|| db_key.as_ref().and_then(|k| self.lookup.layers(std::path::Path::new(k)))),
                 values: &values,
                 classes: &classes,
-                variables: &self.variables,
+                variables: &with_data,
                 connections: &connections,
             };
             let node = &mut self.snarl[node_id];
@@ -343,6 +361,35 @@ impl App {
             let format_before = node.params.get("format").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let edited = params::node_form(ui, node, &cx);
             self.class_counts = class_counts;
+            // What an output wrote in the latest run can be opened from its form.
+            if group == Some(Group::Writer) {
+                let id = self.snarl[node_id].id.clone();
+                let wrote: Vec<std::path::PathBuf> =
+                    self.result.as_ref().and_then(|r| r.nodes.get(&id)).map(|n| n.files.iter().filter(|f| f.exists()).cloned().collect()).unwrap_or_default();
+                if let Some(first) = wrote.first().cloned() {
+                    let page = wrote.iter().find(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("html"))).cloned();
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Open folder").on_hover_text(format!("Shows {} in its folder", first.display())).clicked() {
+                            self.show_in_folder(&first);
+                        }
+                        let open = match (&page, wrote.len()) {
+                            (Some(page), _) => Some((page.clone(), "Open in browser")),
+                            (None, 1) => Some((first.clone(), "Open")),
+                            _ => None,
+                        };
+                        if let Some((file, label)) = open {
+                            if ui.button(label).on_hover_text(format!("Opens {} with the program this computer uses for it", file.display())).clicked() {
+                                if self.quiet {
+                                    self.shown.push(file.clone());
+                                } else if let Err(e) = super::navigator::open_with_system(&file) {
+                                    self.say(format!("{} could not be opened: {}", file.display(), e));
+                                }
+                            }
+                        }
+                    });
+                }
+            }
             // An input asked to read from PostGIS, or an output given a format that another
             // tool writes: a GeoSpatial PDF or a table in PostGIS.
             if edited.postgis {
@@ -353,6 +400,15 @@ impl App {
             }
             if edited.save_connection {
                 self.save_as_connection(node_id);
+            }
+            if edited.open_tool || edited.unpack_tool {
+                let id = self.snarl[node_id].id.clone();
+                if edited.open_tool {
+                    self.open_tool(&id);
+                } else {
+                    self.unpack_tool(&id);
+                }
+                return;
             }
             if edited.pick_area {
                 let id = self.snarl[node_id].id.clone();
@@ -552,9 +608,10 @@ impl App {
         ui.label(RichText::new(format!("{} nodes selected", self.selected.len())).font(theme::strong(16.0)));
         ui.label(RichText::new("Drag one of them to move them all. Click a single node to set it up.").color(pal.muted));
         ui.add_space(6.0);
-        let (mut duplicate, mut remove, mut group) = (false, false, false);
+        let (mut duplicate, mut remove, mut group, mut tool) = (false, false, false, false);
         ui.horizontal(|ui| {
             group = ui.button("Group").on_hover_text("Put a group box around them (Ctrl+G)").clicked();
+            tool = ui.button("Make a tool").on_hover_text("Puts them in a tool of their own: one node with a model inside").clicked();
             duplicate = ui.button("Duplicate").on_hover_text("Ctrl+D").clicked();
             remove = ui.button(RichText::new("Delete").color(pal.err)).on_hover_text("Delete").clicked();
         });
@@ -575,6 +632,9 @@ impl App {
         });
         if group {
             self.add_group(&self.selected.clone(), None);
+        }
+        if tool {
+            self.make_tool_of(&self.selected.clone());
         }
         if duplicate {
             self.duplicate_nodes(&self.selected.clone());

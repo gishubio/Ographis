@@ -1,0 +1,528 @@
+{
+  "format": "ographis/1",
+  "name": "Analysis",
+  "nodes": [
+    {
+      "id": "people",
+      "type": "Reader",
+      "name": "People",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "analysis/people.geojson"
+      },
+      "comment": "Made-up people in squares of 250 m, from tools/make_analysis_example.py"
+    },
+    {
+      "id": "hot",
+      "type": "HotSpots",
+      "name": "Hot spots of people",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "value": "people",
+        "distance": "400"
+      }
+    },
+    {
+      "id": "moran",
+      "type": "SpatialAutocorrelation",
+      "name": "Do many live near many?",
+      "x": 280,
+      "y": 220,
+      "params": {
+        "value": "people",
+        "distance": "600",
+        "permutations": "199"
+      }
+    },
+    {
+      "id": "moran_out",
+      "type": "Writer",
+      "name": "Moran's I",
+      "x": 540,
+      "y": 260,
+      "params": {
+        "path": "out/analysis/morans_i.csv"
+      }
+    },
+    {
+      "id": "hot_map",
+      "type": "MapRenderer",
+      "name": "Map of hot spots",
+      "x": 540,
+      "y": 20,
+      "params": {
+        "width": "1000",
+        "background": "#ffffff",
+        "legend": "bottom-right",
+        "legend_title": "Cold spots at -3 to hot spots at 3",
+        "layers": [
+          {
+            "from": "hot:Output",
+            "fill": "#cccccc",
+            "stroke": "#ffffff",
+            "width": 0.5,
+            "size": 4,
+            "color_by": "hot_class",
+            "ramp": "diverging",
+            "classes": 7,
+            "method": "equal"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hot_png",
+      "type": "Writer",
+      "name": "Hot spots as PNG",
+      "x": 800,
+      "y": 20,
+      "params": {
+        "path": "out/analysis/hot_spots.png"
+      }
+    },
+    {
+      "id": "walk",
+      "type": "Reader",
+      "name": "A walk with a GPS",
+      "x": 20,
+      "y": 460,
+      "params": {
+        "path": "analysis/walk.csv",
+        "x": "e",
+        "y": "n",
+        "crs": "EPSG:3006"
+      },
+      "comment": "A point every 20 seconds, with a coffee, a lost signal and a point that jumps"
+    },
+    {
+      "id": "tracks",
+      "type": "TrackBuilder",
+      "name": "Tracks and stops",
+      "x": 280,
+      "y": 460,
+      "params": {
+        "time": "time",
+        "gap": "15",
+        "stop_radius": "30",
+        "stop_minutes": "5",
+        "fastest": "40"
+      }
+    },
+    {
+      "id": "tracks_out",
+      "type": "Writer",
+      "name": "Tracks",
+      "x": 540,
+      "y": 420,
+      "params": {
+        "path": "out/analysis/walk_tracks.csv"
+      }
+    },
+    {
+      "id": "clusters",
+      "type": "PointClusters",
+      "name": "Where it lingered",
+      "x": 540,
+      "y": 540,
+      "params": {
+        "distance": "15",
+        "min_points": "10"
+      }
+    },
+    {
+      "id": "walk_map",
+      "type": "MapRenderer",
+      "name": "Map of the walk",
+      "x": 800,
+      "y": 460,
+      "params": {
+        "width": "1000",
+        "background": "#ffffff",
+        "legend": "bottom-right",
+        "layers": [
+          {
+            "from": "tracks:Stops",
+            "fill": "#e31a1c",
+            "stroke": "#ffffff",
+            "width": 1.5,
+            "size": 14,
+            "label": "minutes"
+          },
+          {
+            "from": "tracks:Tracks",
+            "fill": "none",
+            "stroke": "#1f78b4",
+            "width": 2.5,
+            "size": 4
+          },
+          {
+            "from": "tracks:Points",
+            "heat": 25
+          }
+        ]
+      }
+    },
+    {
+      "id": "walk_png",
+      "type": "Writer",
+      "name": "Walk as PNG",
+      "x": 1060,
+      "y": 460,
+      "params": {
+        "path": "out/analysis/walk.png"
+      }
+    },
+    {
+      "id": "wind",
+      "type": "Reader",
+      "name": "Wind",
+      "x": 20,
+      "y": 700,
+      "params": {
+        "path": "analysis/wind.csv",
+        "x": "e",
+        "y": "n",
+        "crs": "EPSG:3006"
+      }
+    },
+    {
+      "id": "wind_map",
+      "type": "MapRenderer",
+      "name": "Map of the wind",
+      "x": 280,
+      "y": 700,
+      "params": {
+        "width": "800",
+        "background": "#ffffff",
+        "legend": "bottom-right",
+        "legend_title": "Wind, m/s",
+        "layers": [
+          {
+            "from": "wind:Output",
+            "fill": "#1f78b4",
+            "stroke": "#1f78b4",
+            "width": 2,
+            "size": 30,
+            "arrow_by": "from_degrees",
+            "arrow_from": true,
+            "size_by": "speed",
+            "size_min": 20,
+            "size_max": 60,
+            "label": "speed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "wind_png",
+      "type": "Writer",
+      "name": "Wind as PNG",
+      "x": 540,
+      "y": 700,
+      "params": {
+        "path": "out/analysis/wind.png"
+      }
+    },
+    {
+      "id": "terrain",
+      "type": "Reader",
+      "name": "Terrain",
+      "x": 20,
+      "y": 900,
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      },
+      "comment": "The made-up terrain, 20 m"
+    },
+    {
+      "id": "hollows",
+      "type": "Depressions",
+      "name": "Hollows",
+      "x": 280,
+      "y": 900,
+      "params": {
+        "min_depth": "1",
+        "min_area": "10000"
+      }
+    },
+    {
+      "id": "hollows_out",
+      "type": "Writer",
+      "name": "Hollows",
+      "x": 540,
+      "y": 860,
+      "params": {
+        "path": "out/analysis/hollows.gpkg"
+      }
+    },
+    {
+      "id": "roads",
+      "type": "Reader",
+      "name": "Streets",
+      "x": 20,
+      "y": 1100,
+      "params": {
+        "path": "analysis/roads.geojson"
+      }
+    },
+    {
+      "id": "wet",
+      "type": "SpatialJoiner",
+      "name": "Streets in hollows",
+      "x": 540,
+      "y": 1000,
+      "params": {
+        "relation": "intersects",
+        "mode": "first",
+        "attributes": "hollow, max_depth"
+      }
+    },
+    {
+      "id": "wet_out",
+      "type": "Writer",
+      "name": "Streets under water",
+      "x": 800,
+      "y": 1000,
+      "params": {
+        "path": "out/analysis/streets_in_hollows.csv"
+      }
+    },
+    {
+      "id": "classes",
+      "type": "ImageClassifier",
+      "name": "Kinds of land",
+      "x": 280,
+      "y": 1100,
+      "params": {
+        "method": "kmeans",
+        "classes": "5"
+      },
+      "comment": "The terrain put in five groups by height, as a picture of several bands would be by colour"
+    },
+    {
+      "id": "classes_out",
+      "type": "Writer",
+      "name": "Kinds of land as GeoTIFF",
+      "x": 540,
+      "y": 1140,
+      "params": {
+        "path": "out/analysis/terrain_classes.tif"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "people",
+        "Output"
+      ],
+      "to": [
+        "hot",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "people",
+        "Output"
+      ],
+      "to": [
+        "moran",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "moran",
+        "Summary"
+      ],
+      "to": [
+        "moran_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "hot",
+        "Output"
+      ],
+      "to": [
+        "hot_map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "hot_map",
+        "Map"
+      ],
+      "to": [
+        "hot_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "walk",
+        "Output"
+      ],
+      "to": [
+        "tracks",
+        "Points"
+      ]
+    },
+    {
+      "from": [
+        "tracks",
+        "Tracks"
+      ],
+      "to": [
+        "tracks_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "tracks",
+        "Points"
+      ],
+      "to": [
+        "clusters",
+        "Points"
+      ]
+    },
+    {
+      "from": [
+        "tracks",
+        "Stops"
+      ],
+      "to": [
+        "walk_map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "tracks",
+        "Tracks"
+      ],
+      "to": [
+        "walk_map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "tracks",
+        "Points"
+      ],
+      "to": [
+        "walk_map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "walk_map",
+        "Map"
+      ],
+      "to": [
+        "walk_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "wind",
+        "Output"
+      ],
+      "to": [
+        "wind_map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "wind_map",
+        "Map"
+      ],
+      "to": [
+        "wind_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "terrain",
+        "Output"
+      ],
+      "to": [
+        "hollows",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "hollows",
+        "Hollows"
+      ],
+      "to": [
+        "hollows_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "roads",
+        "Output"
+      ],
+      "to": [
+        "wet",
+        "Features"
+      ]
+    },
+    {
+      "from": [
+        "hollows",
+        "Hollows"
+      ],
+      "to": [
+        "wet",
+        "Join"
+      ]
+    },
+    {
+      "from": [
+        "wet",
+        "Joined"
+      ],
+      "to": [
+        "wet_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "terrain",
+        "Output"
+      ],
+      "to": [
+        "classes",
+        "Raster"
+      ]
+    },
+    {
+      "from": [
+        "classes",
+        "Raster"
+      ],
+      "to": [
+        "classes_out",
+        "Input"
+      ]
+    }
+  ]
+}

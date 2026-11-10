@@ -150,7 +150,9 @@
       "type": "Dissolver",
       "x": 920,
       "y": 180,
-      "params": {},
+      "params": {
+        "parts": "together"
+      },
       "comment": "One zone"
     },
     {

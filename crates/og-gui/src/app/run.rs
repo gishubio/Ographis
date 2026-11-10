@@ -7,6 +7,12 @@ impl App {
     /// Starts a run in a thread of its own, so that the window does not freeze. The thread
     /// reports node by node, so that the counts on the canvas fill in while it runs.
     pub fn run(&mut self, ctx: &egui::Context) {
+        // Variables marked Ask are asked for first, unless they were just given.
+        let ask: Vec<og_engine::Variable> = self.variables.iter().filter(|v| v.ask && !v.name.trim().is_empty()).cloned().collect();
+        if !std::mem::take(&mut self.asked) && !ask.is_empty() && !self.is_running() {
+            self.asking = Some(ask);
+            return;
+        }
         // With the cache on, what has not changed since the latest run is taken from it.
         // Outputs and Run model always run: files are written, and another model may have
         // changed.
@@ -77,6 +83,13 @@ impl App {
         if self.is_running() || !self.take_lock() {
             return;
         }
+        // The whole model runs, so the canvas goes back out to it, where the results are shown.
+        let (fresh, must) = if self.in_tool() {
+            self.close_all_tools();
+            (None, None)
+        } else {
+            (fresh, must)
+        };
         let scope_only = must.is_some();
         let sample = self.trial.take();
         let (ws, base, backend, ctx) = (self.workspace(), self.base_dir(), self.backend.clone(), ctx.clone());
@@ -418,5 +431,6 @@ impl App {
             self.tab = Tab::Log;
         }
         self.result = Some(Arc::new(result));
+        self.result_at = Some(chrono::Local::now().naive_local());
     }
 }

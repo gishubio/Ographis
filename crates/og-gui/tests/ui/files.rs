@@ -496,7 +496,7 @@ fn a_writer_is_told_the_format_and_the_fields() {
     h.run_steps(2);
     h.event(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
-        delta: egui::vec2(0.0, -600.0),
+        delta: egui::vec2(0.0, -900.0),
         phase: egui::TouchPhase::Move,
         modifiers: Default::default(),
     });

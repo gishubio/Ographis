@@ -139,7 +139,7 @@ fn resample(f: &Frame, grid: &Grid, src: &Source, fade: f32) -> RasterImage {
             rgba[(py * w + px) * 4..(py * w + px) * 4 + 4].copy_from_slice(&c);
         }
     }
-    RasterImage { width: w, height: h, rgba, geotransform: f.geotransform() }
+    RasterImage { vector: None, width: w, height: h, rgba, geotransform: f.geotransform() }
 }
 
 /// Where tiles are kept between runs.

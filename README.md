@@ -18,12 +18,19 @@ og run examples/skaraborg.ographis            the same model from the command li
 > Ographis is a hobby project, kept up in spare time by one person. Issues and pull requests
 > are welcome and read, but an answer may take a while.
 >
-> Ographis is written by Claude, guided by human GIS expertise. It is not:
+> Ographis is written by Claude, guided by human GIS expertise. It is not feature complete
+> or polished, and parts of it are thinly documented.
 >
-> - feature complete
-> - polished
-> - well tested
-> - well documented
+> **How it is tested.** More than 500 automatic tests, on Linux: whole models, reading and
+> writing every format, PostGIS, and the graphical program itself. GitHub runs those of the
+> engine and the formats on every push, and all of them run before each release. What they
+> do not cover yet:
+>
+> - Windows, where the program is mostly used, is checked by hand; what has not been checked
+>   there is listed in [docs/BUILD-WINDOWS.md](docs/BUILD-WINDOWS.md).
+> - The results are not yet compared with independent tools such as GEOS, PostGIS and QGIS,
+>   or with cases worked out by a person. That is what version 0.98 is for. Until then,
+>   check what matters against a tool you trust.
 >
 > Ographis is provided "as is". Run and use Ographis at your own risk.
 
@@ -55,6 +62,15 @@ settings file.
 
 ## Getting started
 
+On Windows 11, download `Ographis-<version>-windows.zip` from the
+[releases](https://github.com/gishubio/Ographis/releases), unpack the whole of it into a
+folder of its own and double-click `ographis.exe`. GDAL and PROJ come with it: nothing else
+needs to be installed, neither Rust nor OSGeo4W, and no administrator rights. The program
+is not signed, so Windows may ask: click *More info* and *Run anyway*. `READ-ME-FIRST.txt`
+in the folder says the same.
+
+### Building it yourself
+
 On Windows 11, once Rust and GDAL (OSGeo4W) are installed, the program is built and started
 like this. The steps are in [docs/BUILD-WINDOWS.md](docs/BUILD-WINDOWS.md).
 
@@ -66,8 +82,11 @@ like this. The steps are in [docs/BUILD-WINDOWS.md](docs/BUILD-WINDOWS.md).
 `.\build.cmd -Package` also makes a folder and a zip file in `dist` that runs on a computer
 without OSGeo4W. On Linux, `cargo build --release` with GDAL 3.4 or later installed (see `CONTRIBUTING.md`).
 
+### First steps
+
 Open one of the [examples](docs/EXAMPLES.md), press F5 to run it, and click a node to see
-what came out of it.
+what came out of it. A model is a file: save it, run it again from the command line or on a
+schedule, and give it to someone else to check how a result was made.
 
 ### What the computer needs
 
@@ -87,7 +106,7 @@ run as they did, and its settings are taken over the first time Ographis starts.
 | `crates/og-cli` | The command line `og`. |
 | `crates/og-gui` | The graphical program `ographis`, built with egui and egui-snarl. No web technology. |
 | `vendor/egui-snarl` | The node canvas library, with a small patch. See `vendor/egui-snarl/OGRAPHIS.md`. |
-| `examples/` | Example data and 45 models, also for web APIs in `apis/`; `formats/` holds a CAD drawing, GeoParquet, a city model and vector tiles, and `pointcloud/` a point cloud as from a drone. `house/` holds the example house, which Ographis made itself, as OBJ and as glTF, and `tiles/` three of it as 3D Tiles. |
+| `examples/` | Example data and 60 models, also for web APIs in `apis/`; `formats/` holds a CAD drawing, GeoParquet, a city model and vector tiles, and `pointcloud/` a point cloud as from a drone. `house/` holds the example house, which Ographis made itself, as OBJ and as glTF, and `tiles/` three of it as 3D Tiles. |
 | `build.cmd`, `build.ps1` | Builds on Windows 11: finds GDAL, builds, writes launchers and runs the build test. With `-Package`, also a folder and a zip file in `dist` that runs on a computer without OSGeo4W, to give to others. |
 | `docs/GUIDE.md` | The graphical program, the command line and what to do when something goes wrong. |
 | `docs/TOOLS.md` | Every input, tool and output, and the model format. |

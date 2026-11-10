@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.95.3. Written by og schema.",
+  "description": "A model of Ographis 0.96.0. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -224,6 +224,18 @@
             "VolumeCalculator",
             "HeightTransformer",
             "OutlineFromAbove",
+            "HotSpots",
+            "SpatialAutocorrelation",
+            "PointClusters",
+            "AreaReallocator",
+            "TrackBuilder",
+            "LocationChooser",
+            "LineLengthInAreas",
+            "ImageClassifier",
+            "Depressions",
+            "CustomTool",
+            "ToolInput",
+            "ToolOutput",
             "PointCloudRasterizer",
             "HeightAboveGround",
             "PointCloudFilter",
@@ -897,7 +909,7 @@
                   },
                   "extra": {
                     "title": "Other files and folders",
-                    "description": "a string. Separated by ;, such as README.txt; docs/terms.pdf; styles. A folder goes in with all it holds"
+                    "description": "files and folders: a list of strings, or one string separated by ;; relative paths start at the folder of the model. Such as README.txt, docs/terms.pdf or the folder styles, which goes in with all it holds. A new row comes when one is filled in"
                   },
                   "places": {
                     "title": "In the zip file",
@@ -969,6 +981,7 @@
                           "pdf",
                           "png",
                           "pmtiles",
+                          "svg",
                           "postgis",
                           "qgis",
                           "webmap",
@@ -1259,6 +1272,23 @@
                     "description": "a string. PMTiles: the largest, at most 16. 14 has tiles of about 2 km, and maps zoom in beyond it",
                     "default": "14"
                   },
+                  "geojson_crs": {
+                    "title": "Coordinates",
+                    "description": "one of the values in choices, as a string. GeoJSON is in degrees in WGS 84 (RFC 7946), which web maps take for granted. Other coordinate systems are named in the file in the older way",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "wgs84",
+                          "keep"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "wgs84"
+                  },
                   "gpkg_version": {
                     "title": "GeoPackage version",
                     "description": "one of the values in choices, as a string. Of a new GeoPackage. GDAL chooses the oldest version that holds the data. A file that is there keeps its own",
@@ -1304,6 +1334,23 @@
                       }
                     ],
                     "default": "deflate"
+                  },
+                  "pdf_as": {
+                    "title": "A map as",
+                    "description": "one of the values in choices, as a string. For a map from Draw map or a chart. As shapes it prints sharp and can be edited in Illustrator or Inkscape; as a picture a GIS can place it",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "shapes",
+                          "picture"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "shapes"
                   },
                   "pdf_size": {
                     "title": "Page size",
@@ -1470,6 +1517,7 @@
                           "pdf",
                           "png",
                           "pmtiles",
+                          "svg",
                           "postgis",
                           "qgis",
                           "webmap",
@@ -1585,6 +1633,7 @@
                           "pdf",
                           "png",
                           "pmtiles",
+                          "svg",
                           "postgis",
                           "qgis",
                           "webmap",
@@ -1862,6 +1911,7 @@
                           "pdf",
                           "png",
                           "pmtiles",
+                          "svg",
                           "postgis",
                           "qgis",
                           "webmap",
@@ -1964,6 +2014,7 @@
                           "pdf",
                           "png",
                           "pmtiles",
+                          "svg",
                           "postgis",
                           "qgis",
                           "webmap",
@@ -2268,6 +2319,7 @@
                           "pdf",
                           "png",
                           "pmtiles",
+                          "svg",
                           "postgis",
                           "qgis",
                           "webmap",
@@ -2327,7 +2379,8 @@
                         "enum": [
                           "replace",
                           "empty",
-                          "append"
+                          "append",
+                          "update"
                         ]
                       },
                       {
@@ -2336,6 +2389,27 @@
                       }
                     ],
                     "default": "replace"
+                  },
+                  "update_key": {
+                    "title": "Rows are the same when",
+                    "description": "the name of one attribute of the stream on the port. An attribute whose value tells a row apart, such as an id. A row of the table with the same value is updated; the others are added"
+                  },
+                  "delete_missing": {
+                    "title": "Rows that are not in the stream",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "keep",
+                          "delete"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "keep"
                   },
                   "commit": {
                     "title": "Transaction",
@@ -2904,7 +2978,7 @@
                 "properties": {
                   "attributes": {
                     "title": "Attributes",
-                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. Joined in the order they are chosen. A fixed text is written in single quotes: '0', kod"
+                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. Joined in the order they are chosen. A fixed text is written in single quotes: code, ' - ', name, ', ', town"
                   },
                   "separator": {
                     "title": "Separator",
@@ -2926,6 +3000,23 @@
                       }
                     ],
                     "default": "true"
+                  },
+                  "fixed": {
+                    "title": "Fixed texts are",
+                    "description": "one of the values in choices, as a string. As separators of their own, different ones can go between different attributes, such as code, ' - ', name, ', ', town",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "parts",
+                          "separators"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "parts"
                   },
                   "name": {
                     "title": "New attribute",
@@ -3461,12 +3552,29 @@
                 "properties": {
                   "group_by": {
                     "title": "Group by",
-                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. Empty dissolves all areas into one"
+                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. Only areas with the same values are merged. Empty merges all that touch"
                   },
                   "count": {
                     "title": "Count attribute",
                     "description": "a string. The number of areas that were merged",
                     "default": "_count"
+                  },
+                  "parts": {
+                    "title": "Areas apart",
+                    "description": "one of the values in choices, as a string. What is left apart after merging, such as buildings that do not touch",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "apart",
+                          "together"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "apart"
                   }
                 }
               }
@@ -5091,8 +5199,12 @@
                       {
                         "enum": [
                           "m2",
+                          "a",
                           "ha",
-                          "km2"
+                          "km2",
+                          "ft2",
+                          "ac",
+                          "mi2"
                         ]
                       },
                       {
@@ -5135,8 +5247,17 @@
                     "anyOf": [
                       {
                         "enum": [
+                          "mm",
+                          "cm",
+                          "dm",
                           "m",
-                          "km"
+                          "km",
+                          "mil",
+                          "in",
+                          "ft",
+                          "yd",
+                          "mi",
+                          "nmi"
                         ]
                       },
                       {
@@ -5811,6 +5932,72 @@
                   "legend_title": {
                     "title": "Title of the legend",
                     "description": "a string."
+                  },
+                  "scale_bar": {
+                    "title": "Scale bar",
+                    "description": "one of the values in choices, as a string. A round length of about a fifth of the map, in metres or km",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "bottom-left",
+                          "bottom-right",
+                          "top-left",
+                          "top-right"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "none"
+                  },
+                  "north_arrow": {
+                    "title": "North arrow",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "bottom-left",
+                          "bottom-right",
+                          "top-left",
+                          "top-right"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "none"
+                  },
+                  "grid": {
+                    "title": "Grid",
+                    "description": "one of the values in choices, as a string. With the coordinates in the edge",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "lines",
+                          "ticks"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "none"
+                  },
+                  "grid_every": {
+                    "title": "Grid every",
+                    "description": "a string. In the units of the map, such as 1000 for every km in SWEREF 99 TM. Empty gives a round number by the size"
+                  },
+                  "source": {
+                    "title": "Source",
+                    "description": "a string. Written small in the lower right corner, such as © Lantmäteriet, after the credit of the background map"
                   },
                   "crs": {
                     "title": "Coordinate system",
@@ -7468,6 +7655,23 @@
                       }
                     ],
                     "default": "together"
+                  },
+                  "shape": {
+                    "title": "Shape",
+                    "description": "one of the values in choices, as a string. The outline fills the blocks and fields that the roads reached go round",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "roads",
+                          "outline"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "roads"
                   },
                   "width": {
                     "title": "Area around the roads",
@@ -9254,6 +9458,577 @@
           "if": {
             "properties": {
               "type": {
+                "const": "HotSpots"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "title": "Value",
+                    "description": "the name of one attribute of the stream on the port. Such as the number of accidents in each square, or the rate of illness in each area"
+                  },
+                  "neighbours": {
+                    "title": "Neighbours",
+                    "description": "one of the values in choices, as a string. Which features count as near each other: those within a distance, or each feature's nearest few",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "distance",
+                          "nearest"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "distance"
+                  },
+                  "distance": {
+                    "title": "Within",
+                    "description": "a string. In metres, between the middles of the features. Empty: as far as needed for every feature to have a neighbour"
+                  },
+                  "k": {
+                    "title": "How many nearest",
+                    "description": "a string.",
+                    "default": "8"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "SpatialAutocorrelation"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "title": "Value",
+                    "description": "the name of one attribute of the stream on the port. Such as the income or the share of elderly in each area"
+                  },
+                  "neighbours": {
+                    "title": "Neighbours",
+                    "description": "one of the values in choices, as a string. Which features count as near each other: those within a distance, or each feature's nearest few",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "distance",
+                          "nearest"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "distance"
+                  },
+                  "distance": {
+                    "title": "Within",
+                    "description": "a string. In metres, between the middles of the features. Empty: as far as needed for every feature to have a neighbour"
+                  },
+                  "k": {
+                    "title": "How many nearest",
+                    "description": "a string.",
+                    "default": "8"
+                  },
+                  "permutations": {
+                    "title": "Permutations",
+                    "description": "a string. How many times the values are shuffled among the places to tell chance from pattern. More is surer and slower",
+                    "default": "499"
+                  },
+                  "alpha": {
+                    "title": "Significant below",
+                    "description": "a string. The p-value under which a local cluster counts",
+                    "default": "0.05"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "PointClusters"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "distance": {
+                    "title": "Within",
+                    "description": "a string. In metres: points this close to each other belong together",
+                    "default": "100"
+                  },
+                  "min_points": {
+                    "title": "At least",
+                    "description": "a string. Points within the distance of a point, itself counted, for it to be the core of a cluster. Points in no cluster get none",
+                    "default": "5"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "AreaReallocator"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "counts": {
+                    "title": "Counts",
+                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. Such as people or jobs: shared out by how much of each area of From lies in each area of To, and added up"
+                  },
+                  "averages": {
+                    "title": "Averages",
+                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. Such as a rate or a mean income: the mean in each area of To, weighed by how much of it each area of From covers"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "TrackBuilder"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "time": {
+                    "title": "Time",
+                    "description": "the name of one attribute of the stream on the port. When each point was taken: ISO 8601 such as 2026-06-01T10:15:00Z, or seconds since 1970",
+                    "default": "time"
+                  },
+                  "id": {
+                    "title": "Of whom",
+                    "description": "the name of one attribute of the stream on the port. What tells the movers apart, such as mmsi for ships or the name of a device. Empty: one mover"
+                  },
+                  "gap": {
+                    "title": "A new track after a pause of",
+                    "description": "a string. Minutes without a point. The track is broken there, so that no line is drawn across what is not known",
+                    "default": "30"
+                  },
+                  "stop_radius": {
+                    "title": "A stop is within",
+                    "description": "a string. Metres from where the mover came to it",
+                    "default": "50"
+                  },
+                  "stop_minutes": {
+                    "title": "For at least",
+                    "description": "a string. Minutes. Shorter halts are not stops",
+                    "default": "5"
+                  },
+                  "fastest": {
+                    "title": "Faster than this is a fault",
+                    "description": "a string. Km/h. A point the mover could not have reached so fast is left out, as GPS points that jump. Empty keeps all"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "LocationChooser"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "title": "How many to choose",
+                    "description": "a string. Places among Candidates, counting those that must be chosen",
+                    "default": "1"
+                  },
+                  "goal": {
+                    "title": "Best is",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "least",
+                          "cover"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "least"
+                  },
+                  "within": {
+                    "title": "Within",
+                    "description": "a string. For the most reached: minutes for the quickest, metres for the shortest",
+                    "default": "10"
+                  },
+                  "weight": {
+                    "title": "Each on Demand counts as",
+                    "description": "the name of one attribute of the stream on the port. Such as the number of people in a square of a population grid. Empty: each counts as one"
+                  },
+                  "required": {
+                    "title": "Must be chosen when",
+                    "description": "the name of one attribute of the stream on the port. An attribute that is true, yes or 1 for the facilities that are there already. Empty: none"
+                  },
+                  "direction": {
+                    "title": "Direction",
+                    "description": "one of the values in choices, as a string. Matters where there are one-way roads",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "to",
+                          "from"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "to"
+                  },
+                  "cost": {
+                    "title": "By",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "length",
+                          "time"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "length"
+                  },
+                  "speed": {
+                    "title": "Speed in km/h",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". Along the line as it is drawn, for the quickest route: an attribute such as F_Hogst_225 in NVDB, or a number"
+                  },
+                  "speed_against": {
+                    "title": "Speed against the line",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". Against the way the line is drawn, such as B_Hogst_225 in NVDB. Empty uses the speed along it"
+                  },
+                  "default_speed": {
+                    "title": "Speed where none is given",
+                    "description": "a string. In km/h, where the speed is empty or 0",
+                    "default": "50"
+                  },
+                  "along": {
+                    "title": "May be travelled along the line when",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". A condition for one-way roads, such as F_ForbjudenFardriktning is null. Empty: always"
+                  },
+                  "against": {
+                    "title": "May be travelled against the line when",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". Such as B_ForbjudenFardriktning is null. Empty: always"
+                  },
+                  "snap": {
+                    "title": "Farthest from the network, in metres",
+                    "description": "a string. A point is put on the nearest place of the nearest line. One farther away than this is not reached",
+                    "default": "500"
+                  },
+                  "tolerance": {
+                    "title": "Line ends that meet, within",
+                    "description": "a string. In metres. Lines are joined where their ends are this close, not where they only cross, as at a bridge",
+                    "default": "0.01"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "LineLengthInAreas"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "group_by": {
+                    "title": "For each",
+                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. Attributes of the lines, such as the kind of road. Empty sums all lines together"
+                  },
+                  "unit": {
+                    "title": "Unit",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "mm",
+                          "cm",
+                          "dm",
+                          "m",
+                          "km",
+                          "mil",
+                          "in",
+                          "ft",
+                          "yd",
+                          "mi",
+                          "nmi"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "km"
+                  },
+                  "name": {
+                    "title": "Attribute",
+                    "description": "a string. With a kind, the kind is put after it, such as length_motorway",
+                    "default": "length"
+                  },
+                  "layout": {
+                    "title": "Kinds as",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "columns",
+                          "rows"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "columns"
+                  },
+                  "decimals": {
+                    "title": "Decimals",
+                    "description": "a string. Empty keeps them all",
+                    "default": "3"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ImageClassifier"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "title": "How",
+                    "description": "one of the values in choices, as a string. By itself finds the groups, which you then name. From examples gives the classes you drew",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "kmeans",
+                          "examples"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "kmeans"
+                  },
+                  "classes": {
+                    "title": "Groups",
+                    "description": "a string. How many groups k-means makes",
+                    "default": "6"
+                  },
+                  "class": {
+                    "title": "Class of each example",
+                    "description": "the name of one attribute of the stream on the port. Such as forest, water, field and town, or numbers",
+                    "default": "class"
+                  },
+                  "bands": {
+                    "title": "Bands",
+                    "description": "a string. The bands to use by their numbers from 1, such as 2, 3, 4, 8. Empty uses all"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Depressions"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "min_depth": {
+                    "title": "At least as deep as",
+                    "description": "a string. Metres. Shallower hollows are left out",
+                    "default": "0.1"
+                  },
+                  "min_area": {
+                    "title": "At least as large as",
+                    "description": "a string. Square metres. Smaller hollows are left out",
+                    "default": "100"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "CustomTool"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "title": "The model inside",
+                    "description": "a model as an object, with nodes and edges as in a model file, whose ToolInput and ToolOutput nodes are the ports. Open it with a double-click on the node, or Enter"
+                  },
+                  "loop": {
+                    "title": "Runs",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "once",
+                          "each",
+                          "repeat"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "once"
+                  },
+                  "each_by": {
+                    "title": "For each value of",
+                    "description": "a string. An attribute of the stream on the first port. Inside, $(value) is the value of the round"
+                  },
+                  "times": {
+                    "title": "Times",
+                    "description": "a string. What comes out on a port goes in again on the input port of the same name. Inside, $(round) is the round, from 1",
+                    "default": "3"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ToolInput"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "port": {
+                    "title": "Port",
+                    "description": "a string. The name of the port on the tool, which the stream comes in on",
+                    "default": "Input"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ToolOutput"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "port": {
+                    "title": "Port",
+                    "description": "a string. The name of the port on the tool, which the stream goes out on",
+                    "default": "Output"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "PointCloudRasterizer"
               }
             }
@@ -9643,6 +10418,23 @@
                     "description": "a string. Degrees clockwise from north: 315 is from the north-west, as on most maps",
                     "default": "315"
                   },
+                  "light": {
+                    "title": "Light",
+                    "description": "one of the values in choices, as a string. From several directions, slopes that face away from the sun are seen too, as on a good relief map. The shadows are still cast by the sun",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "one",
+                          "several"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "one"
+                  },
                   "sun_altitude": {
                     "title": "Sun height",
                     "description": "a string. Degrees above the horizon. A low sun gives long shadows",
@@ -9748,6 +10540,23 @@
                     "title": "Sun from",
                     "description": "a string. Degrees clockwise from north: 315 is from the north-west, as on most maps",
                     "default": "315"
+                  },
+                  "light": {
+                    "title": "Light",
+                    "description": "one of the values in choices, as a string. From several directions, slopes that face away from the sun are seen too, as on a good relief map. The shadows are still cast by the sun",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "one",
+                          "several"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "one"
                   },
                   "sun_altitude": {
                     "title": "Sun height",

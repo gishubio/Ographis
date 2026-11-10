@@ -5,6 +5,7 @@
 //! through [`io::Backend`]. CSV and txt are read and written by the engine itself.
 
 pub mod basemap;
+pub mod bugreport;
 pub mod chart;
 pub mod citygml_write;
 pub mod citymodel;
@@ -38,6 +39,7 @@ pub mod parquet_io;
 pub mod photos;
 pub mod pmtiles_write;
 pub mod pointcloud;
+pub mod portkinds;
 pub mod qgis_project;
 pub mod rasterlook;
 pub mod reference;
@@ -53,6 +55,8 @@ pub mod terrain;
 pub mod thematic;
 pub mod tiles3d;
 pub mod tiles3d_write;
+pub mod toolmaking;
+pub mod vector;
 pub mod web;
 
 pub use io::{Backend, Notes};

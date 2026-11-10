@@ -2,7 +2,7 @@
 //! models with their attributes, property sets, quantities, storey, type and material, for
 //! processing and for pictures of buildings.
 //!
-//! The geometry that most files use is read: extruded profiles (rectangles, circles, I, L, U
+//! The geometry that most files use is read: extruded and revolved profiles (rectangles, circles, I, L, U
 //! and T sections, polylines and arcs, with holes), faceted boundary representations, face
 //! sets and surface models, triangulated and polygonal face sets of IFC4, mapped items
 //! (types placed many times), boolean results by their first part, cut by a plane where
@@ -859,6 +859,58 @@ fn extrude(rings: &[Ring], dir: [f64; 3], depth: f64) -> Vec<[[f64; 3]; 3]> {
     outward(out)
 }
 
+/// A profile in the plane z = 0 turned by `angle` radians about the axis through `at` along
+/// `along`, with its ends closed when it does not go all the way round.
+fn revolve(rings: &[Ring], at: [f64; 3], along: [f64; 3], angle: f64) -> Vec<[[f64; 3]; 3]> {
+    let rings: Vec<Ring> = rings
+        .iter()
+        .map(|r| {
+            let mut r = r.clone();
+            if r.len() > 1 && r.first() == r.last() {
+                r.pop();
+            }
+            r
+        })
+        .filter(|r| r.len() >= 3)
+        .collect();
+    if rings.is_empty() || angle.abs() < 1e-9 {
+        return Vec::new();
+    }
+    let u = norm(along);
+    let full = angle.abs() >= std::f64::consts::TAU - 1e-6;
+    let steps = ((angle.abs() / std::f64::consts::TAU * 48.0).ceil() as usize).max(4);
+    // Rodrigues: a point turned by t about the axis.
+    let turn = |p: [f64; 3], t: f64| -> [f64; 3] {
+        let v = sub(p, at);
+        let (c, s) = (t.cos(), t.sin());
+        let k = cross(u, v);
+        let d = dot(u, v) * (1.0 - c);
+        [0, 1, 2].map(|i| at[i] + v[i] * c + k[i] * s + u[i] * d)
+    };
+    let mut out = Vec::new();
+    for r in &rings {
+        let flat: Vec<[f64; 3]> = r.iter().map(|p| [p[0], p[1], 0.0]).collect();
+        let rows: Vec<Vec<[f64; 3]>> = (0..=steps).map(|i| flat.iter().map(|p| turn(*p, angle * i as f64 / steps as f64)).collect()).collect();
+        for i in 0..steps {
+            for k in 0..flat.len() {
+                let k2 = (k + 1) % flat.len();
+                let (a0, b0, a1, b1) = (rows[i][k], rows[i][k2], rows[i + 1][k], rows[i + 1][k2]);
+                out.push([a0, b0, b1]);
+                out.push([a0, b1, a1]);
+            }
+        }
+    }
+    if !full {
+        let outer: Vec<[f64; 3]> = rings[0].iter().map(|p| [p[0], p[1], 0.0]).collect();
+        let holes: Vec<Vec<[f64; 3]>> = rings[1..].iter().map(|r| r.iter().map(|p| [p[0], p[1], 0.0]).collect()).collect();
+        for t in triangulate_face(&outer, &holes) {
+            out.push([t[0], t[2], t[1]]);
+            out.push(t.map(|p| turn(p, angle)));
+        }
+    }
+    outward(out)
+}
+
 /// Keeps the parts of triangles on one side of a plane: where dot(n, p) <= d.
 fn clip_by_plane(tris: Vec<[[f64; 3]; 3]>, n: [f64; 3], d: f64) -> Vec<[[f64; 3]; 3]> {
     let mut out = Vec::new();
@@ -1201,6 +1253,7 @@ fn near<'a>(t: &[[f64; 3]; 3], solid: &'a [[[f64; 3]; 3]]) -> Vec<&'a [[f64; 3];
 /// Takes a closed solid of any shape out of triangles: they are cut where its faces cross
 /// them, and the pieces with the solid behind them go.
 fn subtract_mesh(tris: Vec<[[f64; 3]; 3]>, solid: &[[[f64; 3]; 3]]) -> Vec<[[f64; 3]; 3]> {
+    let closed = Closed::new(solid);
     let mut out = Vec::new();
     for t in tris {
         let close = near(&t, solid);
@@ -1216,7 +1269,7 @@ fn subtract_mesh(tris: Vec<[[f64; 3]; 3]>, solid: &[[[f64; 3]; 3]]) -> Vec<[[f64
             let n = norm(a);
             let c = [0, 1, 2].map(|k| (p[0][k] + p[1][k] + p[2][k]) / 3.0);
             // Behind a face is the material it bounds.
-            if !inside_mesh(sub(c, n.map(|v| v * 1e-5)), solid) {
+            if !closed.contains(sub(c, n.map(|v| v * 1e-5))) {
                 out.push(p);
             }
         }
@@ -1246,10 +1299,105 @@ fn ray_hits(o: [f64; 3], dir: [f64; 3], t: &[[f64; 3]; 3]) -> bool {
     dot(e2, q) * inv > 1e-9
 }
 
-/// Whether a point lies inside a closed mesh: three rays in odd directions, by majority.
-fn inside_mesh(p: [f64; 3], tris: &[[[f64; 3]; 3]]) -> bool {
-    let dirs = [[0.5773, 0.5774, 0.5776], [-0.6123, 0.3531, 0.7072], [0.2673, -0.8018, -0.5345]];
-    dirs.iter().filter(|d| tris.iter().filter(|t| ray_hits(p, **d, t)).count() % 2 == 1).count() >= 2
+/// A closed mesh with an index of its triangles, to tell quickly whether a point lies inside.
+/// The rays go nearly along the three axes, so each looks only at the triangles in one cell
+/// of a grid across the other two.
+struct Closed<'a> {
+    tris: &'a [[[f64; 3]; 3]],
+    boxes: Vec<([f64; 3], [f64; 3])>,
+    lo: [f64; 3],
+    hi: [f64; 3],
+    /// For each axis the ray follows: the size of the grid and the triangles in each cell.
+    grids: [(usize, Vec<Vec<u32>>); 3],
+}
+
+/// Rays nearly along x, y and z, a little askew so that they do not run along an edge.
+const RAYS: [[f64; 3]; 3] = [[1.0, 0.0017, 0.0011], [0.0019, 1.0, 0.0014], [0.0013, 0.0021, 1.0]];
+
+impl<'a> Closed<'a> {
+    fn new(tris: &'a [[[f64; 3]; 3]]) -> Self {
+        let boxes: Vec<([f64; 3], [f64; 3])> = tris
+            .iter()
+            .map(|t| {
+                let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+                for p in t {
+                    for k in 0..3 {
+                        lo[k] = lo[k].min(p[k]);
+                        hi[k] = hi[k].max(p[k]);
+                    }
+                }
+                (lo, hi)
+            })
+            .collect();
+        let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+        for (a, b) in &boxes {
+            for k in 0..3 {
+                lo[k] = lo[k].min(a[k]);
+                hi[k] = hi[k].max(b[k]);
+            }
+        }
+        let n = ((tris.len() as f64 / 2.0).sqrt() as usize).clamp(1, 256);
+        let grids = [0, 1, 2].map(|axis| {
+            let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+            // How far the ray strays sideways across the whole mesh.
+            let stray = 0.0025 * (hi[axis] - lo[axis]) + 1e-9;
+            let mut cells = vec![Vec::new(); n * n];
+            for (i, (a, b)) in boxes.iter().enumerate() {
+                let (u0, u1) = (cell(a[u] - stray, lo[u], hi[u], n), cell(b[u] + stray, lo[u], hi[u], n));
+                let (v0, v1) = (cell(a[v] - stray, lo[v], hi[v], n), cell(b[v] + stray, lo[v], hi[v], n));
+                for cu in u0..=u1 {
+                    for cv in v0..=v1 {
+                        cells[cu * n + cv].push(i as u32);
+                    }
+                }
+            }
+            (n, cells)
+        });
+        Closed { tris, boxes, lo, hi, grids }
+    }
+
+    /// Whether a point lies inside: three rays, by majority. A point outside the box of the
+    /// mesh is outside.
+    fn contains(&self, p: [f64; 3]) -> bool {
+        let e = 1e-9;
+        if (0..3).any(|k| p[k] < self.lo[k] - e || p[k] > self.hi[k] + e) {
+            return false;
+        }
+        let odd = |axis: usize| {
+            let d = norm(RAYS[axis]);
+            let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+            let (n, cells) = &self.grids[axis];
+            let at = cell(p[u], self.lo[u], self.hi[u], *n) * n + cell(p[v], self.lo[v], self.hi[v], *n);
+            cells[at]
+                .iter()
+                .filter(|i| {
+                    let (lo, hi) = &self.boxes[**i as usize];
+                    hi[axis] >= p[axis] - e && (0..3).all(|k| if d[k] > 0.0 { hi[k] >= p[k] - e } else { lo[k] <= p[k] + e })
+                })
+                .filter(|i| ray_hits(p, d, &self.tris[**i as usize]))
+                .count()
+                % 2
+                == 1
+        };
+        // The rays across the mesh where it is thinnest first, since they cross the fewest
+        // triangles; the third only when the first two disagree.
+        let mut order = [0, 1, 2];
+        order.sort_by(|a, b| (self.hi[*a] - self.lo[*a]).total_cmp(&(self.hi[*b] - self.lo[*b])));
+        let (first, second) = (odd(order[0]), odd(order[1]));
+        if first == second {
+            first
+        } else {
+            odd(order[2])
+        }
+    }
+}
+
+/// The cell of a value on a grid of `n` cells from `lo` to `hi`.
+fn cell(x: f64, lo: f64, hi: f64, n: usize) -> usize {
+    if hi <= lo {
+        return 0;
+    }
+    (((x - lo) / (hi - lo) * n as f64).floor().max(0.0) as usize).min(n - 1)
 }
 
 /// The parts of `faces` that lie inside the closed solid `solid`, cut along its planes: the
@@ -1259,6 +1407,7 @@ fn faces_inside(faces: Vec<[[f64; 3]; 3]>, solid: &[[[f64; 3]; 3]]) -> Vec<[[f64
     if faces.is_empty() || solid.is_empty() {
         return Vec::new();
     }
+    let closed = Closed::new(solid);
     // Each face cut by the planes of the faces of the solid near it, so that every piece is
     // wholly inside or wholly outside.
     let mut pieces = Vec::new();
@@ -1311,7 +1460,7 @@ fn faces_inside(faces: Vec<[[f64; 3]; 3]>, solid: &[[[f64; 3]; 3]]) -> Vec<[[f64
             // of the solid, or in a hole already cut, has not.
             let n = norm(area);
             let e = 1e-5;
-            inside_mesh(sub(c, n.map(|v| v * e)), solid) && inside_mesh([c[0] + n[0] * e, c[1] + n[1] * e, c[2] + n[2] * e], solid)
+            closed.contains(sub(c, n.map(|v| v * e))) && closed.contains([c[0] + n[0] * e, c[1] + n[1] * e, c[2] + n[2] * e])
         })
         .collect()
 }
@@ -1408,6 +1557,17 @@ impl Ifc<'_> {
                 let dir = self.direction(e.args.get(2).and_then(|v| v.r()), [0.0, 0.0, 1.0]);
                 let depth = e.args.get(3).and_then(|v| v.num()).unwrap_or(0.0);
                 let tris = extrude(&rings, dir, depth);
+                put(tris.into_iter().map(|t| t.map(|p| place.apply(p))).collect(), out);
+            }
+            "IFCREVOLVEDAREASOLID" | "IFCREVOLVEDAREASOLIDTAPERED" => {
+                // A profile turned about an axis, such as an elbow of a pipe.
+                let rings = self.profile(e.args.first().and_then(|v| v.r()).unwrap_or(0), notes);
+                let place = e.args.get(1).and_then(|v| v.r()).map_or(Tf::ID, |p| self.axis3(p));
+                let axis = e.args.get(2).and_then(|v| v.r());
+                let at = axis.and_then(|a| self.s.arg(a, 0)).and_then(|v| v.r()).map_or([0.0; 3], |p| self.point(p));
+                let along = self.direction(axis.and_then(|a| self.s.arg(a, 1)).and_then(|v| v.r()), [0.0, 0.0, 1.0]);
+                let angle = e.args.get(3).and_then(|v| v.num()).unwrap_or(0.0) * self.angle;
+                let tris = revolve(&rings, at, along, angle);
                 put(tris.into_iter().map(|t| t.map(|p| place.apply(p))).collect(), out);
             }
             "IFCFACETEDBREP" | "IFCFACETEDBREPWITHVOIDS" | "IFCADVANCEDBREP" | "IFCADVANCEDBREPWITHVOIDS" => {
@@ -3100,6 +3260,21 @@ DATA;
 ENDSEC;
 END-ISO-10303-21;
 ";
+
+    #[test]
+    fn a_profile_is_turned_about_an_axis() {
+        // A square of 1 by 1, from 2 to 3 out from the axis, turned a quarter round: by
+        // Pappus, its area times the way its middle goes.
+        let square: Vec<Ring> = vec![vec![[2.0, 0.0], [3.0, 0.0], [3.0, 1.0], [2.0, 1.0]]];
+        let quarter = std::f64::consts::FRAC_PI_2;
+        let volume = |t: &[[[f64; 3]; 3]]| t.iter().map(|p| dot(p[0], cross(p[1], p[2]))).sum::<f64>() / 6.0;
+        let t = revolve(&square, [0.0; 3], [0.0, 1.0, 0.0], quarter);
+        let want = 1.0 * 2.5 * quarter;
+        assert!((volume(&t) - want).abs() < want * 0.01, "{} {}", volume(&t), want);
+        // All the way round, with no ends.
+        let ring = revolve(&square, [0.0; 3], [0.0, 1.0, 0.0], std::f64::consts::TAU);
+        assert!((volume(&ring) - 4.0 * want).abs() < want * 0.04);
+    }
 
     #[test]
     fn a_wall_with_an_opening_its_properties_and_its_place() {

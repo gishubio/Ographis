@@ -20,7 +20,7 @@ pub(super) fn run_keeper(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
         return err("Choose the attributes to keep.");
     }
     let missing: Vec<&str> = keep.iter().map(|k| k.as_str()).filter(|k| table.field_index(k).is_none()).collect();
-    if !missing.is_empty() && !table.fields.is_empty() {
+    if !missing.is_empty() && !table.fields.is_empty() && !table.is_empty() {
         ctx.notes.warn(format!("Not in the stream, so not kept: {}.", missing.join(", ")));
     }
     let idx: Vec<usize> = (0..table.fields.len()).filter(|i| keep.contains(&table.fields[*i].name)).collect();

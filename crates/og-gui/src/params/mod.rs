@@ -57,6 +57,10 @@ pub struct ParamCtx<'a> {
     pub stream_raster: &'a dyn Fn(&str) -> Option<og_engine::rasterlook::RasterInfo>,
     /// Whether expressions get suggestions while they are written.
     pub suggest: bool,
+    /// Whether the help of every setting is shown under it, not only when the pointer is on it.
+    pub hints_always: bool,
+    /// When the latest run that is shown ended, as a time to show.
+    pub ran_at: Option<String>,
     /// The classes of the points on an input port in the latest run, with how many of each.
     pub classes: &'a dyn Fn(&str) -> Vec<(i64, u64)>,
 }
@@ -77,6 +81,10 @@ pub struct Edited {
     /// The server, database, user and password written in the node are to become a
     /// connection in the settings, which the node then names.
     pub save_connection: bool,
+    /// The model inside a tool is to be opened on the canvas.
+    pub open_tool: bool,
+    /// A tool is to be unpacked into the nodes it is made of.
+    pub unpack_tool: bool,
 }
 
 /// The file extensions of formats that keep their data in sheets.
@@ -137,6 +145,18 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("SubstringExtractor", "start") => param("part").as_deref() == Some("middle"),
             ("ValueMapper", "default") => param("otherwise").as_deref() == Some("text"),
             ("TerrainAnalyzer", "radius") => param("measure").as_deref() == Some("tpi"),
+            ("CustomTool", "each_by") => param("loop").as_deref() == Some("each"),
+            ("StringConcatenator", "fixed") => node.params.get("attributes").is_some_and(|v| match v {
+                serde_json::Value::Array(a) => a.iter().any(|x| x.as_str().is_some_and(|t| t.trim().starts_with('\''))),
+                serde_json::Value::String(t) => t.contains('\''),
+                _ => false,
+            }),
+            ("LineLengthInAreas", "layout") => node.params.get("group_by").is_some_and(|v| match v {
+                serde_json::Value::Array(a) => !a.is_empty(),
+                serde_json::Value::String(t) => !t.trim().is_empty(),
+                _ => false,
+            }),
+            ("CustomTool", "times") => param("loop").as_deref() == Some("repeat"),
             ("PointCloudFilter", "height_of") => param("zmin").is_some_and(|v| !v.is_empty()) || param("zmax").is_some_and(|v| !v.is_empty()),
             // The settings of the connection that models before 0.63 kept in the node are shown
             // only while such a model has them and names no connection.
@@ -148,6 +168,7 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("SceneRenderer", "study_dates" | "study_from" | "study_to" | "study_every" | "study_folder") => param("sun").as_deref() == Some("study"),
             ("SceneRenderer", "background_colour") => param("background").as_deref() == Some("colour"),
             ("MapRenderer", "width") => param("size_as").as_deref() != Some("print"),
+            ("MapRenderer", "grid_every") => !matches!(param("grid").as_deref(), None | Some("none") | Some("")),
             ("MapRenderer", "print_mm" | "print_dpi") => param("size_as").as_deref() == Some("print"),
             ("MapRenderer", "background_colour") => param("background").as_deref() == Some("colour"),
             ("MapRenderer", "basemap") => param("background").as_deref() == Some("map"),
@@ -155,9 +176,12 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("MapRenderer", "background_picture" | "background_crs") => param("background").as_deref() == Some("picture"),
             ("MapRenderer", "background_fade") => matches!(param("background").as_deref(), Some("map" | "picture")),
             ("SceneRenderer", "water_level" | "waves") => param("water").is_some_and(|w| w != "none"),
-            ("PostgisWriter", "key_name") => param("key").as_deref() != Some("attribute"),
-            ("PostgisWriter", "key_attribute") => param("key").as_deref() == Some("attribute"),
-            ("PostgisWriter", "commit_rows") => param("commit").as_deref() == Some("every"),
+            ("PostgisWriter", "key_name") => param("mode").as_deref() != Some("update") && param("key").as_deref() != Some("attribute"),
+            ("PostgisWriter", "key_attribute") => param("mode").as_deref() != Some("update") && param("key").as_deref() == Some("attribute"),
+            ("PostgisWriter", "commit_rows") => param("mode").as_deref() != Some("update") && param("commit").as_deref() == Some("every"),
+            ("PostgisWriter", "update_key" | "delete_missing") => param("mode").as_deref() == Some("update"),
+            // An update is one transaction, and does not make a new table's key.
+            ("PostgisWriter", "commit" | "key") => param("mode").as_deref() != Some("update"),
             ("LayeredPdfWriter", "pdf_width" | "pdf_height") => param("pdf_size").as_deref() == Some("custom"),
             ("QgisProjectWriter" | "WebMapWriter", "basemap_own") => param("basemap").as_deref() == Some("own"),
             ("SceneRenderer", "focus") => param("blur").is_some_and(|b| b.trim().parse::<f64>().is_ok_and(|v| v > 0.0)),
@@ -229,12 +253,13 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         "vt_zoom" | "vt_pieces" => reader && tiles_file,
         "zip_file" => reader && (path.to_lowercase().ends_with(".zip") || og_engine::nodes::source_ext(path) == "zip"),
         "mode" | "fields" => !image && !matches!(ext.as_str(), "obj" | "glb" | "gml") && node.params.get("format").and_then(|v| v.as_str()) != Some("3dtiles"),
-        "pdf_size" | "pdf_orientation" | "pdf_margin" | "pdf_title" | "pdf_compress" => writer && ext == "pdf",
+        "pdf_size" | "pdf_orientation" | "pdf_margin" | "pdf_title" | "pdf_compress" | "pdf_as" => writer && ext == "pdf",
         "pdf_width" | "pdf_height" => writer && ext == "pdf" && node.params.get("pdf_size").and_then(|v| v.as_str()) == Some("custom"),
         "pdf_dpi" => writer && ext == "pdf" && node.params.get("pdf_size").and_then(|v| v.as_str()) == Some("fit"),
         "pdf_quality" => writer && ext == "pdf" && node.params.get("pdf_compress").and_then(|v| v.as_str()) == Some("jpeg"),
         "pm_min" | "pm_max" => writer && ext == "pmtiles",
         "gpkg_version" => writer && ext == "gpkg",
+        "geojson_crs" => writer && matches!(ext.as_str(), "geojson" | "json"),
         "img_dpi" => writer && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "tif" | "tiff"),
         "img_quality" => {
             writer
@@ -479,6 +504,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
     let mut open_settings = false;
     let mut pick_area = false;
     let mut save_connection = false;
+    let (mut open_tool, mut unpack_tool) = (false, false);
     ui.label(RichText::new("Name").small().color(cx.pal.muted));
     noted |= ui.add(TextEdit::singleline(&mut node.name).desired_width(f32::INFINITY)).changed();
     if node.name.trim().is_empty() {
@@ -550,14 +576,38 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
             }
         }
         ui.add_space(2.0);
-        // A tick box carries its own label.
+        let top = ui.cursor().min;
+        // A tick box carries its own label. The help is on its name for the pointer.
         if !matches!(spec.kind, ParamKind::OptionalName(_)) {
-            ui.label(RichText::new(label_of(spec, sheets)).small().color(cx.pal.muted));
+            let name = ui.label(RichText::new(label_of(spec, sheets)).small().color(cx.pal.muted));
+            if !spec.hint.is_empty() && !cx.hints_always {
+                name.on_hover_text(spec.hint);
+            }
         }
         let mut value = get(node, spec);
         let before = value.clone();
         let mut hint = spec.hint.to_string();
         match spec.kind {
+            ParamKind::Files => {
+                changed |= file_rows(ui, node, spec, cx.base_dir, cx.relative);
+                value = before.clone();
+            }
+            ParamKind::Model => {
+                let inner = og_engine::nodes::inner_model(&node.params);
+                let count = |k: &str| inner.as_ref().map_or(0, |m| m.nodes.iter().filter(|n| n.kind == k).count());
+                let all = inner.as_ref().map_or(0, |m| m.nodes.len());
+                let (ins, outs) = (count("ToolInput"), count("ToolOutput"));
+                let said = format!("{} nodes inside, {} coming in and {} going out", all - ins - outs, ins, outs);
+                ui.label(RichText::new(said).small());
+                ui.horizontal(|ui| {
+                    open_tool |= ui
+                        .button("Open")
+                        .on_hover_text("Shows the model inside on the canvas, to change it. A double-click on the node, or Enter, does the same")
+                        .clicked();
+                    unpack_tool |= ui.button("Unpack").on_hover_text("Puts the nodes back in the model, in a box with the name of the tool").clicked();
+                });
+                hint.clear();
+            }
             ParamKind::Secret => {
                 // A variable such as $(password) is shown, since it says nothing secret.
                 let plain = value.trim().starts_with("$(");
@@ -665,7 +715,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
             }
             ParamKind::Text if spec.key == "classes" && node.kind == "PointCloudFilter" => {
                 ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
-                class_ticks(ui, &mut value, &(cx.classes)("Points"), &cx.pal);
+                class_ticks(ui, &mut value, &(cx.classes)("Points"), cx.ran_at.as_deref(), &cx.pal);
             }
             ParamKind::Text => {
                 ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
@@ -1062,8 +1112,14 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                 value = before.clone();
             }
         }
-        if !hint.is_empty() {
+        // The help of a setting is shown when the pointer rests on it, so that the form does not
+        // move under the pointer. A message about what is there now, such as a connection that
+        // is missing, is always shown.
+        if !hint.is_empty() && (cx.hints_always || hint != spec.hint) {
             ui.label(RichText::new(hint).small().color(cx.pal.muted));
+        } else if !hint.is_empty() {
+            let field = egui::Rect::from_min_max(top, egui::pos2(ui.max_rect().right(), ui.cursor().min.y));
+            ui.interact(field, egui::Id::new(("help", node.id.clone(), spec.key)), egui::Sense::hover()).on_hover_text(hint);
         }
         if value != before {
             // A newly chosen file gives the node the name of the file, unless the user has already named it.
@@ -1092,7 +1148,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
             changed = true;
         }
     }
-    Edited { any: changed || noted, run: changed, postgis, open_settings, pick_area, save_connection }
+    Edited { any: changed || noted, run: changed, postgis, open_settings, pick_area, save_connection, open_tool, unpack_tool }
 }
 
 /// Settings that are seldom changed, shown under More at the end of the form.
@@ -1104,9 +1160,20 @@ fn is_more(kind: &str, key: &str) -> bool {
         "PostgisReader" => matches!(key, "crs" | "limit"),
         "Writer" => matches!(
             key,
-            "key" | "key_name" | "key_attribute" | "gpkg_version" | "img_quality" | "tif_compress" | "pdf_compress" | "pdf_quality" | "t3_most" | "t3_dz"
+            "key"
+                | "key_name"
+                | "key_attribute"
+                | "gpkg_version"
+                | "geojson_crs"
+                | "img_quality"
+                | "tif_compress"
+                | "pdf_compress"
+                | "pdf_quality"
+                | "pdf_as"
+                | "t3_most"
+                | "t3_dz"
         ),
-        "MapRenderer" => matches!(key, "margin" | "background_fade"),
+        "MapRenderer" => matches!(key, "margin" | "background_fade" | "grid_every"),
         _ => false,
     }
 }
@@ -1179,7 +1246,7 @@ fn db_names(ui: &mut Ui, table: &str, fields: &[String], pal: &Palette) {
 
 /// A tick for each class the points of the latest run have, with how many, that writes the
 /// classes ticked into the field.
-fn class_ticks(ui: &mut Ui, value: &mut String, found: &[(i64, u64)], pal: &Palette) {
+fn class_ticks(ui: &mut Ui, value: &mut String, found: &[(i64, u64)], ran: Option<&str>, pal: &Palette) {
     if found.is_empty() {
         ui.label(RichText::new("Run the model, and the classes in the data can be ticked here.").small().color(pal.muted));
         return;
@@ -1196,6 +1263,11 @@ fn class_ticks(ui: &mut Ui, value: &mut String, found: &[(i64, u64)], pal: &Pale
                 chosen.retain(|x| x != c);
             }
         }
+    }
+    if let Some(at) = ran {
+        // The classes are those of the run that is shown; new data needs a new run.
+        ui.label(RichText::new(format!("From the run at {}", at)).small().color(pal.muted))
+            .on_hover_text("Run again after the data has changed, and the classes found then are shown");
     }
     ui.horizontal(|ui| {
         if ui.add(egui::Button::new("Tick all").small()).clicked() {

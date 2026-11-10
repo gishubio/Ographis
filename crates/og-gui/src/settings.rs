@@ -43,6 +43,12 @@ pub fn suggestions(s: &Settings) -> bool {
     s.other.get("suggestions").and_then(|v| v.as_bool()).unwrap_or(true)
 }
 
+/// Whether the help of every setting in a form is shown under it, rather than when the
+/// pointer rests on the setting.
+pub fn hints_always(s: &Settings) -> bool {
+    s.other.get("hints_always").and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
 /// Whether a notice is shown when a long run finishes, and after how many seconds a run counts
 /// as long.
 pub fn notify(s: &Settings) -> Option<f64> {
@@ -204,6 +210,15 @@ impl SettingsWindow {
             .changed()
         {
             settings.other.insert("suggestions".into(), serde_json::json!(on));
+            changed = true;
+        }
+        let mut always = hints_always(settings);
+        if ui
+            .checkbox(&mut always, "Show the help under every setting in a form")
+            .on_hover_text("Otherwise it is shown when the pointer rests on a setting, and the forms are shorter")
+            .changed()
+        {
+            settings.other.insert("hints_always".into(), serde_json::json!(always));
             changed = true;
         }
         ui.add_space(8.0);

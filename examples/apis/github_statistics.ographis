@@ -1,0 +1,1399 @@
+{
+  "format": "ographis/1",
+  "name": "Ographis on GitHub",
+  "variables": [
+    {
+      "name": "owner",
+      "value": "gishubio"
+    },
+    {
+      "name": "repo",
+      "value": "Ographis"
+    },
+    {
+      "name": "api",
+      "value": "https://api.github.com"
+    },
+    {
+      "name": "connection",
+      "value": "GitHub"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "repo",
+      "type": "HttpCaller",
+      "name": "Repository",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "url": "'$(api)/repos/$(owner)/$(repo)'",
+        "connection": "$(connection)"
+      },
+      "comment": "Stars, watchers, forks and open issues and pull requests, as they are now"
+    },
+    {
+      "id": "repo_values",
+      "type": "JsonExtractor",
+      "name": "Counts",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "attribute": "_response",
+        "paths": [
+          [
+            "stargazers_count",
+            "stars"
+          ],
+          [
+            "subscribers_count",
+            "watching"
+          ],
+          [
+            "forks_count",
+            "forks"
+          ],
+          [
+            "open_issues_count",
+            "open_issues_and_prs"
+          ],
+          [
+            "size",
+            "size_kb"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "repo_date",
+      "type": "AttributeCreator",
+      "name": "Date of the run",
+      "x": 540,
+      "y": 20,
+      "params": {
+        "name": "date",
+        "expression": "now('%Y-%m-%d')"
+      }
+    },
+    {
+      "id": "repo_keep",
+      "type": "AttributeKeeper",
+      "name": "Keep the counts",
+      "x": 800,
+      "y": 20,
+      "params": {
+        "keep": "date, stars, watching, forks, open_issues_and_prs, size_kb"
+      }
+    },
+    {
+      "id": "repo_out",
+      "type": "Writer",
+      "name": "Add to the history",
+      "x": 1060,
+      "y": 20,
+      "params": {
+        "path": "out/github/repository_history.csv",
+        "mode": "append"
+      },
+      "comment": "A line each run. github_history.ographis draws them over time"
+    },
+    {
+      "id": "issues",
+      "type": "HttpCaller",
+      "name": "Issues",
+      "x": 20,
+      "y": 240,
+      "params": {
+        "url": "'$(api)/repos/$(owner)/$(repo)/issues?state=all&per_page=100'",
+        "connection": "$(connection)",
+        "paging": "next"
+      },
+      "comment": "All issues, open and closed. GitHub counts pull requests as issues too"
+    },
+    {
+      "id": "issues_list",
+      "type": "JsonExploder",
+      "name": "One per issue",
+      "x": 280,
+      "y": 240,
+      "params": {
+        "attribute": "_response",
+        "path": ""
+      }
+    },
+    {
+      "id": "only_issues",
+      "type": "Tester",
+      "name": "Not pull requests",
+      "x": 540,
+      "y": 240,
+      "params": {
+        "test": "\"pull_request.url\" is null"
+      }
+    },
+    {
+      "id": "opened",
+      "type": "AttributeCreator",
+      "name": "Week it was opened",
+      "x": 800,
+      "y": 180,
+      "params": {
+        "name": "week",
+        "expression": "date_add(left(created_at, 10), 1 - day_of_week(left(created_at, 10)), 'days')"
+      }
+    },
+    {
+      "id": "opened_kind",
+      "type": "AttributeCreator",
+      "name": "Opened",
+      "x": 1060,
+      "y": 180,
+      "params": {
+        "name": "what",
+        "expression": "'Opened'"
+      }
+    },
+    {
+      "id": "was_closed",
+      "type": "Tester",
+      "name": "Closed",
+      "x": 800,
+      "y": 300,
+      "params": {
+        "test": "closed_at is not null"
+      }
+    },
+    {
+      "id": "closed",
+      "type": "AttributeCreator",
+      "name": "Week it was closed",
+      "x": 1060,
+      "y": 300,
+      "params": {
+        "name": "week",
+        "expression": "date_add(left(closed_at, 10), 1 - day_of_week(left(closed_at, 10)), 'days')"
+      }
+    },
+    {
+      "id": "closed_kind",
+      "type": "AttributeCreator",
+      "name": "Closed",
+      "x": 1320,
+      "y": 300,
+      "params": {
+        "name": "what",
+        "expression": "'Closed'"
+      }
+    },
+    {
+      "id": "one",
+      "type": "AttributeCreator",
+      "name": "Counts one",
+      "x": 1580,
+      "y": 240,
+      "params": {
+        "name": "issues",
+        "expression": "1"
+      }
+    },
+    {
+      "id": "issues_weeks",
+      "type": "ChartDrawer",
+      "name": "Issues per week",
+      "x": 1840,
+      "y": 240,
+      "params": {
+        "note": "Source: GitHub",
+        "format": "en",
+        "width": "1200",
+        "kind": "lines",
+        "x": "week",
+        "series": "what",
+        "value": "issues",
+        "combine": "sum",
+        "from_zero": "yes",
+        "markers": "yes",
+        "title": "Issues opened and closed per week",
+        "subtitle": "$(owner)/$(repo), weeks from Monday, without pull requests"
+      }
+    },
+    {
+      "id": "issues_weeks_png",
+      "type": "Writer",
+      "name": "Issues per week as PNG",
+      "x": 2100,
+      "y": 240,
+      "params": {
+        "path": "out/github/issues_per_week.png"
+      }
+    },
+    {
+      "id": "issues_now",
+      "type": "ChartDrawer",
+      "name": "Open and closed",
+      "x": 800,
+      "y": 440,
+      "params": {
+        "note": "Source: GitHub",
+        "format": "en",
+        "width": "1200",
+        "kind": "bars",
+        "category": "state",
+        "title": "Issues, open and closed",
+        "subtitle": "$(owner)/$(repo), without pull requests",
+        "sort": "name"
+      }
+    },
+    {
+      "id": "issues_now_png",
+      "type": "Writer",
+      "name": "Open and closed as PNG",
+      "x": 1060,
+      "y": 440,
+      "params": {
+        "path": "out/github/issues_open_and_closed.png"
+      }
+    },
+    {
+      "id": "stars",
+      "type": "HttpCaller",
+      "name": "Stars",
+      "x": 20,
+      "y": 700,
+      "params": {
+        "url": "'$(api)/repos/$(owner)/$(repo)/stargazers?per_page=100'",
+        "connection": "$(connection)",
+        "paging": "next",
+        "headers": "Accept: application/vnd.github.star+json"
+      },
+      "comment": "Each star with the time it was given"
+    },
+    {
+      "id": "stars_list",
+      "type": "JsonExploder",
+      "name": "One per star",
+      "x": 280,
+      "y": 700,
+      "params": {
+        "attribute": "_response",
+        "path": ""
+      }
+    },
+    {
+      "id": "stars_sorted",
+      "type": "Sorter",
+      "name": "In the order given",
+      "x": 540,
+      "y": 700,
+      "params": {
+        "sort_keys": [
+          [
+            "starred_at",
+            "ascending"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "stars_count",
+      "type": "Counter",
+      "name": "Stars so far",
+      "x": 800,
+      "y": 700,
+      "params": {
+        "name": "stars"
+      }
+    },
+    {
+      "id": "stars_day",
+      "type": "AttributeCreator",
+      "name": "Day",
+      "x": 1060,
+      "y": 700,
+      "params": {
+        "name": "day",
+        "expression": "left(starred_at, 10)"
+      }
+    },
+    {
+      "id": "stars_chart",
+      "type": "ChartDrawer",
+      "name": "Stars over time",
+      "x": 1320,
+      "y": 700,
+      "params": {
+        "note": "Source: GitHub",
+        "format": "en",
+        "width": "1200",
+        "kind": "lines",
+        "x": "day",
+        "value": "stars",
+        "combine": "max",
+        "from_zero": "yes",
+        "title": "Stars",
+        "subtitle": "$(owner)/$(repo), all stars given, by day"
+      }
+    },
+    {
+      "id": "stars_chart_png",
+      "type": "Writer",
+      "name": "Stars over time as PNG",
+      "x": 1580,
+      "y": 700,
+      "params": {
+        "path": "out/github/stars_over_time.png"
+      }
+    },
+    {
+      "id": "forks",
+      "type": "HttpCaller",
+      "name": "Forks",
+      "x": 20,
+      "y": 900,
+      "params": {
+        "url": "'$(api)/repos/$(owner)/$(repo)/forks?sort=oldest&per_page=100'",
+        "connection": "$(connection)",
+        "paging": "next"
+      },
+      "comment": "Each fork with the time it was made"
+    },
+    {
+      "id": "forks_list",
+      "type": "JsonExploder",
+      "name": "One per fork",
+      "x": 280,
+      "y": 900,
+      "params": {
+        "attribute": "_response",
+        "path": ""
+      }
+    },
+    {
+      "id": "forks_sorted",
+      "type": "Sorter",
+      "name": "Oldest first",
+      "x": 540,
+      "y": 900,
+      "params": {
+        "sort_keys": [
+          [
+            "created_at",
+            "ascending"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "forks_count",
+      "type": "Counter",
+      "name": "Forks so far",
+      "x": 800,
+      "y": 900,
+      "params": {
+        "name": "forks"
+      }
+    },
+    {
+      "id": "forks_day",
+      "type": "AttributeCreator",
+      "name": "Day",
+      "x": 1060,
+      "y": 900,
+      "params": {
+        "name": "day",
+        "expression": "left(created_at, 10)"
+      }
+    },
+    {
+      "id": "forks_chart",
+      "type": "ChartDrawer",
+      "name": "Forks over time",
+      "x": 1320,
+      "y": 900,
+      "params": {
+        "note": "Source: GitHub",
+        "format": "en",
+        "width": "1200",
+        "kind": "lines",
+        "x": "day",
+        "value": "forks",
+        "combine": "max",
+        "from_zero": "yes",
+        "markers": "yes",
+        "title": "Forks",
+        "subtitle": "$(owner)/$(repo), by day"
+      }
+    },
+    {
+      "id": "forks_chart_png",
+      "type": "Writer",
+      "name": "Forks over time as PNG",
+      "x": 1580,
+      "y": 900,
+      "params": {
+        "path": "out/github/forks_over_time.png"
+      }
+    },
+    {
+      "id": "releases",
+      "type": "HttpCaller",
+      "name": "Releases",
+      "x": 20,
+      "y": 1100,
+      "params": {
+        "url": "'$(api)/repos/$(owner)/$(repo)/releases?per_page=100'",
+        "connection": "$(connection)",
+        "paging": "next"
+      },
+      "comment": "Each release with its files and how often they were downloaded"
+    },
+    {
+      "id": "releases_list",
+      "type": "JsonExploder",
+      "name": "One per release",
+      "x": 280,
+      "y": 1100,
+      "params": {
+        "attribute": "_response",
+        "path": ""
+      }
+    },
+    {
+      "id": "assets",
+      "type": "JsonExploder",
+      "name": "One per file",
+      "x": 540,
+      "y": 1100,
+      "params": {
+        "attribute": "assets",
+        "path": "",
+        "prefix": "file"
+      }
+    },
+    {
+      "id": "downloads",
+      "type": "ChartDrawer",
+      "name": "Downloads per release",
+      "x": 800,
+      "y": 1100,
+      "params": {
+        "note": "Source: GitHub",
+        "format": "en",
+        "width": "1200",
+        "kind": "bars",
+        "category": "tag_name",
+        "value": "file.download_count",
+        "combine": "sum",
+        "sort": "name",
+        "orientation": "columns",
+        "title": "Downloads per release",
+        "subtitle": "$(owner)/$(repo), all files of each release"
+      }
+    },
+    {
+      "id": "downloads_png",
+      "type": "Writer",
+      "name": "Downloads per release as PNG",
+      "x": 1060,
+      "y": 1100,
+      "params": {
+        "path": "out/github/downloads_per_release.png"
+      }
+    },
+    {
+      "id": "clones",
+      "type": "HttpCaller",
+      "name": "Clones",
+      "x": 20,
+      "y": 1300,
+      "params": {
+        "url": "'$(api)/repos/$(owner)/$(repo)/traffic/clones'",
+        "connection": "$(connection)"
+      },
+      "comment": "Clones each day of the last 14 days. GitHub keeps no more, and only gives them with a token that may push"
+    },
+    {
+      "id": "clones_days",
+      "type": "JsonExploder",
+      "name": "One per day",
+      "x": 280,
+      "y": 1300,
+      "params": {
+        "attribute": "_response",
+        "path": "clones"
+      }
+    },
+    {
+      "id": "clones_day",
+      "type": "AttributeCreator",
+      "name": "Day",
+      "x": 540,
+      "y": 1300,
+      "params": {
+        "name": "day",
+        "expression": "left(timestamp, 10)"
+      }
+    },
+    {
+      "id": "clones_all",
+      "type": "AttributeCreator",
+      "name": "All",
+      "x": 800,
+      "y": 1250,
+      "params": {
+        "name": "what",
+        "expression": "'Clones'"
+      }
+    },
+    {
+      "id": "clones_all_n",
+      "type": "AttributeCreator",
+      "name": "Count",
+      "x": 1060,
+      "y": 1250,
+      "params": {
+        "name": "n",
+        "expression": "count"
+      }
+    },
+    {
+      "id": "clones_uniq",
+      "type": "AttributeCreator",
+      "name": "Unique",
+      "x": 800,
+      "y": 1350,
+      "params": {
+        "name": "what",
+        "expression": "'Unique cloners'"
+      }
+    },
+    {
+      "id": "clones_uniq_n",
+      "type": "AttributeCreator",
+      "name": "Count",
+      "x": 1060,
+      "y": 1350,
+      "params": {
+        "name": "n",
+        "expression": "uniques"
+      }
+    },
+    {
+      "id": "clones_chart",
+      "type": "ChartDrawer",
+      "name": "Clones per day",
+      "x": 1320,
+      "y": 1300,
+      "params": {
+        "note": "Source: GitHub",
+        "format": "en",
+        "width": "1200",
+        "kind": "lines",
+        "x": "day",
+        "series": "what",
+        "value": "n",
+        "combine": "sum",
+        "from_zero": "yes",
+        "markers": "yes",
+        "title": "Clones per day",
+        "subtitle": "$(owner)/$(repo), the last 14 days"
+      }
+    },
+    {
+      "id": "clones_chart_png",
+      "type": "Writer",
+      "name": "Clones per day as PNG",
+      "x": 1580,
+      "y": 1300,
+      "params": {
+        "path": "out/github/clones_per_day.png"
+      }
+    },
+    {
+      "id": "clones_keep",
+      "type": "AttributeKeeper",
+      "name": "Keep the counts",
+      "x": 800,
+      "y": 1440,
+      "params": {
+        "keep": "day, count, uniques"
+      }
+    },
+    {
+      "id": "clones_out",
+      "type": "Writer",
+      "name": "Add to the history",
+      "x": 1060,
+      "y": 1440,
+      "params": {
+        "path": "out/github/clones_history.csv",
+        "mode": "append"
+      },
+      "comment": "Days come again in the next run; github_history.ographis takes each day once"
+    },
+    {
+      "id": "views",
+      "type": "HttpCaller",
+      "name": "Views",
+      "x": 20,
+      "y": 1560,
+      "params": {
+        "url": "'$(api)/repos/$(owner)/$(repo)/traffic/views'",
+        "connection": "$(connection)"
+      },
+      "comment": "Views each day of the last 14 days. GitHub keeps no more, and only gives them with a token that may push"
+    },
+    {
+      "id": "views_days",
+      "type": "JsonExploder",
+      "name": "One per day",
+      "x": 280,
+      "y": 1560,
+      "params": {
+        "attribute": "_response",
+        "path": "views"
+      }
+    },
+    {
+      "id": "views_day",
+      "type": "AttributeCreator",
+      "name": "Day",
+      "x": 540,
+      "y": 1560,
+      "params": {
+        "name": "day",
+        "expression": "left(timestamp, 10)"
+      }
+    },
+    {
+      "id": "views_all",
+      "type": "AttributeCreator",
+      "name": "All",
+      "x": 800,
+      "y": 1510,
+      "params": {
+        "name": "what",
+        "expression": "'Views'"
+      }
+    },
+    {
+      "id": "views_all_n",
+      "type": "AttributeCreator",
+      "name": "Count",
+      "x": 1060,
+      "y": 1510,
+      "params": {
+        "name": "n",
+        "expression": "count"
+      }
+    },
+    {
+      "id": "views_uniq",
+      "type": "AttributeCreator",
+      "name": "Unique",
+      "x": 800,
+      "y": 1610,
+      "params": {
+        "name": "what",
+        "expression": "'Unique visitors'"
+      }
+    },
+    {
+      "id": "views_uniq_n",
+      "type": "AttributeCreator",
+      "name": "Count",
+      "x": 1060,
+      "y": 1610,
+      "params": {
+        "name": "n",
+        "expression": "uniques"
+      }
+    },
+    {
+      "id": "views_chart",
+      "type": "ChartDrawer",
+      "name": "Views per day",
+      "x": 1320,
+      "y": 1560,
+      "params": {
+        "note": "Source: GitHub",
+        "format": "en",
+        "width": "1200",
+        "kind": "lines",
+        "x": "day",
+        "series": "what",
+        "value": "n",
+        "combine": "sum",
+        "from_zero": "yes",
+        "markers": "yes",
+        "title": "Views per day",
+        "subtitle": "$(owner)/$(repo), the last 14 days"
+      }
+    },
+    {
+      "id": "views_chart_png",
+      "type": "Writer",
+      "name": "Views per day as PNG",
+      "x": 1580,
+      "y": 1560,
+      "params": {
+        "path": "out/github/views_per_day.png"
+      }
+    },
+    {
+      "id": "views_keep",
+      "type": "AttributeKeeper",
+      "name": "Keep the counts",
+      "x": 800,
+      "y": 1700,
+      "params": {
+        "keep": "day, count, uniques"
+      }
+    },
+    {
+      "id": "views_out",
+      "type": "Writer",
+      "name": "Add to the history",
+      "x": 1060,
+      "y": 1700,
+      "params": {
+        "path": "out/github/views_history.csv",
+        "mode": "append"
+      },
+      "comment": "Days come again in the next run; github_history.ographis takes each day once"
+    },
+    {
+      "id": "referrers",
+      "type": "HttpCaller",
+      "name": "Referrers",
+      "x": 20,
+      "y": 1860,
+      "params": {
+        "url": "'$(api)/repos/$(owner)/$(repo)/traffic/popular/referrers'",
+        "connection": "$(connection)"
+      },
+      "comment": "The sites visitors came from, the last 14 days"
+    },
+    {
+      "id": "referrers_list",
+      "type": "JsonExploder",
+      "name": "One per site",
+      "x": 280,
+      "y": 1860,
+      "params": {
+        "attribute": "_response",
+        "path": ""
+      }
+    },
+    {
+      "id": "referrers_chart",
+      "type": "ChartDrawer",
+      "name": "Where visitors come from",
+      "x": 540,
+      "y": 1860,
+      "params": {
+        "note": "Source: GitHub",
+        "format": "en",
+        "width": "1200",
+        "kind": "bars",
+        "category": "referrer",
+        "value": "uniques",
+        "title": "Where visitors come from",
+        "subtitle": "$(owner)/$(repo), unique visitors the last 14 days",
+        "limit": "10"
+      }
+    },
+    {
+      "id": "referrers_chart_png",
+      "type": "Writer",
+      "name": "Where visitors come from as PNG",
+      "x": 800,
+      "y": 1860,
+      "params": {
+        "path": "out/github/referrers.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "repo",
+        "Output"
+      ],
+      "to": [
+        "repo_values",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "repo_values",
+        "Output"
+      ],
+      "to": [
+        "repo_date",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "repo_date",
+        "Output"
+      ],
+      "to": [
+        "repo_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "repo_keep",
+        "Output"
+      ],
+      "to": [
+        "repo_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "issues",
+        "Output"
+      ],
+      "to": [
+        "issues_list",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "issues_list",
+        "Exploded"
+      ],
+      "to": [
+        "only_issues",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "only_issues",
+        "Passed"
+      ],
+      "to": [
+        "opened",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "opened",
+        "Output"
+      ],
+      "to": [
+        "opened_kind",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "only_issues",
+        "Passed"
+      ],
+      "to": [
+        "was_closed",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "was_closed",
+        "Passed"
+      ],
+      "to": [
+        "closed",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "closed",
+        "Output"
+      ],
+      "to": [
+        "closed_kind",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "opened_kind",
+        "Output"
+      ],
+      "to": [
+        "one",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "closed_kind",
+        "Output"
+      ],
+      "to": [
+        "one",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "one",
+        "Output"
+      ],
+      "to": [
+        "issues_weeks",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "issues_weeks",
+        "Chart"
+      ],
+      "to": [
+        "issues_weeks_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "issues_now",
+        "Chart"
+      ],
+      "to": [
+        "issues_now_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "only_issues",
+        "Passed"
+      ],
+      "to": [
+        "issues_now",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "stars",
+        "Output"
+      ],
+      "to": [
+        "stars_list",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "stars_list",
+        "Exploded"
+      ],
+      "to": [
+        "stars_sorted",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "stars_sorted",
+        "Sorted"
+      ],
+      "to": [
+        "stars_count",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "stars_count",
+        "Output"
+      ],
+      "to": [
+        "stars_day",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "stars_chart",
+        "Chart"
+      ],
+      "to": [
+        "stars_chart_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "stars_day",
+        "Output"
+      ],
+      "to": [
+        "stars_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "forks",
+        "Output"
+      ],
+      "to": [
+        "forks_list",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "forks_list",
+        "Exploded"
+      ],
+      "to": [
+        "forks_sorted",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "forks_sorted",
+        "Sorted"
+      ],
+      "to": [
+        "forks_count",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "forks_count",
+        "Output"
+      ],
+      "to": [
+        "forks_day",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "forks_chart",
+        "Chart"
+      ],
+      "to": [
+        "forks_chart_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "forks_day",
+        "Output"
+      ],
+      "to": [
+        "forks_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "releases",
+        "Output"
+      ],
+      "to": [
+        "releases_list",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "releases_list",
+        "Exploded"
+      ],
+      "to": [
+        "assets",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "downloads",
+        "Chart"
+      ],
+      "to": [
+        "downloads_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "assets",
+        "Exploded"
+      ],
+      "to": [
+        "downloads",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones",
+        "Output"
+      ],
+      "to": [
+        "clones_days",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_days",
+        "Exploded"
+      ],
+      "to": [
+        "clones_day",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_day",
+        "Output"
+      ],
+      "to": [
+        "clones_all",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_all",
+        "Output"
+      ],
+      "to": [
+        "clones_all_n",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_day",
+        "Output"
+      ],
+      "to": [
+        "clones_uniq",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_uniq",
+        "Output"
+      ],
+      "to": [
+        "clones_uniq_n",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_chart",
+        "Chart"
+      ],
+      "to": [
+        "clones_chart_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_all_n",
+        "Output"
+      ],
+      "to": [
+        "clones_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_uniq_n",
+        "Output"
+      ],
+      "to": [
+        "clones_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_day",
+        "Output"
+      ],
+      "to": [
+        "clones_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "clones_keep",
+        "Output"
+      ],
+      "to": [
+        "clones_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views",
+        "Output"
+      ],
+      "to": [
+        "views_days",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_days",
+        "Exploded"
+      ],
+      "to": [
+        "views_day",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_day",
+        "Output"
+      ],
+      "to": [
+        "views_all",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_all",
+        "Output"
+      ],
+      "to": [
+        "views_all_n",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_day",
+        "Output"
+      ],
+      "to": [
+        "views_uniq",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_uniq",
+        "Output"
+      ],
+      "to": [
+        "views_uniq_n",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_chart",
+        "Chart"
+      ],
+      "to": [
+        "views_chart_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_all_n",
+        "Output"
+      ],
+      "to": [
+        "views_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_uniq_n",
+        "Output"
+      ],
+      "to": [
+        "views_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_day",
+        "Output"
+      ],
+      "to": [
+        "views_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "views_keep",
+        "Output"
+      ],
+      "to": [
+        "views_out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "referrers",
+        "Output"
+      ],
+      "to": [
+        "referrers_list",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "referrers_chart",
+        "Chart"
+      ],
+      "to": [
+        "referrers_chart_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "referrers_list",
+        "Exploded"
+      ],
+      "to": [
+        "referrers_chart",
+        "Input"
+      ]
+    }
+  ]
+}

@@ -393,11 +393,20 @@ fn buffer_dissolve_overlay_center_and_generalize() {
     let areas: Vec<f64> = d.features.iter().map(|f| og_engine::geom::area(f.geom.as_ref().unwrap(), false)).collect();
     assert_eq!(areas, [20000.0, 10000.0]);
     assert!(matches!(d.features[0].geom, Some(geo::Geometry::Polygon(_))));
-    // Without groups everything is merged, and the lines go to Remnants.
+    // Without groups all that touch are merged, the areas apart stay apart, and the lines go
+    // to Remnants.
     let all = r.output("all", "Dissolved").unwrap();
-    assert_eq!(col(all, "_count"), ints(&[3]));
-    assert_eq!(og_engine::geom::area(all.features[0].geom.as_ref().unwrap(), false), 30000.0);
+    assert_eq!(col(all, "_count"), ints(&[2, 1]));
+    let sizes: Vec<f64> = all.features.iter().map(|f| og_engine::geom::area(f.geom.as_ref().unwrap(), false)).collect();
+    assert_eq!(sizes, [20000.0, 10000.0]);
     assert_eq!(r.output("all", "Remnants").unwrap().len(), 2);
+    // As one multi-area, everything becomes one.
+    let mut together = ws.clone();
+    together.nodes.iter_mut().find(|n| n.id == "all").unwrap().params.insert("parts".into(), serde_json::json!("together"));
+    let r2 = run(&together, None, &dir);
+    let one = r2.output("all", "Dissolved").unwrap();
+    assert_eq!(one.len(), 1);
+    assert_eq!(og_engine::geom::area(one.features[0].geom.as_ref().unwrap(), false), 30000.0);
 
     // Overlayer: the point's own "zone" attribute wins over the area's, "part" is new.
     let p = r.output("overlay", "Point").unwrap();
@@ -536,6 +545,7 @@ fn stamp_cut_join_and_replace_text() {
         {"id": "join", "type": "StringConcatenator", "params": {"attributes": ["code", "name", "part"], "separator": " - ", "name": "label"}},
         {"id": "join_all", "type": "StringConcatenator", "params": {"attributes": "size,part", "separator": "_", "skip_empty": "false"}},
         {"id": "fixed", "type": "StringConcatenator", "params": {"attributes": "'0', code, ', it''s ', \"part\"", "name": "fixed"}},
+        {"id": "own", "type": "StringConcatenator", "params": {"attributes": "code, ' - ', name, ', ', part", "fixed": "separators", "name": "own"}},
         {"id": "a_to_b", "type": "StringReplacer", "params": {"attributes": ["part", "name"], "find": "A", "replace": "B"}},
         {"id": "no_spaces", "type": "StringReplacer", "params": {"attributes": ["name", "size"], "find": " ", "replace": ""}},
         {"id": "any_case", "type": "StringReplacer", "params": {"attributes": ["name"], "find": "ÖTE", "replace": "*", "match_case": "false"}},
@@ -552,6 +562,7 @@ fn stamp_cut_join_and_replace_text() {
         {"from": ["in", "Output"], "to": ["join", "Input"]},
         {"from": ["in", "Output"], "to": ["join_all", "Input"]},
         {"from": ["in", "Output"], "to": ["fixed", "Input"]},
+        {"from": ["in", "Output"], "to": ["own", "Input"]},
         {"from": ["in", "Output"], "to": ["a_to_b", "Input"]},
         {"from": ["in", "Output"], "to": ["no_spaces", "Input"]},
         {"from": ["in", "Output"], "to": ["any_case", "Input"]},
@@ -588,6 +599,8 @@ fn stamp_cut_join_and_replace_text() {
     assert_eq!(col(r.output("join_all", "Output").unwrap(), "_concatenated"), texts(&["12.5_", "7_A", "_B"]));
     // Fixed texts in single quotes, which may hold commas, spaces and a quote written twice.
     assert_eq!(col(r.output("fixed", "Output").unwrap(), "fixed"), texts(&["00114, it's ", "01480, it's A", "0, it's B"]));
+    // Fixed texts as separators of their own: only between two values.
+    assert_eq!(col(r.output("own", "Output").unwrap(), "own"), texts(&["0114 - Upplands Väsby", "1480 - Göteborg, A", "B"]));
 
     // Replaced. Only what matches changes, and a number that is not touched stays a number.
     let a = r.output("a_to_b", "Output").unwrap();
@@ -1786,7 +1799,7 @@ fn features_are_aggregated_and_deaggregated() {
 fn variables_are_put_in_the_settings() {
     use og_engine::run::{expand_variables, is_variable_name};
     use og_engine::Variable;
-    let vars = vec![Variable { name: "year".into(), value: "2026".into() }, Variable { name: "dir".into(), value: "out".into() }];
+    let vars = vec![Variable { name: "year".into(), value: "2026".into(), ask: false }, Variable { name: "dir".into(), value: "out".into(), ask: false }];
     assert_eq!(expand_variables("$(dir)/roads_$(year).gpkg", &vars).unwrap(), "out/roads_2026.gpkg");
     assert_eq!(expand_variables("$( year )", &vars).unwrap(), "2026");
     assert_eq!(expand_variables("no variables here", &vars).unwrap(), "no variables here");
@@ -3633,4 +3646,227 @@ fn a_point_cloud_filter_connected_to_points_keeps_it() {
     assert_eq!(old.nodes[0].params.get("class_ports").and_then(|v| v.as_str()), Some("no"));
     let new = Workspace::from_json(&model("")).unwrap();
     assert!(!new.nodes[0].params.contains_key("class_ports"));
+}
+
+/// A stream that comes in empty goes on empty, also through tools that need an attribute of
+/// the features, instead of a row of errors.
+#[test]
+fn an_empty_stream_goes_on_empty_through_tools_that_need_its_attributes() {
+    let dir = tmp("empty-on");
+    std::fs::write(dir.join("towns.csv"), TOWNS).unwrap();
+    let ws = Workspace::from_json(
+        r#"{
+      "format": "ographis/1", "name": "test",
+      "nodes": [
+        {"id": "t", "type": "Reader", "params": {"path": "towns.csv"}},
+        {"id": "none", "type": "Tester", "params": {"test": "population > 1000000000"}},
+        {"id": "keep", "type": "AttributeKeeper", "params": {"keep": "name"}},
+        {"id": "calc", "type": "AttributeCreator", "params": {"name": "big", "expression": "inhabitants * 2"}},
+        {"id": "out", "type": "Writer", "params": {"path": "out/none.csv"}}
+      ],
+      "edges": [
+        {"from": ["t", "Output"], "to": ["none", "Input"]},
+        {"from": ["none", "Passed"], "to": ["keep", "Input"]},
+        {"from": ["keep", "Output"], "to": ["calc", "Input"]},
+        {"from": ["calc", "Output"], "to": ["out", "Input"]}
+      ]
+    }"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert!(r.nodes.values().all(|n| n.error.is_none()), "no node fails");
+    assert_eq!(r.output("calc", "Output").unwrap().len(), 0);
+    // What it would have said is in the log, in case the name is wrong.
+    assert!(r.log.iter().any(|l| l.level == Level::Info && l.msg.contains("nothing came in") && l.msg.contains("inhabitants")));
+    // With features, the wrong name is an error as before.
+    let ws = Workspace::from_json(&serde_json::to_string(&ws).unwrap().replace("population > 1000000000", "population > 0")).unwrap();
+    let r = run(&ws, None, &dir);
+    assert!(r.nodes["calc"].error.as_deref().is_some_and(|e| e.contains("inhabitants")));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Draw map draws points as arrows the way of their direction, and as a heatmap.
+#[test]
+fn draw_map_draws_arrows_and_a_heatmap() {
+    let dir = tmp("arrows-heat");
+    // Wind from the west at the left, and a crowd of points at the right.
+    let mut csv = String::from("dir;wkt\n");
+    csv += "270;POINT (20 50)\n";
+    for k in 0..30 {
+        csv += &format!(";POINT ({} {})\n", 80.0 + (k % 5) as f64, 50.0 + (k / 5) as f64);
+    }
+    csv += ";POINT (0 0)\n;POINT (100 100)\n";
+    std::fs::write(dir.join("pts.csv"), csv).unwrap();
+    let ws = Workspace::from_json(
+        r##"{
+      "nodes": [
+        {"id": "p", "type": "Reader", "params": {"path": "pts.csv", "crs": "EPSG:3006"}},
+        {"id": "arrows", "type": "MapRenderer", "params": {"width": "200", "margin": "0", "background": "#ffffff",
+          "layers": [{"from": "p:Output", "fill": "#000000", "stroke": "#000000", "width": 2, "size": 40, "arrow_by": "dir", "arrow_from": true}]}},
+        {"id": "heat", "type": "MapRenderer", "params": {"width": "200", "margin": "0", "background": "#ffffff",
+          "layers": [{"from": "p:Output", "heat": 15}]}}
+      ],
+      "edges": [{"from": ["p", "Output"], "to": ["arrows", "Layers"]}, {"from": ["p", "Output"], "to": ["heat", "Layers"]}]
+    }"##,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0);
+    let img = r.output("arrows", "Map").unwrap().image.clone().unwrap();
+    let dark = |img: &og_engine::model::RasterImage, x: usize, y: usize| img.rgba[(y * img.width + x) * 4] < 100;
+    // From the west, so the arrow points east: its head to the right of the point, its tail
+    // to the left, and nothing above or below. The points without a direction are not drawn.
+    let (x, y) = (40usize, 100usize);
+    assert!(dark(&img, x + 15, y) && dark(&img, x - 15, y), "a shaft from west to east");
+    assert!(!dark(&img, x, y - 15) && !dark(&img, x, y + 15));
+    assert!(!dark(&img, 2, 198), "a point without a direction is not drawn");
+    // The heatmap is darkest where the points crowd, and clear far from them.
+    let heat = r.output("heat", "Map").unwrap().image.clone().unwrap();
+    let at = |x: usize, y: usize| heat.rgba[(y * heat.width + x) * 4..][..3].to_vec();
+    let crowd = at(164, 95);
+    assert!(crowd[2] < 120, "a warm colour where the points crowd: {:?}", crowd);
+    assert_eq!(at(100, 30), [255, 255, 255], "white far from any point");
+}
+
+/// A tool made of other tools: its ports are the Tool input and Tool output nodes inside, and
+/// it runs once, for each value of an attribute, or again and again.
+#[test]
+fn a_tool_made_of_other_tools_runs_once_for_each_value_and_repeated() {
+    let dir = tmp("custom-tool");
+    std::fs::write(dir.join("towns.csv"), TOWNS).unwrap();
+    let tool = |run: &str, inner_calc: &str| {
+        format!(
+            r#"{{"id": "tool", "type": "CustomTool", "name": "Double", "params": {{{run}
+               "tool": {{"nodes": [
+                  {{"id": "in", "type": "ToolInput", "y": 0, "params": {{"port": "Towns"}}}},
+                  {{"id": "calc", "type": "AttributeCreator", "params": {inner_calc}}},
+                  {{"id": "out", "type": "ToolOutput", "params": {{"port": "Towns"}}}}],
+                 "edges": [{{"from": ["in", "Output"], "to": ["calc", "Input"]}}, {{"from": ["calc", "Output"], "to": ["out", "Input"]}}]}}}}}}"#
+        )
+    };
+    let model = |tool: String| {
+        Workspace::from_json(&format!(
+            r#"{{"format": "ographis/1", "name": "t", "variables": [{{"name": "factor", "value": "2"}}],
+              "nodes": [{{"id": "t", "type": "Reader", "params": {{"path": "towns.csv"}}}}, {tool}],
+              "edges": [{{"from": ["t", "Output"], "to": ["tool", "Towns"]}}]}}"#
+        ))
+        .unwrap()
+    };
+    // Once: the variables of the model count inside.
+    let r = run(&model(tool("", r#"{"name": "twice", "expression": "population * $(factor)"}"#)), None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0);
+    assert_eq!(col(r.output("tool", "Towns").unwrap(), "twice")[0], Value::Int(1_200_000));
+    // For each municipality, with $(value) the municipality of the round.
+    let r = run(&model(tool(r#""loop": "each", "each_by": "municipality","#, r#"{"name": "seen", "expression": "'$(value)'"}"#)), None, &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let out = r.output("tool", "Towns").unwrap();
+    assert_eq!(out.len(), 5);
+    assert_eq!(col(out, "seen"), col(out, "municipality"));
+    // Repeated three times, what comes out going in again.
+    let r = run(&model(tool(r#""loop": "repeat", "times": "3","#, r#"{"name": "population", "expression": "population + 1"}"#)), None, &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    assert_eq!(col(r.output("tool", "Towns").unwrap(), "population")[0], Value::Int(600_003));
+    // A fault inside is the fault of the tool, with the node it was in.
+    let r = run(&model(tool("", r#"{"name": "x", "expression": "no_such + 1"}"#)), None, &dir);
+    let e = r.nodes["tool"].error.clone().unwrap();
+    assert!(e.contains("inside the tool") && e.contains("no_such"), "{}", e);
+    // og check knows the ports of the tool.
+    let text = serde_json::to_string(&model(tool("", r#"{"name": "twice", "expression": "population * 2"}"#))).unwrap();
+    let found = og_engine::reference::check(&text);
+    assert!(found.iter().all(|f| !f.error), "{:?}", found.iter().map(|f| &f.message).collect::<Vec<_>>());
+}
+
+/// A setting can take its value from the data of another node: $(node.attribute) is the value
+/// of the first feature, and the node runs after the one it takes it from.
+#[test]
+fn a_setting_takes_a_value_from_the_data_of_another_node() {
+    let dir = tmp("data-values");
+    std::fs::write(dir.join("towns.csv"), TOWNS).unwrap();
+    std::fs::write(dir.join("limits.csv"), "least;label\n100000;big\n").unwrap();
+    // The test is written before the limit is read: the order in the file does not matter.
+    let ws = Workspace::from_json(
+        r#"{"format": "ographis/1", "name": "t",
+          "nodes": [{"id": "t", "type": "Reader", "params": {"path": "towns.csv"}},
+                    {"id": "keep", "type": "Tester", "params": {"test": "population > $(limits.least)"}},
+                    {"id": "name", "type": "AttributeCreator", "params": {"name": "size", "expression": "'$(limits.label)'"}},
+                    {"id": "limits", "type": "Reader", "params": {"path": "limits.csv"}}],
+          "edges": [{"from": ["t", "Output"], "to": ["keep", "Input"]}, {"from": ["keep", "Passed"], "to": ["name", "Input"]}]}"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let out = r.output("name", "Output").unwrap();
+    assert!(!out.is_empty() && col(out, "population").iter().all(|v| v.as_f64().unwrap() > 100_000.0));
+    assert!(col(out, "size").iter().all(|v| v.to_text() == "big"));
+    // The keys of the cache follow the data the value comes from.
+    let before = og_engine::node_keys(&ws, &dir)["keep"];
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    std::fs::write(dir.join("limits.csv"), "least;label\n500000;huge\n").unwrap();
+    assert_ne!(og_engine::node_keys(&ws, &dir)["keep"], before);
+    // An attribute that is not there is said.
+    let bad = Workspace::from_json(&serde_json::to_string(&ws).unwrap().replace("limits.least", "limits.most")).unwrap();
+    let r = run(&bad, None, &dir);
+    let e = r.nodes["keep"].error.clone().unwrap();
+    assert!(e.contains("has no attribute most"), "{}", e);
+    // og check does not take it for a variable that is missing.
+    let found = og_engine::reference::check(&serde_json::to_string(&ws).unwrap());
+    assert!(found.iter().all(|f| !f.error), "{:?}", found.iter().map(|f| &f.message).collect::<Vec<_>>());
+}
+
+/// A map for print: roads with an edge and dashed borders, names that bend along a road and
+/// spread over an area, a scale bar, a north arrow and a grid, written as a PDF and an SVG of
+/// shapes.
+#[test]
+fn a_map_has_a_frame_line_styles_and_is_written_as_shapes() {
+    let dir = tmp("map-frame");
+    // A road that turns a corner, and an area.
+    std::fs::write(dir.join("roads.csv"), "name;wkt\nLong winding road;LINESTRING (0 500, 300 520, 600 600, 800 800, 900 1000)\n").unwrap();
+    std::fs::write(dir.join("area.csv"), "name;wkt\nLake;POLYGON ((100 100, 900 100, 900 400, 100 400, 100 100))\n").unwrap();
+    let ws = Workspace::from_json(
+        r##"{
+      "nodes": [
+        {"id": "roads", "type": "Reader", "params": {"path": "roads.csv", "crs": "EPSG:3006"}},
+        {"id": "lake", "type": "Reader", "params": {"path": "area.csv", "crs": "EPSG:3006"}},
+        {"id": "map", "type": "MapRenderer", "params": {"width": "800", "background": "#ffffff", "scale_bar": "bottom-left",
+          "north_arrow": "top-right", "grid": "lines", "grid_every": "200", "source": "Made up",
+          "layers": [
+            {"from": "roads:Output", "fill": "none", "stroke": "#ffcc00", "width": 4, "size": 4, "casing": "#444444", "casing_width": 1.5, "label": "name", "label_size": 16},
+            {"from": "lake:Output", "name": "Water", "fill": "#a6cee3", "stroke": "#1f78b4", "width": 2, "size": 4, "dash": "dash", "label": "name", "label_spaced": true, "label_size": 20}
+          ]}},
+        {"id": "pdf", "type": "Writer", "params": {"path": "out/map.pdf", "pdf_size": "a4", "pdf_title": "Roads"}},
+        {"id": "svg", "type": "Writer", "params": {"path": "out/map.svg"}}
+      ],
+      "edges": [{"from": ["roads", "Output"], "to": ["map", "Layers"]}, {"from": ["lake", "Output"], "to": ["map", "Layers"]},
+                {"from": ["map", "Map"], "to": ["pdf", "Input"]}, {"from": ["map", "Map"], "to": ["svg", "Input"]}]
+    }"##,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let img = r.output("map", "Map").unwrap().image.clone().unwrap();
+    let pic = img.vector.clone().expect("the map is kept as shapes");
+    use og_engine::vector::Op;
+    // The edge of the road under it, in grey, and the dashed outline of the lake.
+    assert!(pic.ops.iter().any(|o| matches!(o, Op::Stroke { rgba, width, .. } if rgba[..3] == [0x44, 0x44, 0x44] && *width == 7.0)));
+    assert!(pic.ops.iter().any(|o| matches!(o, Op::Stroke { rgba, dash, .. } if rgba[..3] == [0x1f, 0x78, 0xb4] && !dash.is_empty())));
+    // The name of the road letter by letter: more shapes in its colour than a single text.
+    let letters = pic.ops.iter().filter(|o| matches!(o, Op::Fill { rgba, .. } if rgba[..3] == [0x22, 0x22, 0x22])).count();
+    assert!(letters > "Long winding road".len(), "{} letters", letters);
+    // A layer for each layer of the map, with its name or that of its stream, its labels,
+    // and the frame, in the order they are drawn: the top row of the form last.
+    let names: Vec<&str> = pic.layers.iter().map(|s| s.as_str()).collect();
+    assert_eq!(names, ["Background", "Water", "Input", "Input labels", "Water labels", "Frame and legend"]);
+    let pdf = std::fs::read(dir.join("out/map.pdf")).unwrap();
+    let text = String::from_utf8_lossy(&pdf);
+    assert!(pdf.starts_with(b"%PDF-1.5"));
+    assert!(text.contains("/OCProperties") && text.contains("/Type /OCG /Name (Water labels)"), "the PDF has layers");
+    let svg = std::fs::read_to_string(dir.join("out/map.svg")).unwrap();
+    assert!(svg.starts_with("<svg") && svg.contains("stroke-dasharray"));
+    assert!(svg.contains("inkscape:groupmode=\"layer\" inkscape:label=\"Water\"") && svg.matches("<g ").count() == svg.matches("</g>").count());
+    assert!(r.log.iter().any(|l| l.msg.contains("shapes, sharp at any size")));
 }

@@ -26,6 +26,16 @@ pub struct ThemeSpec {
     pub order_by: String,
     /// Points closer than this many pixels are drawn as one, with their number. 0 is off.
     pub cluster: f32,
+    /// Points are drawn as arrows pointing the way of this attribute, in degrees from north
+    /// and clockwise, such as the direction of wind or a current. Their length is the size.
+    pub arrow_by: String,
+    /// The direction says where it comes from, as for wind, so the arrow points the other way.
+    pub arrow_from: bool,
+    /// Points are drawn as a heatmap: how many lie near each place, within this many pixels.
+    /// 0 is off.
+    pub heat: f32,
+    /// What each point counts as in the heatmap. Empty: each counts as one.
+    pub heat_by: String,
 }
 
 impl Default for ThemeSpec {
@@ -41,13 +51,17 @@ impl Default for ThemeSpec {
             order: String::new(),
             order_by: String::new(),
             cluster: 0.0,
+            arrow_by: String::new(),
+            arrow_from: false,
+            heat: 0.0,
+            heat_by: String::new(),
         }
     }
 }
 
 impl ThemeSpec {
     pub fn is_off(&self) -> bool {
-        self.size_by.is_empty() && self.color_by.is_empty() && self.order.is_empty() && self.cluster <= 0.0
+        self.size_by.is_empty() && self.color_by.is_empty() && self.order.is_empty() && self.cluster <= 0.0 && self.arrow_by.is_empty() && self.heat <= 0.0
     }
 }
 
@@ -98,6 +112,13 @@ pub struct Theme {
     /// What the sizes stand for, when the colours stand for something else.
     pub size_keys: Vec<Key>,
     pub size_heading: String,
+    /// For arrows: the angle on the map of each point, in radians clockwise from up. None
+    /// where it has no direction.
+    pub angles: Option<Vec<Option<f32>>>,
+    /// For a heatmap: its reach in pixels, the weight of each point, and the colour ramp.
+    pub heat: f32,
+    pub heat_weights: Option<Vec<f32>>,
+    pub heat_ramp: String,
 }
 
 /// The colour ramps for numbers, each from light to dark: (value, label, stops).
@@ -227,6 +248,18 @@ pub fn prepare(table: &Table, style: &LayerStyle, spec: &ThemeSpec) -> Result<Th
             .map(Some)
             .ok_or_else(|| GbError(format!("The layer has no attribute {} to draw by. It has: {}.", name.trim(), table.field_names().join(", "))))
     };
+    // Arrows: the angle of each point; from where the wind comes, the arrow points away.
+    if let Some(i) = field(&spec.arrow_by)? {
+        let turn = if spec.arrow_from { std::f32::consts::PI } else { 0.0 };
+        theme.angles = Some(table.features.iter().map(|f| f.attrs[i].as_f64().map(|d| (d as f32).to_radians() + turn)).collect());
+    }
+    // A heatmap: the weight of each point, and the ramp from the colour setting.
+    if spec.heat > 0.0 {
+        theme.heat = spec.heat;
+        theme.heat_weights = field(&spec.heat_by)?.map(|i| table.features.iter().map(|f| f.attrs[i].as_f64().unwrap_or(0.0).max(0.0) as f32).collect());
+        theme.heat_ramp = if RAMPS.iter().any(|r| r.0 == spec.ramp) { spec.ramp.clone() } else { "heat".into() };
+        return Ok(theme);
+    }
     let size_at = field(&spec.size_by)?;
     let color_at = field(&spec.color_by)?;
     let order_at = match field(&spec.order_by)? {
@@ -286,38 +319,54 @@ pub fn prepare(table: &Table, style: &LayerStyle, spec: &ThemeSpec) -> Result<Th
             let mut sorted: Vec<f64> = vals.iter().flatten().copied().collect();
             sorted.sort_by(f64::total_cmp);
             let classes = spec.classes.clamp(1, 12);
-            let breaks: Vec<f64> = if sorted.is_empty() {
-                Vec::new()
+            let mut distinct = sorted.clone();
+            distinct.dedup();
+            if distinct.len() >= 2 && distinct.len() <= classes {
+                // As few values as classes, such as 5, 10 and 15 minutes: a class for each value,
+                // named by it, not ranges between them.
+                let ramp = if RAMPS.iter().any(|r| r.0 == spec.ramp) { spec.ramp.as_str() } else { "blues" };
+                let n = distinct.len();
+                let color_of = |c: usize| ramp_at(ramp, 0.08 + 0.92 * c as f64 / (n - 1) as f64);
+                for (c, v) in distinct.iter().enumerate() {
+                    keys.push((color_of(c), short(*v)));
+                    class_keys.push(ClassKey::Range(*v, *v));
+                }
+                vals.iter().map(|v| v.and_then(|v| distinct.iter().position(|d| *d == v)).map(color_of)).collect()
             } else {
-                match spec.method.as_str() {
-                    "natural" => natural_breaks(&sorted, classes),
-                    "quantile" => {
-                        let mut b: Vec<f64> = (0..=classes).map(|k| sorted[((sorted.len() - 1) as f64 * k as f64 / classes as f64).round() as usize]).collect();
-                        b.dedup_by(|a, b| a == b);
-                        b
+                let breaks: Vec<f64> = if sorted.is_empty() {
+                    Vec::new()
+                } else {
+                    match spec.method.as_str() {
+                        "natural" => natural_breaks(&sorted, classes),
+                        "quantile" => {
+                            let mut b: Vec<f64> =
+                                (0..=classes).map(|k| sorted[((sorted.len() - 1) as f64 * k as f64 / classes as f64).round() as usize]).collect();
+                            b.dedup_by(|a, b| a == b);
+                            b
+                        }
+                        _ => {
+                            let (lo, hi) = (sorted[0], sorted[sorted.len() - 1]);
+                            (0..=classes).map(|k| lo + (hi - lo) * k as f64 / classes as f64).collect()
+                        }
                     }
-                    _ => {
-                        let (lo, hi) = (sorted[0], sorted[sorted.len() - 1]);
-                        (0..=classes).map(|k| lo + (hi - lo) * k as f64 / classes as f64).collect()
+                };
+                let count = breaks.len().saturating_sub(1).max(1);
+                let ramp = if RAMPS.iter().any(|r| r.0 == spec.ramp) { spec.ramp.as_str() } else { "blues" };
+                let color_of_class = |c: usize| ramp_at(ramp, if count == 1 { 0.7 } else { 0.08 + 0.92 * c as f64 / (count - 1) as f64 });
+                let class_of = |v: f64| breaks.windows(2).position(|w| v <= w[1]).unwrap_or(count - 1).min(count - 1);
+                for c in 0..count {
+                    if breaks.len() >= 2 {
+                        let text = if breaks[c] == breaks[c + 1] { short(breaks[c]) } else { format!("{} – {}", short(breaks[c]), short(breaks[c + 1])) };
+                        keys.push((color_of_class(c), text));
+                        class_keys.push(ClassKey::Range(breaks[c], breaks[c + 1]));
                     }
                 }
-            };
-            let count = breaks.len().saturating_sub(1).max(1);
-            let ramp = if RAMPS.iter().any(|r| r.0 == spec.ramp) { spec.ramp.as_str() } else { "blues" };
-            let color_of_class = |c: usize| ramp_at(ramp, if count == 1 { 0.7 } else { 0.08 + 0.92 * c as f64 / (count - 1) as f64 });
-            let class_of = |v: f64| breaks.windows(2).position(|w| v <= w[1]).unwrap_or(count - 1).min(count - 1);
-            for c in 0..count {
-                if breaks.len() >= 2 {
-                    let text = if breaks[c] == breaks[c + 1] { short(breaks[c]) } else { format!("{} – {}", short(breaks[c]), short(breaks[c + 1])) };
-                    keys.push((color_of_class(c), text));
-                    class_keys.push(ClassKey::Range(breaks[c], breaks[c + 1]));
+                if breaks.len() == 1 {
+                    keys.push((color_of_class(0), short(breaks[0])));
+                    class_keys.push(ClassKey::Range(breaks[0], breaks[0]));
                 }
+                vals.iter().map(|v| v.map(|v| color_of_class(if breaks.len() >= 2 { class_of(v) } else { 0 }))).collect()
             }
-            if breaks.len() == 1 {
-                keys.push((color_of_class(0), short(breaks[0])));
-                class_keys.push(ClassKey::Range(breaks[0], breaks[0]));
-            }
-            vals.iter().map(|v| v.map(|v| color_of_class(if breaks.len() >= 2 { class_of(v) } else { 0 }))).collect()
         } else {
             // The most common texts get the colours, the rest are Other.
             let mut counts: Vec<(String, usize)> = Vec::new();

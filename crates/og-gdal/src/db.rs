@@ -147,6 +147,14 @@ pub(crate) fn write(table: &Table, conn: &str, opts: &DbWrite, notes: &mut Notes
         return Err(GbError(format!("The attribute {} clashes with a column that the table gets. Rename it with Manage attributes.", bad)));
     }
     let fields = plan_fields(&shaped, &features, names, None, &HashMap::new(), notes);
+    // Rows updated by a key, in a table that is there.
+    if let (Some(key_attr), true) = (&opts.update_key, there) {
+        let target = Target { schema, name, full: &full, column, mssql };
+        return update_rows(&mut ds, &shaped, &features, &fields, ty, &target, key_attr, opts, notes);
+    }
+    if opts.update_key.is_some() {
+        notes.info(format!("{}.{} was not there, so it was made; the next run updates its rows", schema, name));
+    }
     // In parts, each committed, or all in one transaction.
     let chunked = opts.commit_every.filter(|n| *n > 0 && features.len() > *n);
     let chunked = match (chunked, key.fids.is_some()) {
@@ -275,6 +283,186 @@ pub(crate) fn write(table: &Table, conn: &str, opts: &DbWrite, notes: &mut Notes
     }
     if there && !opts.append {
         notes.info(format!("replaced {}.{}", schema, name));
+    }
+    Ok(features.len() as u64)
+}
+
+/// The table that is written to.
+struct Target<'a> {
+    schema: &'a str,
+    name: &'a str,
+    /// The name GDAL knows the table by.
+    full: &'a str,
+    /// The geometry column of the rows that are written.
+    column: &'a str,
+    mssql: bool,
+}
+
+impl Target<'_> {
+    /// A table in the schema, quoted as the database wants it.
+    fn quoted(&self, name: &str) -> String {
+        if self.mssql {
+            format!("[{}].[{}]", self.schema.replace(']', "]]"), name.replace(']', "]]"))
+        } else {
+            format!("{}.{}", ident(self.schema), ident(name))
+        }
+    }
+    fn col(&self, name: &str) -> String {
+        if self.mssql {
+            format!("[{}]", name.replace(']', "]]"))
+        } else {
+            ident(name)
+        }
+    }
+}
+
+/// The first value of the first row an SQL query gives, as a whole number.
+fn count_of(ds: &gdal::Dataset, sql: &str) -> Result<u64> {
+    let mut rs = ds
+        .execute_sql(sql, None, gdal::vector::sql::Dialect::DEFAULT)
+        .map_err(|e| gerr("Cannot count the rows", e))?
+        .ok_or_else(|| GbError("The database gave no count.".into()))?;
+    let n = rs.features().next().and_then(|f| f.field(0).ok().flatten()).and_then(|v| match v {
+        gdal::vector::FieldValue::IntegerValue(i) => Some(i as u64),
+        gdal::vector::FieldValue::Integer64Value(i) => Some(i as u64),
+        gdal::vector::FieldValue::RealValue(r) => Some(r as u64),
+        gdal::vector::FieldValue::StringValue(s) => s.trim().parse().ok(),
+        _ => None,
+    });
+    Ok(n.unwrap_or(0))
+}
+
+/// Updates the rows of a table that is there whose key is in the stream, adds the others and,
+/// when asked, deletes the rows whose key is not. The stream is written to a table of its own
+/// first, and all of it happens in one transaction: if anything fails, the table is as it was.
+#[allow(clippy::too_many_arguments)]
+fn update_rows(
+    ds: &mut gdal::Dataset,
+    shaped: &Table,
+    features: &[&Feature],
+    fields: &[OutField],
+    ty: OGRwkbGeometryType::Type,
+    target: &Target,
+    key_attr: &str,
+    opts: &DbWrite,
+    notes: &mut Notes,
+) -> Result<u64> {
+    let key = launder(key_attr);
+    let ki = shaped.field_index(&key).ok_or_else(|| GbError(format!("There is no attribute {} to update the rows by.", key_attr)))?;
+    // Each row of the stream is one row of the table: no key twice, and none empty.
+    let mut seen = std::collections::HashSet::new();
+    for f in features {
+        let v = &f.attrs[ki];
+        if v.is_null() || v.to_text().trim().is_empty() {
+            return Err(GbError(format!("A feature has no {}, so it cannot be told which row it is. Nothing was written.", key_attr)));
+        }
+        if !seen.insert(v.to_text()) {
+            return Err(GbError(format!(
+                "{} is {} in two features, so it cannot be told which one the row should be. Nothing was written.",
+                key_attr,
+                v.to_text()
+            )));
+        }
+    }
+    // The columns of the table, and its geometry column.
+    let (columns, geom_col) = {
+        let l = ds
+            .layer_by_name(target.full)
+            .or_else(|_| ds.layer_by_name(&format!("{}.{}", target.schema, target.name)))
+            .map_err(|e| gerr(format!("Cannot open the table {}", target.full), e))?;
+        let defn = l.defn();
+        let cols: Vec<String> = defn.fields().map(|f| f.name().to_lowercase()).collect();
+        let geom = defn.geom_fields().next().map(|g| g.name()).filter(|g| !g.is_empty());
+        (cols, geom)
+    };
+    if !columns.contains(&key.to_lowercase()) {
+        return Err(GbError(format!("The table {}.{} has no column {} to update the rows by.", target.schema, target.name, key)));
+    }
+    let set: Vec<String> = fields.iter().map(|f| f.name.clone()).filter(|n| *n != key && columns.contains(&n.to_lowercase())).collect();
+    let left: Vec<String> = fields.iter().map(|f| f.name.clone()).filter(|n| *n != key && !columns.contains(&n.to_lowercase())).collect();
+    if !left.is_empty() {
+        notes.warn(format!("The table has no column for {}, so it is not written. Add the columns, or replace the table.", left.join(", ")));
+    }
+    let with_geom = ty != OGRwkbGeometryType::wkbNone && geom_col.is_some();
+    let stage = launder(&format!("og_update_{}", target.name)).chars().take(60).collect::<String>();
+    let (t, st) = (target.quoted(target.name), target.quoted(&stage));
+    let kc = target.col(&key);
+    let mut txn = ds.start_transaction().map_err(|e| gerr("Cannot start writing", e))?;
+    let users_sql = |sql: &Option<String>| sql.as_ref().map(|s| s.replace("{table}", &t));
+    let run = |txn: &mut gdal::Dataset, sql: String, what: &str| {
+        txn.execute_sql(sql, None, gdal::vector::sql::Dialect::DEFAULT).map(|_| ()).map_err(|e| gerr(what, e))
+    };
+    let outcome = (|| -> Result<(u64, u64, u64)> {
+        if let Some(sql) = users_sql(&opts.sql_before) {
+            run(&mut txn, sql, "The SQL before failed, and nothing was written")?;
+            notes.info("ran the SQL before");
+        }
+        create(&mut txn, shaped, features, fields, ty, &stage, target.schema, target.column, "og_row", None, target.mssql)?;
+        let matched = format!("EXISTS (SELECT 1 FROM {t} t WHERE t.{kc} = s.{kc})");
+        let updated = count_of(&txn, &format!("SELECT COUNT(*) FROM {st} s WHERE {matched}"))?;
+        let deleted = if opts.delete_missing {
+            count_of(&txn, &format!("SELECT COUNT(*) FROM {t} t WHERE NOT EXISTS (SELECT 1 FROM {st} s WHERE s.{kc} = t.{kc})"))?
+        } else {
+            0
+        };
+        let mut pairs: Vec<(String, String)> = set.iter().map(|c| (target.col(c), format!("s.{}", target.col(c)))).collect();
+        if with_geom {
+            pairs.push((target.col(geom_col.as_deref().unwrap_or(target.column)), format!("s.{}", target.col(target.column))));
+        }
+        if !pairs.is_empty() {
+            let sql = if target.mssql {
+                let assign: Vec<String> = pairs.iter().map(|(c, v)| format!("t.{} = {}", c, v)).collect();
+                format!("UPDATE t SET {} FROM {t} t JOIN {st} s ON t.{kc} = s.{kc}", assign.join(", "))
+            } else {
+                let assign: Vec<String> = pairs.iter().map(|(c, v)| format!("{} = {}", c, v)).collect();
+                format!("UPDATE {t} AS t SET {} FROM {st} AS s WHERE t.{kc} = s.{kc}", assign.join(", "))
+            };
+            run(&mut txn, sql, "Cannot update the rows")?;
+        }
+        let mut cols: Vec<String> = vec![kc.clone()];
+        let mut vals: Vec<String> = vec![format!("s.{}", kc)];
+        for (c, v) in &pairs {
+            cols.push(c.clone());
+            vals.push(v.clone());
+        }
+        let sql = format!("INSERT INTO {t} ({}) SELECT {} FROM {st} s WHERE NOT {matched}", cols.join(", "), vals.join(", "));
+        run(&mut txn, sql, "Cannot add the new rows")?;
+        if opts.delete_missing {
+            let sql = if target.mssql {
+                format!("DELETE t FROM {t} t WHERE NOT EXISTS (SELECT 1 FROM {st} s WHERE s.{kc} = t.{kc})")
+            } else {
+                format!("DELETE FROM {t} AS t WHERE NOT EXISTS (SELECT 1 FROM {st} s WHERE s.{kc} = t.{kc})")
+            };
+            run(&mut txn, sql, "Cannot delete the rows that are not in the stream")?;
+        }
+        run(&mut txn, format!("DROP TABLE {st}"), "Cannot remove the table the rows came through")?;
+        if let Some(sql) = users_sql(&opts.sql_after) {
+            run(&mut txn, sql, "The SQL after failed, and nothing was written")?;
+            notes.info("ran the SQL after");
+        }
+        Ok((updated, features.len() as u64 - updated, deleted))
+    })();
+    let (updated, added, deleted) = match outcome {
+        Ok(n) => {
+            txn.commit().map_err(|e| gerr("Cannot finish writing", e))?;
+            n
+        }
+        Err(e) => {
+            let _ = txn.rollback();
+            return Err(e);
+        }
+    };
+    let mut said =
+        format!("updated {} rows and added {} in {}.{}", og_engine::model::fmt_count(updated), og_engine::model::fmt_count(added), target.schema, target.name);
+    if opts.delete_missing {
+        said.push_str(&format!(", and deleted {} that were not in the stream", og_engine::model::fmt_count(deleted)));
+    }
+    notes.info(said);
+    if opts.analyze {
+        let sql = if target.mssql { format!("UPDATE STATISTICS {}", t) } else { format!("ANALYZE {}", t) };
+        if let Err(e) = ds.execute_sql(sql, None, gdal::vector::sql::Dialect::DEFAULT) {
+            notes.warn(format!("The rows were written, but the statistics of the table could not be updated: {}", e));
+        }
     }
     Ok(features.len() as u64)
 }

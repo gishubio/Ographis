@@ -159,6 +159,41 @@ impl App {
         }
     }
 
+    /// What goes through a connection, shown while the pointer is on it: how many features,
+    /// of what kind and with which attributes, from the latest run.
+    pub(super) fn wire_tooltip(&self, ui: &Ui, from: OutPinId, to: InPinId, pal: &Palette) {
+        let mismatch = graph::wire_mismatch(&self.snarl, from, to);
+        let Some(n) = self.snarl.get_node(from.node) else { return };
+        let Some(port) = n.outputs().get(from.output).cloned() else { return };
+        let table = self.result.as_ref().and_then(|r| r.nodes.get(&n.id)).and_then(|r| r.outputs.get(&port)).cloned();
+        let stale = self.stale;
+        let id = egui::Id::new(("wire-tip", from));
+        egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), id, egui::PopupAnchor::Pointer).show(|ui| {
+            ui.label(RichText::new(format!("Out of {} · {}", n.name, port)).strong());
+            if let Some(said) = &mismatch {
+                ui.label(RichText::new(format!("⚠ {}", said)).color(pal.warn));
+            }
+            let Some(t) = table else {
+                ui.label(RichText::new("Run the model to see what goes through").color(pal.muted));
+                return;
+            };
+            let kinds = geometry_kinds(&t);
+            let what = carried(&t).unwrap_or_else(|| format!("{} features", fmt_count(t.features.len() as u64)));
+            ui.label(if kinds.is_empty() || t.image.is_some() || t.grid.is_some() { what } else { format!("{}, {}", what, kinds) });
+            if let Some(crs) = t.crs {
+                ui.label(RichText::new(crs_label(Some(crs))).small().color(pal.muted));
+            }
+            if !t.fields.is_empty() {
+                let names: Vec<&str> = t.fields.iter().take(12).map(|f| f.name.as_str()).collect();
+                let more = if t.fields.len() > 12 { format!(" and {} more", t.fields.len() - 12) } else { String::new() };
+                ui.label(RichText::new(format!("{}{}", names.join(", "), more)).small());
+            }
+            if stale {
+                ui.label(RichText::new("From the latest run; the model has changed since").small().color(pal.warn));
+            }
+        });
+    }
+
     /// What the connection goes between, in words.
     pub(super) fn wire_text(&self, wire: (OutPinId, InPinId)) -> Option<(String, String)> {
         let (a, b) = (self.snarl.get_node(wire.0.node)?, self.snarl.get_node(wire.1.node)?);

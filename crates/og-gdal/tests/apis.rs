@@ -569,6 +569,98 @@ fn the_kolada_example_works_with_api_v3() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// The GitHub example on a made-up copy of the API: pages by the Link header, stars with the
+/// time they were given, pull requests left out of the issues, and a chart of each.
+#[test]
+fn the_github_example_draws_its_charts_and_keeps_a_history() {
+    let dir = tmp("github");
+    let b = GdalBackend::new();
+    let (url, log) = server(Arc::new(|r: &Req| {
+        let host = r.headers.get("host").cloned().unwrap_or_default();
+        let repo = "/repos/gishubio/Ographis";
+        let route = r.route().strip_prefix(repo).unwrap_or("?");
+        let page2 = r.query("page").as_deref() == Some("2");
+        match route {
+            "" => (200, vec![], r#"{"stargazers_count": 3, "subscribers_count": 2, "forks_count": 1, "open_issues_count": 2, "size": 900}"#.into()),
+            "/issues" if !page2 => (
+                200,
+                vec![("Link".into(), format!("<http://{}{}/issues?state=all&per_page=100&page=2>; rel=\"next\"", host, repo))],
+                r#"[{"number": 1, "state": "open", "created_at": "2026-10-11T23:30:00Z", "closed_at": null},
+                    {"number": 2, "state": "closed", "created_at": "2026-10-13T08:00:00Z", "closed_at": "2026-10-20T09:00:00Z"},
+                    {"number": 3, "state": "open", "created_at": "2026-10-14T08:00:00Z", "closed_at": null, "pull_request": {"url": "x"}}]"#
+                    .into(),
+            ),
+            "/issues" => (200, vec![], r#"[{"number": 4, "state": "closed", "created_at": "2026-10-21T10:00:00Z", "closed_at": "2026-10-22T10:00:00Z"}]"#.into()),
+            "/stargazers" if r.headers.get("accept").is_some_and(|a| a.contains("star+json")) => (
+                200,
+                vec![],
+                r#"[{"starred_at": "2026-10-02T10:00:00Z"}, {"starred_at": "2026-10-01T10:00:00Z"}, {"starred_at": "2026-10-05T10:00:00Z"}]"#.into(),
+            ),
+            "/stargazers" => (200, vec![], r#"[{"login": "a"}]"#.into()),
+            "/forks" => (200, vec![], r#"[{"created_at": "2026-10-03T10:00:00Z"}]"#.into()),
+            "/releases" => (
+                200,
+                vec![],
+                r#"[{"tag_name": "0.95", "assets": [{"name": "a.zip", "download_count": 12}, {"name": "b.zip", "download_count": 3}]},
+                    {"tag_name": "0.94", "assets": [{"name": "a.zip", "download_count": 7}]}]"#
+                    .into(),
+            ),
+            "/traffic/clones" => (200, vec![], r#"{"count": 9, "uniques": 4, "clones": [{"timestamp": "2026-11-01T00:00:00Z", "count": 5, "uniques": 2}, {"timestamp": "2026-11-02T00:00:00Z", "count": 4, "uniques": 2}]}"#.into()),
+            "/traffic/views" => (200, vec![], r#"{"count": 30, "uniques": 9, "views": [{"timestamp": "2026-11-01T00:00:00Z", "count": 20, "uniques": 5}, {"timestamp": "2026-11-02T00:00:00Z", "count": 10, "uniques": 4}]}"#.into()),
+            "/traffic/popular/referrers" => (200, vec![], r#"[{"referrer": "github.com", "count": 8, "uniques": 3}, {"referrer": "gishub.io", "count": 4, "uniques": 2}]"#.into()),
+            _ => (404, vec![], r#"{"message": "Not Found"}"#.into()),
+        }
+    }));
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/apis");
+    // Without an API connection: the made-up server needs no token.
+    let model = std::fs::read_to_string(examples.join("github_statistics.ographis"))
+        .unwrap()
+        .replace("https://api.github.com", &url)
+        .replace(r#""value": "GitHub""#, r#""value": """#);
+    let ws = Workspace::from_json(&model).unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    let errors: Vec<_> = r.nodes.iter().filter_map(|(k, n)| n.error.clone().map(|e| (k.clone(), e))).collect();
+    assert!(errors.is_empty(), "{:?}", errors);
+    // Four issues on two pages, the pull request left out.
+    assert_eq!(col(r.output("only_issues", "Passed").unwrap(), "number"), [Value::Int(1), Value::Int(2), Value::Int(4)]);
+    // A week starts on a Monday, also for an issue opened late on a Sunday.
+    let weeks: Vec<String> = col(r.output("opened", "Output").unwrap(), "week").iter().map(|v| format!("{:?}", v)).collect();
+    assert!(weeks[0].contains("2026-10-05") && weeks[1].contains("2026-10-12"), "{:?}", weeks);
+    // The stars in the order given, counted.
+    let stars = r.output("stars_day", "Output").unwrap();
+    assert_eq!(col(stars, "day"), [Value::Text("2026-10-01".into()), Value::Text("2026-10-02".into()), Value::Text("2026-10-05".into())]);
+    assert_eq!(col(stars, "stars"), [Value::Int(1), Value::Int(2), Value::Int(3)]);
+    assert_eq!(r.output("assets", "Exploded").unwrap().len(), 3);
+    for png in [
+        "issues_per_week",
+        "issues_open_and_closed",
+        "stars_over_time",
+        "forks_over_time",
+        "downloads_per_release",
+        "clones_per_day",
+        "views_per_day",
+        "referrers",
+    ] {
+        assert!(dir.join(format!("out/github/{}.png", png)).exists(), "{}", png);
+    }
+    let accept: Vec<_> = log.lock().unwrap().iter().filter(|q| q.route().ends_with("/stargazers")).filter_map(|q| q.headers.get("accept").cloned()).collect();
+    assert_eq!(accept, ["application/vnd.github.star+json"]);
+    // A second run adds to the history, and the history model draws it.
+    let r = run(&ws, Some(&b), &dir);
+    assert!(r.nodes.values().all(|n| n.error.is_none()));
+    let history = std::fs::read_to_string(dir.join("out/github/repository_history.csv")).unwrap();
+    assert_eq!(history.lines().count(), 3, "{}", history);
+    let ws = Workspace::from_json(&std::fs::read_to_string(examples.join("github_history.ographis")).unwrap()).unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    let errors: Vec<_> = r.nodes.iter().filter_map(|(k, n)| n.error.clone().map(|e| (k.clone(), e))).collect();
+    assert!(errors.is_empty(), "{:?}", errors);
+    assert_eq!(r.output("clones", "Output").unwrap().len(), 4);
+    for png in ["repository_over_time", "clones_over_time", "views_over_time"] {
+        assert!(dir.join(format!("out/github/{}.png", png)).exists(), "{}", png);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A server of the files in a folder, as they are, that keeps the addresses it was asked for.
 fn file_server(dir: PathBuf) -> (String, Arc<Mutex<Vec<String>>>) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

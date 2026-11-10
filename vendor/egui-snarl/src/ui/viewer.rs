@@ -371,6 +371,12 @@ pub trait SnarlViewer<T> {
         let _ = (node, from, to, snarl);
     }
 
+    /// Ographis: the pointer is on a connection, which is not dragged.
+    #[inline]
+    fn wire_hovered(&mut self, from: OutPinId, to: InPinId, snarl: &mut Snarl<T>) {
+        let _ = (from, to, snarl);
+    }
+
     /// Ographis: a connection was clicked with the primary button.
     #[inline]
     fn wire_clicked(&mut self, from: &OutPin, to: &InPin, snarl: &mut Snarl<T>) {

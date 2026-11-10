@@ -621,7 +621,7 @@ fn sun_sheet(pictures: &[(String, crate::model::RasterImage)], columns: usize) -
             }
         }
     }
-    Ok(crate::model::RasterImage { width: sw, height: sh, rgba: pm.data().to_vec(), geotransform: [0.0, 1.0, 0.0, sh as f64, 0.0, -1.0] })
+    Ok(crate::model::RasterImage { vector: None, width: sw, height: sh, rgba: pm.data().to_vec(), geotransform: [0.0, 1.0, 0.0, sh as f64, 0.0, -1.0] })
 }
 
 /// The water of a scene: none, a surface at a height, or the areas on Water.

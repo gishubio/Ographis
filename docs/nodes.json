@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.95.3",
+  "version": "0.96.0",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a name that is shown, x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -1327,10 +1327,10 @@
         {
           "key": "extra",
           "label": "Other files and folders",
-          "kind": "text",
-          "shape": "a string",
+          "kind": "paths",
+          "shape": "files and folders: a list of strings, or one string separated by ;; relative paths start at the folder of the model",
           "default": "",
-          "hint": "Separated by ;, such as README.txt; docs/terms.pdf; styles. A folder goes in with all it holds"
+          "hint": "Such as README.txt, docs/terms.pdf or the folder styles, which goes in with all it holds. A new row comes when one is filled in"
         },
         {
           "key": "places",
@@ -1477,6 +1477,10 @@
             {
               "value": "pmtiles",
               "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
+              "value": "svg",
+              "label": "SVG drawing of a map (.svg)"
             },
             {
               "value": "postgis",
@@ -1891,6 +1895,24 @@
           "hint": "PMTiles: the largest, at most 16. 14 has tiles of about 2 km, and maps zoom in beyond it"
         },
         {
+          "key": "geojson_crs",
+          "label": "Coordinates",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "wgs84",
+              "label": "In WGS 84, as GeoJSON is to be"
+            },
+            {
+              "value": "keep",
+              "label": "In the coordinate system of the stream"
+            }
+          ],
+          "default": "wgs84",
+          "hint": "GeoJSON is in degrees in WGS 84 (RFC 7946), which web maps take for granted. Other coordinate systems are named in the file in the older way"
+        },
+        {
           "key": "gpkg_version",
           "label": "GeoPackage version",
           "kind": "choice",
@@ -1957,6 +1979,24 @@
           ],
           "default": "deflate",
           "hint": "For pictures, also Cloud Optimized. JPEG suits aerial photos, not maps with lines and text"
+        },
+        {
+          "key": "pdf_as",
+          "label": "A map as",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "shapes",
+              "label": "Lines, areas and text as shapes, sharp at any size, placed on the map"
+            },
+            {
+              "value": "picture",
+              "label": "A picture of pixels, placed on the map"
+            }
+          ],
+          "default": "shapes",
+          "hint": "For a map from Draw map or a chart. As shapes it prints sharp and can be edited in Illustrator or Inkscape; as a picture a GIS can place it"
         },
         {
           "key": "pdf_size",
@@ -2257,6 +2297,10 @@
               "label": "PMTiles vector tiles (.pmtiles)"
             },
             {
+              "value": "svg",
+              "label": "SVG drawing of a map (.svg)"
+            },
+            {
               "value": "postgis",
               "label": "PostGIS table"
             },
@@ -2474,6 +2518,10 @@
             {
               "value": "pmtiles",
               "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
+              "value": "svg",
+              "label": "SVG drawing of a map (.svg)"
             },
             {
               "value": "postgis",
@@ -2933,6 +2981,10 @@
               "label": "PMTiles vector tiles (.pmtiles)"
             },
             {
+              "value": "svg",
+              "label": "SVG drawing of a map (.svg)"
+            },
+            {
               "value": "postgis",
               "label": "PostGIS table"
             },
@@ -3150,6 +3202,10 @@
             {
               "value": "pmtiles",
               "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
+              "value": "svg",
+              "label": "SVG drawing of a map (.svg)"
             },
             {
               "value": "postgis",
@@ -3644,6 +3700,10 @@
               "label": "PMTiles vector tiles (.pmtiles)"
             },
             {
+              "value": "svg",
+              "label": "SVG drawing of a map (.svg)"
+            },
+            {
               "value": "postgis",
               "label": "PostGIS table"
             },
@@ -3752,9 +3812,39 @@
             {
               "value": "append",
               "label": "Add to the table"
+            },
+            {
+              "value": "update",
+              "label": "Update the rows by a key, and add the new ones"
             }
           ],
           "default": "replace"
+        },
+        {
+          "key": "update_key",
+          "label": "Rows are the same when",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "An attribute whose value tells a row apart, such as an id. A row of the table with the same value is updated; the others are added"
+        },
+        {
+          "key": "delete_missing",
+          "label": "Rows that are not in the stream",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "keep",
+              "label": "Are kept"
+            },
+            {
+              "value": "delete",
+              "label": "Are deleted, so that the table holds what the stream holds"
+            }
+          ],
+          "default": "keep"
         },
         {
           "key": "commit",
@@ -4488,7 +4578,7 @@
       "title": "Concatenate attributes",
       "group": "tool",
       "category": "Attributes",
-      "description": "Joins several attributes, and fixed texts if you want, into one new text attribute, with a separator between them if you want one.",
+      "description": "Joins several attributes, and fixed texts if you want, into one new text attribute, with a separator between them if you want one. The fixed texts can also be separators of their own, so that different ones go between different attributes, such as 12 - Main street, Skövde.",
       "inputs": [
         "Input"
       ],
@@ -4505,7 +4595,7 @@
           "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
           "port": "Input",
           "default": "",
-          "hint": "Joined in the order they are chosen. A fixed text is written in single quotes: '0', kod"
+          "hint": "Joined in the order they are chosen. A fixed text is written in single quotes: code, ' - ', name, ', ', town"
         },
         {
           "key": "separator",
@@ -4532,6 +4622,24 @@
           ],
           "default": "true",
           "hint": "An empty value then gives no separator either"
+        },
+        {
+          "key": "fixed",
+          "label": "Fixed texts are",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "parts",
+              "label": "Parts, with the separator around them too"
+            },
+            {
+              "value": "separators",
+              "label": "Separators of their own, each between two values"
+            }
+          ],
+          "default": "parts",
+          "hint": "As separators of their own, different ones can go between different attributes, such as code, ' - ', name, ', ', town"
         },
         {
           "key": "name",
@@ -5200,7 +5308,7 @@
       "title": "Dissolve",
       "group": "tool",
       "category": "Geometry",
-      "description": "Merges areas into one per group. Shared boundaries disappear and overlaps count once. Only the group-by attributes are kept. Features that are not areas go to Remnants.",
+      "description": "Merges areas that touch or overlap, in each group. Shared boundaries disappear and overlaps count once. Areas that do not touch stay features of their own, or become one multi-area for each group as a choice. Only the group-by attributes are kept. Features that are not areas go to Remnants.",
       "inputs": [
         "Input"
       ],
@@ -5218,7 +5326,7 @@
           "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
           "port": "Input",
           "default": "",
-          "hint": "Empty dissolves all areas into one"
+          "hint": "Only areas with the same values are merged. Empty merges all that touch"
         },
         {
           "key": "count",
@@ -5227,6 +5335,24 @@
           "shape": "a string",
           "default": "_count",
           "hint": "The number of areas that were merged"
+        },
+        {
+          "key": "parts",
+          "label": "Areas apart",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "apart",
+              "label": "Each a feature of its own"
+            },
+            {
+              "value": "together",
+              "label": "One multi-area for each group"
+            }
+          ],
+          "default": "apart",
+          "hint": "What is left apart after merging, such as buildings that do not touch"
         }
       ]
     },
@@ -7158,12 +7284,28 @@
               "label": "m²"
             },
             {
+              "value": "a",
+              "label": "ares (100 m²)"
+            },
+            {
               "value": "ha",
               "label": "hectares"
             },
             {
               "value": "km2",
               "label": "km²"
+            },
+            {
+              "value": "ft2",
+              "label": "square feet"
+            },
+            {
+              "value": "ac",
+              "label": "acres"
+            },
+            {
+              "value": "mi2",
+              "label": "square miles"
             }
           ],
           "default": "m2"
@@ -7207,12 +7349,48 @@
           "shape": "one of the values in choices, as a string",
           "choices": [
             {
+              "value": "mm",
+              "label": "mm"
+            },
+            {
+              "value": "cm",
+              "label": "cm"
+            },
+            {
+              "value": "dm",
+              "label": "dm"
+            },
+            {
               "value": "m",
               "label": "m"
             },
             {
               "value": "km",
               "label": "km"
+            },
+            {
+              "value": "mil",
+              "label": "Swedish miles (10 km)"
+            },
+            {
+              "value": "in",
+              "label": "inches"
+            },
+            {
+              "value": "ft",
+              "label": "feet"
+            },
+            {
+              "value": "yd",
+              "label": "yards"
+            },
+            {
+              "value": "mi",
+              "label": "miles"
+            },
+            {
+              "value": "nmi",
+              "label": "nautical miles"
             }
           ],
           "default": "m"
@@ -8129,6 +8307,103 @@
           "kind": "text",
           "shape": "a string",
           "default": ""
+        },
+        {
+          "key": "scale_bar",
+          "label": "Scale bar",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "None"
+            },
+            {
+              "value": "bottom-left",
+              "label": "Lower left"
+            },
+            {
+              "value": "bottom-right",
+              "label": "Lower right"
+            },
+            {
+              "value": "top-left",
+              "label": "Upper left"
+            },
+            {
+              "value": "top-right",
+              "label": "Upper right"
+            }
+          ],
+          "default": "none",
+          "hint": "A round length of about a fifth of the map, in metres or km"
+        },
+        {
+          "key": "north_arrow",
+          "label": "North arrow",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "None"
+            },
+            {
+              "value": "bottom-left",
+              "label": "Lower left"
+            },
+            {
+              "value": "bottom-right",
+              "label": "Lower right"
+            },
+            {
+              "value": "top-left",
+              "label": "Upper left"
+            },
+            {
+              "value": "top-right",
+              "label": "Upper right"
+            }
+          ],
+          "default": "none"
+        },
+        {
+          "key": "grid",
+          "label": "Grid",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "None"
+            },
+            {
+              "value": "lines",
+              "label": "Lines across the map"
+            },
+            {
+              "value": "ticks",
+              "label": "Marks in the edge"
+            }
+          ],
+          "default": "none",
+          "hint": "With the coordinates in the edge"
+        },
+        {
+          "key": "grid_every",
+          "label": "Grid every",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "In the units of the map, such as 1000 for every km in SWEREF 99 TM. Empty gives a round number by the size"
+        },
+        {
+          "key": "source",
+          "label": "Source",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Written small in the lower right corner, such as © Lantmäteriet, after the credit of the background map"
         },
         {
           "key": "crs",
@@ -10345,6 +10620,24 @@
           "default": "together"
         },
         {
+          "key": "shape",
+          "label": "Shape",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "roads",
+              "label": "Around the roads reached"
+            },
+            {
+              "value": "outline",
+              "label": "The outline: what lies between the roads reached is within too, as on an isochrone map"
+            }
+          ],
+          "default": "roads",
+          "hint": "The outline fills the blocks and fields that the roads reached go round"
+        },
+        {
           "key": "width",
           "label": "Area around the roads",
           "kind": "text",
@@ -10900,7 +11193,7 @@
       "title": "Zonal statistics",
       "group": "tool",
       "category": "Raster",
-      "description": "Counts the cells of the raster within each area: how many, the mean, the smallest and largest, sum, median, spread and the most common value, and for classes, such as land cover, the share or area of each. A cell counts when its middle lies in the area. The share of forest in each municipality, the mean height of each property, the people in each district from a population grid.",
+      "description": "Counts the cells of the raster within each area: how many, the mean, the smallest and largest, sum, median, spread and the most common value, and for classes, such as land cover, the share or area of each. A cell counts when its middle lies in the area. The share of forest in each municipality, the mean height of each property, the people in each district from a population grid. A series of pictures over time, such as from Read satellite bands, gives each area a row for each time, with the time: the NDVI of each field through a summer.",
       "inputs": [
         "Zones",
         "Raster"
@@ -12747,6 +13040,765 @@
       ]
     },
     {
+      "type": "HotSpots",
+      "title": "Hot spots",
+      "group": "tool",
+      "category": "Statistics",
+      "description": "Finds where high values lie together, and low values: hot and cold spots, by the Getis-Ord Gi* statistic of each feature with its neighbours. Each feature gets gi_z (how far above or below what chance would give), gi_p, hot_spot, such as Hot spot, 99 %, and hot_class from -3 to 3, to colour from blue to red. Accidents counted in squares, illness in areas, prices of sold houses. The features should be in metres.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "value",
+          "label": "Value",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "Such as the number of accidents in each square, or the rate of illness in each area"
+        },
+        {
+          "key": "neighbours",
+          "label": "Neighbours",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "distance",
+              "label": "Within a distance"
+            },
+            {
+              "value": "nearest",
+              "label": "The nearest, so many of them"
+            }
+          ],
+          "default": "distance",
+          "hint": "Which features count as near each other: those within a distance, or each feature's nearest few"
+        },
+        {
+          "key": "distance",
+          "label": "Within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "In metres, between the middles of the features. Empty: as far as needed for every feature to have a neighbour"
+        },
+        {
+          "key": "k",
+          "label": "How many nearest",
+          "kind": "text",
+          "shape": "a string",
+          "default": "8"
+        }
+      ]
+    },
+    {
+      "type": "SpatialAutocorrelation",
+      "title": "Spatial autocorrelation",
+      "group": "tool",
+      "category": "Statistics",
+      "description": "Whether like values lie together, by Moran's I: on Summary the I of all the features, what chance would give, and a p-value from shuffling the values among the places; on Features each feature's local I, its p and its cluster: High-High and Low-Low where like lie together, High-Low and Low-High for one that stands out from its neighbours.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Features",
+        "Summary"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "value",
+          "label": "Value",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "Such as the income or the share of elderly in each area"
+        },
+        {
+          "key": "neighbours",
+          "label": "Neighbours",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "distance",
+              "label": "Within a distance"
+            },
+            {
+              "value": "nearest",
+              "label": "The nearest, so many of them"
+            }
+          ],
+          "default": "distance",
+          "hint": "Which features count as near each other: those within a distance, or each feature's nearest few"
+        },
+        {
+          "key": "distance",
+          "label": "Within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "In metres, between the middles of the features. Empty: as far as needed for every feature to have a neighbour"
+        },
+        {
+          "key": "k",
+          "label": "How many nearest",
+          "kind": "text",
+          "shape": "a string",
+          "default": "8"
+        },
+        {
+          "key": "permutations",
+          "label": "Permutations",
+          "kind": "text",
+          "shape": "a string",
+          "default": "499",
+          "hint": "How many times the values are shuffled among the places to tell chance from pattern. More is surer and slower"
+        },
+        {
+          "key": "alpha",
+          "label": "Significant below",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0.05",
+          "hint": "The p-value under which a local cluster counts"
+        }
+      ]
+    },
+    {
+      "type": "PointClusters",
+      "title": "Point clusters",
+      "group": "tool",
+      "category": "Statistics",
+      "description": "Finds clusters of points by DBSCAN: points that have enough others within a distance, and those they reach, form a cluster, of any shape; points far from the rest belong to none. Each point gets its cluster and how many points it has, and the outline of each cluster comes on Clusters. Where the accidents gather, the trees of a forest stand, the visitors of a park stop.",
+      "inputs": [
+        "Points"
+      ],
+      "outputs": [
+        "Points",
+        "Clusters"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "distance",
+          "label": "Within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "100",
+          "hint": "In metres: points this close to each other belong together"
+        },
+        {
+          "key": "min_points",
+          "label": "At least",
+          "kind": "text",
+          "shape": "a string",
+          "default": "5",
+          "hint": "Points within the distance of a point, itself counted, for it to be the core of a cluster. Points in no cluster get none"
+        }
+      ]
+    },
+    {
+      "type": "AreaReallocator",
+      "title": "Reallocate between areas",
+      "group": "tool",
+      "category": "Statistics",
+      "description": "Moves values from one division of the land to another that does not follow it, by how much of each area lies in the other: people from the squares of a population grid to the districts, jobs from DeSO to the catchments of the schools. Counts are shared out and added up, averages weighed by area. Points on From, such as addresses with their people, go whole to the area they lie in. Each area of To gets covered, the share of it that From covers.",
+      "inputs": [
+        "From",
+        "To"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "counts",
+          "label": "Counts",
+          "kind": "attributes",
+          "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
+          "port": "From",
+          "default": "",
+          "hint": "Such as people or jobs: shared out by how much of each area of From lies in each area of To, and added up"
+        },
+        {
+          "key": "averages",
+          "label": "Averages",
+          "kind": "attributes",
+          "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
+          "port": "From",
+          "default": "",
+          "hint": "Such as a rate or a mean income: the mean in each area of To, weighed by how much of it each area of From covers"
+        }
+      ]
+    },
+    {
+      "type": "TrackBuilder",
+      "title": "Tracks and stops",
+      "group": "tool",
+      "category": "Statistics",
+      "description": "Makes points with a time into tracks, as from a GPS (GPX) or the AIS of ships: a line for each mover, broken where a pause is long, with its start, end, length and speed; each point with how far and how fast it came from the one before; and the stops, where the mover stayed within a radius for some minutes. Points that jump faster than the mover can go can be left out.",
+      "inputs": [
+        "Points"
+      ],
+      "outputs": [
+        "Tracks",
+        "Points",
+        "Stops"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "time",
+          "label": "Time",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Points",
+          "default": "time",
+          "hint": "When each point was taken: ISO 8601 such as 2026-06-01T10:15:00Z, or seconds since 1970"
+        },
+        {
+          "key": "id",
+          "label": "Of whom",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Points",
+          "default": "",
+          "hint": "What tells the movers apart, such as mmsi for ships or the name of a device. Empty: one mover"
+        },
+        {
+          "key": "gap",
+          "label": "A new track after a pause of",
+          "kind": "text",
+          "shape": "a string",
+          "default": "30",
+          "hint": "Minutes without a point. The track is broken there, so that no line is drawn across what is not known"
+        },
+        {
+          "key": "stop_radius",
+          "label": "A stop is within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "50",
+          "hint": "Metres from where the mover came to it"
+        },
+        {
+          "key": "stop_minutes",
+          "label": "For at least",
+          "kind": "text",
+          "shape": "a string",
+          "default": "5",
+          "hint": "Minutes. Shorter halts are not stops"
+        },
+        {
+          "key": "fastest",
+          "label": "Faster than this is a fault",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Km/h. A point the mover could not have reached so fast is left out, as GPS points that jump. Empty keeps all"
+        }
+      ]
+    },
+    {
+      "type": "LocationChooser",
+      "title": "Choose locations",
+      "group": "tool",
+      "category": "Network",
+      "description": "Chooses the best places for one or more facilities among candidates, along the network: those that give the least travel in all for those on Demand, weighed such as by the people in each square, or that reach the most within some minutes. Facilities that are there already can be kept. Each chosen place gets its rank, how many it serves and their mean travel, and each on Demand its facility and travel. Where to put a new health centre, fire station or store.",
+      "inputs": [
+        "Network",
+        "Candidates",
+        "Demand"
+      ],
+      "outputs": [
+        "Chosen",
+        "Demand"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "count",
+          "label": "How many to choose",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "Places among Candidates, counting those that must be chosen"
+        },
+        {
+          "key": "goal",
+          "label": "Best is",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "least",
+              "label": "The least travel in all: the sum of each one's way to the nearest, weighed"
+            },
+            {
+              "value": "cover",
+              "label": "The most reached within a limit"
+            }
+          ],
+          "default": "least"
+        },
+        {
+          "key": "within",
+          "label": "Within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "10",
+          "hint": "For the most reached: minutes for the quickest, metres for the shortest"
+        },
+        {
+          "key": "weight",
+          "label": "Each on Demand counts as",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Demand",
+          "default": "",
+          "hint": "Such as the number of people in a square of a population grid. Empty: each counts as one"
+        },
+        {
+          "key": "required",
+          "label": "Must be chosen when",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Candidates",
+          "default": "",
+          "hint": "An attribute that is true, yes or 1 for the facilities that are there already. Empty: none"
+        },
+        {
+          "key": "direction",
+          "label": "Direction",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "to",
+              "label": "Travelling to the facilities, as customers do"
+            },
+            {
+              "value": "from",
+              "label": "Travelling from the facilities, as an ambulance does"
+            }
+          ],
+          "default": "to",
+          "hint": "Matters where there are one-way roads"
+        },
+        {
+          "key": "cost",
+          "label": "By",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "length",
+              "label": "Shortest: the length"
+            },
+            {
+              "value": "time",
+              "label": "Quickest: the time, by the speed"
+            }
+          ],
+          "default": "length"
+        },
+        {
+          "key": "speed",
+          "label": "Speed in km/h",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Network",
+          "default": "",
+          "hint": "Along the line as it is drawn, for the quickest route: an attribute such as F_Hogst_225 in NVDB, or a number"
+        },
+        {
+          "key": "speed_against",
+          "label": "Speed against the line",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Network",
+          "default": "",
+          "hint": "Against the way the line is drawn, such as B_Hogst_225 in NVDB. Empty uses the speed along it"
+        },
+        {
+          "key": "default_speed",
+          "label": "Speed where none is given",
+          "kind": "text",
+          "shape": "a string",
+          "default": "50",
+          "hint": "In km/h, where the speed is empty or 0"
+        },
+        {
+          "key": "along",
+          "label": "May be travelled along the line when",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Network",
+          "default": "",
+          "hint": "A condition for one-way roads, such as F_ForbjudenFardriktning is null. Empty: always"
+        },
+        {
+          "key": "against",
+          "label": "May be travelled against the line when",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Network",
+          "default": "",
+          "hint": "Such as B_ForbjudenFardriktning is null. Empty: always"
+        },
+        {
+          "key": "snap",
+          "label": "Farthest from the network, in metres",
+          "kind": "text",
+          "shape": "a string",
+          "default": "500",
+          "hint": "A point is put on the nearest place of the nearest line. One farther away than this is not reached"
+        },
+        {
+          "key": "tolerance",
+          "label": "Line ends that meet, within",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0.01",
+          "hint": "In metres. Lines are joined where their ends are this close, not where they only cross, as at a bridge"
+        }
+      ]
+    },
+    {
+      "type": "LineLengthInAreas",
+      "title": "Sum line lengths in areas",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "The length of the lines that lie in each area, as the length of the road network in each municipality: in all, or for each kind of line, such as each kind of road, as attributes on the areas or as a feature for each area and kind. A line that crosses a border counts in each area by the part of it inside. In metres or other units, on the ellipsoid when the coordinates are in degrees.",
+      "inputs": [
+        "Areas",
+        "Lines"
+      ],
+      "outputs": [
+        "Areas"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "group_by",
+          "label": "For each",
+          "kind": "attributes",
+          "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
+          "port": "Lines",
+          "default": "",
+          "hint": "Attributes of the lines, such as the kind of road. Empty sums all lines together"
+        },
+        {
+          "key": "unit",
+          "label": "Unit",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "mm",
+              "label": "mm"
+            },
+            {
+              "value": "cm",
+              "label": "cm"
+            },
+            {
+              "value": "dm",
+              "label": "dm"
+            },
+            {
+              "value": "m",
+              "label": "m"
+            },
+            {
+              "value": "km",
+              "label": "km"
+            },
+            {
+              "value": "mil",
+              "label": "Swedish miles (10 km)"
+            },
+            {
+              "value": "in",
+              "label": "inches"
+            },
+            {
+              "value": "ft",
+              "label": "feet"
+            },
+            {
+              "value": "yd",
+              "label": "yards"
+            },
+            {
+              "value": "mi",
+              "label": "miles"
+            },
+            {
+              "value": "nmi",
+              "label": "nautical miles"
+            }
+          ],
+          "default": "km"
+        },
+        {
+          "key": "name",
+          "label": "Attribute",
+          "kind": "text",
+          "shape": "a string",
+          "default": "length",
+          "hint": "With a kind, the kind is put after it, such as length_motorway"
+        },
+        {
+          "key": "layout",
+          "label": "Kinds as",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "columns",
+              "label": "An attribute for each kind, on the areas"
+            },
+            {
+              "value": "rows",
+              "label": "A feature for each area and kind"
+            }
+          ],
+          "default": "columns"
+        },
+        {
+          "key": "decimals",
+          "label": "Decimals",
+          "kind": "text",
+          "shape": "a string",
+          "default": "3",
+          "hint": "Empty keeps them all"
+        }
+      ]
+    },
+    {
+      "type": "ImageClassifier",
+      "title": "Classify image",
+      "group": "tool",
+      "category": "Raster",
+      "description": "Gives each cell of a picture with several bands, such as from Sentinel-2, a class: by itself, putting the cells in groups of like colours by k-means, numbered from the darkest, for you to name; or from examples, areas you drew of forest, water, field and town, each cell getting the class it is most like. On Classes, each class with its cells, area and mean of each band. Raster to areas then gives the areas of each class.",
+      "inputs": [
+        "Raster",
+        "Examples"
+      ],
+      "outputs": [
+        "Raster",
+        "Classes"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "method",
+          "label": "How",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "kmeans",
+              "label": "By itself: the cells are put in groups of like colours (k-means)"
+            },
+            {
+              "value": "examples",
+              "label": "From examples: areas on Examples with their class, and each cell to the class it is most like"
+            }
+          ],
+          "default": "kmeans",
+          "hint": "By itself finds the groups, which you then name. From examples gives the classes you drew"
+        },
+        {
+          "key": "classes",
+          "label": "Groups",
+          "kind": "text",
+          "shape": "a string",
+          "default": "6",
+          "hint": "How many groups k-means makes"
+        },
+        {
+          "key": "class",
+          "label": "Class of each example",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Examples",
+          "default": "class",
+          "hint": "Such as forest, water, field and town, or numbers"
+        },
+        {
+          "key": "bands",
+          "label": "Bands",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The bands to use by their numbers from 1, such as 2, 3, 4, 8. Empty uses all"
+        }
+      ]
+    },
+    {
+      "type": "Depressions",
+      "title": "Hollows",
+      "group": "tool",
+      "category": "Terrain",
+      "description": "Finds the hollows of a terrain model where water gathers and stays in a cloudburst, as it would if it could not soak away: each with its greatest depth, the water it holds when full, its area, its bottom and the height at which it runs over. On Depth, how deep the water stands in each cell when every hollow is full. Join buildings to Hollows to see which lie where water gathers; Catchments and streams shows the way it runs there.",
+      "inputs": [
+        "Terrain"
+      ],
+      "outputs": [
+        "Hollows",
+        "Depth"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "min_depth",
+          "label": "At least as deep as",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0.1",
+          "hint": "Metres. Shallower hollows are left out"
+        },
+        {
+          "key": "min_area",
+          "label": "At least as large as",
+          "kind": "text",
+          "shape": "a string",
+          "default": "100",
+          "hint": "Square metres. Smaller hollows are left out"
+        }
+      ]
+    },
+    {
+      "type": "CustomTool",
+      "title": "Tool",
+      "group": "tool",
+      "category": "Workflow",
+      "description": "A tool of your own: nodes made into one, with a model inside that a double-click opens. Its ports are the Tool input and Tool output nodes inside. It runs once, once for each value of an attribute (For each, with $(value) inside), or a number of times with what comes out going in again (Repeat, with $(round) inside). Unpack it to make it nodes in a group again.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": true,
+      "offered": true,
+      "params": [
+        {
+          "key": "tool",
+          "label": "The model inside",
+          "kind": "model",
+          "shape": "a model as an object, with nodes and edges as in a model file, whose ToolInput and ToolOutput nodes are the ports",
+          "default": "",
+          "hint": "Open it with a double-click on the node, or Enter"
+        },
+        {
+          "key": "loop",
+          "label": "Runs",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "once",
+              "label": "Once"
+            },
+            {
+              "value": "each",
+              "label": "For each value of an attribute: once for the features with each value, and all that comes out together"
+            },
+            {
+              "value": "repeat",
+              "label": "Repeat: so many times, what comes out going in again"
+            }
+          ],
+          "default": "once"
+        },
+        {
+          "key": "each_by",
+          "label": "For each value of",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "An attribute of the stream on the first port. Inside, $(value) is the value of the round"
+        },
+        {
+          "key": "times",
+          "label": "Times",
+          "kind": "text",
+          "shape": "a string",
+          "default": "3",
+          "hint": "What comes out on a port goes in again on the input port of the same name. Inside, $(round) is the round, from 1"
+        }
+      ]
+    },
+    {
+      "type": "ToolInput",
+      "title": "Tool input",
+      "group": "tool",
+      "category": "Workflow",
+      "description": "In the model of a tool: a port of the tool that a stream comes in on. Its name is the name of the port.",
+      "inputs": [],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "port",
+          "label": "Port",
+          "kind": "text",
+          "shape": "a string",
+          "default": "Input",
+          "hint": "The name of the port on the tool, which the stream comes in on"
+        }
+      ]
+    },
+    {
+      "type": "ToolOutput",
+      "title": "Tool output",
+      "group": "tool",
+      "category": "Workflow",
+      "description": "In the model of a tool: a port of the tool that a stream goes out on. Its name is the name of the port.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "port",
+          "label": "Port",
+          "kind": "text",
+          "shape": "a string",
+          "default": "Output",
+          "hint": "The name of the port on the tool, which the stream goes out on"
+        }
+      ]
+    },
+    {
       "type": "PointCloudRasterizer",
       "title": "Point cloud to raster",
       "group": "tool",
@@ -13304,6 +14356,24 @@
           "hint": "Degrees clockwise from north: 315 is from the north-west, as on most maps"
         },
         {
+          "key": "light",
+          "label": "Light",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "one",
+              "label": "From the sun alone"
+            },
+            {
+              "value": "several",
+              "label": "From several directions, softer and clearer"
+            }
+          ],
+          "default": "one",
+          "hint": "From several directions, slopes that face away from the sun are seen too, as on a good relief map. The shadows are still cast by the sun"
+        },
+        {
           "key": "sun_altitude",
           "label": "Sun height",
           "kind": "text",
@@ -13441,6 +14511,24 @@
           "shape": "a string",
           "default": "315",
           "hint": "Degrees clockwise from north: 315 is from the north-west, as on most maps"
+        },
+        {
+          "key": "light",
+          "label": "Light",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "one",
+              "label": "From the sun alone"
+            },
+            {
+              "value": "several",
+              "label": "From several directions, softer and clearer"
+            }
+          ],
+          "default": "one",
+          "hint": "From several directions, slopes that face away from the sun are seen too, as on a good relief map. The shadows are still cast by the sun"
         },
         {
           "key": "sun_altitude",

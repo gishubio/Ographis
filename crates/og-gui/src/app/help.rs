@@ -203,6 +203,7 @@ impl App {
         let Some((title, body)) = &mut self.report else { return };
         let mut close = false;
         let mut send = None;
+        let mut zip = false;
         let modal = egui::Modal::new(egui::Id::new("report_problem")).show(ctx, |ui| {
             ui.set_width(620.0);
             ui.label(RichText::new("Report a problem").font(theme::strong(17.0)).color(pal.ink));
@@ -222,6 +223,13 @@ impl App {
             ui.horizontal(|ui| {
                 if ui.button("Open as an issue on GitHub").on_hover_text("Opens the browser with the report filled in. Nothing is sent until you press Submit there").clicked() {
                     send = Some(format!("{}/issues/new?title={}&body={}", REPOSITORY, url_encode(title.trim()), url_encode(body)));
+                }
+                if ui
+                    .button("Save a zip to attach")
+                    .on_hover_text("The model as last saved, with passwords and keys taken out, the log of its latest run and the latest faults. Drag it onto the issue")
+                    .clicked()
+                {
+                    zip = true;
                 }
                 if ui.button("Copy the report").on_hover_text("To paste in an e-mail instead").clicked() {
                     ui.ctx().copy_text(format!("{}\n\n{}", title.trim(), body));
@@ -244,8 +252,28 @@ impl App {
             }
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }
+        if zip {
+            self.save_report_zip();
+        }
         if close || modal.should_close() {
             self.report = None;
+        }
+    }
+
+    /// The zip of `og report`, beside the model or in the folder of the program's settings,
+    /// shown in its folder.
+    fn save_report_zip(&mut self) {
+        let folder =
+            self.path.as_ref().and_then(|p| p.parent().map(|d| d.to_path_buf())).or_else(og_engine::settings::settings_dir).unwrap_or_else(std::env::temp_dir);
+        let out = folder.join(format!("ographis-report-{}.zip", chrono::Local::now().format("%Y%m%d-%H%M")));
+        let versions: Vec<String> = self.backend.versions().iter().map(|(n, v)| format!("{} {}", n, v)).collect();
+        let about = format!("Ographis {} · {}", env!("CARGO_PKG_VERSION"), versions.join(" · "));
+        match og_engine::bugreport::bundle(self.path.as_deref(), &out, &about) {
+            Ok(b) => {
+                self.say(format!("The report is saved as {}, with {}.", b.file.display(), b.parts.join(", ")));
+                self.show_in_folder(&b.file);
+            }
+            Err(e) => self.say(format!("The report could not be saved: {}", e.0)),
         }
     }
 

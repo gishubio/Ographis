@@ -1643,16 +1643,6 @@ fn scroll_bars_show_and_move_a_large_model() {
     shot(&mut h, "088-scroll-bars");
 }
 
-/// Two clicks in the same moment, as a double click.
-fn double_click(h: &mut Harness<'_, App>, pos: egui::Pos2) {
-    pointer(h, pos, None);
-    // A frame each, a quarter of a second apart in the harness.
-    for pressed in [true, false, true, false] {
-        h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
-    }
-    h.run_steps(2);
-}
-
 /// Quick add: a double click on empty canvas opens a box where a few letters find the tool,
 /// / puts the tool after the selected node, connected, and a connection let go on empty
 /// canvas asks for the tool to connect.

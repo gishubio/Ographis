@@ -632,7 +632,7 @@ pub fn stylize(img: &RasterImage, style: &str, across: usize, scale: usize, dith
     // Placed where the picture was, with its pixels of another size.
     let g = img.geotransform;
     let (kx, ky) = (img.width as f64 / pw as f64, img.height as f64 / ph as f64);
-    Ok((RasterImage { width: pw, height: ph, rgba, geotransform: [g[0], g[1] * kx, g[2] * ky, g[3], g[4] * kx, g[5] * ky] }, parts))
+    Ok((RasterImage { vector: None, width: pw, height: ph, rgba, geotransform: [g[0], g[1] * kx, g[2] * ky, g[3], g[4] * kx, g[5] * ky] }, parts))
 }
 
 fn run_stylize(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
@@ -787,7 +787,7 @@ mod tests {
                 rgba.extend_from_slice(if x < 32 { &[0x30, 0x60, 0xc0, 255] } else { &[0x50, 0xa0, 0x40, 255] });
             }
         }
-        let img = RasterImage { width: w, height: h, rgba, geotransform: [0.0, 1.0, 0.0, 32.0, 0.0, -1.0] };
+        let img = RasterImage { vector: None, width: w, height: h, rgba, geotransform: [0.0, 1.0, 0.0, 32.0, 0.0, -1.0] };
         let (c64, _) = stylize(&img, "c64", 16, 4, false).unwrap();
         assert_eq!((c64.width, c64.height), (16 * 4 * 2, 16 * 4));
         let px = |i: &RasterImage, x: usize, y: usize| [i.rgba[(y * i.width + x) * 4], i.rgba[(y * i.width + x) * 4 + 1], i.rgba[(y * i.width + x) * 4 + 2]];

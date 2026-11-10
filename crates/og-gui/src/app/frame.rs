@@ -112,10 +112,14 @@ impl App {
             .frame(egui::Frame::new().fill(pal.panel))
             .show(ui, |ui| self.left_panel(ui, &pal));
         clock.lap("tools and files");
+        // At most most of the window, so that the model stays in sight and the edge can be
+        // dragged back, whatever the form holds.
+        let widest = (ctx.content_rect().width() * 0.6).max(320.0);
         egui::Panel::right("params")
             .resizable(true)
             .default_size(310.0)
             .min_size(240.0)
+            .max_size(widest)
             .frame(egui::Frame::new().fill(pal.panel).inner_margin(egui::Margin::symmetric(12, 10)))
             .show(ui, |ui| self.params_panel(ui, &pal));
         clock.lap("the form");
@@ -139,6 +143,7 @@ impl App {
         self.update_dialog(&ctx, &pal);
         self.report_dialog(&ctx, &pal);
         self.variables_dialog(&ctx, &pal);
+        self.ask_dialog(&ctx, &pal);
         self.description_dialog(&ctx, &pal);
         self.postgis_dialog(&ctx, &pal);
         self.settings_dialog(&ctx, &pal);
@@ -246,6 +251,7 @@ impl App {
             || self.picker.is_some()
             || self.tips
             || self.variables_open
+            || self.asking.is_some()
             || self.db_dialog.is_some()
             || self.settings_window.is_some()
             || !self.layer_choices.is_empty();
@@ -286,6 +292,13 @@ impl App {
         if group {
             self.add_group(&self.selected.clone(), None);
         }
+        if !typing && !popup && ctx.input(|i| i.key_pressed(Key::Enter) && !i.modifiers.command) {
+            if let [one] = self.selected.as_slice() {
+                if let Some(id) = self.snarl.get_node(*one).filter(|n| n.kind == "CustomTool").map(|n| n.id.clone()) {
+                    self.open_tool(&id);
+                }
+            }
+        }
         if duplicate {
             self.duplicate_nodes(&self.selected.clone());
         }
@@ -293,7 +306,10 @@ impl App {
             let everything: Vec<NodeId> = self.snarl.nodes_ids_data().map(|(id, _)| id).collect();
             self.set_selection(everything);
         }
-        if none {
+        // Escape with nothing selected goes out of a tool; Enter on a tool goes into it.
+        if none && self.in_tool() && self.selected.is_empty() && self.selected_group.is_none() && self.selected_wire.is_none() {
+            self.close_tool();
+        } else if none {
             self.set_selection(Vec::new());
             self.selected_group = None;
             self.selected_wire = None;

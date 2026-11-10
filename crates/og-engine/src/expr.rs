@@ -1262,6 +1262,21 @@ fn swedish(m: Moment) -> chrono::NaiveDateTime {
     }
 }
 
+/// A time as seconds since 1970, from ISO 8601 with or without a zone, a date alone, or a
+/// number of seconds. A time without a zone is counted as it is written, so that times of one
+/// kind can be compared and subtracted.
+pub fn seconds_of(v: &Value) -> Option<f64> {
+    let t = match moment(v)? {
+        Moment::At(t) | Moment::Local(t) => t,
+    };
+    Some(t.and_utc().timestamp() as f64 + t.and_utc().timestamp_subsec_nanos() as f64 / 1e9)
+}
+
+/// A time of seconds since 1970 as ISO 8601, without a zone, to the second.
+pub fn iso_of(seconds: f64) -> String {
+    chrono::DateTime::from_timestamp(seconds.floor() as i64, 0).map(|d| d.naive_utc().format("%Y-%m-%dT%H:%M:%S").to_string()).unwrap_or_default()
+}
+
 /// A moment read from an API: in UTC when its zone is known, or as it is written.
 enum Moment {
     At(chrono::NaiveDateTime),

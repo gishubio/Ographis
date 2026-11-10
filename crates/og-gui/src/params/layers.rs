@@ -229,6 +229,27 @@ pub(super) fn map_layer_rows(
                 ui.add(egui::DragValue::new(&mut row.style.size).range(0.0..=100.0).speed(0.2).max_decimals(1))
                     .on_hover_text("The diameter of a point, in pixels");
             });
+            // How the lines are drawn: dashes, and an edge under them as on a road map.
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(RichText::new("line").small().color(pal.muted));
+                let shown = og_engine::mapdraw::DASHES.iter().find(|d| d.0 == row.style.dash).map_or("Solid", |d| d.1);
+                egui::ComboBox::from_id_salt(("dash", i)).selected_text(shown).width(110.0).show_ui(ui, |ui| {
+                    for (key, name) in og_engine::mapdraw::DASHES {
+                        ui.selectable_value(&mut row.style.dash, key.to_string(), *name);
+                    }
+                });
+                ui.add_space(6.0);
+                let mut edge = row.style.casing.is_some();
+                if ui.checkbox(&mut edge, "Edge").on_hover_text("A wider line under each line, as the edge of a road").changed() {
+                    row.style.casing = if edge { Some([0x55, 0x55, 0x55, 255]) } else { None };
+                }
+                if let Some(c) = &mut row.style.casing {
+                    colour_button(ui, c);
+                    ui.add(egui::DragValue::new(&mut row.style.casing_width).range(0.0..=20.0).speed(0.1).max_decimals(1))
+                        .on_hover_text("How much wider than the line, in pixels on each side");
+                }
+            });
             // Drawing by the values of an attribute: Draw map and QGIS, not the PDF. Icons
             // only in Draw map.
             if !named || qgis {
@@ -383,8 +404,8 @@ pub(super) fn raster_rows(ui: &mut Ui, r: &mut og_engine::rasterlook::RasterSpec
     });
 }
 
-/// How a layer of Draw map shows the values of its features: size, colour, order and
-/// clusters, folded in under "Values" until it is used.
+/// How a layer of Draw map shows the values of its features: size, colour, order, arrows,
+/// heatmap and clusters, folded in under "Values" until it is used.
 pub(super) fn theme_rows(ui: &mut Ui, t: &mut og_engine::thematic::ThemeSpec, from: &str, fields: &[(String, bool)], pal: &Palette) {
     let on = !t.is_off();
     let title = if on { "Values · in use" } else { "Values" };
@@ -474,6 +495,27 @@ pub(super) fn theme_rows(ui: &mut Ui, t: &mut og_engine::thematic::ThemeSpec, fr
                 });
             }
             ui.horizontal(|ui| {
+                ui.label(RichText::new("Arrows by").small().color(pal.muted))
+                    .on_hover_text("Points become arrows the way of this attribute: degrees from north, clockwise, such as the direction of wind or a current. Their length is the size, which Size by can set by the speed");
+                pick(ui, "arrow-by", &mut t.arrow_by, true);
+            });
+            if !t.arrow_by.is_empty() {
+                ui.checkbox(&mut t.arrow_from, RichText::new("It says where it comes from, as for wind").small())
+                    .on_hover_text("Wind from 270° comes from the west, so the arrow points east");
+            }
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Heatmap within").small().color(pal.muted))
+                    .on_hover_text("Points become a heatmap: how many lie near each place, coloured by the ramp of Colour by, or yellow to red. 0 draws the points");
+                ui.add(egui::DragValue::new(&mut t.heat).range(0.0..=300.0).speed(0.5).max_decimals(0));
+                ui.label(RichText::new("pixels").small().color(pal.muted));
+            });
+            if t.heat > 0.0 {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("each counting as").small().color(pal.muted)).on_hover_text("Such as the number of people at an address. None: each point counts as one");
+                    pick(ui, "heat-by", &mut t.heat_by, true);
+                });
+            }
+            ui.horizontal(|ui| {
                 ui.label(RichText::new("Gather points within").small().color(pal.muted))
                     .on_hover_text("Points closer than this on the map are drawn as one, with their number in it. 0 draws every point");
                 ui.add(egui::DragValue::new(&mut t.cluster).range(0.0..=200.0).speed(0.5).max_decimals(0));
@@ -529,7 +571,12 @@ pub(super) fn label_rows(ui: &mut Ui, l: &mut og_engine::mapdraw::LabelSpec, fro
             .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Label text"));
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Placed").small().color(pal.muted));
-                let places = [("auto", "Beside points, along lines"), ("center", "On the point, in the middle"), ("xy", "At x and y from attributes")];
+                let places = [
+                    ("auto", "Beside points, bending along lines"),
+                    ("straight", "Beside points, straight along lines"),
+                    ("center", "On the point, in the middle"),
+                    ("xy", "At x and y from attributes"),
+                ];
                 let shown = places.iter().find(|p| p.0 == l.place).map_or(places[0].1, |p| p.1);
                 egui::ComboBox::from_id_salt(("label-place", from)).selected_text(shown).width(170.0).show_ui(ui, |ui| {
                     for (v, t) in places {
@@ -569,6 +616,7 @@ pub(super) fn label_rows(ui: &mut Ui, l: &mut og_engine::mapdraw::LabelSpec, fro
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.checkbox(&mut l.bold, "Bold");
                 ui.checkbox(&mut l.upper, "CAPITALS");
+                ui.checkbox(&mut l.spaced, "Spread out").on_hover_text("The letters spread out over an area, as the name of a lake or a district");
                 let mut c = Some(l.colour);
                 optional_colour(ui, &mut c, "Colour", "The colour of the letters", [0x22, 0x22, 0x22, 255]);
                 if let Some(c) = c {

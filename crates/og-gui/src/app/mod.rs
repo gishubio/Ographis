@@ -33,6 +33,7 @@ mod keyboard;
 mod navigator;
 mod palette;
 mod run;
+mod tools;
 mod top_bar;
 mod wires;
 
@@ -186,6 +187,11 @@ pub struct App {
     progress: (usize, usize),
     /// The named boxes that hold nodes together on the canvas.
     pub groups: Vec<GroupBox>,
+    /// The models around the one on the canvas, when the model inside a tool is open: the
+    /// outermost first.
+    pub inside: Vec<tools::Outer>,
+    /// The latest click on a tool made of other tools, to tell a double click: when and which.
+    node_click: Option<(f64, NodeId)>,
     /// The group box that is selected. Its settings are shown in the panel on the right.
     pub selected_group: Option<usize>,
     group_drag: Option<GroupDrag>,
@@ -204,6 +210,11 @@ pub struct App {
     pub variables: Vec<og_engine::Variable>,
     /// Whether the window with the variables is open.
     pub variables_open: bool,
+    /// The variables marked Ask, while they are asked for before a run.
+    pub asking: Option<Vec<og_engine::Variable>>,
+    /// The values were just given, so the run that follows does not ask again.
+    asked: bool,
+    ask_focused: bool,
     /// The window that connects an input or an output to PostGIS, when it is open.
     pub db_dialog: Option<crate::dbdialog::DbDialog>,
     /// The settings of the user, for all models: the database connections.
@@ -298,6 +309,8 @@ pub struct App {
     /// there to read also if the program stops before the run ends; with its file name.
     run_log: Option<(std::fs::File, String)>,
     run_started: Option<chrono::NaiveDateTime>,
+    /// When the result that is shown came, to say how old what the forms show of it is.
+    pub result_at: Option<chrono::NaiveDateTime>,
     /// Whether the window with tips and shortcuts is open.
     pub tips: bool,
     /// Whether the start screen shows on the empty canvas. The program turns it on when it
@@ -429,6 +442,8 @@ impl App {
             running_step: None,
             progress: (0, 0),
             groups: Vec::new(),
+            inside: Vec::new(),
+            node_click: None,
             selected_group: None,
             group_drag: None,
             expanded: HashSet::new(),
@@ -439,6 +454,9 @@ impl App {
             navigator: Vec::new(),
             variables: Vec::new(),
             variables_open: false,
+            asking: None,
+            asked: false,
+            ask_focused: false,
             db_dialog: None,
             settings: load_settings(),
             settings_window: None,
@@ -485,6 +503,7 @@ impl App {
             canvas_click: None,
             run_log: None,
             run_started: None,
+            result_at: None,
             tips: false,
             start_screen: false,
             update_check: None,
@@ -540,8 +559,17 @@ impl App {
         self.transform.scaling
     }
 
+    /// The whole model, also when the model inside a tool is what is on the canvas: that is
+    /// put into its tool, and that tool into the model around it.
     pub fn workspace(&self) -> Workspace {
-        let mut ws = graph::workspace_from(&self.snarl, &self.name, &self.groups, &self.navigator);
+        let mut ws = self.canvas_workspace();
+        for outer in self.inside.iter().rev() {
+            let mut around = outer.ws.clone();
+            ws.name = outer.label.clone();
+            og_engine::toolmaking::put_inside(&mut around, &outer.node, &ws);
+            ws = around;
+        }
+        ws.name = self.name.clone();
         ws.variables = self.variables.clone();
         ws.cache = self.use_cache;
         ws.description = self.description.clone();
@@ -627,7 +655,8 @@ impl App {
         // A workspace that was just opened has nothing to undo.
         self.undo.clear();
         self.redo.clear();
-        self.undo_base = self.workspace();
+        self.inside.clear();
+        self.undo_base = self.canvas_workspace();
         self.taken_in = self.revision;
         self.focus = None;
         self.selected.clear();

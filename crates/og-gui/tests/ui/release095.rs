@@ -209,6 +209,8 @@ fn filter_point_cloud_ticks_the_classes_in_the_data() {
     h.state_mut().set_selection(vec![f]);
     settle(&mut h);
     shot(&mut h, "95-classes-to-tick");
+    // It says which run the classes come from.
+    assert!(h.query_by_label_contains("From the run at").is_some());
     // The labels of the ticks: class · name · count.
     let ticks: Vec<String> = h
         .query_all_by_role(egui::accesskit::Role::CheckBox)
