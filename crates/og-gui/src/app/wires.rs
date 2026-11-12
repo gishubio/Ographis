@@ -194,6 +194,19 @@ impl App {
         });
     }
 
+    /// The stream that came into a port of a node in the latest run, from the connection
+    /// to it.
+    pub(super) fn input_table(&self, id: &str, port: &str) -> Option<Arc<Table>> {
+        let node = graph::find(&self.snarl, id)?;
+        let wire = self
+            .snarl
+            .wires()
+            .find(|w| w.1.node == node && self.snarl.get_node(node).and_then(|n| n.inputs().get(w.1.input).cloned()).as_deref() == Some(port))?;
+        let from = self.snarl.get_node(wire.0.node)?;
+        let out = from.outputs().get(wire.0.output)?.clone();
+        self.result.as_ref()?.nodes.get(&from.id)?.outputs.get(&out).cloned()
+    }
+
     /// What the connection goes between, in words.
     pub(super) fn wire_text(&self, wire: (OutPinId, InPinId)) -> Option<(String, String)> {
         let (a, b) = (self.snarl.get_node(wire.0.node)?, self.snarl.get_node(wire.1.node)?);

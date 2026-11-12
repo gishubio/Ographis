@@ -23,6 +23,9 @@ run, so the run's own is not known, only that it was lower.
 | polygons_buffer | 200 000 small areas from CSV with WKT, their area and a buffer of 2 m, to GeoPackage |
 | raster_slope | The slope of 4000 × 4000 heights (16 million cells), GeoTIFF to GeoTIFF |
 | cloud_raster | 5 000 000 points from LAZ made a terrain model of 1 m cells, the mean height |
+| dissolve_groups | 60 000 overlapping areas of 40 corners, dissolved in 400 blocks by a group attribute (0.96.2) |
+| dissolve_districts | The same 60 000 areas dissolved in 120 districts of some 500 areas each (0.96.2) |
+| dissolve_one | The same 60 000 areas dissolved into one (0.96.2) |
 
 ## Results
 
@@ -32,6 +35,24 @@ On Linux, two cores of an Intel Xeon at 2.1 GHz and 8 GB of memory, release buil
 | --- | --- | --- | --- | --- |
 | 0.94 | 6.1 s, 1 114 MB | 3.6 s, 820 MB | 2.5 s, 303 MB | 2.7 s, 208 MB |
 | 0.95 | 6.4 s, 678 MB | 3.8 s, 490 MB | 2.8 s, 244 MB | 2.6 s, 197 MB |
+
+In 0.96.2 the heavy vector tools work on every core. On the same two cores:
+
+| Version | points_join | polygons_buffer | dissolve_groups | dissolve_one | raster_slope | cloud_raster |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0.96.1 | 5.9 s, 723 MB | 3.2 s, 488 MB | 4.6 s, 352 MB | 4.2 s, 1 199 MB | 2.2 s | 2.3 s |
+| 0.96.2 | 3.2 s, 750 MB | 2.0 s, 526 MB | 2.2 s, 364 MB | 2.1 s, 390 MB | 2.1 s, 303 MB | 2.2 s, 246 MB |
+
+Dissolving into one area now merges pieces of neighbours and then the pieces two by two,
+rather than everything at once, and so holds a third of the memory.
+
+Dissolving into a few groups of a few hundred areas each, as by municipality, first went
+on one core whatever the computer: a run of groups was handed out whole to one core, and a
+group of up to 1024 areas was merged in one go. dissolve_districts, 120 such groups, took
+4.0 s with one core busy. Now the runs are as many as the cores can take, the largest
+groups go first, and a group is merged in pieces by as many cores; the same case takes
+2.7 s on the two cores, and should gain more with more cores. With more cores the
+vector cases should go faster still; the raster and point cloud cases did not change.
 
 What they say: a point cloud is kept compactly, about 30 bytes a point, and a raster as the
 values of its cells. Features take more: a point with four attributes some 200 bytes, a

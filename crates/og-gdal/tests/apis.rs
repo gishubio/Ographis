@@ -97,6 +97,9 @@ fn server(handler: Arc<Handler>) -> (String, Arc<Mutex<Vec<Req>>>) {
     (format!("http://{}", addr), log)
 }
 
+/// The settings are the same for the whole program, so the tests that set them take turns.
+static SETTINGS_TURN: Mutex<()> = Mutex::new(());
+
 fn model(nodes: &str, edges: &str) -> Workspace {
     Workspace::from_json(&format!(r#"{{"nodes": [{}], "edges": [{}]}}"#, nodes, edges)).unwrap()
 }
@@ -163,6 +166,7 @@ fn pages_are_followed_by_link_offset_and_number() {
 
 #[test]
 fn keys_tokens_and_busy_services() {
+    let _turn = SETTINGS_TURN.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tmp("keys");
     let b = GdalBackend::new();
     let busy = Arc::new(Mutex::new(0));
@@ -1137,5 +1141,171 @@ fn overture_maps_is_read_within_a_rectangle_in_parts() {
     let fetched = asked.lock().unwrap().clone();
     assert!(!fetched.iter().any(|p| p.contains("part-1")), "the file elsewhere is not read: {:?}", fetched);
     assert!(r.log.iter().any(|l| l.msg.contains("parts of 1 files") && !l.msg.contains("16 of 16")), "only some row groups: {:?}", r.log);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A key made for this test only, for a service account that does not exist.
+const TEST_KEY: &str = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDZaAq2L5CXP873\nkZQgiv5+aVzZbVQQ7bu2owu+lOR4IO8VuCkuoeoYlGu+/nW3QEkKuP3zwYyVbS/X\n3ncdSs2tW5OolO1jPqoiJfP4cxWeuxaVyiu5HaPhqecu+oeLMOSSJr1z434XrtTN\nyFWhxdyPBCYSpppENhuLwBaWuTt6dHN/8WKOszhzygHlWuDp2GJcERaZThig7tWa\nlwlyMpdh2iscXGVjOGWMoo5NWZYhilt/4dWgUAQixiUaGeg9FLyEmWqdJRa3eqV/\ncCy+gP42qv+Ql5VEzZTfb9yiZzqyh971oA3Qjc9e5fKyd8SVfQJXv1WertyC0xpG\nkZ+9Hqf/AgMBAAECggEANvU1F/8IJyPrNuwnLN7WHLCX1yLrCGiAdlfbJS9QXgm9\nRplKV854dgQ3BI4gxdVLYZmIIPGBj1iNqp1DMTVyrusidZBIPjleGsnLVbgJ9BlJ\nSU5VJTOX9PjVRyvvzcDrVwLSC5SrkGMSyn5lH0L8UW70DOzuvGWNKxPA4hMrNPX5\n4NfuVjJteUyKDRffjPwgadZ1N4kddZsCC3sy79IQS52NU7Uz5zo9YIyU1maDyro/\n3VSygfCTjvgGvOF5Rj1uF3j8QcqOGPy8MtNYyWHu8h41mjyngbdiUbO4t5TejaZB\nrpeMHGJ6RcZO/9zh1+AfjXK7VGytyW8SOcTvvh+nkQKBgQDuFpP9yHQ2FkqwR8m6\nteSGierfqTcXD+qLIF5d7Cf06btoaKlexK+jTYQW73hOyKnniJLLAk9Ygwb748rd\nsk8EVoTA16c8r8ALTPDu++ehzvB8VeOEoqWKvjJhgyEbdV/fBdG91uuQC9iscIc+\n+MGz0AXNPzVWzoEzUAvKTotLZwKBgQDpwyVwDXxAkLzAjdJ42Dd08HgIxCNaSHXj\nD/eEJouw++aPoLM7lV5k9rG4wvbU8wONPLpMktwx7YphTkmhZJQcswwnL8ayL32T\n8iEcduL4nN3zBUPWjrwC4Z859GZefja8eVA1vO15l29qiYRUJx+5rwv1kptIU1+s\n8RDKDtt3qQKBgAezo0XqXhgB0JizOctYZvQTMg3aI3YThbrKaUMQiJpblTxjZlcy\ndZwKveMgC/xAcX6T5Gu8v2RVmLw9OirBwdyaD+FNGJPV+5hh/Mk+TNfnIdBj1uBL\ngp9iV67f1wpUWa2VOpuxgB1AxNmPKlDXKyzt5cIl8UvFklheloMM12SxAoGAYANd\nTyba0BIi1NvrhOMZ9BgI1WDqPFzivr6CJW9HlQwB6SBSPbjeKo4A9ShvBYxC+zHk\nOyte8crlOY5UQ8vx4c/QwA+phupmo+uhmfViyEZ2CykwceHyaySMp9swaMNibAtP\n3KKaz4RZqOKOzZm8OCIjwVvUF+LWu0vQX422qvECgYEAw4jQHc7Ds8k2zx0Cvo+y\nQT1FjMxQEp3UcsfrJSCfiQDExIsmf9GLq/IasbfPehbylVi8cQoPWuD/AlbE5/xA\nh2v/dv1DRZApLVxUFANmmZE21mH5Nox6jruLLi/TlqjujMV3E+qAeAQvB0HJpIft\nHDee/yfFxEJrdQWFflqfP4k=\n-----END PRIVATE KEY-----\n";
+
+/// Google Sheets: a sheet shared with a link read as CSV, and a private one read, written
+/// over and added to through the API with a service account, against a server on this
+/// computer that answers as Google does.
+#[test]
+fn google_sheets_are_read_and_written() {
+    let _turn = SETTINGS_TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tmp("gsheets");
+    let b = GdalBackend::new();
+    type Sheets = Arc<Mutex<Vec<(String, Vec<Vec<serde_json::Value>>)>>>;
+    let sheets: Sheets = Arc::new(Mutex::new(vec![(
+        "Rooms".to_string(),
+        vec![
+            vec![serde_json::json!("name"), serde_json::json!("area"), serde_json::json!("wkt")],
+            vec![serde_json::json!("Hall"), serde_json::json!(40.5), serde_json::json!("POINT (1 2)")],
+            vec![serde_json::json!("Kitchen, small"), serde_json::json!(12), serde_json::json!("POINT (3 4)")],
+        ],
+    )]));
+    let state = sheets.clone();
+    let (base, log) = server(Arc::new(move |r: &Req| {
+        let authed = r.headers.get("authorization").map(|a| a.as_str()) == Some("Bearer tok-1");
+        let route = r.route().to_string();
+        let json = |v: serde_json::Value| (200, vec![], v.to_string());
+        if route == "/token" {
+            let ok = r.body.contains("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer")
+                && r.body.split("assertion=").nth(1).is_some_and(|a| a.split('.').count() == 3);
+            return if ok { json(serde_json::json!({"access_token": "tok-1", "expires_in": 3600})) } else { (400, vec![], "{}".into()) };
+        }
+        if route == "/spreadsheets/d/PUB/export" {
+            return (200, vec![("Content-Type".into(), "text/csv".into())], "name,count\nNorth,3\nSouth,5\n".into());
+        }
+        if route == "/spreadsheets/d/PRIV/export" {
+            return (200, vec![("Content-Type".into(), "text/html".into())], "<html>Sign in</html>".into());
+        }
+        if !authed {
+            return (401, vec![], "{\"error\": {\"message\": \"no token\"}}".into());
+        }
+        let mut s = state.lock().unwrap();
+        let body: serde_json::Value = serde_json::from_str(&r.body).unwrap_or(serde_json::Value::Null);
+        if route == "/v4/spreadsheets/ABC" {
+            let list: Vec<serde_json::Value> = s.iter().enumerate().map(|(i, (t, _))| serde_json::json!({"properties": {"title": t, "sheetId": i}})).collect();
+            return json(serde_json::json!({"sheets": list}));
+        }
+        if route == "/v4/spreadsheets/ABC:batchUpdate" {
+            let title = body["requests"][0]["addSheet"]["properties"]["title"].as_str().unwrap().to_string();
+            s.push((title, Vec::new()));
+            return json(serde_json::json!({}));
+        }
+        let rest = route.strip_prefix("/v4/spreadsheets/ABC/values/").unwrap_or("");
+        let title = rest.split(['!', ':']).next().unwrap_or("").to_string();
+        let Some(k) = s.iter().position(|x| x.0 == title) else { return (400, vec![], "{\"error\": {\"message\": \"no such sheet\"}}".into()) };
+        let rows =
+            |v: &serde_json::Value| -> Vec<Vec<serde_json::Value>> { v["values"].as_array().unwrap().iter().map(|r| r.as_array().unwrap().clone()).collect() };
+        match (r.method.as_str(), rest) {
+            ("GET", x) if x.ends_with("!A1:A1") => {
+                json(serde_json::json!({"values": s[k].1.iter().take(1).map(|r| r.iter().take(1).cloned().collect::<Vec<_>>()).collect::<Vec<_>>()}))
+            }
+            ("GET", _) => json(serde_json::json!({"values": s[k].1})),
+            ("POST", x) if x.ends_with(":clear") => {
+                s[k].1.clear();
+                json(serde_json::json!({}))
+            }
+            ("PUT", _) => {
+                s[k].1 = rows(&body);
+                json(serde_json::json!({}))
+            }
+            ("POST", x) if x.ends_with(":append") => {
+                let more = rows(&body);
+                s[k].1.extend(more);
+                json(serde_json::json!({}))
+            }
+            _ => (404, vec![], "{}".into()),
+        }
+    }));
+    std::env::set_var("OGRAPHIS_GOOGLE_DOCS", &base);
+    std::env::set_var("OGRAPHIS_GOOGLE_SHEETS_API", &base);
+    let key = serde_json::json!({"type": "service_account", "client_email": "ographis-test@example.iam.gserviceaccount.com", "private_key": TEST_KEY, "token_uri": format!("{}/token", base)});
+    use_settings(Some(Settings {
+        apis: vec![ApiConnection { name: "Sheets".into(), auth: "google".into(), secret: key.to_string(), ..Default::default() }],
+        ..Default::default()
+    }));
+    let ws = model(
+        &format!(
+            r#"{{"id": "shared", "type": "Reader", "params": {{"path": "{b}/spreadsheets/d/PUB/edit#gid=0"}}}},
+               {{"id": "private", "type": "Reader", "params": {{"path": "{b}/spreadsheets/d/ABC/edit", "layer": "Rooms", "connection": "Sheets", "crs": "EPSG:3006"}}}},
+               {{"id": "out", "type": "Writer", "params": {{"path": "{b}/spreadsheets/d/ABC/edit", "format": "gsheet", "layer": "Copy", "connection": "Sheets"}}}},
+               {{"id": "closed", "type": "Reader", "params": {{"path": "{b}/spreadsheets/d/PRIV/edit"}}}}"#,
+            b = base
+        ),
+        r#"{"from": ["private", "Output"], "to": ["out", "Input"]}"#,
+    );
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    // Shared with a link: the CSV Google gives.
+    let shared = r.output("shared", "Output").unwrap();
+    assert_eq!(col(shared, "count"), [Value::Int(3), Value::Int(5)]);
+    // Private, with the service account: numbers as numbers, text with a comma whole, WKT.
+    let private = r.output("private", "Output").unwrap();
+    assert_eq!(col(private, "name"), [Value::Text("Hall".into()), Value::Text("Kitchen, small".into())]);
+    assert_eq!(col(private, "area")[0], Value::Real(40.5));
+    assert!(private.features[1].geom.is_some());
+    // Written to a new sheet: the names, and the rows with their geometry as WKT.
+    let copy = sheets.lock().unwrap().iter().find(|s| s.0 == "Copy").cloned().expect("the sheet Copy was added");
+    assert_eq!(copy.1.len(), 3);
+    assert_eq!(copy.1[0].last().unwrap(), "wkt");
+    assert_eq!(copy.1[2][0], "Kitchen, small");
+    // Not shared: says how to share it.
+    let closed = r.nodes["closed"].error.clone().unwrap();
+    assert!(closed.contains("not shared with a link"), "{}", closed);
+    assert!(log.lock().unwrap().iter().filter(|q| q.route() == "/token").count() <= 2, "the token is kept");
+    // Added to: the rows after those there, without the names again.
+    let ws = model(
+        &format!(
+            r#"{{"id": "private", "type": "Reader", "params": {{"path": "{b}/spreadsheets/d/ABC/edit#gid=0", "connection": "Sheets"}}}},
+               {{"id": "out", "type": "Writer", "params": {{"path": "{b}/spreadsheets/d/ABC/edit", "format": "gsheet", "layer": "Copy", "connection": "Sheets", "mode": "append"}}}}"#,
+            b = base
+        ),
+        r#"{"from": ["private", "Output"], "to": ["out", "Input"]}"#,
+    );
+    let r = run(&ws, Some(&b), &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let copy = sheets.lock().unwrap().iter().find(|s| s.0 == "Copy").cloned().unwrap();
+    assert_eq!(copy.1.len(), 5);
+    assert_eq!(copy.1[3][0], "Hall");
+    std::env::remove_var("OGRAPHIS_GOOGLE_DOCS");
+    std::env::remove_var("OGRAPHIS_GOOGLE_SHEETS_API");
+    use_settings(None);
+}
+
+#[test]
+fn every_request_is_written_to_the_log() {
+    let dir = tmp("request_log");
+    let b = GdalBackend::new();
+    let (base, _) = server(Arc::new(|r: &Req| match r.route() {
+        "/ok" => (200, vec![], "{\"ok\": 1}".into()),
+        _ => (404, vec![], "{}".into()),
+    }));
+    let ws = model(
+        &format!(
+            r#"{{"id": "get", "type": "HttpCaller", "params": {{"url": "{b}/ok?q=1", "log": "logs/requests.log"}}}},
+               {{"id": "post", "type": "HttpCaller", "params": {{"url": "{b}/missing", "method": "POST", "body": "'a\tb'", "log": "logs/requests.log"}}}}"#,
+            b = base
+        ),
+        "",
+    );
+    let r = run(&ws, Some(&b), &dir);
+    assert_eq!(r.output("get", "Output").unwrap().len(), 1, "{:?}", r.log);
+    let text = std::fs::read_to_string(dir.join("logs/requests.log")).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 3, "a heading and a line for each request: {}", text);
+    assert!(lines[0].starts_with("time\tmethod\taddress\tstatus"));
+    let get = lines.iter().find(|l| l.contains("/ok?q=1")).unwrap();
+    let cells: Vec<&str> = get.split('\t').collect();
+    assert_eq!((cells[1], cells[3], cells[4]), ("GET", "200", "9"));
+    let post = lines.iter().find(|l| l.contains("/missing")).unwrap();
+    assert!(post.contains("\t404\t") && post.ends_with("a\\tb"), "the body on one line: {}", post);
+    // A later run adds to the file.
+    run(&ws, Some(&b), &dir);
+    assert_eq!(std::fs::read_to_string(dir.join("logs/requests.log")).unwrap().lines().count(), 5);
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -33,6 +33,12 @@ pub fn default_background(s: &Settings) -> String {
     }
 }
 
+/// The folder Open and Save as begin in, and where an unsaved model reads and writes, when
+/// one is set and is there.
+pub fn start_folder(s: &Settings) -> Option<std::path::PathBuf> {
+    s.other.get("start_folder").and_then(|v| v.as_str()).map(std::path::PathBuf::from).filter(|p| p.is_dir())
+}
+
 /// How many features each input reads in a trial run, from the settings.
 pub fn trial_features(s: &Settings) -> usize {
     s.other.get("trial_features").and_then(|v| v.as_u64()).filter(|n| *n > 0).map_or(1000, |n| n as usize)
@@ -221,6 +227,37 @@ impl SettingsWindow {
             settings.other.insert("hints_always".into(), serde_json::json!(always));
             changed = true;
         }
+        ui.add_space(8.0);
+        // Where Open and Save as begin, and where a model not yet saved reads and writes.
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Start folder").color(pal.muted))
+                .on_hover_text("Where Open and Save as begin, and where a model that is not saved yet reads and writes its files. Without one: the folder of the model last used");
+            let shown = settings.other.get("start_folder").and_then(|v| v.as_str()).map(str::to_string);
+            match &shown {
+                Some(f) => {
+                    let there = std::path::Path::new(f).is_dir();
+                    ui.label(RichText::new(f).font(theme::mono(12.0)).color(if there { pal.ink } else { pal.warn }))
+                        .on_hover_text(if there { "The start folder" } else { "This folder is not there, so the folder of the model last used is taken" });
+                }
+                None => {
+                    ui.label(RichText::new("the folder of the model last used").small().color(pal.muted));
+                }
+            }
+            if ui.button("Choose…").clicked() {
+                let mut dialog = rfd::FileDialog::new();
+                if let Some(f) = start_folder(settings) {
+                    dialog = dialog.set_directory(f);
+                }
+                if let Some(d) = dialog.pick_folder() {
+                    settings.other.insert("start_folder".into(), serde_json::json!(d.to_string_lossy()));
+                    changed = true;
+                }
+            }
+            if shown.is_some() && ui.button("Clear").on_hover_text("Begin in the folder of the model last used").clicked() {
+                settings.other.remove("start_folder");
+                changed = true;
+            }
+        });
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             ui.label(RichText::new("A trial run reads at most").color(pal.muted));
@@ -490,6 +527,7 @@ impl SettingsWindow {
                         }
                     });
                     let kind_changed = before != c.auth;
+                    let mut key_read = false;
                     ui.end_row();
                     match c.auth.as_str() {
                         "key_header" => {
@@ -510,10 +548,35 @@ impl SettingsWindow {
                             row(ui, "Client secret", &mut c.secret, true, "", "api-secret");
                             row(ui, "Scope", &mut c.scope, false, "if the service asks for one", "api-scope");
                         }
+                        "google" => {
+                            // The key file Google gives for a service account, read whole.
+                            ui.label(RichText::new("Key").color(pal.muted));
+                            ui.horizontal(|ui| {
+                                if ui.button("Read key file…").on_hover_text("The JSON file Google gives when a key is made for the service account").clicked()
+                                {
+                                    if let Some(f) = rfd::FileDialog::new().add_filter("Key of a service account", &["json"]).pick_file() {
+                                        if let Ok(text) = std::fs::read_to_string(&f) {
+                                            c.secret = text;
+                                            key_read = true;
+                                        }
+                                    }
+                                }
+                                let email = serde_json::from_str::<serde_json::Value>(c.secret.trim())
+                                    .ok()
+                                    .and_then(|v| v["client_email"].as_str().map(str::to_string));
+                                match email {
+                                    Some(e) => ui.label(RichText::new(e).small()).on_hover_text("Share the sheets with this address"),
+                                    None if c.secret.trim().is_empty() => ui.label(RichText::new("No key yet").small().color(pal.muted)),
+                                    None => ui.label(RichText::new("This is not the key file of a service account").small().color(pal.warn)),
+                                };
+                            });
+                            ui.end_row();
+                            row(ui, "Scope", &mut c.scope, false, "empty: Google Sheets", "api-scope");
+                        }
                         _ => row(ui, "Key", &mut c.secret, true, "", "api-secret"),
                     }
                     row(ui, "Only for addresses", &mut c.base_url, false, "such as https://api.trafikinfo.trafikverket.se/", "api-base");
-                    kind_changed
+                    kind_changed || key_read
                 });
                 changed |= kind_changed.inner;
                 ui.label(RichText::new("With an address, the key is only ever sent to addresses that begin with it.").small().color(pal.muted));

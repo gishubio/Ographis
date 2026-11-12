@@ -3353,7 +3353,7 @@ dependencies = [
 
 [[package]]
 name = "og-cli"
-version = "0.96.0"
+version = "0.96.2"
 dependencies = [
  "chrono",
  "og-engine",
@@ -3363,10 +3363,11 @@ dependencies = [
 
 [[package]]
 name = "og-engine"
-version = "0.96.0"
+version = "0.96.2"
 dependencies = [
  "ab_glyph",
  "acadrust",
+ "base64 0.22.1",
  "bytes",
  "chrono",
  "e57",
@@ -3383,6 +3384,7 @@ dependencies = [
  "rayon",
  "regex",
  "resvg",
+ "ring",
  "rstar",
  "serde",
  "serde_json",
@@ -3394,13 +3396,14 @@ dependencies = [
 
 [[package]]
 name = "og-gdal"
-version = "0.96.0"
+version = "0.96.2"
 dependencies = [
  "flate2",
  "gdal",
  "gdal-sys",
  "geo",
  "icu_locale_core",
+ "image",
  "og-engine",
  "serde_json",
  "spreadsheet-ods",
@@ -3411,7 +3414,7 @@ dependencies = [
 
 [[package]]
 name = "og-gui"
-version = "0.96.0"
+version = "0.96.2"
 dependencies = [
  "arboard",
  "chrono",
@@ -3423,6 +3426,7 @@ dependencies = [
  "image",
  "og-engine",
  "og-gdal",
+ "rayon",
  "rfd",
  "serde_json",
  "ttf-parser",

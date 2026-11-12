@@ -266,6 +266,16 @@ Not yet checked on Windows:
   the speed of reading IFC with many cut-outs, measured here only in a debug build.
 - Version 0.96 beta 3: the PDF of shapes opened in Acrobat Reader, Edge and Illustrator, and
   the SVG in Inkscape; here they were checked with qpdf and drawn with Poppler.
+- Version 0.96.2: the start folder in Open and Save as on Windows; LandXML from Civil 3D
+  and Novapoint; an IDS file from a client against a real model; how much faster Dissolve
+  is on a computer with many cores; the heightmap, masks and instances imported in Unreal,
+  Unity and Godot; OpenUSD opened in Houdini, Blender, Omniverse and Quick Look on a Mac or
+  iPhone; splats from Polycam, Luma or Postshot placed on a map and opened again in a
+  viewer of splats; how smoothly the 3D view turns a scene of millions of splats; the rules
+  of the road on a county of NVDB and of OpenStreetMap.
+- Version 0.96.1: Google Sheets against Google itself, read and written with a real service
+  account, and *Read key file…* in Settings; the ready map styles and patterns in a PDF in
+  Acrobat Reader.
 - Version 0.96: the layers of a PDF of shapes in Acrobat Reader and QGIS, the layers of the
   SVG in Inkscape, and the coordinates of the PDF in QGIS; here GDAL read both.
 - Version 0.91, all built and tested only on Linux: Model → *Schedule…* making, finding and

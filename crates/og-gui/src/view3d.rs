@@ -37,6 +37,30 @@ struct Item {
     intensity: Option<f32>,
 }
 
+/// A scene of Gaussian splats shown with the stream: the cloud, and the features of the
+/// stream that stand for its points, every n-th of them.
+#[derive(Clone)]
+pub struct SplatSource {
+    pub cloud: Arc<og_engine::cloud::Cloud>,
+    /// The first of those features, and how many they are.
+    pub first: usize,
+    pub count: usize,
+}
+
+/// A splat ready to draw: its middle in the metres of the view, its covariance there (xx,
+/// xy, xz, yy, yz, zz), its colour from 0 to 255, its opacity and the feature it stands for.
+struct SplatPrep {
+    at: [f32; 3],
+    cov: [f32; 6],
+    rgb: [f32; 3],
+    opacity: f32,
+    feature: u32,
+}
+
+/// The most splats that are drawn; more are thinned out. While the view is turned, fewer.
+const MOST_SPLATS: usize = 2_000_000;
+const MOST_SPLATS_TURNING: usize = 250_000;
+
 /// What the points of a cloud are coloured by.
 pub const POINT_COLOURS: &[(&str, &str)] = &[("own", "Their own colours"), ("height", "Height"), ("class", "Class"), ("intensity", "Intensity")];
 
@@ -60,6 +84,13 @@ struct Prepared {
     /// The triangles of a 3D model, such as one read from OBJ: corners, colour (0 to 255)
     /// and the object, which is the feature, they belong to.
     model: Vec<([[f32; 3]; 3], [f32; 3], u32)>,
+    /// The middle of the data, and the metres of a unit of x and y there, to place what is
+    /// given in the coordinates of the stream.
+    mid: [f64; 2],
+    scale: [f64; 2],
+    /// Gaussian splats, drawn soft over the surfaces, and how many were thinned out.
+    splats: Vec<SplatPrep>,
+    splats_left_out: usize,
 }
 
 /// The most triangles of a model that are drawn. More are thinned out.
@@ -82,6 +113,11 @@ pub struct View3d {
     /// The surfaces drawn with a depth buffer, as a picture, and for each of its pixels the
     /// feature it shows, to pick by a click; with what they were drawn for.
     drawn: Option<Drawn>,
+    /// Level planes to show, see-through, such as where Outline from above cuts: the height
+    /// and west, south, east and north, in the coordinates of the stream.
+    pub planes: Vec<(f64, [f64; 4])>,
+    /// Scenes of Gaussian splats among what is shown, drawn as splats rather than points.
+    pub splats: Vec<SplatSource>,
 }
 
 struct Drawn {
@@ -105,7 +141,7 @@ type ScreenFace = ([(Pos2, f32); 3], Color32, u32);
 /// its feature.
 type PixelDot = ([f32; 3], f32, Color32, u32);
 
-fn rasterize(w: usize, h: usize, faces: &[PixelFace], dots: &[PixelDot]) -> (Vec<Color32>, Vec<u32>) {
+fn rasterize(w: usize, h: usize, faces: &[PixelFace], dots: &[PixelDot]) -> (Vec<Color32>, Vec<u32>, Vec<f32>) {
     let mut colour = vec![Color32::TRANSPARENT; w * h];
     let mut depth = vec![f32::INFINITY; w * h];
     let mut ids = vec![NONE; w * h];
@@ -165,7 +201,71 @@ fn rasterize(w: usize, h: usize, faces: &[PixelFace], dots: &[PixelDot]) -> (Vec
             }
         }
     }
-    (colour, ids)
+    (colour, ids, depth)
+}
+
+/// A splat on the screen: its middle in pixels and depth, the inverse of its covariance
+/// there (a, b, c), how far it reaches in pixels, its colour, opacity and feature.
+struct ScreenSplat {
+    x: f32,
+    y: f32,
+    depth: f32,
+    conic: [f32; 3],
+    reach: f32,
+    rgb: [f32; 3],
+    opacity: f32,
+    feature: u32,
+}
+
+/// Blends splats over the picture from far to near, each soft as a Gaussian, hidden where a
+/// surface lies nearer. Spread over the cores in bands of rows.
+fn blend_splats(w: usize, h: usize, colour: &mut [Color32], ids: &mut [u32], depth: &[f32], splats: &[ScreenSplat]) {
+    use rayon::prelude::*;
+    const BAND: usize = 16;
+    colour.par_chunks_mut(w * BAND).zip(ids.par_chunks_mut(w * BAND)).enumerate().for_each(|(band, (cols, idb))| {
+        let (y0, y1) = (band * BAND, (band * BAND + BAND).min(h));
+        for s in splats {
+            if s.y + s.reach < y0 as f32 || s.y - s.reach >= y1 as f32 {
+                continue;
+            }
+            let (xa, xb) = ((s.x - s.reach).floor().max(0.0) as usize, ((s.x + s.reach).ceil().max(0.0) as usize).min(w.saturating_sub(1)));
+            let (ya, yb) = (((s.y - s.reach).floor().max(y0 as f32)) as usize, ((s.y + s.reach).ceil() as usize).min(y1 - 1));
+            if xa > xb || ya > yb {
+                continue;
+            }
+            for y in ya..=yb {
+                let dy = y as f32 + 0.5 - s.y;
+                for x in xa..=xb {
+                    let dx = x as f32 + 0.5 - s.x;
+                    let power = -0.5 * (s.conic[0] * dx * dx + s.conic[2] * dy * dy) - s.conic[1] * dx * dy;
+                    if !(-8.0..=0.0).contains(&power) {
+                        continue;
+                    }
+                    let a = (s.opacity * power.exp()).min(0.99);
+                    if a < 1.0 / 255.0 {
+                        continue;
+                    }
+                    let k = y * w + x;
+                    if s.depth > depth[k] {
+                        continue;
+                    }
+                    let local = (y - y0) * w + x;
+                    let d = cols[local];
+                    let keep = 1.0 - a;
+                    let mix = |src: f32, dst: u8| (src * a + dst as f32 * keep).round().clamp(0.0, 255.0) as u8;
+                    cols[local] = Color32::from_rgba_premultiplied(
+                        mix(s.rgb[0], d.r()),
+                        mix(s.rgb[1], d.g()),
+                        mix(s.rgb[2], d.b()),
+                        (a * 255.0 + d.a() as f32 * keep).round().clamp(0.0, 255.0) as u8,
+                    );
+                    if a > 0.35 {
+                        idb[local] = s.feature;
+                    }
+                }
+            }
+        }
+    });
 }
 
 impl Default for View3d {
@@ -180,6 +280,8 @@ impl Default for View3d {
             pan: Vec2::ZERO,
             prepared: None,
             drawn: None,
+            planes: Vec::new(),
+            splats: Vec::new(),
         }
     }
 }
@@ -206,7 +308,7 @@ fn colour(rgb: [f32; 3], light: f32, alpha: u8) -> Color32 {
 
 /// `skip`: how many features first the model shows already; when not given, all of them
 /// when there is a model, and the outline when there is a grid.
-fn prepare(table: &Table, key: usize, skip: Option<usize>) -> Prepared {
+fn prepare(table: &Table, key: usize, skip: Option<usize>, splat_sources: &[SplatSource]) -> Prepared {
     use geo::BoundingRect;
     let geographic = og_engine::nodes::is_geographic(None, table.crs).unwrap_or(false);
     // The middle of the data, and metres for degrees.
@@ -289,8 +391,13 @@ fn prepare(table: &Table, key: usize, skip: Option<usize>) -> Prepared {
     };
     let (class_at, intensity_at) = (at("classification"), at("intensity"));
     let num = |f: &og_engine::Feature, k: usize| f.attrs.get(k).and_then(|v| v.as_f64());
+    // The features that stand for splats are drawn as the splats, not as points.
+    let is_splat = |fi: usize| splat_sources.iter().any(|s| fi >= s.first && fi < s.first + s.count);
     for (fi, f) in table.features.iter().enumerate() {
         let Some(g) = &f.geom else { continue };
+        if is_splat(fi) {
+            continue;
+        }
         match skip {
             Some(n) if fi < n => continue,
             Some(_) => {}
@@ -428,6 +535,39 @@ fn prepare(table: &Table, key: usize, skip: Option<usize>) -> Prepared {
         let cell = [(gt[1] * step as f64 * kx) as f32, (gt[5] * step as f64 * ky) as f32];
         (w, h, v, corner, cell)
     });
+    // The splats, every n-th when they are too many to turn smoothly.
+    let mut splats = Vec::new();
+    let total: usize = splat_sources.iter().map(|s| s.cloud.len()).sum();
+    let step = total.div_ceil(MOST_SPLATS).max(1);
+    let splats_left_out = if step > 1 { total - total / step } else { 0 };
+    for src in splat_sources {
+        let c = &src.cloud;
+        let Some(s) = &c.splat else { continue };
+        let every = c.len().div_ceil(src.count.max(1)).max(1);
+        for i in (0..c.len()).step_by(step) {
+            if !c.z[i].is_finite() {
+                continue;
+            }
+            let l = local(c.x[i], c.y[i]);
+            let z = c.z[i] as f32;
+            zlo = zlo.min(z);
+            zhi = zhi.max(z);
+            let cov = s.covariance(i);
+            // Degrees of a coordinate system in degrees are not metres: the splats keep the
+            // size they have, which is then far too small, rather than one made up.
+            let cov = [cov[0] * (kx * kx) as f32, cov[1] * (kx * ky) as f32, cov[2] * kx as f32, cov[3] * (ky * ky) as f32, cov[4] * ky as f32, cov[5]];
+            splats.push(SplatPrep {
+                at: [l[0], l[1], z],
+                cov,
+                rgb: s.colour[i].map(|v| v.clamp(0.0, 1.0) * 255.0),
+                opacity: s.opacity[i],
+                feature: (src.first + (i / every).min(src.count.saturating_sub(1))) as u32,
+            });
+        }
+    }
+    if !splats.is_empty() {
+        with_heights += splats.len();
+    }
     if !zlo.is_finite() {
         (zlo, zhi) = (0.0, 0.0);
     }
@@ -436,7 +576,21 @@ fn prepare(table: &Table, key: usize, skip: Option<usize>) -> Prepared {
         it.pts.iter_mut().for_each(|p| p[2] = zlo);
     }
     let half = [((b.width() * kx) as f32 / 2.0).max(1.0), ((b.height() * ky) as f32 / 2.0).max(1.0)];
-    Prepared { key, items, grid, half, z: [zlo, zhi], with_heights, left_out, tris_left_out, model }
+    Prepared {
+        key,
+        items,
+        grid,
+        half,
+        z: [zlo, zhi],
+        with_heights,
+        left_out,
+        tris_left_out,
+        model,
+        mid: [mid.x, mid.y],
+        scale: [kx, ky],
+        splats,
+        splats_left_out,
+    }
 }
 
 impl View3d {
@@ -482,9 +636,9 @@ impl View3d {
             );
             return None;
         };
-        let key = Arc::as_ptr(table) as usize;
+        let key = self.splats.iter().fold(Arc::as_ptr(table) as usize, |k, s| k.wrapping_mul(31) ^ (Arc::as_ptr(&s.cloud) as usize).wrapping_add(s.first));
         if self.prepared.as_ref().is_none_or(|p| p.key != key) {
-            self.prepared = Some(prepare(table, key, skip));
+            self.prepared = Some(prepare(table, key, skip, &self.splats));
         }
         // Turning, moving and zooming.
         if resp.dragged_by(egui::PointerButton::Primary) {
@@ -542,6 +696,8 @@ impl View3d {
             0.55 + 0.55 * ((n[0] * sun[0] + n[1] * sun[1] + n[2] * sun[2]) / l).max(0.0)
         };
         // Drawn again only when something has changed: the view, the size or the choice.
+        // While it is turned, fewer splats, and all again when it is let go.
+        let turning = !prep.splats.is_empty() && resp.dragged();
         let ppp = ui.ctx().pixels_per_point();
         let (pw, ph) = ((rect.width() * ppp).round().max(1.0) as usize, (rect.height() * ppp).round().max(1.0) as usize);
         let key: Vec<u32> = [
@@ -562,6 +718,7 @@ impl View3d {
             mid.x.to_bits(),
             mid.y.to_bits(),
             self.points_by.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32)),
+            turning as u32,
         ]
         .to_vec();
         let need = self.drawn.as_ref().is_none_or(|d| d.key != key);
@@ -662,7 +819,53 @@ impl View3d {
         if need {
             let px: Vec<PixelFace> =
                 faces.iter().map(|(t, c, id)| (t.map(|(p, z)| ((p.x - rect.left()) * ppp, (p.y - rect.top()) * ppp, z)), *c, *id)).collect();
-            let (colours, ids) = rasterize(pw, ph, &px, &dots);
+            let (mut colours, mut ids, depth) = rasterize(pw, ph, &px, &dots);
+            if !prep.splats.is_empty() {
+                // Each splat on the screen, its covariance seen along the view.
+                let k = scale * ppp;
+                let r1 = [-ca * k, sa * k, 0.0];
+                let r2 = [sa * se * k, ca * se * k, -ce * ex * k];
+                let step = if turning { prep.splats.len().div_ceil(MOST_SPLATS_TURNING).max(1) } else { 1 };
+                let accent = [pal.accent.r() as f32, pal.accent.g() as f32, pal.accent.b() as f32];
+                let mut screen: Vec<ScreenSplat> = prep
+                    .splats
+                    .iter()
+                    .step_by(step)
+                    .filter_map(|s| {
+                        let (sp, depth) = project(s.at);
+                        let (x, y) = ((sp.x - rect.left()) * ppp, (sp.y - rect.top()) * ppp);
+                        let c = s.cov;
+                        let m = [[c[0], c[1], c[2]], [c[1], c[3], c[4]], [c[2], c[4], c[5]]];
+                        let quad = |a: [f32; 3], b: [f32; 3]| (0..3).map(|i| (0..3).map(|j| a[i] * m[i][j] * b[j]).sum::<f32>()).sum::<f32>();
+                        // A little blur, so that the smallest still cover a pixel.
+                        let (cxx, cxy, cyy) = (quad(r1, r1) + 0.3, quad(r1, r2), quad(r2, r2) + 0.3);
+                        let det = cxx * cyy - cxy * cxy;
+                        if det <= 0.0 || !det.is_finite() {
+                            return None;
+                        }
+                        let half = (cxx + cyy) / 2.0;
+                        let big = half + (half * half - det).max(0.01).sqrt();
+                        let reach = (3.0 * big.sqrt()).ceil().min(512.0);
+                        if x + reach < 0.0 || y + reach < 0.0 || x - reach > pw as f32 || y - reach > ph as f32 {
+                            return None;
+                        }
+                        let chosen = selected == Some(s.feature as usize) || also.contains(&(s.feature as usize));
+                        Some(ScreenSplat {
+                            x,
+                            y,
+                            depth,
+                            conic: [cyy / det, -cxy / det, cxx / det],
+                            reach,
+                            rgb: if chosen { accent } else { s.rgb },
+                            opacity: s.opacity,
+                            feature: s.feature,
+                        })
+                    })
+                    .collect();
+                // From far to near.
+                screen.sort_by(|a, b| b.depth.total_cmp(&a.depth));
+                blend_splats(pw, ph, &mut colours, &mut ids, &depth, &screen);
+            }
             let image = egui::ColorImage { size: [pw, ph], source_size: Vec2::new(pw as f32, ph as f32), pixels: colours };
             let texture = match self.drawn.take() {
                 Some(mut d) => {
@@ -685,6 +888,24 @@ impl View3d {
                     picked = Some((id != NONE).then_some(id as usize));
                 }
             }
+        }
+        // Level planes, see-through over the model, each with its height.
+        for (z, b) in &self.planes {
+            let at = |x: f64, y: f64| {
+                let p = [((x - prep.mid[0]) * prep.scale[0]) as f32, ((y - prep.mid[1]) * prep.scale[1]) as f32, *z as f32];
+                project(p).0
+            };
+            let corners = vec![at(b[0], b[1]), at(b[2], b[1]), at(b[2], b[3]), at(b[0], b[3])];
+            let fill = Color32::from_rgba_unmultiplied(pal.accent.r(), pal.accent.g(), pal.accent.b(), 46);
+            painter.add(egui::Shape::convex_polygon(corners.clone(), fill, Stroke::new(1.5, pal.accent)));
+            let top = corners.iter().copied().fold(corners[0], |a, c| if c.y < a.y { c } else { a });
+            painter.text(
+                top + Vec2::new(4.0, -4.0),
+                Align2::LEFT_BOTTOM,
+                format!("cut at {} m", fmt_real((z * 100.0).round() / 100.0)),
+                egui::FontId::proportional(11.0),
+                pal.accent,
+            );
         }
         // Lines and outlines, coloured by their height, and points on top.
         let outline = Color32::from_rgba_unmultiplied(pal.ink.r(), pal.ink.g(), pal.ink.b(), 110);
@@ -744,6 +965,13 @@ impl View3d {
         if prep.tris_left_out > 0 {
             lines.push(format!("The {} smallest triangles are left out, to keep it quick", fmt_count(prep.tris_left_out as u64)));
         }
+        if !prep.splats.is_empty() {
+            lines.push(if prep.splats_left_out > 0 {
+                format!("{} Gaussian splats, {} left out to keep it quick", fmt_count(prep.splats.len() as u64), fmt_count(prep.splats_left_out as u64))
+            } else {
+                format!("{} Gaussian splats", fmt_count(prep.splats.len() as u64))
+            });
+        }
         let mut y = rect.bottom() - 8.0;
         for l in lines.iter().rev() {
             let galley = painter.layout_no_wrap(l.clone(), egui::FontId::proportional(11.5), pal.ink);
@@ -786,6 +1014,19 @@ fn intensity_range(items: &[Item]) -> [f32; 2] {
 }
 
 impl View3d {
+    /// How many Gaussian splats are drawn, and how many pixels show one of them.
+    pub fn splats_shown(&self) -> (usize, usize) {
+        let n = self.prepared.as_ref().map_or(0, |p| p.splats.len());
+        let pixels = match (&self.prepared, &self.drawn) {
+            (Some(p), Some(d)) if !p.splats.is_empty() => {
+                let ids: std::collections::HashSet<u32> = p.splats.iter().map(|s| s.feature).collect();
+                d.ids.iter().filter(|i| ids.contains(i)).count()
+            }
+            _ => 0,
+        };
+        (n, pixels)
+    }
+
     /// Whether what is shown has points, which can be coloured in more than one way.
     pub fn has_points(&self) -> bool {
         self.prepared.as_ref().is_some_and(|p| p.items.iter().any(|i| i.kind == Kind::Point && (i.rgb.is_some() || i.class.is_some() || i.intensity.is_some())))
@@ -811,7 +1052,7 @@ mod point_colour_tests {
             f.z = Some(std::sync::Arc::from(vec![10.0 + k as f64]));
             t.features.push(f);
         }
-        let p = prepare(&t, 1, None);
+        let p = prepare(&t, 1, None, &[]);
         assert_eq!(p.items.len(), 2);
         assert_eq!(p.items[0].rgb, Some([200.0, 10.0, 10.0]));
         assert_eq!((p.items[1].class, p.items[1].intensity), (Some(6), Some(900.0)));

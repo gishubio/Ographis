@@ -59,16 +59,23 @@ pub const WRITER_FORMATS: &[(&str, &str)] = &[
     ("gpkg", "GeoPackage (.gpkg)"),
     ("gml", "GML 3.2 (.gml)"),
     ("gpx", "GPX for GPS units (.gpx)"),
+    ("gsheet", "Google Sheets (the address of the sheet)"),
     ("kml", "KML for Google Earth (.kml)"),
     ("kmz", "KMZ for Google Earth (.kmz)"),
     ("tif", "GeoTIFF image (.tif)"),
     ("cog", "Cloud Optimized GeoTIFF (.tif)"),
     ("citygml", "CityGML 2.0 buildings (.gml)"),
     ("glb", "glTF 3D model (.glb)"),
+    ("usda", "OpenUSD (.usda)"),
+    ("usdz", "OpenUSD package with textures (.usdz)"),
     ("3dtiles", "3D Tiles 1.1 (a folder with tileset.json)"),
     ("jpg", "JPEG image (.jpg)"),
+    ("json", "JSON: a list of objects (.json)"),
+    ("landxml", "LandXML surface and points (.xml)"),
     ("las", "LAS point cloud (.las)"),
     ("laz", "LAZ point cloud (.laz)"),
+    ("ply", "Gaussian splats or points, PLY (.ply)"),
+    ("spz", "Gaussian splats, compressed SPZ (.spz)"),
     ("ods", "LibreOffice Calc (.ods)"),
     ("obj", "OBJ 3D model (.obj)"),
     ("pdf", "PDF (.pdf)"),
@@ -77,6 +84,7 @@ pub const WRITER_FORMATS: &[(&str, &str)] = &[
     ("shp", "Shapefile (.shp)"),
     ("svg", "SVG drawing of a map (.svg)"),
     ("txt", "Text (.txt)"),
+    ("xml", "XML (.xml)"),
 ];
 
 /// What an output can write to: the file formats, a GeoSpatial PDF with layers, and a table
@@ -92,6 +100,7 @@ pub const OUTPUT_FORMATS: &[(&str, &str)] = &[
     ("gpkg", "GeoPackage (.gpkg)"),
     ("gml", "GML 3.2 (.gml)"),
     ("gpx", "GPX for GPS units (.gpx)"),
+    ("gsheet", "Google Sheets (the address of the sheet)"),
     ("kml", "KML for Google Earth (.kml)"),
     ("kmz", "KMZ for Google Earth (.kmz)"),
     ("geopdf", "GeoSpatial PDF with layers (.pdf)"),
@@ -99,10 +108,16 @@ pub const OUTPUT_FORMATS: &[(&str, &str)] = &[
     ("cog", "Cloud Optimized GeoTIFF (.tif)"),
     ("citygml", "CityGML 2.0 buildings (.gml)"),
     ("glb", "glTF 3D model (.glb)"),
+    ("usda", "OpenUSD (.usda)"),
+    ("usdz", "OpenUSD package with textures (.usdz)"),
     ("3dtiles", "3D Tiles 1.1 (a folder with tileset.json)"),
     ("jpg", "JPEG image (.jpg)"),
+    ("json", "JSON: a list of objects (.json)"),
+    ("landxml", "LandXML surface and points (.xml)"),
     ("las", "LAS point cloud (.las)"),
     ("laz", "LAZ point cloud (.laz)"),
+    ("ply", "Gaussian splats or points, PLY (.ply)"),
+    ("spz", "Gaussian splats, compressed SPZ (.spz)"),
     ("ods", "LibreOffice Calc (.ods)"),
     ("obj", "OBJ 3D model (.obj)"),
     ("pdf", "PDF (.pdf)"),
@@ -116,6 +131,7 @@ pub const OUTPUT_FORMATS: &[(&str, &str)] = &[
     ("odp", "LibreOffice Impress slides (.odp)"),
     ("shp", "Shapefile (.shp)"),
     ("txt", "Text (.txt)"),
+    ("xml", "XML (.xml)"),
 ];
 
 /// The tool that writes a format of OUTPUT_FORMATS.
@@ -336,6 +352,75 @@ pub(super) const WRITER_PARAMS: &[ParamSpec] = &[
         hint: "PMTiles: the largest, at most 16. 14 has tiles of about 2 km, and maps zoom in beyond it",
     },
     ParamSpec {
+        key: "connection",
+        label: "API connection",
+        kind: ParamKind::ApiConnection,
+        default: "",
+        hint: "Google Sheets: a connection with the key of a Google service account that the sheet is shared with, as an editor",
+    },
+    ParamSpec {
+        key: "splat_up",
+        label: "Upwards in the file",
+        kind: ParamKind::Choice(super::input::SPLAT_UP),
+        default: "auto",
+        hint: "Gaussian splats: y down for PLY and y up for SPZ, as most viewers expect, or z up as on maps",
+    },
+    ParamSpec {
+        key: "usd_layers",
+        label: "Layers by",
+        kind: ParamKind::Attribute("Input"),
+        default: "",
+        hint: "OpenUSD: a layer for each value, such as buildings, roads and trees, each a file the main file takes in. Empty: one",
+    },
+    ParamSpec {
+        key: "usd_variants",
+        label: "Variants by",
+        kind: ParamKind::Attribute("Input"),
+        default: "",
+        hint: "OpenUSD: a variant for each value, such as today and plan, to switch between in the 3D program. Empty: none",
+    },
+    ParamSpec { key: "xml_root", label: "Outer element", kind: ParamKind::Text, default: "features", hint: "XML: the element around all of it" },
+    ParamSpec { key: "xml_row", label: "Element of a feature", kind: ParamKind::Text, default: "feature", hint: "XML: the element of each feature. Names with a dot become elements within it" },
+    ParamSpec {
+        key: "xml_geometry",
+        label: "Geometry in XML",
+        kind: ParamKind::Choice(&[("none", "Left out"), ("wkt", "As WKT, in geometry")]),
+        default: "none",
+        hint: "",
+    },
+    ParamSpec {
+        key: "json_shape",
+        label: "JSON as",
+        kind: ParamKind::Choice(&[
+            ("list", "A list of objects, one for each feature"),
+            ("lines", "JSON Lines: an object on each line"),
+            ("first", "The object of the first feature alone"),
+        ]),
+        default: "list",
+        hint: "Names with a dot become objects within the object, and attributes that hold JSON, such as from Build JSON, are written as JSON",
+    },
+    ParamSpec {
+        key: "json_list_name",
+        label: "List under the name",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Puts the list in an object under this name, such as {\"items\": [...]}. Empty writes the list as it is",
+    },
+    ParamSpec {
+        key: "json_geometry",
+        label: "Geometry in JSON",
+        kind: ParamKind::Choice(&[("none", "Left out"), ("geojson", "As GeoJSON, in geometry"), ("wkt", "As WKT, in geometry")]),
+        default: "none",
+        hint: "In the coordinates of the stream",
+    },
+    ParamSpec {
+        key: "schema_files",
+        label: "Schema and TypeScript types",
+        kind: ParamKind::Choice(YES_NO),
+        default: "false",
+        hint: "Writes name.schema.json (JSON Schema) and name.d.ts (TypeScript) beside the file, with each attribute, its type and whether it can be empty, for those who use the file in code",
+    },
+    ParamSpec {
         key: "geojson_crs",
         label: "Coordinates",
         kind: ParamKind::Choice(&[("wgs84", "In WGS 84, as GeoJSON is to be"), ("keep", "In the coordinate system of the stream")]),
@@ -429,6 +514,9 @@ pub(super) const WRITER_PARAMS: &[ParamSpec] = &[
 pub fn writer_file(path: &str, format: Option<&str>) -> String {
     let Some(format) = format.map(|f| f.trim().to_lowercase()).filter(|f| !f.is_empty()) else { return path.to_string() };
     let format = match format.as_str() {
+        // A Google sheet is an address, not a file.
+        "gsheet" => return path.to_string(),
+        "landxml" => "xml".to_string(),
         "geopdf" => "pdf".to_string(),
         "qgis" => "qgz".to_string(),
         "cog" => "tif".to_string(),
@@ -645,11 +733,11 @@ fn model_origin(p: &P) -> Result<Option<[f64; 3]>> {
 }
 
 pub(super) fn run_writer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    // A point cloud is written as it is to LAS and LAZ; to other formats as features.
+    // A point cloud is written as it is to LAS, LAZ, PLY and SPZ; to other formats as features.
     if let Some(t) = inp.get("Input").filter(|t| t.points.is_some()) {
         let stored = p.get("path").unwrap_or_default();
         let ext = ext_of(Path::new(&writer_file(&stored, p.get("format").as_deref())));
-        if !matches!(ext.as_str(), "las" | "laz") || stored.contains('{') {
+        if !matches!(ext.as_str(), "las" | "laz" | "ply" | "spz") || stored.contains('{') {
             let mut inp = inp.clone();
             inp.insert("Input", crate::cloud::as_features(t, &mut ctx.notes));
             return run_writer_files(p, &inp, ctx);
@@ -669,8 +757,42 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         _ => {}
     }
     let stored = p.need("path", "The output has no file. Say where the result should be written.")?;
+    if p.get("format").as_deref() == Some("gsheet") || crate::gsheets::is_sheet(&stored) {
+        return write_sheet(p, input(inp, "Input"), &stored, ctx);
+    }
     let path = ctx.resolve(&writer_file(&stored, p.get("format").as_deref()));
     let ext = ext_of(&path);
+    if p.get("format").as_deref() == Some("json") {
+        return write_json(p, input(inp, "Input"), &path, ctx);
+    }
+    if p.get("format").as_deref() == Some("landxml") {
+        let table = input(inp, "Input");
+        let text = crate::landxml::write(table, table.crs)?;
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
+        }
+        std::fs::write(&path, text).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))?;
+        let tris = table.mesh.as_deref().map_or(0, |m| m.tris.len());
+        ctx.notes.info(format!("written as LandXML: {} triangles", fmt_count(tris as u64)));
+        ctx.files.push(path.clone());
+        return Ok(Vec::new());
+    }
+    if ext == "xml" && input(inp, "Input").mesh.is_none() {
+        let table = input(inp, "Input");
+        let root = p.get("xml_root").filter(|r| !r.trim().is_empty()).unwrap_or_else(|| "features".into());
+        let row = p.get("xml_row").filter(|r| !r.trim().is_empty()).unwrap_or_else(|| "feature".into());
+        let text = crate::xml::write(table, &root, &row, p.get("xml_geometry").as_deref() == Some("wkt"));
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
+        }
+        std::fs::write(&path, text).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))?;
+        if table.is_empty() {
+            ctx.notes.warn("No features came in, so the XML has only its outer element.");
+        }
+        ctx.notes.info(format!("{} features written as XML", fmt_count(table.len() as u64)));
+        ctx.files.push(path.clone());
+        return Ok(Vec::new());
+    }
     if p.get("format").as_deref() == Some("3dtiles") {
         // 3D Tiles: a folder with tileset.json and the tiles, placed on the globe.
         let table = input(inp, "Input");
@@ -771,6 +893,56 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             ctx.notes.warn(format!("{} points had no height and were written at 0.", fmt_count(flat)));
         }
         ctx.files.push(path);
+        return Ok(Vec::new());
+    }
+    if matches!(ext.as_str(), "ply" | "spz") {
+        // Gaussian splats, or points: around an origin, in the axes viewers expect.
+        let table = input(inp, "Input");
+        let (cloud, _) = crate::cloud::cloud_of(table);
+        if cloud.is_empty() {
+            return err("Nothing came in to write as splats or points.");
+        }
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
+        }
+        let axes = crate::splats::Axes::of(p.get("splat_up").as_deref().filter(|u| *u != "auto"), &ext);
+        let origin = match model_origin(p)? {
+            Some(o) => o,
+            None => {
+                let n = cloud.len() as f64;
+                let (x, y) = (cloud.x.iter().sum::<f64>() / n, cloud.y.iter().sum::<f64>() / n);
+                let low = cloud.z.iter().copied().filter(|z| z.is_finite()).fold(f64::INFINITY, f64::min);
+                [x.round(), y.round(), if low.is_finite() { low.floor() } else { 0.0 }]
+            }
+        };
+        let dropped = if ext == "spz" {
+            crate::splats::write_spz(&cloud, &path, axes, origin)?
+        } else {
+            crate::splats::write_ply(&cloud, &path, axes, origin, table.crs)?
+        };
+        let what = if cloud.splat.is_some() { "Gaussian splats" } else { "points" };
+        ctx.notes.info(format!("{} {} written around the origin {}, {}, {}", fmt_count(cloud.len() as u64), what, origin[0], origin[1], origin[2]));
+        if dropped {
+            ctx.notes.warn("The splats were turned, so their colours by the side they are seen from were left out: the colour of each is kept.");
+        }
+        ctx.files.push(path);
+        return Ok(Vec::new());
+    }
+    if matches!(ext.as_str(), "usda" | "usdz") {
+        // OpenUSD: the 3D model, or the lines and points, with layers and variants.
+        let table = input(inp, "Input");
+        let field = |key: &str| -> Result<Option<usize>> { p.get(key).filter(|v| !v.trim().is_empty()).map(|v| table.need_field(&v)).transpose() };
+        let opts = crate::usd_write::UsdOpts { layer_by: field("usd_layers")?, variant_by: field("usd_variants")?, origin: model_origin(p)? };
+        if table.mesh.is_none() && table.has_geometry() && ctx.geographic(table.crs) == Some(true) {
+            ctx.notes.warn("The lines and points are in degrees: reproject them to metres first, or they come out tiny and flat in a 3D program.");
+        }
+        let files = crate::usd_write::write_usd(table, &path, &opts)?;
+        ctx.notes.info(format!(
+            "{} objects written as OpenUSD{}",
+            fmt_count(table.mesh.as_ref().map_or(table.len(), |m| m.objects.len()) as u64),
+            if files.len() > 1 { format!(", in {} files", files.len()) } else { String::new() }
+        ));
+        ctx.files.extend(files);
         return Ok(Vec::new());
     }
     if matches!(ext.as_str(), "obj" | "glb") {
@@ -978,6 +1150,11 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         let opts = WriteOpts { layer: p.get("layer"), encoding: p.get("encoding"), sizes, append, key, gpkg_version, ..Default::default() };
         let files = b.write(table, &path, &opts, &mut ctx.notes)?;
         ctx.files.extend(files);
+        if p.flag("schema_files") && matches!(ext.as_str(), "geojson" | "json") {
+            let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "data".into());
+            let (schema, ts) = crate::typedefs::for_geojson(table, &stem);
+            write_beside(&path, &stem, &schema, &ts, ctx)?;
+        }
     }
     Ok(Vec::new())
 }
@@ -1126,4 +1303,97 @@ fn vector_geo(ctx: &mut NodeCtx, table: &Table, pic: &crate::vector::Picture) ->
     // Degrees as x is longitude and y latitude; the PDF wants latitude first.
     let corners = [(ys[0], xs[0]), (ys[1], xs[1]), (ys[2], xs[2]), (ys[3], xs[3])];
     corners.iter().all(|(la, lo)| la.is_finite() && lo.is_finite()).then_some(crate::vector::Geo { epsg, wkt, corners })
+}
+
+/// The stream as plain JSON: a list of objects, JSON Lines or one object, with the
+/// attributes, names with a dot as objects, and the geometry if asked.
+fn write_json(p: &P, table: &Table, path: &Path, ctx: &mut NodeCtx) -> Result<Outputs> {
+    let idx: Vec<usize> = (0..table.fields.len()).collect();
+    let geometry = p.get("json_geometry").unwrap_or_else(|| "none".into());
+    let shape = p.get("json_shape").unwrap_or_else(|| "list".into());
+    let objects: Vec<serde_json::Value> = table.features.iter().map(|f| crate::nodes::json::feature_object(table, f, &idx, true, true, &geometry)).collect();
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
+    }
+    let n = objects.len();
+    let text = match shape.as_str() {
+        "lines" => {
+            let mut t = String::new();
+            for o in &objects {
+                t.push_str(&serde_json::to_string(o).map_err(|e| GbError(e.to_string()))?);
+                t.push('\n');
+            }
+            t
+        }
+        "first" => {
+            if n > 1 {
+                ctx.notes.warn(format!("{} features came in; only the first is written, as one object.", fmt_count(n as u64)));
+            }
+            serde_json::to_string_pretty(objects.first().unwrap_or(&serde_json::Value::Object(Default::default()))).map_err(|e| GbError(e.to_string()))?
+        }
+        _ => {
+            let v = crate::nodes::json::list_under(objects, &p.get("json_list_name").unwrap_or_default());
+            serde_json::to_string_pretty(&v).map_err(|e| GbError(e.to_string()))?
+        }
+    };
+    let append = p.get("mode").as_deref() == Some("append") && shape == "lines";
+    if append {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(path).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))?;
+        f.write_all(text.as_bytes()).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))?;
+    } else {
+        if p.get("mode").as_deref() == Some("append") {
+            ctx.notes.warn("A JSON list cannot be added to, so it was written over. JSON Lines can be.".to_string());
+        }
+        std::fs::write(path, text).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))?;
+    }
+    if n == 0 {
+        ctx.notes.warn("No features came in, so the JSON is empty.");
+    }
+    if p.flag("schema_files") {
+        let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "data".into());
+        let (schema, ts) = crate::typedefs::for_json(table, &stem, &shape, &p.get("json_list_name").unwrap_or_default(), &geometry);
+        write_beside(path, &stem, &schema, &ts, ctx)?;
+    }
+    ctx.notes.info(format!("{} objects written as JSON{}", fmt_count(n as u64), if append { ", added at the end" } else { "" }));
+    ctx.files.push(path.to_path_buf());
+    Ok(Vec::new())
+}
+
+/// The stream to a Google sheet, through the API with a service account: over what is
+/// there, or after it.
+fn write_sheet(p: &P, table: &Table, url: &str, ctx: &mut NodeCtx) -> Result<Outputs> {
+    if !crate::gsheets::is_sheet(url) {
+        return err("Write the address of the Google sheet as the file, such as https://docs.google.com/spreadsheets/d/…/edit, as the browser shows it.");
+    }
+    let name = p.get("connection").filter(|c| !c.trim().is_empty()).ok_or_else(|| {
+        GbError("Writing to Google Sheets needs an API connection with the key of a Google service account that the sheet is shared with. Make one under Edit → Settings → API connections.".into())
+    })?;
+    let conn = crate::web::connection(&name)?;
+    if conn.auth != "google" {
+        return err(format!("The API connection {} is not a Google service account. Choose one that holds the key of a service account.", name));
+    }
+    let b = ctx.backend("Writing to Google Sheets")?;
+    let gate = ctx.gate;
+    let stopped = move || !gate.going();
+    let append = p.get("mode").as_deref() == Some("append");
+    let sheet = p.get("layer");
+    let (n, title) = crate::gsheets::write(table, url, conn, sheet.as_deref(), append, b, &stopped, &mut ctx.notes)?;
+    if n == 0 {
+        ctx.notes.warn("No features came in, so the sheet has only the names of the attributes.");
+    }
+    ctx.notes.info(format!("{} rows {} the sheet {} in Google Sheets", fmt_count(n as u64), if append { "added to" } else { "written to" }, title));
+    Ok(Vec::new())
+}
+
+/// The JSON Schema and the TypeScript types of a file, written beside it.
+fn write_beside(path: &Path, stem: &str, schema: &str, ts: &str, ctx: &mut NodeCtx) -> Result<()> {
+    let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    let (s, t) = (dir.join(format!("{}.schema.json", stem)), dir.join(format!("{}.d.ts", stem)));
+    std::fs::write(&s, schema).map_err(|e| GbError(format!("Cannot write {}: {}", s.display(), e)))?;
+    std::fs::write(&t, ts).map_err(|e| GbError(format!("Cannot write {}: {}", t.display(), e)))?;
+    ctx.notes.info(format!("the schema and the types beside it: {}.schema.json and {}.d.ts", stem, stem));
+    ctx.files.push(s);
+    ctx.files.push(t);
+    Ok(())
 }

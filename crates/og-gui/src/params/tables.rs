@@ -326,9 +326,11 @@ pub(super) fn renames(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec, fields: &
                     ui.selectable_value(old, f.clone(), f);
                 }
             });
-            ui.label(RichText::new("to").small().color(pal.muted));
-            ui.add(TextEdit::singleline(new).desired_width(w).hint_text("new name"));
-            if ui.small_button("×").on_hover_text("Remove this rename").clicked() {
+            // The same rows serve comments on columns.
+            let comments = spec.key == "column_comments";
+            ui.label(RichText::new(if comments { "·" } else { "to" }).small().color(pal.muted));
+            ui.add(TextEdit::singleline(new).desired_width(w).hint_text(if comments { "comment" } else { "new name" }));
+            if ui.small_button("×").on_hover_text(if comments { "Remove this comment" } else { "Remove this rename" }).clicked() {
                 remove = Some(i);
             }
         });

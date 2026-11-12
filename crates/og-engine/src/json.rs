@@ -287,13 +287,31 @@ pub fn find_records<'a>(v: &'a Json, path: Option<&str>) -> Result<(Vec<&'a Json
             if let Some((k, a)) = best {
                 return Ok((a.iter().collect(), k.clone()));
             }
-            for (k, x) in o {
-                if let Json::Object(inner) = x {
-                    if inner.values().any(|y| matches!(y, Json::Array(a) if a.iter().any(|e| e.is_object()))) {
-                        let (recs, at) = find_records(x, None)?;
-                        return Ok((recs, format!("{}.{}", clean_key(k), at)));
+            // Further down, as in XML where the records lie within several elements: the
+            // longest list of objects at any depth.
+            fn deepest<'a>(v: &'a Json, at: String, depth: usize, best: &mut Option<(String, &'a Vec<Json>)>) {
+                if depth > 8 {
+                    return;
+                }
+                if let Json::Object(o) = v {
+                    for (k, x) in o {
+                        let here = if at.is_empty() { clean_key(k) } else { format!("{}.{}", at, clean_key(k)) };
+                        match x {
+                            Json::Array(a) if a.iter().any(|e| e.is_object()) => {
+                                if best.as_ref().is_none_or(|b| a.len() > b.1.len()) {
+                                    *best = Some((here.clone(), a));
+                                }
+                            }
+                            Json::Object(_) => deepest(x, here, depth + 1, best),
+                            _ => {}
+                        }
                     }
                 }
+            }
+            let mut best = None;
+            deepest(v, String::new(), 0, &mut best);
+            if let Some((at, a)) = best {
+                return Ok((a.iter().collect(), at));
             }
             Ok((vec![v], "the object at the top".to_string()))
         }
@@ -304,13 +322,18 @@ pub fn find_records<'a>(v: &'a Json, path: Option<&str>) -> Result<(Vec<&'a Json
 /// A JSON file as a table: a feature for each record.
 pub fn read_table(path: &Path, records: Option<&str>, lists: Lists, nested_as_text: bool, notes: &mut crate::io::Notes) -> Result<Table> {
     let v = read_file(path)?;
+    table_of(&v, records, lists, nested_as_text, notes)
+}
+
+/// The records of a JSON value as a table, found, flattened and typed as for a file.
+pub fn table_of(v: &Json, records: Option<&str>, lists: Lists, nested_as_text: bool, notes: &mut crate::io::Notes) -> Result<Table> {
     // Statistics in JSON-stat, as from SCB or Eurostat, become a row per value.
-    if records.is_none_or(|r| r.trim().is_empty()) && crate::jsonstat::is_jsonstat(&v) {
-        let t = crate::jsonstat::to_table(&v, &crate::jsonstat::Layout { labels: true, ..Default::default() })?;
+    if records.is_none_or(|r| r.trim().is_empty()) && crate::jsonstat::is_jsonstat(v) {
+        let t = crate::jsonstat::to_table(v, &crate::jsonstat::Layout { labels: true, ..Default::default() })?;
         notes.info(format!("JSON-stat: {} values", crate::model::fmt_count(t.len() as u64)));
         return Ok(t);
     }
-    let (recs, at) = find_records(&v, records)?;
+    let (recs, at) = find_records(v, records)?;
     let rows: Vec<Vec<(String, Value)>> = recs
         .into_iter()
         .map(|r| {

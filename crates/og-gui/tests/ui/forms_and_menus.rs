@@ -601,7 +601,7 @@ fn the_tools_and_forms_of_0_63() {
     let reader = h.state().selected[0];
     h.state_mut().snarl[reader].params.insert("path".into(), serde_json::json!("data.json"));
     h.run_steps(3);
-    assert!(h.query_by_label("Records at (JSON)").is_some());
+    assert!(h.query_by_label("Records at (JSON, XML)").is_some());
     // About says when the program was built.
     h.state_mut().about = true;
     h.run_steps(3);

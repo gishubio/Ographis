@@ -61,6 +61,8 @@ pub struct Canvas {
     kept: Option<Vec<Op>>,
     layers: Vec<String>,
     starts: Vec<(usize, usize)>,
+    /// How much of what is drawn shows, from 0 to 1, such as the opacity of a map layer.
+    opacity: f32,
     /// How much has been kept, in pieces of paths and pixels of pictures.
     size: usize,
 }
@@ -110,7 +112,7 @@ fn colour_of(paint: &Paint) -> Option<[u8; 4]> {
 impl Canvas {
     /// A see-through picture; with `keep`, what is drawn is kept as shapes too.
     pub fn new(width: u32, height: u32, keep: bool) -> Option<Canvas> {
-        Some(Canvas { pm: Pixmap::new(width, height)?, kept: keep.then(Vec::new), layers: Vec::new(), starts: Vec::new(), size: 0 })
+        Some(Canvas { pm: Pixmap::new(width, height)?, kept: keep.then(Vec::new), layers: Vec::new(), starts: Vec::new(), opacity: 1.0, size: 0 })
     }
 
     pub fn width(&self) -> u32 {
@@ -181,7 +183,24 @@ impl Canvas {
         }
     }
 
+    /// What is drawn from now on shows this much, from 0 to 1, as if laid on with that opacity.
+    pub fn set_opacity(&mut self, opacity: f32) {
+        self.opacity = opacity.clamp(0.0, 1.0);
+    }
+
+    /// A paint at the opacity of the canvas.
+    fn faded<'p>(&self, paint: &Paint<'p>) -> Paint<'p> {
+        let mut p = paint.clone();
+        if self.opacity < 1.0 {
+            if let tiny_skia::Shader::SolidColor(c) = &mut p.shader {
+                c.apply_opacity(self.opacity);
+            }
+        }
+        p
+    }
+
     pub fn fill_path(&mut self, path: &Path, paint: &Paint, rule: FillRule, ts: Transform, mask: Option<&tiny_skia::Mask>) {
+        let paint = &self.faded(paint);
         self.pm.fill_path(path, paint, rule, ts, mask);
         if let (true, Some(rgba)) = (self.kept.is_some(), colour_of(paint)) {
             let segs = segments(path, ts);
@@ -191,6 +210,7 @@ impl Canvas {
     }
 
     pub fn stroke_path(&mut self, path: &Path, paint: &Paint, stroke: &Stroke, ts: Transform, mask: Option<&tiny_skia::Mask>) {
+        let paint = &self.faded(paint);
         self.pm.stroke_path(path, paint, stroke, ts, mask);
         if let (true, Some(rgba)) = (self.kept.is_some(), colour_of(paint)) {
             let segs = segments(path, ts);
@@ -214,6 +234,7 @@ impl Canvas {
 
     /// Lays a picture at x, y. Only moving it is kept, not turning or scaling it.
     pub fn draw_pixmap(&mut self, x: i32, y: i32, pixmap: PixmapRef, paint: &PixmapPaint, ts: Transform, mask: Option<&tiny_skia::Mask>) {
+        let paint = &PixmapPaint { opacity: paint.opacity * self.opacity, ..*paint };
         self.pm.draw_pixmap(x, y, pixmap, paint, ts, mask);
         if self.kept.is_some() {
             let mut rgba = Vec::with_capacity(pixmap.data().len());

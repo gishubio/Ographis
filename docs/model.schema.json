@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.96.0. Written by og schema.",
+  "description": "A model of Ographis 0.96.2. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -167,6 +167,7 @@
             "JsonFlattener",
             "JsonExploder",
             "JsonExtractor",
+            "XmlExtractor",
             "JsonStatReader",
             "JsonBuilder",
             "MapRenderer",
@@ -224,6 +225,9 @@
             "VolumeCalculator",
             "HeightTransformer",
             "OutlineFromAbove",
+            "IdsChecker",
+            "GameEngineExporter",
+            "SplatMaker",
             "HotSpots",
             "SpatialAutocorrelation",
             "PointClusters",
@@ -711,6 +715,30 @@
                     ],
                     "default": "all"
                   },
+                  "splat_up": {
+                    "title": "Upwards in the scene",
+                    "description": "one of the values in choices, as a string. Gaussian splats and PLY points: which axis of the file points up",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "auto",
+                          "-y",
+                          "y",
+                          "z"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "auto"
+                  },
+                  "splat_scale": {
+                    "title": "Metres for a unit of the scene",
+                    "description": "a string. Splats made from photos have no scale of their own: such as 2.5 when a distance of 4 m in the world measures 1.6 in the scene",
+                    "default": "1"
+                  },
                   "obj_east": {
                     "title": "Origin of the model, east",
                     "description": "a string. Where 0, 0, 0 of the model goes on the map, such as 319500 in SWEREF 99 TM",
@@ -750,11 +778,11 @@
                     "default": "common"
                   },
                   "json_records": {
-                    "title": "Records at (JSON)",
-                    "description": "a string. Where the list of records is in the file, such as results or data.items. Empty finds it: the list itself, or a list such as results"
+                    "title": "Records at (JSON, XML)",
+                    "description": "a string. Where the list of records is in the file, such as results or data.items, or in XML the elements by their path, such as Fastigheter.Fastighet. Empty finds it: the list itself, or a list such as results"
                   },
                   "json_nested": {
-                    "title": "Objects in a record (JSON)",
+                    "title": "Objects in a record (JSON, XML)",
                     "description": "one of the values in choices, as a string. An address inside a record becomes adress.gata and adress.ort, or stays as JSON text for Flatten JSON",
                     "anyOf": [
                       {
@@ -965,6 +993,7 @@
                           "gpkg",
                           "gml",
                           "gpx",
+                          "gsheet",
                           "kml",
                           "kmz",
                           "geopdf",
@@ -972,10 +1001,16 @@
                           "cog",
                           "citygml",
                           "glb",
+                          "usda",
+                          "usdz",
                           "3dtiles",
                           "jpg",
+                          "json",
+                          "landxml",
                           "las",
                           "laz",
+                          "ply",
+                          "spz",
                           "ods",
                           "obj",
                           "pdf",
@@ -988,7 +1023,8 @@
                           "pptx",
                           "odp",
                           "shp",
-                          "txt"
+                          "txt",
+                          "xml"
                         ]
                       },
                       {
@@ -1272,6 +1308,121 @@
                     "description": "a string. PMTiles: the largest, at most 16. 14 has tiles of about 2 km, and maps zoom in beyond it",
                     "default": "14"
                   },
+                  "connection": {
+                    "title": "API connection",
+                    "description": "the name of an API connection in the settings of the user. Google Sheets: a connection with the key of a Google service account that the sheet is shared with, as an editor"
+                  },
+                  "splat_up": {
+                    "title": "Upwards in the file",
+                    "description": "one of the values in choices, as a string. Gaussian splats: y down for PLY and y up for SPZ, as most viewers expect, or z up as on maps",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "auto",
+                          "-y",
+                          "y",
+                          "z"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "auto"
+                  },
+                  "usd_layers": {
+                    "title": "Layers by",
+                    "description": "the name of one attribute of the stream on the port. OpenUSD: a layer for each value, such as buildings, roads and trees, each a file the main file takes in. Empty: one"
+                  },
+                  "usd_variants": {
+                    "title": "Variants by",
+                    "description": "the name of one attribute of the stream on the port. OpenUSD: a variant for each value, such as today and plan, to switch between in the 3D program. Empty: none"
+                  },
+                  "xml_root": {
+                    "title": "Outer element",
+                    "description": "a string. XML: the element around all of it",
+                    "default": "features"
+                  },
+                  "xml_row": {
+                    "title": "Element of a feature",
+                    "description": "a string. XML: the element of each feature. Names with a dot become elements within it",
+                    "default": "feature"
+                  },
+                  "xml_geometry": {
+                    "title": "Geometry in XML",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "wkt"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "none"
+                  },
+                  "json_shape": {
+                    "title": "JSON as",
+                    "description": "one of the values in choices, as a string. Names with a dot become objects within the object, and attributes that hold JSON, such as from Build JSON, are written as JSON",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "list",
+                          "lines",
+                          "first"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "list"
+                  },
+                  "json_list_name": {
+                    "title": "List under the name",
+                    "description": "a string. Puts the list in an object under this name, such as {\"items\": [...]}. Empty writes the list as it is"
+                  },
+                  "json_geometry": {
+                    "title": "Geometry in JSON",
+                    "description": "one of the values in choices, as a string. In the coordinates of the stream",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "geojson",
+                          "wkt"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "none"
+                  },
+                  "schema_files": {
+                    "title": "Schema and TypeScript types",
+                    "description": "one of the values in choices, as a string. Writes name.schema.json (JSON Schema) and name.d.ts (TypeScript) beside the file, with each attribute, its type and whether it can be empty, for those who use the file in code",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "false"
+                  },
                   "geojson_crs": {
                     "title": "Coordinates",
                     "description": "one of the values in choices, as a string. GeoJSON is in degrees in WGS 84 (RFC 7946), which web maps take for granted. Other coordinate systems are named in the file in the older way",
@@ -1501,6 +1652,7 @@
                           "gpkg",
                           "gml",
                           "gpx",
+                          "gsheet",
                           "kml",
                           "kmz",
                           "geopdf",
@@ -1508,10 +1660,16 @@
                           "cog",
                           "citygml",
                           "glb",
+                          "usda",
+                          "usdz",
                           "3dtiles",
                           "jpg",
+                          "json",
+                          "landxml",
                           "las",
                           "laz",
+                          "ply",
+                          "spz",
                           "ods",
                           "obj",
                           "pdf",
@@ -1524,7 +1682,8 @@
                           "pptx",
                           "odp",
                           "shp",
-                          "txt"
+                          "txt",
+                          "xml"
                         ]
                       },
                       {
@@ -1617,6 +1776,7 @@
                           "gpkg",
                           "gml",
                           "gpx",
+                          "gsheet",
                           "kml",
                           "kmz",
                           "geopdf",
@@ -1624,10 +1784,16 @@
                           "cog",
                           "citygml",
                           "glb",
+                          "usda",
+                          "usdz",
                           "3dtiles",
                           "jpg",
+                          "json",
+                          "landxml",
                           "las",
                           "laz",
+                          "ply",
+                          "spz",
                           "ods",
                           "obj",
                           "pdf",
@@ -1640,7 +1806,8 @@
                           "pptx",
                           "odp",
                           "shp",
-                          "txt"
+                          "txt",
+                          "xml"
                         ]
                       },
                       {
@@ -1895,6 +2062,7 @@
                           "gpkg",
                           "gml",
                           "gpx",
+                          "gsheet",
                           "kml",
                           "kmz",
                           "geopdf",
@@ -1902,10 +2070,16 @@
                           "cog",
                           "citygml",
                           "glb",
+                          "usda",
+                          "usdz",
                           "3dtiles",
                           "jpg",
+                          "json",
+                          "landxml",
                           "las",
                           "laz",
+                          "ply",
+                          "spz",
                           "ods",
                           "obj",
                           "pdf",
@@ -1918,7 +2092,8 @@
                           "pptx",
                           "odp",
                           "shp",
-                          "txt"
+                          "txt",
+                          "xml"
                         ]
                       },
                       {
@@ -1998,6 +2173,7 @@
                           "gpkg",
                           "gml",
                           "gpx",
+                          "gsheet",
                           "kml",
                           "kmz",
                           "geopdf",
@@ -2005,10 +2181,16 @@
                           "cog",
                           "citygml",
                           "glb",
+                          "usda",
+                          "usdz",
                           "3dtiles",
                           "jpg",
+                          "json",
+                          "landxml",
                           "las",
                           "laz",
+                          "ply",
+                          "spz",
                           "ods",
                           "obj",
                           "pdf",
@@ -2021,7 +2203,8 @@
                           "pptx",
                           "odp",
                           "shp",
-                          "txt"
+                          "txt",
+                          "xml"
                         ]
                       },
                       {
@@ -2185,6 +2368,10 @@
                     "title": "Only rows where",
                     "description": "a string. A condition in SQL, such as kommun = 'Skövde', so that the database sends only those rows"
                   },
+                  "columns": {
+                    "title": "Only these columns",
+                    "description": "a string. Names with commas, such as namn, kommun: the database sends only those and the geometry, so that a wide table is read faster. Empty reads all"
+                  },
                   "bbox": {
                     "title": "Only within",
                     "description": "a string. A rectangle, west, south, east, north in degrees, such as 11.95, 57.69, 11.99, 57.71, or chosen on the map: the database sends only the rows that reach into it, found through its spatial index"
@@ -2303,6 +2490,7 @@
                           "gpkg",
                           "gml",
                           "gpx",
+                          "gsheet",
                           "kml",
                           "kmz",
                           "geopdf",
@@ -2310,10 +2498,16 @@
                           "cog",
                           "citygml",
                           "glb",
+                          "usda",
+                          "usdz",
                           "3dtiles",
                           "jpg",
+                          "json",
+                          "landxml",
                           "las",
                           "laz",
+                          "ply",
+                          "spz",
                           "ods",
                           "obj",
                           "pdf",
@@ -2326,7 +2520,8 @@
                           "pptx",
                           "odp",
                           "shp",
-                          "txt"
+                          "txt",
+                          "xml"
                         ]
                       },
                       {
@@ -2490,6 +2685,14 @@
                   "key_attribute": {
                     "title": "Key attribute",
                     "description": "the name of one attribute of the stream on the port. Its values must all be different and none empty"
+                  },
+                  "table_comment": {
+                    "title": "Comment on the table",
+                    "description": "a string. What the table holds, kept in the database (COMMENT ON TABLE), where other programs show it"
+                  },
+                  "column_comments": {
+                    "title": "Comments on columns",
+                    "description": "an object {\"old name\": \"new name\"}. An attribute and what it holds, such as its unit or its source, kept in the database (COMMENT ON COLUMN)"
                   },
                   "sql_before": {
                     "title": "SQL before",
@@ -3532,7 +3735,25 @@
             "properties": {
               "params": {
                 "type": "object",
-                "properties": {}
+                "properties": {
+                  "close": {
+                    "title": "3D models along the edge",
+                    "description": "one of the values in choices, as a string. A building or another solid cut by the edge is closed with a new wall there, on each side, so that it stands whole in a 3D print or a picture",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "false"
+                  }
+                }
               }
             }
           }
@@ -5489,6 +5710,10 @@
                     ],
                     "default": "none"
                   },
+                  "log": {
+                    "title": "Write every request to",
+                    "description": "a file to write; relative paths start at the folder of the model. A text file, such as requests.log, with a line for each request: when, the method, the address, the status, the size and time of the answer, and the body sent. Added to in each run. Secrets of the API connection are hidden. Empty: none"
+                  },
                   "retries": {
                     "title": "Tries again",
                     "description": "a string. When the service is busy (429), briefly away (502, 503, 504) or cannot be reached: waits as the service says, or 1, 2, 4… seconds",
@@ -5640,6 +5865,32 @@
           "if": {
             "properties": {
               "type": {
+                "const": "XmlExtractor"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "attribute": {
+                    "title": "XML in",
+                    "description": "the name of one attribute of the stream on the port. The attribute with XML text, such as the answer of a web service"
+                  },
+                  "paths": {
+                    "title": "Values to take",
+                    "description": "a list of [path in the JSON, attribute name]. A path of element names and the attribute it goes to, such as Fastighet.Adress.Ort or Fastighet.Tel[1], from the outermost element. An XML attribute is taken by its name, as Fastighet.id. An empty name takes the last part of the path"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "JsonStatReader"
               }
             }
@@ -5718,6 +5969,32 @@
                     "description": "a string. The attribute that gets the JSON text",
                     "default": "json"
                   },
+                  "gather": {
+                    "title": "Make",
+                    "description": "one of the values in choices, as a string. A list gathers the objects of the features, all of them or those with the same value, into one feature each, as a web service wants a list of many",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "each",
+                          "all",
+                          "group"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "each"
+                  },
+                  "gather_by": {
+                    "title": "Lists by",
+                    "description": "the name of one attribute of the stream on the port. The attribute whose values each get a list. The list's feature keeps the value"
+                  },
+                  "list_name": {
+                    "title": "List under the name",
+                    "description": "a string. Puts the list in an object under this name, such as {\"features\": [...]}. Empty writes the list as it is"
+                  },
                   "nest": {
                     "title": "Names with a dot as objects",
                     "description": "one of the values in choices, as a string. adress.gata and adress.ort become \"adress\": {\"gata\": …, \"ort\": …}, as Flatten JSON took them apart",
@@ -5759,7 +6036,8 @@
                       {
                         "enum": [
                           "none",
-                          "geojson"
+                          "geojson",
+                          "wkt"
                         ]
                       },
                       {
@@ -5839,6 +6117,25 @@
                     "title": "Pixels to the inch",
                     "description": "a string. 300 for print, 150 for a draft. Lines, points and labels keep the size they have on the screen, measured on paper, and the picture tells Output its resolution",
                     "default": "300"
+                  },
+                  "map_style": {
+                    "title": "Style",
+                    "description": "one of the values in choices, as a string. A ready look for the whole map: the colours of the layers are made to fit it, each layer keeping its own hue, and a background of a colour gets the paper of the style",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "",
+                          "light",
+                          "dark",
+                          "topo",
+                          "bw"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ]
                   },
                   "margin": {
                     "title": "Margin in %",
@@ -5994,6 +6291,36 @@
                   "grid_every": {
                     "title": "Grid every",
                     "description": "a string. In the units of the map, such as 1000 for every km in SWEREF 99 TM. Empty gives a round number by the size"
+                  },
+                  "overview": {
+                    "title": "Overview map",
+                    "description": "one of the values in choices, as a string. A small map in a corner that shows where the map lies, with the map as a red frame: what is connected to Overview, such as the outline of the county, or else the lines and areas of the map seen from further away",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "bottom-left",
+                          "bottom-right",
+                          "top-left",
+                          "top-right"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "none"
+                  },
+                  "overview_size": {
+                    "title": "Overview width in %",
+                    "description": "a string. Of the width of the map",
+                    "default": "25"
+                  },
+                  "overview_zoom": {
+                    "title": "Overview reaches",
+                    "description": "a string. How many times wider than the map, when nothing is connected to Overview",
+                    "default": "5"
                   },
                   "source": {
                     "title": "Source",
@@ -6355,6 +6682,24 @@
                     "description": "a string. Degrees clockwise from north: 180 looks north from the south",
                     "default": "215"
                   },
+                  "camera": {
+                    "title": "Camera",
+                    "description": "one of the values in choices, as a string. A ready place for the camera, which sets its height, projection and lens. Looking from and the zoom still count",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "",
+                          "birds_eye",
+                          "axonometric",
+                          "top"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ]
+                  },
                   "elevation": {
                     "title": "Camera height in degrees",
                     "description": "a string. Above the horizon. 90 looks straight down",
@@ -6598,6 +6943,40 @@
                   "glow_names": {
                     "title": "Light in materials named",
                     "description": "a string. Words in the names of materials that give off light in their own colour, such as lamp, neon, sign. Materials with emission in their file glow too"
+                  },
+                  "roof_by": {
+                    "title": "Roofs coloured by",
+                    "description": "the name of one attribute of the stream on the port. An attribute of the models with the kind of roof, such as roof_type from LoD2 buildings: flat, gable, hipped, shed or mansard, in English or Swedish (platt, sadel, valm, pulpet), or a colour as #rrggbb. Empty keeps their materials"
+                  },
+                  "tree_height": {
+                    "title": "Trees, height",
+                    "description": "a string. In metres, for the points on Trees",
+                    "default": "10"
+                  },
+                  "tree_height_by": {
+                    "title": "Trees, height from",
+                    "description": "the name of one attribute of the stream on the port. An attribute with the height of each tree. Empty gives all the height above"
+                  },
+                  "tree_kind": {
+                    "title": "Trees, kind",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "leafy",
+                          "conifer"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "leafy"
+                  },
+                  "tree_kind_by": {
+                    "title": "Trees, kind from",
+                    "description": "the name of one attribute of the stream on the port. An attribute where words such as conifer, pine, spruce, barr, gran or tall make a conifer, and other values a leafy tree"
                   },
                   "lit_windows": {
                     "title": "Lit windows in %",
@@ -7678,6 +8057,46 @@
                     "description": "a string. In metres: how far from the roads reached the area reaches, for the houses and land along them",
                     "default": "100"
                   },
+                  "rules": {
+                    "title": "Rules of the road",
+                    "description": "one of the values in choices, as a string. Ready rules for OpenStreetMap or NVDB: one-way streets, roundabouts, speed limits and which roads may be used, by how one travels. My own: the conditions and speeds below",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "own",
+                          "osm",
+                          "nvdb"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "own"
+                  },
+                  "mode": {
+                    "title": "Travelling",
+                    "description": "one of the values in choices, as a string. With ready rules: by car at the speed limits, by bicycle at 18 km/h, on foot at 5 km/h",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "car",
+                          "bike",
+                          "walk"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "car"
+                  },
+                  "avoid": {
+                    "title": "Keep away from",
+                    "description": "some of the values in choices: a list of strings, or one string separated by commas. With ready rules, these roads are left out of the network"
+                  },
                   "cost": {
                     "title": "By",
                     "description": "one of the values in choices, as a string.",
@@ -7769,6 +8188,46 @@
                     "title": "Area around the roads",
                     "description": "a string. In metres: how far from the roads reached the area reaches, for the houses and land along them",
                     "default": "100"
+                  },
+                  "rules": {
+                    "title": "Rules of the road",
+                    "description": "one of the values in choices, as a string. Ready rules for OpenStreetMap or NVDB: one-way streets, roundabouts, speed limits and which roads may be used, by how one travels. My own: the conditions and speeds below",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "own",
+                          "osm",
+                          "nvdb"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "own"
+                  },
+                  "mode": {
+                    "title": "Travelling",
+                    "description": "one of the values in choices, as a string. With ready rules: by car at the speed limits, by bicycle at 18 km/h, on foot at 5 km/h",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "car",
+                          "bike",
+                          "walk"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "car"
+                  },
+                  "avoid": {
+                    "title": "Keep away from",
+                    "description": "some of the values in choices: a list of strings, or one string separated by commas. With ready rules, these roads are left out of the network"
                   },
                   "cost": {
                     "title": "By",
@@ -9448,6 +9907,177 @@
                   "min_area": {
                     "title": "Smallest part",
                     "description": "a string. In square metres: parts of an outline smaller than this are left out, and objects with nothing left go to Other. Empty keeps all"
+                  },
+                  "plane_3d": {
+                    "title": "Cut in 3D",
+                    "description": "one of the values in choices, as a string. In the 3D view of the program: the model that comes in, with the height of the cut as a plane",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "true",
+                          "false"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "IdsChecker"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "title": "IDS file",
+                    "description": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model. The requirements as buildingSMART's Information Delivery Specification (.ids), such as a client's demands on the model"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "GameEngineExporter"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "engine": {
+                    "title": "Engine",
+                    "description": "one of the values in choices, as a string. The units, axes and sizes follow the engine",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "unreal",
+                          "unity",
+                          "godot"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "unreal"
+                  },
+                  "folder": {
+                    "title": "Folder",
+                    "description": "a string. Where the files go, beside the model or a whole path: heightmap.png and .r16, masks, instances.csv, roads.json and IMPORT.txt",
+                    "default": "game"
+                  },
+                  "size": {
+                    "title": "Size of the heightmap",
+                    "description": "one of the values in choices, as a string. The nearest size the engine takes. The heightmap is square, over the whole terrain model; outside it, the lowest height",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "auto",
+                          "small",
+                          "medium",
+                          "large",
+                          "huge"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "auto"
+                  },
+                  "mask_by": {
+                    "title": "Masks by",
+                    "description": "the name of one attribute of the stream on the port. The attribute of the areas that names their kind, such as forest, water or field: a mask for each kind. Empty: one mask of all the areas"
+                  },
+                  "kind_by": {
+                    "title": "Instances by",
+                    "description": "the name of one attribute of the stream on the port. The attribute that names what stands there, such as tree, pole or house. Empty: instance"
+                  },
+                  "height_by": {
+                    "title": "Height of instances",
+                    "description": "the name of one attribute of the stream on the port. Such as the height of a building or a tree, in metres, for its scale. Empty: none"
+                  },
+                  "road_width": {
+                    "title": "Width of roads",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". In metres: a number, or an attribute such as the width in NVDB. For the road mask and the splines",
+                    "default": "6"
+                  },
+                  "road_name": {
+                    "title": "Name of roads",
+                    "description": "the name of one attribute of the stream on the port. An attribute for the name of each spline. Empty: road and its number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "SplatMaker"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "neighbours": {
+                    "title": "Neighbours",
+                    "description": "a string. How many of the nearest points give each splat its size and shape",
+                    "default": "8"
+                  },
+                  "size": {
+                    "title": "Size",
+                    "description": "a string. Larger than 1 to close gaps between the points, smaller for sharper",
+                    "default": "1"
+                  },
+                  "opacity": {
+                    "title": "Opacity",
+                    "description": "a string. From 0, clear, to 1, solid",
+                    "default": "0.9"
+                  },
+                  "shape": {
+                    "title": "Shape",
+                    "description": "one of the values in choices, as a string. Flat splats follow walls and ground, and look like a surface",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "flat",
+                          "round"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "flat"
                   }
                 }
               }
@@ -9724,6 +10354,46 @@
                       }
                     ],
                     "default": "to"
+                  },
+                  "rules": {
+                    "title": "Rules of the road",
+                    "description": "one of the values in choices, as a string. Ready rules for OpenStreetMap or NVDB: one-way streets, roundabouts, speed limits and which roads may be used, by how one travels. My own: the conditions and speeds below",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "own",
+                          "osm",
+                          "nvdb"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "own"
+                  },
+                  "mode": {
+                    "title": "Travelling",
+                    "description": "one of the values in choices, as a string. With ready rules: by car at the speed limits, by bicycle at 18 km/h, on foot at 5 km/h",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "car",
+                          "bike",
+                          "walk"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "car"
+                  },
+                  "avoid": {
+                    "title": "Keep away from",
+                    "description": "some of the values in choices: a list of strings, or one string separated by commas. With ready rules, these roads are left out of the network"
                   },
                   "cost": {
                     "title": "By",
@@ -10926,6 +11596,46 @@
                       }
                     ],
                     "default": "nearest"
+                  },
+                  "rules": {
+                    "title": "Rules of the road",
+                    "description": "one of the values in choices, as a string. Ready rules for OpenStreetMap or NVDB: one-way streets, roundabouts, speed limits and which roads may be used, by how one travels. My own: the conditions and speeds below",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "own",
+                          "osm",
+                          "nvdb"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "own"
+                  },
+                  "mode": {
+                    "title": "Travelling",
+                    "description": "one of the values in choices, as a string. With ready rules: by car at the speed limits, by bicycle at 18 km/h, on foot at 5 km/h",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "car",
+                          "bike",
+                          "walk"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "car"
+                  },
+                  "avoid": {
+                    "title": "Keep away from",
+                    "description": "some of the values in choices: a list of strings, or one string separated by commas. With ready rules, these roads are left out of the network"
                   },
                   "cost": {
                     "title": "By",

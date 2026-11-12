@@ -8,7 +8,9 @@ use geo::Geometry;
 use serde_json::{Map, Value as Json};
 
 pub(super) const LISTS: &[(&str, &str)] = &[("text", "As JSON text in one attribute"), ("columns", "An attribute per element: name.0, name.1, …")];
-pub(super) const GEOMETRY: &[(&str, &str)] = &[("none", "Left out"), ("geojson", "As GeoJSON, in geometry")];
+pub(super) const GEOMETRY: &[(&str, &str)] = &[("none", "Left out"), ("geojson", "As GeoJSON, in geometry"), ("wkt", "As WKT, in geometry")];
+pub(super) const GATHER: &[(&str, &str)] =
+    &[("each", "An object for each feature"), ("all", "One list of all the features"), ("group", "A list for each value of an attribute")];
 
 /// The JSON in an attribute of a feature. Empty gives None; text that is not JSON an error.
 pub(super) fn json_of(v: &Value) -> std::result::Result<Option<Json>, String> {
@@ -359,6 +361,17 @@ pub(super) const EXTRACT_PARAMS: &[ParamSpec] = &[
     },
 ];
 
+pub(super) const XML_EXTRACT_PARAMS: &[ParamSpec] = &[
+    ParamSpec { key: "attribute", label: "XML in", kind: ParamKind::Attribute("Input"), default: "", hint: "The attribute with XML text, such as the answer of a web service" },
+    ParamSpec {
+        key: "paths",
+        label: "Values to take",
+        kind: ParamKind::JsonPaths("Input", "attribute"),
+        default: "",
+        hint: "A path of element names and the attribute it goes to, such as Fastighet.Adress.Ort or Fastighet.Tel[1], from the outermost element. An XML attribute is taken by its name, as Fastighet.id. An empty name takes the last part of the path",
+    },
+];
+
 /// The rows of path and name, as they are stored: a JSON list of [path, name].
 pub fn json_paths_of(params: &Params, key: &str) -> Vec<(String, String)> {
     let Some(Json::Array(rows)) = params.get(key) else { return Vec::new() };
@@ -384,6 +397,35 @@ pub(super) fn run_extract(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
     let table = input(inp, "Input");
     let attr = p.need("attribute", "Choose the attribute that holds the JSON.")?;
     let at = table.need_field(&attr)?;
+    extract_values(p, table, at, &json_of, "json_error", ctx)
+}
+
+/// Extract XML values: the XML in the attribute read as JSON is, and the values taken from it
+/// by their paths, as Extract JSON values does. The XML stays as it came.
+pub(super) fn run_xml_extract(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+    let table = input(inp, "Input");
+    let attr = p.need("attribute", "Choose the attribute that holds the XML.")?;
+    let at = table.need_field(&attr)?;
+    let parse = |v: &Value| -> std::result::Result<Option<Json>, String> {
+        let text = v.to_text();
+        if v.is_null() || text.trim().is_empty() {
+            return Ok(None);
+        }
+        crate::xml::to_json(&text).map(Some).map_err(|e| e.0)
+    };
+    extract_values(p, table, at, &parse, "xml_error", ctx)
+}
+
+/// The values at the paths of the form, from what `parse` makes of the attribute at `at`,
+/// into attributes; features whose attribute cannot be read go to Failed with why.
+fn extract_values(
+    p: &P,
+    table: &crate::model::Table,
+    at: usize,
+    parse: &dyn Fn(&Value) -> std::result::Result<Option<Json>, String>,
+    error_name: &str,
+    ctx: &mut NodeCtx,
+) -> Result<Outputs> {
     let rows = json_paths_of(p.values, "paths");
     if rows.is_empty() {
         return err("Add a path for each value to take, such as adress.ort.");
@@ -399,12 +441,12 @@ pub(super) fn run_extract(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
     }
     let mut out = table.clone();
     let mut failed = table.like();
-    failed.fields.push(Field::new("json_error", crate::model::FieldType::Text));
+    failed.fields.push(Field::new(error_name, crate::model::FieldType::Text));
     let mut values: Vec<Vec<Value>> = vec![Vec::new(); wanted.len()];
     let mut kept = Vec::new();
     let mut missing = 0usize;
     for f in &table.features {
-        match json_of(&f.attrs[at]) {
+        match parse(&f.attrs[at]) {
             Ok(v) => {
                 for (k, (steps, _)) in wanted.iter().enumerate() {
                     let got = v.as_ref().and_then(|v| json::get(v, steps)).map(json::to_value).unwrap_or(Value::Null);
@@ -457,6 +499,28 @@ pub(super) const BUILD_PARAMS: &[ParamSpec] = &[
         hint: "The attributes to put in. Empty puts in all of them",
     },
     ParamSpec { key: "result", label: "Write to", kind: ParamKind::Text, default: "json", hint: "The attribute that gets the JSON text" },
+    ParamSpec {
+        key: "gather",
+        label: "Make",
+        kind: ParamKind::Choice(GATHER),
+        default: "each",
+        hint:
+            "A list gathers the objects of the features, all of them or those with the same value, into one feature each, as a web service wants a list of many",
+    },
+    ParamSpec {
+        key: "gather_by",
+        label: "Lists by",
+        kind: ParamKind::Attribute("Input"),
+        default: "",
+        hint: "The attribute whose values each get a list. The list's feature keeps the value",
+    },
+    ParamSpec {
+        key: "list_name",
+        label: "List under the name",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Puts the list in an object under this name, such as {\"features\": [...]}. Empty writes the list as it is",
+    },
     ParamSpec {
         key: "nest",
         label: "Names with a dot as objects",
@@ -515,30 +579,61 @@ pub fn geojson(g: &Geometry<f64>) -> Json {
     }
 }
 
+/// A feature as a JSON object: its attributes of `idx`, names with a dot as objects when
+/// `nest`, JSON text as JSON when `parse`, and its geometry as GeoJSON or WKT when asked.
+pub fn feature_object(table: &crate::model::Table, f: &crate::model::Feature, idx: &[usize], nest: bool, parse: bool, geometry: &str) -> Json {
+    let mut obj = Map::new();
+    for &i in idx {
+        let v = json::from_value(&f.attrs[i], parse);
+        let name = &table.fields[i].name;
+        if nest {
+            insert_nested(&mut obj, name, v);
+        } else {
+            obj.insert(name.clone(), v);
+        }
+    }
+    match geometry {
+        "geojson" => {
+            obj.insert("geometry".into(), f.geom.as_ref().map_or(Json::Null, geojson));
+        }
+        "wkt" => {
+            let text = f.geom.as_ref().map(|g| match f.heights() {
+                Some(z) => crate::geom::wkt_z(g, z),
+                None => wkt::ToWkt::wkt_string(g),
+            });
+            obj.insert("geometry".into(), text.map_or(Json::Null, Json::String));
+        }
+        _ => {}
+    }
+    Json::Object(obj)
+}
+
+/// A list of objects, as it is, or in an object under a name.
+pub fn list_under(items: Vec<Json>, name: &str) -> Json {
+    if name.trim().is_empty() {
+        Json::Array(items)
+    } else {
+        let mut o = Map::new();
+        o.insert(name.trim().to_string(), Json::Array(items));
+        Json::Object(o)
+    }
+}
+
 pub(super) fn run_build(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let table = input(inp, "Input");
+    let gather = p.get("gather").unwrap_or_else(|| "each".into());
+    if gather != "each" {
+        return gather_build(p, table, &gather, ctx);
+    }
     let chosen = p.list("attributes");
     let idx: Vec<usize> =
         if chosen.is_empty() { (0..table.fields.len()).collect() } else { chosen.iter().map(|n| table.need_field(n)).collect::<Result<_>>()? };
     let result = p.get("result").filter(|r| !r.trim().is_empty()).unwrap_or_else(|| "json".into());
     let (nest, parse, pretty) = (p.get("nest").as_deref() != Some("false"), p.get("parse").as_deref() != Some("false"), p.flag("pretty"));
-    let with_geom = p.get("geometry").as_deref() == Some("geojson");
+    let geometry = p.get("geometry").unwrap_or_else(|| "none".into());
     let mut texts = Vec::with_capacity(table.len());
     for f in &table.features {
-        let mut obj = Map::new();
-        for &i in &idx {
-            let v = json::from_value(&f.attrs[i], parse);
-            let name = &table.fields[i].name;
-            if nest {
-                insert_nested(&mut obj, name, v);
-            } else {
-                obj.insert(name.clone(), v);
-            }
-        }
-        if with_geom {
-            obj.insert("geometry".into(), f.geom.as_ref().map_or(Json::Null, geojson));
-        }
-        let v = Json::Object(obj);
+        let v = feature_object(table, f, &idx, nest, parse, &geometry);
         let text = if pretty { serde_json::to_string_pretty(&v) } else { serde_json::to_string(&v) }.map_err(|e| GbError(e.to_string()))?;
         texts.push(Value::Text(text));
     }
@@ -558,6 +653,60 @@ pub(super) fn run_build(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
         }
     }
     ctx.notes.info(format!("{} attributes in {}", idx.len(), result));
+    Ok(vec![("Output".into(), out)])
+}
+
+/// Build JSON as lists: one feature with all the objects, or one for each value of an
+/// attribute, which keeps the value.
+fn gather_build(p: &P, table: &crate::model::Table, gather: &str, ctx: &mut NodeCtx) -> Result<Outputs> {
+    let chosen = p.list("attributes");
+    let idx: Vec<usize> =
+        if chosen.is_empty() { (0..table.fields.len()).collect() } else { chosen.iter().map(|n| table.need_field(n)).collect::<Result<_>>()? };
+    let result = p.get("result").filter(|r| !r.trim().is_empty()).unwrap_or_else(|| "json".into());
+    let (nest, parse, pretty) = (p.get("nest").as_deref() != Some("false"), p.get("parse").as_deref() != Some("false"), p.flag("pretty"));
+    let geometry = p.get("geometry").unwrap_or_else(|| "none".into());
+    let name = p.get("list_name").unwrap_or_default();
+    let by = if gather == "group" {
+        let a = p.need("gather_by", "Choose the attribute whose values each get a list.")?;
+        Some((table.need_field(&a)?, a))
+    } else {
+        None
+    };
+    // The groups in the order their values first come.
+    let mut groups: Vec<(Value, Vec<usize>)> = Vec::new();
+    for (row, f) in table.features.iter().enumerate() {
+        let key = by.as_ref().map_or(Value::Null, |(i, _)| f.attrs[*i].clone());
+        match groups.iter_mut().find(|g| g.0 == key) {
+            Some(g) => g.1.push(row),
+            None => groups.push((key, vec![row])),
+        }
+    }
+    let mut out = table.like();
+    out.fields = Vec::new();
+    if let Some((i, _)) = &by {
+        out.fields.push(table.fields[*i].clone());
+    }
+    out.fields.push(Field::new(result.clone(), crate::model::FieldType::Text));
+    out.fields.push(Field::new("count", crate::model::FieldType::Int));
+    for (key, rows) in &groups {
+        let items: Vec<Json> = rows.iter().map(|r| feature_object(table, &table.features[*r], &idx, nest, parse, &geometry)).collect();
+        let v = list_under(items, &name);
+        let text = if pretty { serde_json::to_string_pretty(&v) } else { serde_json::to_string(&v) }.map_err(|e| GbError(e.to_string()))?;
+        let mut attrs = Vec::new();
+        if by.is_some() {
+            attrs.push(key.clone());
+        }
+        attrs.push(Value::Text(text));
+        attrs.push(Value::Int(rows.len() as i64));
+        out.features.push(crate::model::Feature { attrs, geom: None, z: None });
+    }
+    match &by {
+        Some((_, a)) => ctx.notes.info(format!("{} lists, one for each value of {}", fmt_count(groups.len() as u64), a)),
+        None => ctx.notes.info(format!("one list of {} objects", fmt_count(table.len() as u64))),
+    }
+    if table.is_empty() {
+        ctx.notes.warn("No features came in, so there is nothing to put in a list.");
+    }
     Ok(vec![("Output".into(), out)])
 }
 
@@ -607,6 +756,27 @@ pub(super) const TYPES: &[NodeType] = &[
         ports: None,
         params: EXTRACT_PARAMS,
         run: run_extract,
+        summary: |p| {
+            let rows = json_paths_of(p.values, "paths");
+            match rows.as_slice() {
+                [] => "no paths".into(),
+                [one] => one.0.clone(),
+                many => format!("{} values", many.len()),
+            }
+        },
+    },
+    NodeType {
+        name: "XmlExtractor",
+        title: "Extract XML values",
+        hidden: false,
+        group: Group::Transformer,
+        category: "JSON",
+        desc: "Takes chosen values out of the XML in an attribute, such as the answer of a web service, each by its path of element names, such as Fastighet.Adress.Ort or Fastighet.Tel[1], into attributes. An XML attribute is taken by its name. A value that is not there is left empty. Features whose attribute is not XML go to Failed.",
+        inputs: &["Input"],
+        outputs: &["Output", "Failed"],
+        ports: None,
+        params: XML_EXTRACT_PARAMS,
+        run: run_xml_extract,
         summary: |p| {
             let rows = json_paths_of(p.values, "paths");
             match rows.as_slice() {

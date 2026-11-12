@@ -224,14 +224,23 @@ impl App {
         // Only the clouds of the latest run are kept.
         if views.len() > 16 {
             views.clear();
+            self.splat_sources.borrow_mut().clear();
         }
         let every = c.len().div_ceil(SHOWN_POINTS).max(1);
         let v = Arc::new(c.to_features(t.crs, every));
         views.insert(key, v.clone());
+        if c.splat.is_some() {
+            self.splat_sources.borrow_mut().insert(Arc::as_ptr(&v) as usize, c.clone());
+        }
         if every > 1 {
             self.cloud_totals.borrow_mut().insert(Arc::as_ptr(&v) as usize, (every, c.len()));
         }
         v
+    }
+
+    /// The scene of Gaussian splats a shown stream stands for, if it is one.
+    pub(super) fn splat_of(&self, t: &Arc<Table>) -> Option<Arc<og_engine::cloud::Cloud>> {
+        self.splat_sources.borrow().get(&(Arc::as_ptr(t) as usize)).cloned()
     }
 
     /// What the map shows of a series of rasters, such as satellite pictures over time: the

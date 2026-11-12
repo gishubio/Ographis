@@ -143,8 +143,29 @@ pub const FORMATS: &[Format] = &[
         name: "JSON",
         files: ".json, web addresses",
         read: OWN,
-        write: "Ographis (Build JSON)",
-        note: "Flattened, exploded and picked by path; JSON-stat from statistics offices",
+        write: OWN,
+        note: "Flattened, exploded and picked by path; JSON-stat from statistics offices. Written as a list of objects, JSON Lines or one object, and built in the model with Build JSON",
+    },
+    Format {
+        name: "XML",
+        files: ".xml",
+        read: OWN,
+        write: OWN,
+        note: "Read as records found in it, as JSON is; values picked by path with Extract XML values; written with an element for each feature and for each attribute",
+    },
+    Format {
+        name: "LandXML",
+        files: ".xml",
+        read: OWN,
+        write: OWN,
+        note: "Surfaces as a 3D model of triangles, points with their codes and heights, and alignments as lines with their arcs; written from a TIN and from points",
+    },
+    Format {
+        name: "Google Sheets",
+        files: "the address of a sheet",
+        read: OWN,
+        write: OWN,
+        note: "A sheet shared with a link is read as it is; a private one is read and written with a Google service account that it is shared with",
     },
     Format {
         name: "GeoTIFF and other rasters",
@@ -206,6 +227,13 @@ pub const FORMATS: &[Format] = &[
     Format { name: "OBJ", files: ".obj", read: OWN, write: OWN, note: "With materials and textures" },
     Format { name: "glTF", files: ".gltf, .glb", read: OWN, write: OWN, note: "Written as .glb around an origin kept in the file" },
     Format {
+        name: "OpenUSD",
+        files: ".usda, .usdz",
+        read: "",
+        write: OWN,
+        note: "3D models, lines and points, with a layer for each value of an attribute and variants by another, the coordinate system and origin in the metadata; .usdz packed with its textures",
+    },
+    Format {
         name: "3D Tiles",
         files: "tileset.json",
         read: OWN,
@@ -213,6 +241,13 @@ pub const FORMATS: &[Format] = &[
         note: "Batched and instanced models, from a folder or the web. Written as 3D Tiles 1.1 with glTF tiles, placed on the globe",
     },
     Format { name: "Point clouds", files: ".las, .laz, .copc.laz", read: "Ographis (las, laz-rs)", write: "Ographis (las, laz-rs)", note: "COPC read from the web part by part. Written as LAS 1.4 with classes, intensity, returns and colours" },
+    Format {
+        name: "Gaussian splats",
+        files: ".ply, .spz",
+        read: OWN,
+        write: OWN,
+        note: "Scenes of splats from photos, placed on the map by an origin, a turn, a scale and the axis that points up; shown in 3D with map data; made from point clouds. PLY of plain points too",
+    },
     Format { name: "E57 scans", files: ".e57", read: "Ographis (e57)", write: "", note: "Terrestrial and mobile laser scans: every scan placed by its pose, with colours and intensity, read as one point cloud" },
     Format {
         name: "Charts as web pages",
@@ -336,7 +371,8 @@ mod tests {
         let listed = |ext: &str| FORMATS.iter().any(|f| f.files.split(", ").any(|x| x.trim_start_matches('.') == ext) && !f.write.is_empty());
         for (ext, _) in crate::nodes::WRITER_FORMATS.iter().chain(crate::nodes::OUTPUT_FORMATS) {
             match *ext {
-                "" | "geopdf" | "postgis" | "tif" | "cog" => {}
+                "" | "geopdf" | "postgis" | "tif" | "cog" | "gsheet" => {}
+                "landxml" => assert!(listed("xml")),
                 "citygml" => assert!(listed("gml")),
                 "3dtiles" => assert!(listed("tileset.json")),
                 "qgis" => assert!(listed("qgz")),

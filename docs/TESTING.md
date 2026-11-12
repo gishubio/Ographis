@@ -1,6 +1,6 @@
 # What is tested
 
-`cargo test` runs 549 tests: expressions, CSV, geometry, whole models, reading and
+`cargo test` runs 580 tests: expressions, CSV, geometry, whole models, reading and
 writing real files, fetching from a web server on the same computer, and the user
 interface. The interface tests run the program without a window, with simulated clicks,
 drags and keys: load, run, pick a row, sort the table, drag a connection between two
@@ -26,7 +26,7 @@ in its comment instead, so the tests use their own copies of the models they ope
 `crates/og-gui/tests/fixtures/models`, laid over a copy of `examples` with its data. The
 examples can then be reworded without breaking the tests.
 
-Four tests of performance, not run with the others, measure how long large data takes and
+Seven cases of performance, not run with the others, measure how long large data takes and
 how much memory: see [PERFORMANCE.md](PERFORMANCE.md).
 
 The tests run side by side. Once, in some thirty such runs during the work on 0.4, the

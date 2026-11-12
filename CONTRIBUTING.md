@@ -95,6 +95,9 @@ docs/PERFORMANCE.md:
 - What a user sees is in English. The names in model files stay as they are, so that every
   earlier model still opens; a change of format is made in `Workspace::from_json`, which
   brings old files up to date.
+- Ographis is its own program. Code, comments, documentation, commit messages, pull
+  requests and issues describe what Ographis does in its own words, without comparing it
+  with other ETL programs or saying that something works "as in" one of them.
 - No new dependency without a reason; `tools/third_party.py` writes
   `THIRD-PARTY-LICENSES.md` again when they change.
 

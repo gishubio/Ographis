@@ -63,6 +63,13 @@ pub(super) const SCENE_PARAMS: &[ParamSpec] = &[
         default: "215",
         hint: "Degrees clockwise from north: 180 looks north from the south",
     },
+    ParamSpec {
+        key: "camera",
+        label: "Camera",
+        kind: ParamKind::Choice(super::scene096::CAMERAS),
+        default: "",
+        hint: "A ready place for the camera, which sets its height, projection and lens. Looking from and the zoom still count",
+    },
     ParamSpec { key: "elevation", label: "Camera height in degrees", kind: ParamKind::Text, default: "25", hint: "Above the horizon. 90 looks straight down" },
     ParamSpec {
         key: "projection",
@@ -189,6 +196,35 @@ pub(super) const SCENE_PARAMS: &[ParamSpec] = &[
         hint: "Words in the names of materials that give off light in their own colour, such as lamp, neon, sign. Materials with emission in their file glow too",
     },
     ParamSpec {
+        key: "roof_by",
+        label: "Roofs coloured by",
+        kind: ParamKind::Attribute("Models"),
+        default: "",
+        hint: "An attribute of the models with the kind of roof, such as roof_type from LoD2 buildings: flat, gable, hipped, shed or mansard, in English or Swedish (platt, sadel, valm, pulpet), or a colour as #rrggbb. Empty keeps their materials",
+    },
+    ParamSpec { key: "tree_height", label: "Trees, height", kind: ParamKind::Text, default: "10", hint: "In metres, for the points on Trees" },
+    ParamSpec {
+        key: "tree_height_by",
+        label: "Trees, height from",
+        kind: ParamKind::Attribute("Trees"),
+        default: "",
+        hint: "An attribute with the height of each tree. Empty gives all the height above",
+    },
+    ParamSpec {
+        key: "tree_kind",
+        label: "Trees, kind",
+        kind: ParamKind::Choice(&[("leafy", "Leafy, with a round crown"), ("conifer", "Conifers, as cones")]),
+        default: "leafy",
+        hint: "",
+    },
+    ParamSpec {
+        key: "tree_kind_by",
+        label: "Trees, kind from",
+        kind: ParamKind::Attribute("Trees"),
+        default: "",
+        hint: "An attribute where words such as conifer, pine, spruce, barr, gran or tall make a conifer, and other values a leafy tree",
+    },
+    ParamSpec {
         key: "lit_windows",
         label: "Lit windows in %",
         kind: ParamKind::Text,
@@ -285,7 +321,53 @@ pub(super) fn run_scene(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
         ));
     }
     let terrain = input(inp, "Terrain").grid.as_deref();
-    let mut meshes = meshes;
+    // Roofs coloured by their kind, in a copy of each model that has the attribute.
+    let roof_by = p.get("roof_by").filter(|s| !s.trim().is_empty());
+    let roofed: Vec<Option<crate::mesh::Mesh>> = models
+        .iter()
+        .map(|t| match (&roof_by, t.mesh.as_deref()) {
+            (Some(a), Some(m)) => super::scene096::colour_roofs(m, t, a).map(|(m, kinds)| {
+                ctx.notes.info(format!("roofs of {} kinds coloured by {}", kinds, a));
+                m
+            }),
+            _ => None,
+        })
+        .collect();
+    if let Some(a) = &roof_by {
+        if roofed.iter().all(|r| r.is_none()) {
+            ctx.notes.warn(format!("No model on Models has the attribute {}, so the roofs keep their materials.", a));
+        }
+    }
+    let mut meshes: Vec<&crate::mesh::Mesh> = models.iter().zip(&roofed).filter_map(|(t, r)| r.as_ref().or(t.mesh.as_deref())).collect();
+    // Trees on the points on Trees, on the terrain, or on the lowest of the models.
+    let tree_table = input(inp, "Trees");
+    let tree_mesh = if tree_table.features.is_empty() {
+        None
+    } else {
+        let crs = models.iter().find_map(|t| t.crs).or_else(|| terrain.and_then(|g| g.crs));
+        let moved;
+        let tt = match (crs, tree_table.crs) {
+            (Some(a), Some(b)) if a != b => {
+                moved = reproject(tree_table, a, ctx.backend)?;
+                &moved
+            }
+            _ => tree_table,
+        };
+        let pts = super::scene096::tree_points(p, tt)?;
+        let foot = meshes.iter().filter_map(|m| m.bounds()).map(|(lo, _)| lo[2]).fold(f64::INFINITY, f64::min);
+        let foot = if foot.is_finite() { foot } else { 0.0 };
+        let ground = |x: f64, y: f64| terrain.and_then(|g| crate::terrain::height_at(g, x, y)).unwrap_or(foot);
+        if pts.is_empty() {
+            ctx.notes.warn("Trees has no points, so no trees are drawn.");
+            None
+        } else {
+            ctx.notes.info(format!("{} trees", fmt_count(pts.len() as u64)));
+            Some(super::scene096::trees(&pts, &ground))
+        }
+    };
+    if let Some(t) = &tree_mesh {
+        meshes.push(t);
+    }
     // A TIN, as from Generate TIN, is a terrain of triangles: drawn as a model.
     if terrain.is_none() {
         if let Some(tin) = input(inp, "Terrain").mesh.as_deref() {
@@ -366,6 +448,11 @@ pub(super) fn run_scene(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
         sky_tint: [1.0; 3],
         vivid: 0.0,
     };
+    if let Some((elevation, parallel, fov)) = super::scene096::camera_of(&p.get("camera").unwrap_or_default()) {
+        s.elevation = elevation;
+        s.parallel = parallel;
+        s.fov = fov;
+    }
     let (sun_tint, sky_tint, vivid, wider) = mood_of(&p.get("mood").unwrap_or_default());
     s.sun_tint = sun_tint;
     s.sky_tint = sky_tint;
@@ -781,7 +868,7 @@ pub(super) const TYPES: &[NodeType] = &[
         group: Group::Transformer,
         category: "3D models and views",
         desc: "The picture of a 3D scene for presenting: models such as buildings read from OBJ, glTF, 3D Tiles or IFC, or made with Extrude or Generate TIN, rendered by following rays of light: lit by the sun, with soft shadows, and by the sky, which reaches into the shade and darkens corners, with their materials, textures and glass. On a light floor, under the sky as it is at that hour, or on the terrain connected to Terrain with the map on Map laid over it. Clouds, haze, water that mirrors, reflections and more bounces of the light, or the models white or in wood as a model. At dusk, lit windows, lamps at the points on Lights and materials that glow; depth of field blurs what is not in focus. The sun can stand where it does on a date and at a time, and a sun study gives a sheet of pictures through the day. A picture can take some minutes. For a quick look at terrain alone, use Quick terrain view.",
-        inputs: &["Models", "Terrain", "Map", "Water", "Lights"],
+        inputs: &["Models", "Terrain", "Map", "Water", "Lights", "Trees"],
         outputs: &["Image"],
         ports: None,
         params: SCENE_PARAMS,

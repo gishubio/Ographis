@@ -9,6 +9,12 @@ pub(super) const FILENAME_PARTS: &[(&str, &str)] = &[("stem", "Name without exte
 pub(super) const OBJ_UNITS: &[(&str, &str)] =
     &[("auto", "As the format says, or from its size"), ("m", "Metres"), ("cm", "Centimetres"), ("mm", "Millimetres"), ("ft", "Feet"), ("in", "Inches")];
 pub(super) const OBJ_UP: &[(&str, &str)] = &[("auto", "As the format says: y for glTF, z for OBJ"), ("z", "z, as on maps"), ("y", "y, as in many 3D programs")];
+pub(super) const SPLAT_UP: &[(&str, &str)] = &[
+    ("auto", "As the format says: y down for PLY, y up for SPZ"),
+    ("-y", "y down, as COLMAP and the training of splats"),
+    ("y", "y up, as three.js and many viewers"),
+    ("z", "z up, as on maps"),
+];
 pub(super) const DXF_BLOCKS: &[(&str, &str)] = &[("points", "Points with their attributes"), ("drawn", "Drawn out in lines")];
 pub(super) const DXF_CLOSED: &[(&str, &str)] = &[("areas", "As areas"), ("lines", "As lines")];
 pub(super) const CITY_LODS: &[(&str, &str)] =
@@ -190,6 +196,14 @@ pub(super) const READER_PARAMS: &[ParamSpec] = &[
     ParamSpec { key: "ifc_openings", label: "Openings", kind: ParamKind::Choice(IFC_OPENINGS), default: "cut", hint: "For windows and doors: cut out of the walls and slabs where they are boxes or other convex shapes" },
     ParamSpec { key: "ifc_spaces", label: "Spaces", kind: ParamKind::Choice(IFC_SPACES), default: "false", hint: "The rooms as volumes. They fill the building, so they are left out unless asked for" },
     ParamSpec { key: "ifc_properties", label: "Property sets", kind: ParamKind::Choice(IFC_PROPERTIES), default: "all", hint: "Each property as an attribute, such as Pset_WallCommon.IsExternal, also quantities and those of the type" },
+    ParamSpec { key: "splat_up", label: "Upwards in the scene", kind: ParamKind::Choice(SPLAT_UP), default: "auto", hint: "Gaussian splats and PLY points: which axis of the file points up" },
+    ParamSpec {
+        key: "splat_scale",
+        label: "Metres for a unit of the scene",
+        kind: ParamKind::Text,
+        default: "1",
+        hint: "Splats made from photos have no scale of their own: such as 2.5 when a distance of 4 m in the world measures 1.6 in the scene",
+    },
     ParamSpec { key: "obj_east", label: "Origin of the model, east", kind: ParamKind::Text, default: "0", hint: "Where 0, 0, 0 of the model goes on the map, such as 319500 in SWEREF 99 TM" },
     ParamSpec { key: "obj_north", label: "Origin of the model, north", kind: ParamKind::Text, default: "0", hint: "Such as 6399800" },
     ParamSpec { key: "obj_height", label: "Origin of the model, height", kind: ParamKind::Text, default: "0", hint: "The height of the ground, such as 52.5" },
@@ -203,14 +217,14 @@ pub(super) const READER_PARAMS: &[ParamSpec] = &[
     },
     ParamSpec {
         key: "json_records",
-        label: "Records at (JSON)",
+        label: "Records at (JSON, XML)",
         kind: ParamKind::Text,
         default: "",
-        hint: "Where the list of records is in the file, such as results or data.items. Empty finds it: the list itself, or a list such as results",
+        hint: "Where the list of records is in the file, such as results or data.items, or in XML the elements by their path, such as Fastigheter.Fastighet. Empty finds it: the list itself, or a list such as results",
     },
     ParamSpec {
         key: "json_nested",
-        label: "Objects in a record (JSON)",
+        label: "Objects in a record (JSON, XML)",
         kind: ParamKind::Choice(JSON_NESTED),
         default: "flatten",
         hint: "An address inside a record becomes adress.gata and adress.ort, or stays as JSON text for Flatten JSON",
@@ -448,6 +462,27 @@ pub(super) fn run_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
     }
     let mut sources = reader_sources(p, ctx.base_dir)?;
     let mut web_headers: Vec<(String, String)> = Vec::new();
+    // A Google sheet: fetched as CSV, through the API with a service account or as shared
+    // with a link, and read as a CSV file named after the sheet.
+    if let Some(url) = sources.url.clone().filter(|u| crate::gsheets::is_sheet(u)) {
+        let b = ctx.backend("Reading a Google sheet")?;
+        let conn = match p.get("connection").filter(|c| !c.trim().is_empty()) {
+            Some(name) => Some(crate::web::connection(&name)?),
+            None => None,
+        };
+        let gate = ctx.gate;
+        let stopped = move || !gate.going();
+        let sheet = p.list("layer").into_iter().next();
+        let (title, csv) = crate::gsheets::read_csv(&url, conn, sheet.as_deref(), b, &stopped)?;
+        let dir = std::env::temp_dir().join(format!("og-sheets-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).map_err(|e| GbError(format!("Cannot make a folder for the sheet: {}", e)))?;
+        let safe: String = title.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' { c } else { '_' }).collect();
+        let file = dir.join(format!("{}.csv", safe.trim()));
+        std::fs::write(&file, csv).map_err(|e| GbError(format!("Cannot keep the sheet: {}", e)))?;
+        ctx.notes.info(format!("{} read from Google Sheets", title));
+        sources.url = None;
+        sources.files = vec![file];
+    }
     if let Some(url) = sources.url.clone() {
         let b = ctx.backend("Reading from the web")?;
         // The key or login of a connection goes along, by the address or in headers.
@@ -570,6 +605,44 @@ pub(super) fn run_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
                 let t = b.read_with(file, &opts, &mut notes, &going).map_err(|e| GbError(e.0.replace(&file.to_string_lossy().to_string(), "the service")))?;
                 read.push((t, layer));
             }
+        } else if ext == "spz" || ext == "ply" {
+            // Gaussian splats, or points from a scanner or a drone, placed on the map.
+            let num = |k: &str, what: &str| number_param(p, k, what).map(|v| v.unwrap_or(0.0));
+            let (mut cloud, splats, kept_origin, kept_crs, kept_axes) = if ext == "spz" {
+                (crate::splats::read_spz(file).map_err(named)?, true, None, None, None)
+            } else {
+                if !crate::splats::is_point_ply(file) {
+                    return err(format!("{} holds faces, not points: a 3D model in PLY is not read. Save it as OBJ or glTF.", file.display()));
+                }
+                let r = crate::splats::read_ply(file).map_err(named)?;
+                (r.cloud, r.splats, r.origin, r.crs, r.axes)
+            };
+            let given = [num("obj_east", "East")?, num("obj_north", "North")?, num("obj_height", "The height")?];
+            // A file Ographis wrote says where it lies, unless another place is given.
+            let origin = match kept_origin {
+                Some(o) if given == [0.0; 3] => o,
+                _ => given,
+            };
+            let axes = match (p.get("splat_up").filter(|u| u != "auto"), kept_axes) {
+                (None, Some(a)) => a,
+                (choice, _) => crate::splats::Axes::of(choice.as_deref(), &ext),
+            };
+            let scale = number_param(p, "splat_scale", "The metres for a unit")?.unwrap_or(1.0);
+            if scale <= 0.0 {
+                return err("The metres for a unit of the scene must be more than 0.");
+            }
+            let turn = num("obj_rotation", "The rotation")?;
+            crate::splats::place(&mut cloud, &crate::splats::Placement { axes, scale, origin, turn });
+            crate::splats::describe(&mut cloud);
+            if splats {
+                let s = cloud.splat.as_ref().expect("splats");
+                notes.info(format!(
+                    "{} Gaussian splats{}",
+                    fmt_count(cloud.len() as u64),
+                    if s.sh_degree > 0 { format!(", with colours by the side they are seen from to degree {}", s.sh_degree) } else { String::new() }
+                ));
+            }
+            read.push((cloud.into_table(crs.or(kept_crs)), None));
         } else if matches!(ext.as_str(), "las" | "laz" | "e57") {
             let classes = match p.get("las_classes").filter(|c| !c.trim().is_empty()) {
                 None => None,
@@ -766,6 +839,46 @@ pub(super) fn run_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
             };
             let t = crate::json::read_table(file, p.get("json_records").as_deref(), lists, text, &mut notes).map_err(named)?;
             read.push((t, None));
+        } else if ext == "xml" && crate::landxml::is_landxml(file) {
+            // LandXML: surfaces as triangles, points and alignments, each a layer.
+            let lx = crate::landxml::read(file).map_err(named)?;
+            let file_crs = crs.or(lx.epsg);
+            let mut layers = [("surfaces", lx.surfaces), ("points", lx.points), ("alignments", lx.alignments)];
+            let has: Vec<&str> = layers.iter().filter(|(_, t)| !t.is_empty()).map(|(n, _)| *n).collect();
+            let chosen: Vec<String> = if wanted.is_empty() {
+                has.first().map(|h| vec![h.to_string()]).unwrap_or_default()
+            } else if wanted.iter().any(|w| w == "*") {
+                has.iter().map(|h| h.to_string()).collect()
+            } else {
+                wanted.clone()
+            };
+            if wanted.is_empty() && has.len() > 1 {
+                notes.info(format!("the file also has {}: choose them under Layer", has[1..].join(" and ")));
+            }
+            for name in &chosen {
+                let Some(k) = layers.iter().position(|(n, _)| n.eq_ignore_ascii_case(name)) else {
+                    return Err(named(GbError(format!("A LandXML file has the layers {}, not {}.", crate::landxml::LAYERS.join(", "), name))));
+                };
+                let mut t = std::mem::take(&mut layers[k].1);
+                t.crs = file_crs;
+                notes.info(format!("{} {}", fmt_count(t.len() as u64), name));
+                read.push((t, Some(name.clone())));
+            }
+            if has.is_empty() {
+                notes.warn("The LandXML file has no surfaces, points or alignments that Ographis reads.".to_string());
+            }
+        } else if crate::xml::is_plain_xml(file) {
+            // XML is read as JSON is, by the records found in it or at the path given.
+            let (lists, text) = match p.get("json_nested").as_deref() {
+                Some("columns") => (crate::json::Lists::Columns, false),
+                Some("text") => (crate::json::Lists::Text, true),
+                _ => (crate::json::Lists::Text, false),
+            };
+            let raw = std::fs::read(file).map_err(|e| named(GbError(format!("Cannot read {}: {}", file.display(), e))))?;
+            let text_of = crate::csv_io::decode_owned(raw, p.get("encoding").as_deref(), &mut notes).map_err(named)?;
+            let v = crate::xml::to_json(&text_of).map_err(named)?;
+            let t = crate::json::table_of(&v, p.get("json_records").as_deref(), lists, text, &mut notes).map_err(named)?;
+            read.push((t, None));
         } else if is_text_format(&ext) {
             let opts = CsvReadOpts {
                 delimiter: parse_delimiter(p.get("delimiter"))?,
@@ -804,6 +917,8 @@ pub(super) fn run_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
                 };
                 let cell_size = number_param(p, "cell_size", "The cell size")?.filter(|c| *c > 0.0);
                 let opts = ReadOpts {
+                    columns: None,
+                    filter: None,
                     layer: layer.clone(),
                     encoding: p.get("encoding"),
                     crs,
@@ -1098,9 +1213,12 @@ pub const READ_FORMATS: &[&str] = &[
     "GeoParquet (.parquet)",
     "GeoTIFF, also Cloud Optimized (.tif)",
     "JSON (.json)",
+    "XML (.xml)",
+    "LandXML surfaces, points and alignments (.xml)",
     "LibreOffice Calc (.ods)",
     "OpenStreetMap (.osm.pbf, .osm)",
-    "Point clouds (.las, .laz, .copc.laz)",
+    "Point clouds (.las, .laz, .copc.laz, .ply)",
+    "Gaussian splats (.ply, .spz)",
     "PostGIS tables",
     "Shapefile (.shp)",
     "Vector tiles (.mbtiles, .pmtiles, {z}/{x}/{y}.pbf)",

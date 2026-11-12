@@ -5,7 +5,8 @@
 
 use super::geom_transform::number_param;
 use super::network::{
-    lines_of, network_crs, network_from, point_of, P_AGAINST, P_ALONG, P_COST, P_DEFAULT_SPEED, P_SNAP, P_SPEED, P_SPEED_AGAINST, P_TOLERANCE,
+    lines_of, network_crs, network_from, point_of, P_AGAINST, P_ALONG, P_AVOID, P_COST, P_DEFAULT_SPEED, P_MODE, P_RULES, P_SNAP, P_SPEED, P_SPEED_AGAINST,
+    P_TOLERANCE,
 };
 use super::*;
 use crate::model::{err, fmt_count, fmt_real};
@@ -438,10 +439,26 @@ const P_SHAPE: ParamSpec = ParamSpec {
     hint: "The outline fills the blocks and fields that the roads reached go round",
 };
 
-const SERVICE_PARAMS: &[ParamSpec] =
-    &[P_BREAKS, P_DIRECTION, P_EACH, P_SHAPE, P_WIDTH, P_COST, P_SPEED, P_SPEED_AGAINST, P_DEFAULT_SPEED, P_ALONG, P_AGAINST, P_SNAP, P_TOLERANCE];
+const SERVICE_PARAMS: &[ParamSpec] = &[
+    P_BREAKS,
+    P_DIRECTION,
+    P_EACH,
+    P_SHAPE,
+    P_WIDTH,
+    P_RULES,
+    P_MODE,
+    P_AVOID,
+    P_COST,
+    P_SPEED,
+    P_SPEED_AGAINST,
+    P_DEFAULT_SPEED,
+    P_ALONG,
+    P_AGAINST,
+    P_SNAP,
+    P_TOLERANCE,
+];
 const ALLOCATE_PARAMS: &[ParamSpec] =
-    &[P_DIRECTION, P_REACH, P_WIDTH, P_COST, P_SPEED, P_SPEED_AGAINST, P_DEFAULT_SPEED, P_ALONG, P_AGAINST, P_SNAP, P_TOLERANCE];
+    &[P_DIRECTION, P_REACH, P_WIDTH, P_RULES, P_MODE, P_AVOID, P_COST, P_SPEED, P_SPEED_AGAINST, P_DEFAULT_SPEED, P_ALONG, P_AGAINST, P_SNAP, P_TOLERANCE];
 
 /// A table in the coordinate system of the network.
 pub(super) fn in_crs(t: &Table, crs: u32, what: &str, ctx: &NodeCtx) -> Result<Table> {

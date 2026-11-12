@@ -3870,3 +3870,427 @@ fn a_map_has_a_frame_line_styles_and_is_written_as_shapes() {
     assert!(svg.contains("inkscape:groupmode=\"layer\" inkscape:label=\"Water\"") && svg.matches("<g ").count() == svg.matches("</g>").count());
     assert!(r.log.iter().any(|l| l.msg.contains("shapes, sharp at any size")));
 }
+
+/// A map with hatched and see-through areas, in a ready style, with an overview map in a
+/// corner: the hatching is lines in the PDF, and the overview shows where the map lies.
+#[test]
+fn a_map_has_patterns_a_style_and_an_overview() {
+    let dir = tmp("map-styles");
+    std::fs::write(
+        dir.join("area.csv"),
+        "name;wkt\nMarsh;POLYGON ((100 100, 900 100, 900 400, 100 400, 100 100))\nField;POLYGON ((100 500, 500 500, 500 900, 100 900, 100 500))\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("county.csv"), "name;wkt\nCounty;POLYGON ((-5000 -5000, 6000 -5000, 6000 6000, -5000 6000, -5000 -5000))\n").unwrap();
+    let ws = Workspace::from_json(
+        r##"{
+      "nodes": [
+        {"id": "area", "type": "Reader", "params": {"path": "area.csv", "crs": "EPSG:3006"}},
+        {"id": "county", "type": "Reader", "params": {"path": "county.csv", "crs": "EPSG:3006"}},
+        {"id": "map", "type": "MapRenderer", "params": {"width": "800", "background": "#ffffff", "map_style": "topo",
+          "overview": "bottom-right", "overview_size": "30",
+          "layers": [
+            {"from": "area:Output", "name": "Wet", "fill": "#a6cee3", "stroke": "#1f78b4", "width": 1, "size": 4, "pattern": "hatch", "pattern_every": 6, "opacity": 60}
+          ]}},
+        {"id": "plain", "type": "MapRenderer", "params": {"width": "800", "background": "#ffffff",
+          "layers": [{"from": "area:Output", "fill": "#a6cee3", "stroke": "#1f78b4", "width": 1, "size": 4}]}},
+        {"id": "pdf", "type": "Writer", "params": {"path": "out/map.pdf"}}
+      ],
+      "edges": [{"from": ["area", "Output"], "to": ["map", "Layers"]}, {"from": ["county", "Output"], "to": ["map", "Overview"]},
+                {"from": ["area", "Output"], "to": ["plain", "Layers"]}, {"from": ["map", "Map"], "to": ["pdf", "Input"]}]
+    }"##,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let img = r.output("map", "Map").unwrap().image.clone().unwrap();
+    let plain = r.output("plain", "Map").unwrap().image.clone().unwrap();
+    let pic = img.vector.clone().expect("kept as shapes");
+    use og_engine::vector::Op;
+    // Hatching: many short strokes in the layer, and see-through at 60 %.
+    let strokes = pic.ops.iter().filter(|o| matches!(o, Op::Stroke { rgba, .. } if rgba[3] == 153)).count();
+    assert!(strokes >= 2, "{} see-through strokes", strokes);
+    let hatch: usize = pic
+        .ops
+        .iter()
+        .map(|o| {
+            if let Op::Stroke { path, rgba, .. } = o {
+                if rgba[3] == 153 {
+                    path.len()
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        })
+        .sum();
+    assert!(hatch > 100, "the hatching has {} pieces", hatch);
+    // The style: yellowed paper instead of white.
+    let px = |i: &og_engine::model::RasterImage, x: usize, y: usize| {
+        let k = (y * i.width + x) * 4;
+        [i.rgba[k], i.rgba[k + 1], i.rgba[k + 2]]
+    };
+    assert_eq!(px(&plain, 2, 2), [255, 255, 255]);
+    assert_eq!(px(&img, 2, 2), [0xf0, 0xe6, 0xcc]);
+    // The overview in the lower right: the red frame of the map in it.
+    let red = pic.ops.iter().any(|o| matches!(o, Op::Stroke { rgba, .. } if rgba[..3] == [0xd7, 0x30, 0x27]));
+    assert!(red, "the map is a red frame in the overview");
+    let (w, h) = (img.width, img.height);
+    let corner = px(&img, w - 20, h - 20);
+    assert_ne!(corner, [0xf0, 0xe6, 0xcc], "the overview covers the corner");
+    assert!(r.log.iter().any(|l| l.msg.contains("overview map")), "{:?}", r.log);
+    let pdf = std::fs::read(dir.join("out/map.pdf")).unwrap();
+    assert!(pdf.starts_with(b"%PDF"));
+}
+
+/// Roofs coloured by their kind, trees on points and a ready camera in Render 3D scene.
+#[test]
+fn a_scene_has_roofs_by_kind_trees_and_a_birds_eye_view() {
+    let dir = tmp("scene-roofs");
+    std::fs::write(
+        dir.join("houses.csv"),
+        "roof_type;wkt\nflat;POLYGON ((0 0, 20 0, 20 12, 0 12, 0 0))\nsadeltak;POLYGON ((30 0, 50 0, 50 12, 30 12, 30 0))\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("trees.csv"), "kind;wkt\nGran;POINT (10 30)\nEk;POINT (40 30)\nBjörk;POINT (25 -15)\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{
+      "nodes": [
+        {"id": "houses", "type": "Reader", "params": {"path": "houses.csv", "crs": "EPSG:3006"}},
+        {"id": "trees", "type": "Reader", "params": {"path": "trees.csv", "crs": "EPSG:3006"}},
+        {"id": "block", "type": "Extruder", "params": {"height": "8"}},
+        {"id": "scene", "type": "SceneRenderer", "params": {"width": "64", "height": "40", "quality": "4", "camera": "birds_eye",
+            "roof_by": "roof_type", "tree_kind_by": "kind", "tree_height": "9"}}
+      ],
+      "edges": [
+        {"from": ["houses", "Output"], "to": ["block", "Input"]},
+        {"from": ["block", "Output"], "to": ["scene", "Models"]},
+        {"from": ["trees", "Output"], "to": ["scene", "Trees"]}
+      ]
+    }"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    assert!(r.log.iter().any(|l| l.msg.contains("roofs of 2 kinds coloured by roof_type")), "{:?}", r.log);
+    assert!(r.log.iter().any(|l| l.msg.contains("3 trees")), "{:?}", r.log);
+    let img = r.output("scene", "Image").unwrap().image.clone().unwrap();
+    assert_eq!((img.width, img.height), (64, 40));
+}
+
+/// JSON built in a model: lists gathered per group with Build JSON, and the stream written
+/// as plain JSON, JSON Lines or one object.
+#[test]
+fn json_is_gathered_into_lists_and_written_plain() {
+    let dir = tmp("json-plain");
+    std::fs::write(
+        dir.join("rooms.csv"),
+        "storey;name;area;contact.email;wkt\n1;Hall;40.5;a@x.se;POINT (1 2)\n1;Kitchen;12;b@x.se;POINT (3 4)\n2;Office;20;c@x.se;POINT (5 6)\n",
+    )
+    .unwrap();
+    let ws = Workspace::from_json(
+        r#"{
+      "nodes": [
+        {"id": "rooms", "type": "Reader", "params": {"path": "rooms.csv", "crs": "EPSG:3006"}},
+        {"id": "lists", "type": "JsonBuilder", "params": {"gather": "group", "gather_by": "storey", "attributes": ["name", "area"], "result": "rooms", "list_name": "rooms"}},
+        {"id": "plain", "type": "Writer", "params": {"path": "out/rooms", "format": "json", "json_geometry": "wkt", "json_list_name": "items", "schema_files": "true"}},
+        {"id": "lines", "type": "Writer", "params": {"path": "out/rooms_lines", "format": "json", "json_shape": "lines"}},
+        {"id": "nested", "type": "Writer", "params": {"path": "out/storeys.json", "format": "json"}}
+      ],
+      "edges": [
+        {"from": ["rooms", "Output"], "to": ["lists", "Input"]},
+        {"from": ["rooms", "Output"], "to": ["plain", "Input"]},
+        {"from": ["rooms", "Output"], "to": ["lines", "Input"]},
+        {"from": ["lists", "Output"], "to": ["nested", "Input"]}
+      ]
+    }"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let read = |f: &str| -> serde_json::Value { serde_json::from_str(&std::fs::read_to_string(dir.join("out").join(f)).unwrap()).unwrap() };
+    // A list under a name, names with a dot as objects, numbers as numbers, and WKT.
+    let plain = read("rooms.json");
+    let items = plain["items"].as_array().unwrap();
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0]["contact"]["email"], "a@x.se");
+    assert_eq!(items[0]["area"], 40.5);
+    assert_eq!(items[0]["geometry"], "POINT(1 2)");
+    // The schema and the types beside it.
+    let schema = read("rooms.schema.json");
+    assert_eq!(schema["properties"]["items"]["items"]["properties"]["contact"]["properties"]["email"]["type"], "string");
+    let ts = std::fs::read_to_string(dir.join("out/rooms.d.ts")).unwrap();
+    assert!(ts.contains("export interface RoomsItem") && ts.contains("area: number;") && ts.contains("geometry: string;"), "{}", ts);
+    // JSON Lines: an object on each line.
+    let lines = std::fs::read_to_string(dir.join("out/rooms_lines.json")).unwrap();
+    assert_eq!(lines.lines().count(), 3);
+    assert!(lines.lines().all(|l| serde_json::from_str::<serde_json::Value>(l).is_ok()));
+    // A list for each storey, written as JSON within JSON.
+    let storeys = read("storeys.json");
+    let s = storeys.as_array().unwrap();
+    assert_eq!(s.len(), 2);
+    assert_eq!(s[0]["storey"], 1);
+    assert_eq!(s[0]["count"], 2);
+    assert_eq!(s[0]["rooms"]["rooms"][1]["name"], "Kitchen");
+    assert!(r.log.iter().any(|l| l.msg.contains("2 lists, one for each value of storey")), "{:?}", r.log);
+}
+
+/// A building cut by Clip is closed with a wall along the edge when asked, on each side.
+#[test]
+fn clip_closes_a_cut_building() {
+    let dir = tmp("clip-close");
+    std::fs::write(dir.join("houses.csv"), "name;wkt\nLong house;POLYGON ((0 0, 30 0, 30 10, 0 10, 0 0))\n").unwrap();
+    std::fs::write(dir.join("area.csv"), "name;wkt\nPlot;POLYGON ((-5 -5, 12 -5, 12 15, -5 15, -5 -5))\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{
+      "nodes": [
+        {"id": "houses", "type": "Reader", "params": {"path": "houses.csv", "crs": "EPSG:3006"}},
+        {"id": "area", "type": "Reader", "params": {"path": "area.csv", "crs": "EPSG:3006"}},
+        {"id": "block", "type": "Extruder", "params": {"height": "8"}},
+        {"id": "open", "type": "Clipper", "params": {}},
+        {"id": "closed", "type": "Clipper", "params": {"close": "true"}}
+      ],
+      "edges": [
+        {"from": ["houses", "Output"], "to": ["block", "Input"]},
+        {"from": ["block", "Output"], "to": ["open", "Clippee"]}, {"from": ["area", "Output"], "to": ["open", "Clipper"]},
+        {"from": ["block", "Output"], "to": ["closed", "Clippee"]}, {"from": ["area", "Output"], "to": ["closed", "Clipper"]}
+      ]
+    }"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let open_edges = |m: &og_engine::mesh::Mesh| -> usize {
+        let key = |p: [f64; 3]| [(p[0] * 1e4).round() as i64, (p[1] * 1e4).round() as i64, (p[2] * 1e4).round() as i64];
+        let mut n: std::collections::HashMap<([i64; 3], [i64; 3]), usize> = Default::default();
+        for t in &m.tris {
+            for k in 0..3 {
+                let (a, b) = (key(m.positions[t.v[k] as usize]), key(m.positions[t.v[(k + 1) % 3] as usize]));
+                *n.entry(if a < b { (a, b) } else { (b, a) }).or_default() += 1;
+            }
+        }
+        n.values().filter(|c| **c == 1).count()
+    };
+    let open = r.output("open", "Inside").unwrap().mesh.clone().unwrap();
+    let closed = r.output("closed", "Inside").unwrap().mesh.clone().unwrap();
+    let closed_out = r.output("closed", "Outside").unwrap().mesh.clone().unwrap();
+    assert!(open_edges(&open) > 0, "cut open");
+    assert_eq!(open_edges(&closed), 0, "closed inside");
+    assert_eq!(open_edges(&closed_out), 0, "closed outside");
+    assert!(r.log.iter().any(|l| l.msg.contains("2 walls close what was cut")), "{:?}", r.log);
+}
+
+/// XML read as records, values picked from XML in an attribute, and features written as XML
+/// and read back.
+#[test]
+fn xml_is_read_picked_and_written() {
+    let dir = tmp("xml");
+    std::fs::write(
+        dir.join("fastigheter.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<reg:Register xmlns:reg="urn:example">
+  <Info skapad="2026-11-12"/>
+  <Fastigheter>
+    <Fastighet id="5"><Namn>Borås 1:2</Namn><Kod>0123</Kod><Area>40.5</Area><Adress typ="post"><Ort>Borås</Ort></Adress></Fastighet>
+    <Fastighet id="6"><Namn>Skövde 3:4</Namn><Kod>0456</Kod><Area>12</Area><Adress typ="post"><Ort>Skövde</Ort></Adress></Fastighet>
+  </Fastigheter>
+</reg:Register>"#,
+    )
+    .unwrap();
+    std::fs::write(dir.join("answers.csv"), "id;answer\n1;<svar><status kod='200'>ok</status><antal>3</antal></svar>\n2;inte xml <\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{
+      "nodes": [
+        {"id": "read", "type": "Reader", "params": {"path": "fastigheter.xml", "json_records": "Register.Fastigheter.Fastighet"}},
+        {"id": "found", "type": "Reader", "params": {"path": "fastigheter.xml"}},
+        {"id": "answers", "type": "Reader", "params": {"path": "answers.csv"}},
+        {"id": "pick", "type": "XmlExtractor", "params": {"attribute": "answer", "paths": [["svar.antal", ""], ["svar.status.kod", "code"], ["svar.status.value", "status"]]}},
+        {"id": "write", "type": "Writer", "params": {"path": "out/copy.xml", "xml_root": "Fastigheter", "xml_row": "Fastighet"}}
+      ],
+      "edges": [
+        {"from": ["answers", "Output"], "to": ["pick", "Input"]},
+        {"from": ["read", "Output"], "to": ["write", "Input"]}
+      ]
+    }"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let read = r.output("read", "Output").unwrap();
+    assert_eq!(read.len(), 2);
+    assert_eq!(col(read, "Namn"), [Value::Text("Borås 1:2".into()), Value::Text("Skövde 3:4".into())]);
+    assert_eq!(col(read, "Kod")[0], Value::Text("0123".into()), "codes stay text");
+    assert_eq!(col(read, "Adress.Ort")[1], Value::Text("Skövde".into()));
+    assert_eq!(col(read, "id")[0], Value::Int(5));
+    // Without a path, the list of records is found.
+    assert_eq!(r.output("found", "Output").unwrap().len(), 2);
+    // Picked from XML in an attribute; what is not XML goes to Failed.
+    let picked = r.output("pick", "Output").unwrap();
+    assert_eq!(col(picked, "antal"), [Value::Int(3)]);
+    assert_eq!(col(picked, "code"), [Value::Int(200)]);
+    assert_eq!(col(picked, "status"), [Value::Text("ok".into())]);
+    assert!(col(picked, "answer")[0].to_text().starts_with("<svar>"), "the XML stays as it came");
+    let failed = r.output("pick", "Failed").unwrap();
+    assert_eq!(failed.len(), 1);
+    assert!(failed.field_index("xml_error").is_some());
+    // Written and read again, as the same records.
+    let text = std::fs::read_to_string(dir.join("out/copy.xml")).unwrap();
+    assert!(text.contains("<Fastigheter>") && text.contains("<Adress>") && text.contains("<Ort>Borås</Ort>"), "{}", text);
+    let ws2 = Workspace::from_json(r#"{"nodes": [{"id": "again", "type": "Reader", "params": {"path": "out/copy.xml"}}], "edges": []}"#).unwrap();
+    let r2 = run(&ws2, None, &dir);
+    let again = r2.output("again", "Output").unwrap();
+    assert_eq!(col(again, "Adress.Ort"), col(read, "Adress.Ort"));
+}
+
+/// LandXML through Input and Output: a surface and points read as layers in the coordinate
+/// system the file names, and the surface written again.
+#[test]
+fn landxml_is_read_by_layer_and_written() {
+    let dir = tmp("landxml");
+    std::fs::write(
+        dir.join("site.xml"),
+        r#"<?xml version="1.0"?>
+<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" version="1.2">
+  <CoordinateSystem epsgCode="3006"/>
+  <CgPoints><CgPoint name="P1" code="BRUNN">6400010 300010 101.5</CgPoint><CgPoint name="P2">6400012 300011 101.0</CgPoint></CgPoints>
+  <Surfaces><Surface name="Mark"><Definition surfType="TIN">
+    <Pnts><P id="1">6400000 300000 100</P><P id="2">6400000 300020 101</P><P id="3">6400020 300000 102</P></Pnts>
+    <Faces><F>1 2 3</F></Faces>
+  </Definition></Surface></Surfaces>
+</LandXML>"#,
+    )
+    .unwrap();
+    let ws = Workspace::from_json(
+        r#"{
+      "nodes": [
+        {"id": "surface", "type": "Reader", "params": {"path": "site.xml"}},
+        {"id": "points", "type": "Reader", "params": {"path": "site.xml", "layer": ["points"]}},
+        {"id": "out", "type": "Writer", "params": {"path": "out/again", "format": "landxml"}}
+      ],
+      "edges": [{"from": ["surface", "Output"], "to": ["out", "Input"]}]
+    }"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let surface = r.output("surface", "Output").unwrap();
+    assert_eq!(surface.crs, Some(3006));
+    assert_eq!(surface.mesh.as_deref().unwrap().tris.len(), 1);
+    assert!(r.log.iter().any(|l| l.msg.contains("also has points")), "{:?}", r.log);
+    let points = r.output("points", "Output").unwrap();
+    assert_eq!(points.len(), 2);
+    assert_eq!(col(points, "code")[0], Value::Text("BRUNN".into()));
+    let text = std::fs::read_to_string(dir.join("out/again.xml")).unwrap();
+    assert!(text.contains("<LandXML") && text.contains("epsgCode=\"3006\"") && text.contains("<F>1 2 3</F>"), "{}", text);
+}
+
+#[test]
+fn ready_rules_of_the_road_follow_one_way_streets_and_roundabouts() {
+    let dir = tmp("road_rules");
+    // As above: a road along y = 0 in two pieces and one up x = 500. The eastern piece is a
+    // one-way street westwards; in OpenStreetMap as oneway=-1, in NVDB as forbidden along it.
+    std::fs::write(
+        dir.join("osm.csv"),
+        "highway;maxspeed;other_tags;wkt\nresidential;50;;LINESTRING (0 0, 500 0)\nresidential;50;\"\"\"oneway\"\"=>\"\"-1\"\"\";LINESTRING (500 0, 1000 0)\nprimary;100;;LINESTRING (500 0, 500 1000)\nfootway;;;LINESTRING (0 0, 0 1000)\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("nvdb.csv"),
+        "F_Hogst_225;B_Hogst_225;F_ForbjudenFardriktning;Farjeled;wkt\n50;50;;;LINESTRING (0 0, 500 0)\n50;50;1;;LINESTRING (500 0, 1000 0)\n100;100;;1;LINESTRING (500 0, 500 1000)\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("from.csv"), "name;wkt\nStart;POINT (100 10)\n").unwrap();
+    std::fs::write(dir.join("to.csv"), "goal;wkt\nEast;POINT (1000 -5)\nTop;POINT (500 1000)\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "osm", "type": "Reader", "params": {"path": "osm.csv", "crs": "EPSG:3006"}},
+        {"id": "nvdb", "type": "Reader", "params": {"path": "nvdb.csv", "crs": "EPSG:3006"}},
+        {"id": "from", "type": "Reader", "params": {"path": "from.csv", "crs": "EPSG:3006"}},
+        {"id": "to", "type": "Reader", "params": {"path": "to.csv", "crs": "EPSG:3006"}},
+        {"id": "car", "type": "ShortestRoute", "params": {"rules": "osm"}},
+        {"id": "walk", "type": "ShortestRoute", "params": {"rules": "osm", "mode": "walk", "cost": "time"}},
+        {"id": "nv", "type": "ShortestRoute", "params": {"rules": "nvdb", "cost": "time"}},
+        {"id": "noferry", "type": "ShortestRoute", "params": {"rules": "nvdb", "avoid": ["ferry"]}}],
+      "edges": [
+        {"from": ["osm", "Output"], "to": ["car", "Network"]}, {"from": ["from", "Output"], "to": ["car", "From"]}, {"from": ["to", "Output"], "to": ["car", "To"]},
+        {"from": ["osm", "Output"], "to": ["walk", "Network"]}, {"from": ["from", "Output"], "to": ["walk", "From"]}, {"from": ["to", "Output"], "to": ["walk", "To"]},
+        {"from": ["nvdb", "Output"], "to": ["nv", "Network"]}, {"from": ["from", "Output"], "to": ["nv", "From"]}, {"from": ["to", "Output"], "to": ["nv", "To"]},
+        {"from": ["nvdb", "Output"], "to": ["noferry", "Network"]}, {"from": ["from", "Output"], "to": ["noferry", "From"]}, {"from": ["to", "Output"], "to": ["noferry", "To"]}]}"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0);
+    let goal = |id: &str| col(r.output(id, "Routes").unwrap(), "to_goal");
+    // By car the one-way street may not be driven east, so the top is nearest.
+    let car = r.output("car", "Routes").unwrap();
+    assert_eq!((goal("car")[0].clone(), col(car, "length_m")[0].clone()), (text("Top"), Value::Real(1400.0)));
+    // On foot it may: 900 m at 5 km/h is 10.8 minutes.
+    assert_eq!((goal("walk")[0].clone(), col(r.output("walk", "Routes").unwrap(), "minutes")[0].clone()), (text("East"), Value::Real(10.8)));
+    // NVDB: the same street, found by its attributes; 400 m at 50 and 1000 m at 100 km/h.
+    assert_eq!((goal("nv")[0].clone(), col(r.output("nv", "Routes").unwrap(), "minutes")[0].clone()), (text("Top"), Value::Real(1.08)));
+    assert!(r.log.iter().any(|l| l.msg.contains("F_ForbjudenFardriktning (forbidden direction along)")), "the log names the attributes found");
+    // Without the ferry up to the top, nothing can be reached.
+    assert!(r.output("noferry", "Routes").unwrap().is_empty());
+    assert_eq!(r.output("noferry", "Unreached").unwrap().len(), 1);
+}
+
+#[test]
+fn points_become_splats_placed_on_the_map_and_written_as_ply_and_spz() {
+    let dir = tmp("splats");
+    // A wall of coloured points from a drone, as an ASCII PLY: x east, y up, z towards the
+    // viewer, in metres around its own middle.
+    let mut ply = String::from("ply\nformat ascii 1.0\nelement vertex 200\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n");
+    for i in 0..20 {
+        for j in 0..10 {
+            ply.push_str(&format!("{} {} 0 200 {} 40\n", i as f64 * 0.2, j as f64 * 0.2, 100 + j * 10));
+        }
+    }
+    std::fs::write(dir.join("wall.ply"), ply).unwrap();
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "wall", "type": "Reader", "params": {"path": "wall.ply", "splat_up": "y", "obj_east": "319500", "obj_north": "6399800", "obj_height": "50", "crs": "EPSG:3006"}},
+        {"id": "make", "type": "SplatMaker", "params": {}},
+        {"id": "spz", "type": "Writer", "params": {"path": "out/wall.spz"}},
+        {"id": "ply", "type": "Writer", "params": {"path": "out/wall.ply"}}],
+      "edges": [{"from": ["wall", "Output"], "to": ["make", "Points"]},
+        {"from": ["make", "Splats"], "to": ["spz", "Input"]}, {"from": ["make", "Splats"], "to": ["ply", "Input"]}]}"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert_eq!(r.errors, 0);
+    // y up in the file is z up on the map: the wall stands from 50 m up to 51.8 m.
+    let read = r.output("wall", "Output").unwrap();
+    let c = read.points.as_ref().unwrap();
+    let top = c.z.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    assert!((top - 51.8).abs() < 1e-5 && (c.x[199] - 319_503.8).abs() < 1e-5, "{} {}", top, c.x[199]);
+    // Made splats: flat along the wall, whose normal points north or south.
+    let made = r.output("make", "Splats").unwrap();
+    let s = made.points.as_ref().unwrap().splat.as_ref().unwrap();
+    assert_eq!(s.len(), 200);
+    assert!(s.scale[55][2] < s.scale[55][0], "thin across the wall");
+    assert!(made.field_index("splat_size").is_some());
+    // Written: the PLY says where it lies, and comes back there by itself.
+    let text = std::fs::read(dir.join("out/wall.ply")).unwrap();
+    assert!(String::from_utf8_lossy(&text[..400]).contains("comment ographis crs EPSG:3006"));
+    let ws2 = Workspace::from_json(r#"{"nodes": [{"id": "back", "type": "Reader", "params": {"path": "out/wall.ply"}}], "edges": []}"#).unwrap();
+    let r2 = run(&ws2, None, &dir);
+    let back = r2.output("back", "Output").unwrap();
+    let b = back.points.as_ref().unwrap();
+    assert_eq!(back.crs, Some(3006));
+    assert!((b.x[199] - c.x[199]).abs() < 1e-3 && (b.z[199] - c.z[199]).abs() < 1e-3, "{} {}", b.x[199], b.z[199]);
+    // The SPZ, placed by hand at the origin it was written around.
+    let again = run(&Workspace::from_json(r#"{"nodes": [{"id": "s", "type": "Reader", "params": {"path": "out/wall.spz", "obj_east": "319502", "obj_north": "6399800", "obj_height": "50", "crs": "EPSG:3006"}}], "edges": []}"#).unwrap(), None, &dir);
+    let sp = again.output("s", "Output").unwrap().points.as_ref().unwrap().clone();
+    assert_eq!(sp.len(), 200);
+    assert!(sp.splat.is_some());
+    assert!(r.log.iter().any(|l| l.msg.contains("200 Gaussian splats written around the origin")), "{:?}", r.log.iter().map(|l| &l.msg).collect::<Vec<_>>());
+}

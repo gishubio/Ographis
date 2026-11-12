@@ -917,6 +917,8 @@ fn postgis_is_reached_from_input_and_output() {
     let writer = h.state().selected[0];
     h.get_by_value("From the file name").click();
     h.run_steps(3);
+    h.get_by_label("GeoSpatial PDF with layers (.pdf)").scroll_to_me();
+    h.run_steps(3);
     h.get_by_label("GeoSpatial PDF with layers (.pdf)").click();
     h.run_steps(4);
     assert_eq!(h.state().snarl[writer].kind, "LayeredPdfWriter");
@@ -935,6 +937,8 @@ fn postgis_is_reached_from_input_and_output() {
         modifiers: Default::default(),
     });
     h.run_steps(6);
+    h.get_by_label("PostGIS table").scroll_to_me();
+    h.run_steps(3);
     h.get_by_label("PostGIS table").click();
     h.run_steps(3);
     assert!(h.state().db_dialog.as_ref().is_some_and(|d| d.output));
@@ -966,6 +970,8 @@ fn postgis_is_reached_from_input_and_output() {
         modifiers: Default::default(),
     });
     h.run_steps(6);
+    h.get_by_label("PostGIS table").scroll_to_me();
+    h.run_steps(3);
     h.get_by_label("PostGIS table").click();
     h.run_steps(3);
     // The tables are listed first, which can take a moment when much else runs.

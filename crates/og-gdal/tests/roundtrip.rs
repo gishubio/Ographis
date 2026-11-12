@@ -3962,3 +3962,157 @@ fn a_map_of_shapes_in_a_pdf_has_coordinates_and_layers() {
         (want[0], want[3], want_right, want_bottom)
     );
 }
+
+/// GeoJSON with its JSON Schema and TypeScript types beside it.
+#[test]
+fn geojson_gets_a_schema_and_types() {
+    let dir = tmp("geojson_types");
+    let b = GdalBackend::new();
+    std::fs::write(dir.join("schools.csv"), "name;pupils;wkt\nNorth;120;POINT (16.1 58.4)\nSouth;;POINT (16.2 58.3)\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "in", "type": "Reader", "params": {"path": "schools.csv", "crs": "EPSG:4326"}},
+        {"id": "out", "type": "Writer", "params": {"path": "out/schools.geojson", "schema_files": "true"}}],
+      "edges": [{"from": ["in", "Output"], "to": ["out", "Input"]}]}"#,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let schema: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("out/schools.schema.json")).unwrap()).unwrap();
+    let props = &schema["properties"]["features"]["items"]["properties"]["properties"]["properties"];
+    assert_eq!(props["pupils"]["type"], serde_json::json!(["integer", "null"]));
+    let ts = std::fs::read_to_string(dir.join("out/schools.d.ts")).unwrap();
+    assert!(ts.contains("GeoJSON.FeatureCollection<GeoJSON.Point, SchoolsProperties>") && ts.contains("pupils: number | null;"), "{}", ts);
+}
+
+/// Comments on a table and its columns are kept in PostGIS, and a table is read with only
+/// the columns asked for, also with a condition. Needs OG_TEST_PG, as above.
+#[test]
+fn postgis_tables_get_comments_and_are_read_by_chosen_columns() {
+    use og_engine::io::DbWrite;
+    let Ok(conn) = std::env::var("OG_TEST_PG") else { return };
+    let b = GdalBackend::new();
+    let mut notes = Notes::default();
+    let opts = DbWrite {
+        schema: "public".into(),
+        table: "og_comments".into(),
+        geometry: "auto".into(),
+        geom_column: "geom".into(),
+        table_comment: Some("Municipalities, made up for a test".into()),
+        column_comments: vec![("invånare_totalt".into(), "Inhabitants, 31 December".into()), ("name".into(), "The name, as SCB writes it".into())],
+        ..Default::default()
+    };
+    b.write_postgis(&sample(), &conn, &opts, &mut notes).unwrap();
+    assert!(notes.info.iter().any(|n| n.contains("comments on the table and 2 columns")), "{:?}", notes.info);
+    let ds = gdal::Dataset::open_ex(&conn, gdal::DatasetOptions { open_flags: gdal::GdalOpenFlags::GDAL_OF_VECTOR, ..Default::default() }).unwrap();
+    let one = |sql: &str| -> String {
+        let mut rs = ds.execute_sql(sql, None, gdal::vector::sql::Dialect::DEFAULT).unwrap().unwrap();
+        let v = rs.features().next().unwrap().field_as_string(0).unwrap().unwrap_or_default();
+        v
+    };
+    assert_eq!(one("SELECT obj_description('public.og_comments'::regclass) AS c"), "Municipalities, made up for a test");
+    assert_eq!(
+        one("SELECT col_description('public.og_comments'::regclass, (SELECT attnum FROM pg_attribute WHERE attrelid = 'public.og_comments'::regclass AND attname = 'invånare_totalt')) AS c"),
+        "Inhabitants, 31 December"
+    );
+    // Only two columns, and the geometry.
+    let t = b
+        .read(
+            std::path::Path::new(&conn),
+            &og_engine::io::ReadOpts {
+                layer: Some("public.og_comments".into()),
+                columns: Some(vec!["name".into(), "share".into()]),
+                filter: Some("share > 0".into()),
+                ..Default::default()
+            },
+            &mut notes,
+        )
+        .unwrap();
+    assert_eq!(t.field_names(), ["name", "share"]);
+    assert!(t.features.iter().all(|f| f.geom.is_some()));
+    let err = b
+        .read(
+            std::path::Path::new(&conn),
+            &og_engine::io::ReadOpts { layer: Some("public.og_comments".into()), columns: Some(vec!["nope".into()]), ..Default::default() },
+            &mut notes,
+        )
+        .unwrap_err();
+    assert!(err.0.contains("There is no column nope"), "{}", err.0);
+}
+
+#[test]
+fn a_real_place_is_made_ready_for_game_engines() {
+    let b = GdalBackend::new();
+    let dir = tmp("game_engine");
+    // A slope rising east from 100 to 160 m over 300 × 200 m, 10 m cells.
+    let mut text = "ncols 30\nnrows 20\nxllcorner 400000\nyllcorner 6500000\ncellsize 10\nNODATA_value -9999\n".to_string();
+    for _ in 0..20 {
+        let row: Vec<String> = (0..30).map(|c| format!("{}", 100.0 + c as f64 * 2.0)).collect();
+        text += &(row.join(" ") + "\n");
+    }
+    std::fs::write(dir.join("dem.asc"), text).unwrap();
+    std::fs::write(
+        dir.join("cover.csv"),
+        "kind;wkt\nforest;POLYGON ((400000 6500100, 400100 6500100, 400100 6500200, 400000 6500200, 400000 6500100))\nwater;POLYGON ((400200 6500000, 400300 6500000, 400300 6500050, 400200 6500050, 400200 6500000))\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("things.csv"),
+        "kind;height;wkt\ntree;12;POINT (400050 6500150)\nhouse;6;POLYGON ((400150 6500050, 400162 6500050, 400162 6500056, 400150 6500056, 400150 6500050))\ntree;8;POINT (500000 7000000)\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("roads.csv"), "name;width;wkt\nStorgatan;8;LINESTRING (400000 6500100, 400290 6500100)\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "dem", "type": "Reader", "params": {"path": "dem.asc", "raster_as": "grid", "crs": "EPSG:3006"}},
+        {"id": "cover", "type": "Reader", "params": {"path": "cover.csv", "crs": "EPSG:3006"}},
+        {"id": "things", "type": "Reader", "params": {"path": "things.csv", "crs": "EPSG:3006"}},
+        {"id": "roads", "type": "Reader", "params": {"path": "roads.csv", "crs": "EPSG:3006"}},
+        {"id": "unreal", "type": "GameEngineExporter", "params": {"engine": "unreal", "folder": "unreal", "mask_by": "kind", "kind_by": "kind", "height_by": "height", "road_width": "width", "road_name": "name"}},
+        {"id": "unity", "type": "GameEngineExporter", "params": {"engine": "unity", "folder": "unity", "mask_by": "kind"}}],
+      "edges": [
+        {"from": ["dem", "Output"], "to": ["unreal", "Heights"]}, {"from": ["cover", "Output"], "to": ["unreal", "Areas"]},
+        {"from": ["things", "Output"], "to": ["unreal", "Instances"]}, {"from": ["roads", "Output"], "to": ["unreal", "Roads"]},
+        {"from": ["dem", "Output"], "to": ["unity", "Heights"]}, {"from": ["cover", "Output"], "to": ["unity", "Areas"]}]}"#,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    // 300 m at 10 m cells: 31 pixels at least, so the smallest size of Unreal, 127.
+    let hm = image::open(dir.join("unreal/heightmap.png")).unwrap();
+    assert_eq!((hm.width(), hm.height()), (127, 127));
+    let hm = hm.into_luma16();
+    // West is lowest, east highest; south of the model, outside it, at the lowest.
+    assert_eq!(hm.get_pixel(0, 0)[0], 0);
+    assert!(hm.get_pixel(120, 10)[0] > 60000, "{}", hm.get_pixel(120, 10)[0]);
+    assert_eq!(std::fs::metadata(dir.join("unreal/heightmap.r16")).unwrap().len(), 127 * 127 * 2);
+    // Unity reads rows from the south: the top row of its file is the south edge, outside.
+    let unity = image::open(dir.join("unity/heightmap.png")).unwrap().into_luma16();
+    assert_eq!(unity.width(), 129);
+    assert_eq!(unity.get_pixel(120, 0)[0], 0, "the south, outside the model, at the lowest");
+    assert!(unity.get_pixel(120, 128)[0] > 60000);
+    // Masks: the forest in the north-west.
+    let forest = image::open(dir.join("unreal/masks/mask_forest.png")).unwrap().into_luma8();
+    assert_eq!(forest.get_pixel(20, 20)[0], 255);
+    assert_eq!(forest.get_pixel(100, 20)[0], 0);
+    assert!(dir.join("unreal/masks/mask_water.png").exists() && dir.join("unreal/masks/mask_roads.png").exists());
+    // The instances in centimetres; the tree outside is left out.
+    let inst = r.output("unreal", "Instances").unwrap();
+    assert_eq!(inst.len(), 2);
+    let names: Vec<String> = inst.features.iter().map(|f| f.attrs[0].to_text()).collect();
+    assert_eq!(names, ["tree_1", "house_1"]);
+    // The tree: 50 m east, 50 m south of the north edge at 6500200, and 9 m above the
+    // lowest, as the heights are those of the middles of the cells.
+    assert_eq!(
+        (&inst.features[0].attrs[2], &inst.features[0].attrs[3], &inst.features[0].attrs[4]),
+        (&Value::Real(5000.0), &Value::Real(5000.0), &Value::Real(900.0))
+    );
+    let csv = std::fs::read_to_string(dir.join("unreal/instances.csv")).unwrap();
+    assert!(csv.starts_with("Name,kind,x,y,z,yaw,width,length,height\ntree_1,tree,"), "{}", csv);
+    let roads: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("unreal/roads.json")).unwrap()).unwrap();
+    assert_eq!(roads["roads"][0]["name"], "Storgatan");
+    assert_eq!(roads["roads"][0]["width"], 800.0);
+    let notes = std::fs::read_to_string(dir.join("unreal/IMPORT.txt")).unwrap();
+    assert!(notes.contains("Scale: X") && notes.contains("EPSG:3006"), "{}", notes);
+    let _ = std::fs::remove_dir_all(&dir);
+}

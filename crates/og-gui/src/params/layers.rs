@@ -172,6 +172,8 @@ pub(super) fn map_layer_rows(
             let raster = if named { None } else { stream_raster(&row.from) };
             if let Some(info) = &raster {
                 raster_rows(ui, &mut row.raster, info, &row.from, pal);
+                // One opacity for the layer, kept as that of the raster.
+                row.style.opacity = row.raster.opacity;
                 return;
             }
             ui.horizontal_wrapped(|ui| {
@@ -250,6 +252,46 @@ pub(super) fn map_layer_rows(
                         .on_hover_text("How much wider than the line, in pixels on each side");
                 }
             });
+            // A pattern over the fill of areas, and how much the layer covers what is under
+            // it: in Draw map.
+            if !named {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.label(RichText::new("pattern").small().color(pal.muted));
+                    let shown = og_engine::mapdraw::PATTERNS.iter().find(|d| d.0 == row.style.pattern).map_or("No pattern", |d| d.1);
+                    egui::ComboBox::from_id_salt(("pattern", i)).selected_text(shown).width(110.0).show_ui(ui, |ui| {
+                        for (key, name) in og_engine::mapdraw::PATTERNS {
+                            ui.selectable_value(&mut row.style.pattern, key.to_string(), *name);
+                        }
+                    });
+                    if !row.style.pattern.is_empty() {
+                        let mut own = row.style.pattern_colour.is_some();
+                        if ui.checkbox(&mut own, "Colour").on_hover_text("A colour of its own. Without it, the colour of the line").changed() {
+                            row.style.pattern_colour = if own { row.style.stroke.or(Some([0x33, 0x33, 0x33, 255])) } else { None };
+                        }
+                        if let Some(c) = &mut row.style.pattern_colour {
+                            colour_button(ui, c);
+                        }
+                        ui.label(RichText::new("every").small().color(pal.muted));
+                        ui.add(egui::DragValue::new(&mut row.style.pattern_every).range(2.0..=100.0).speed(0.2).max_decimals(1))
+                            .on_hover_text("The space between the lines or dots, in pixels");
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.label(RichText::new("opacity").small().color(pal.muted));
+                    let mut pct = (row.style.opacity * 100.0).round();
+                    if ui
+                        .add(egui::Slider::new(&mut pct, 0.0..=100.0).suffix(" %").step_by(5.0))
+                        .on_hover_text("How much the layer covers what is under it, such as a background map")
+                        .changed()
+                    {
+                        row.style.opacity = pct / 100.0;
+                        row.raster.opacity = row.style.opacity;
+                    }
+                });
+            }
+
             // Drawing by the values of an attribute: Draw map and QGIS, not the PDF. Icons
             // only in Draw map.
             if !named || qgis {

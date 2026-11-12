@@ -133,22 +133,34 @@ pub(super) fn run_bufferer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Out
     let flat = p.get("ends").as_deref() == Some("flat");
     let mut out = table.like();
     let (mut no_distance, mut vanished) = (0usize, 0usize);
-    for (i, f) in table.features.iter().enumerate() {
-        let Some(g) = &f.geom else {
-            out.features.push(f.clone());
-            continue;
-        };
+    // Each feature on a core of its own: what it became, or why it is passed on as it was.
+    enum Done {
+        Kept,
+        NoDistance,
+        Buffered(Geometry<f64>),
+        Vanished,
+    }
+    let done = ctx.gate.each(table.len(), |i| {
+        let f = &table.features[i];
+        let Some(g) = &f.geom else { return Ok(Done::Kept) };
         let d = match e.eval(&Row { feature: f, index: i, geographic }).map_err(|e| at_row(e, i))?.as_f64() {
             Some(d) => d,
-            None => {
+            None => return Ok(Done::NoDistance),
+        };
+        Ok(match geom::buffer_with(g, d, flat, side) {
+            Some(b) => Done::Buffered(b),
+            None => Done::Vanished,
+        })
+    })?;
+    for (f, d) in table.features.iter().zip(done) {
+        match d {
+            Done::Kept => out.features.push(f.clone()),
+            Done::NoDistance => {
                 no_distance += 1;
                 out.features.push(f.clone());
-                continue;
             }
-        };
-        match geom::buffer_with(g, d, flat, side) {
-            Some(b) => out.features.push(Feature { z: None, attrs: f.attrs.clone(), geom: Some(b) }),
-            None => vanished += 1,
+            Done::Buffered(b) => out.features.push(Feature { z: None, attrs: f.attrs.clone(), geom: Some(b) }),
+            Done::Vanished => vanished += 1,
         }
     }
     if no_distance > 0 {

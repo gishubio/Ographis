@@ -1,0 +1,52 @@
+{
+  "format": "ographis/1",
+  "name": "Drone points as Gaussian splats",
+  "nodes": [
+    {
+      "id": "points",
+      "type": "Reader",
+      "name": "Drone points",
+      "x": 20,
+      "y": 20,
+      "params": {"path": "pointcloud/drone_points.laz"}
+    },
+    {
+      "id": "splats",
+      "type": "SplatMaker",
+      "name": "Splats",
+      "x": 300,
+      "y": 20,
+      "comment": "Flat along roofs, walls and ground. See them in 3D under the canvas",
+      "params": {"size": "1.3"}
+    },
+    {
+      "id": "spz",
+      "type": "Writer",
+      "name": "For a viewer of splats",
+      "x": 580,
+      "y": 20,
+      "params": {"path": "out/drone.spz"}
+    },
+    {
+      "id": "usd",
+      "type": "Writer",
+      "name": "Footprints as OpenUSD",
+      "x": 580,
+      "y": 160,
+      "params": {"path": "out/footprints.usda", "usd_layers": "roof"}
+    },
+    {
+      "id": "footprints",
+      "type": "Reader",
+      "name": "Footprints",
+      "x": 300,
+      "y": 160,
+      "params": {"path": "pointcloud/footprints.geojson"}
+    }
+  ],
+  "edges": [
+    {"from": ["points", "Output"], "to": ["splats", "Points"]},
+    {"from": ["splats", "Splats"], "to": ["spz", "Input"]},
+    {"from": ["footprints", "Output"], "to": ["usd", "Input"]}
+  ]
+}

@@ -737,7 +737,8 @@ fn the_panel_says_what_the_program_is_for_when_nothing_is_selected() {
         "LibreOffice Calc (.ods)",
         "Excel (.xlsx)",
         "GeoTIFF, also Cloud Optimized (.tif)",
-        "Point clouds (.las, .laz, .copc.laz)",
+        "Point clouds (.las, .laz, .copc.laz, .ply)",
+        "Gaussian splats (.ply, .spz)",
         "CAD drawings (.dxf, .dwg)",
     ] {
         assert!(h.query_all_by_label_contains(text).count() >= 1, "the panel should say: {}", text);
@@ -1355,20 +1356,28 @@ fn colours_are_copied_and_layers_dragged_in_draw_map() {
     h.run_steps(3);
     h.get_by_label("Copy colour").click();
     h.run_steps(3);
-    right_click_at(&mut h, fills[2]);
+    // The third layer is further down the form: scrolled to first.
+    let _ = fills;
+    h.get_all_by_label("Fill").nth(2).unwrap().scroll_to_me();
+    h.run_steps(3);
+    let third = h.get_all_by_label("Fill").nth(2).unwrap().rect().center();
+    right_click_at(&mut h, third);
     h.run_steps(3);
     shot(&mut h, "264-paste-colour");
     h.get_by_label_contains("Paste colour").click();
     h.run_steps(3);
     let after = layers(&h);
     assert_eq!(after[2].1, before[0].1, "the third layer got the fill of the first");
-    // A layer is dragged by its handle to the top.
+    // A layer is dragged by its handle to the top: the second, with the top of the form in
+    // view, as the rows of three layers are taller than the form.
+    h.get_all_by_label("Drag handle").next().unwrap().scroll_to_me();
+    h.run_steps(3);
     let handles: Vec<egui::Pos2> = h.get_all_by_label("Drag handle").map(|n| n.rect().center()).collect();
     assert_eq!(handles.len(), 3);
-    drag(&mut h, handles[2], handles[0] - egui::vec2(0.0, 12.0), egui::PointerButton::Primary);
+    drag(&mut h, handles[1], handles[0] - egui::vec2(0.0, 12.0), egui::PointerButton::Primary);
     h.run_steps(4);
     let moved = layers(&h);
-    assert_eq!(moved[0].0, after[2].0, "the bottom layer is now on top: {:?}", moved);
+    assert_eq!(moved[0].0, after[1].0, "the second layer is now on top: {:?}", moved);
     shot(&mut h, "265-layer-dragged");
 }
 
@@ -1577,6 +1586,9 @@ fn colours_are_typed_as_codes_and_copied_on_the_colour_itself() {
     right_click_at(&mut h, s[0]);
     h.run_steps(3);
     h.get_by_label("Copy colour").click();
+    h.run_steps(3);
+    // The last colour is further down the form: scrolled to first.
+    h.query_all_by_label_contains("#").rfind(|n| format!("{:?}", n).contains("ColorWell")).unwrap().scroll_to_me();
     h.run_steps(3);
     let s = swatches(&h);
     right_click_at(&mut h, *s.last().unwrap());

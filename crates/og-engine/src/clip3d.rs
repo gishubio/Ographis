@@ -309,3 +309,190 @@ pub fn clip_mesh(mesh: &Mesh, clipper: &Clipper) -> (Mesh, Mesh) {
     let all: Vec<usize> = (0..mesh.objects.len()).collect();
     (part(tris_in).pick(&all), part(tris_out).pick(&all))
 }
+
+/// Closes a model where it was cut: for each object, the open edges that lie on the upright
+/// "curtain" over the boundary of the clip areas are chained into rings, and each ring is
+/// filled with a wall of its own, in the material of the object there. A solid cut in two,
+/// such as a building, is then closed again on each side. Gives the number of walls.
+///
+/// The curtain bends where the boundary turns, so each ring is laid out flat along the
+/// boundary (the length along it, and the height) before it is filled. A ring within another
+/// of the same object, such as round a courtyard, is filled too.
+pub fn close_cut(mesh: &mut Mesh, clipper: &Clipper) -> usize {
+    use std::collections::HashSet;
+    let key = |p: [f64; 3]| [(p[0] * 1e5).round() as i64, (p[1] * 1e5).round() as i64, (p[2] * 1e5).round() as i64];
+    // The rings of the clip boundary, each segment with how far along its ring it begins.
+    let mut segs: Vec<(usize, Coord<f64>, Coord<f64>, f64)> = Vec::new();
+    let mut ring_len: Vec<f64> = Vec::new();
+    for poly in &clipper.area().0 {
+        for ring in std::iter::once(poly.exterior()).chain(poly.interiors()) {
+            let r = ring_len.len();
+            let mut along = 0.0;
+            for l in ring.lines() {
+                segs.push((r, l.start, l.end, along));
+                along += (l.end.x - l.start.x).hypot(l.end.y - l.start.y);
+            }
+            ring_len.push(along);
+        }
+    }
+    // Where a point lies on the boundary: its ring and how far along it, if it is on it.
+    let scale = {
+        let b = clipper.bbox();
+        b.width().max(b.height()).max(1.0)
+    };
+    let on_boundary = |p: [f64; 3]| -> Option<(usize, f64)> {
+        let mut best: Option<(f64, usize, f64)> = None;
+        for (r, a, b, start) in &segs {
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let len2 = dx * dx + dy * dy;
+            if len2 == 0.0 {
+                continue;
+            }
+            let t = (((p[0] - a.x) * dx + (p[1] - a.y) * dy) / len2).clamp(0.0, 1.0);
+            let (qx, qy) = (a.x + t * dx, a.y + t * dy);
+            let d = (p[0] - qx).hypot(p[1] - qy);
+            if best.is_none_or(|b| d < b.0) {
+                best = Some((d, *r, start + t * len2.sqrt()));
+            }
+        }
+        best.filter(|b| b.0 <= scale * 1e-7 + 1e-6).map(|b| (b.1, b.2))
+    };
+    // The edges of each object, by where their ends are, with how often each is used and
+    // which way it runs in the triangle that uses it once.
+    let mut count: HashMap<EdgeKey, EdgeUse> = HashMap::new();
+    for t in &mesh.tris {
+        for k in 0..3 {
+            let (a, b) = (mesh.positions[t.v[k] as usize], mesh.positions[t.v[(k + 1) % 3] as usize]);
+            let (ka, kb) = (key(a), key(b));
+            if ka == kb {
+                continue;
+            }
+            let e = if ka < kb { (t.object, ka, kb) } else { (t.object, kb, ka) };
+            let slot = count.entry(e).or_insert((0, a, b, t.material));
+            slot.0 += 1;
+        }
+    }
+    // The open edges on the curtain, turned round: the wall runs the other way.
+    let mut next: HashMap<(u32, [i64; 3]), Vec<EdgeNext>> = HashMap::new();
+    for ((object, _, _), (n, a, b, material)) in &count {
+        if *n != 1 {
+            continue;
+        }
+        let (Some(_), Some(_)) = (on_boundary(*a), on_boundary(*b)) else { continue };
+        // The wall goes from b to a.
+        next.entry((*object, key(*b))).or_default().push((key(*a), *b, *a, *material));
+    }
+    let mut used: HashSet<(u32, [i64; 3], [i64; 3])> = HashSet::new();
+    let mut walls = 0usize;
+    let starts: Vec<(u32, [i64; 3])> = next.keys().copied().collect();
+    for start in starts {
+        let Some(list) = next.get(&start).cloned() else { continue };
+        for first in list {
+            if used.contains(&(start.0, start.1, first.0)) {
+                continue;
+            }
+            // Follow the open edges round to where they began.
+            let object = start.0;
+            let material = first.3;
+            let mut ring: Vec<[f64; 3]> = vec![first.1];
+            used.insert((object, start.1, first.0));
+            let mut at = first.0;
+            let mut last = first.2;
+            let mut closed = false;
+            for _ in 0..100_000 {
+                if at == start.1 {
+                    closed = true;
+                    break;
+                }
+                ring.push(last);
+                let Some(cands) = next.get(&(object, at)) else { break };
+                let Some(step) = cands.iter().find(|c| !used.contains(&(object, at, c.0))) else { break };
+                used.insert((object, at, step.0));
+                at = step.0;
+                last = step.2;
+            }
+            if !closed || ring.len() < 3 {
+                continue;
+            }
+            // Laid out flat along the boundary: how far along, and the height.
+            let placed: Vec<Option<(usize, f64)>> = ring.iter().map(|p| on_boundary(*p)).collect();
+            let Some(r) = placed.first().copied().flatten().map(|p| p.0) else { continue };
+            let total = ring_len[r];
+            let base = placed[0].map_or(0.0, |p| p.1);
+            let flat: Vec<[f64; 3]> = ring
+                .iter()
+                .zip(&placed)
+                .map(|(p, at)| {
+                    let mut s = at.map_or(base, |a| a.1) - base;
+                    // Round the ring of the boundary the short way.
+                    if s > total / 2.0 {
+                        s -= total;
+                    } else if s < -total / 2.0 {
+                        s += total;
+                    }
+                    [s, p[2], 0.0]
+                })
+                .collect();
+            let tris = crate::mesh::triangulate(&flat);
+            if tris.is_empty() {
+                continue;
+            }
+            let first_index = mesh.positions.len() as u32;
+            mesh.positions.extend(ring.iter().copied());
+            for t in tris {
+                mesh.tris.push(Tri { v: t.map(|i| first_index + i as u32), n: [NONE; 3], t: [NONE; 3], material, object });
+            }
+            walls += 1;
+        }
+    }
+    walls
+}
+
+/// An edge of an object by the object and its two ends, rounded.
+type EdgeKey = (u32, [i64; 3], [i64; 3]);
+/// How often an edge is used, its ends as they run in the triangle, and the triangle's object.
+type EdgeUse = (u32, [f64; 3], [f64; 3], u32);
+/// The far end of an open edge, rounded, its two ends and the object.
+type EdgeNext = ([i64; 3], [f64; 3], [f64; 3], u32);
+
+#[cfg(test)]
+mod close_tests {
+    use super::*;
+
+    /// A box cut in two by an area is closed again on each side, so that every edge is used
+    /// twice.
+    #[test]
+    fn a_box_cut_in_two_is_closed_on_both_sides() {
+        // A box of 10 × 10 × 5, as eight corners and twelve triangles facing out.
+        let p = |x: f64, y: f64, z: f64| [x, y, z];
+        let positions = vec![p(0., 0., 0.), p(10., 0., 0.), p(10., 10., 0.), p(0., 10., 0.), p(0., 0., 5.), p(10., 0., 5.), p(10., 10., 5.), p(0., 10., 5.)];
+        let faces: [[u32; 3]; 12] =
+            [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];
+        let mesh = Mesh {
+            positions,
+            tris: faces.iter().map(|v| Tri { v: *v, n: [NONE; 3], t: [NONE; 3], material: 0, object: 0 }).collect(),
+            materials: vec![Default::default()],
+            objects: vec!["box".into()],
+            ..Default::default()
+        };
+        let area = geo::Geometry::Polygon(Polygon::new(LineString::from(vec![(-5.0, -5.0), (4.0, -5.0), (4.0, 15.0), (-5.0, 15.0), (-5.0, -5.0)]), vec![]));
+        let clipper = Clipper::new(std::iter::once(&area)).unwrap();
+        let (mut inside, mut outside) = clip_mesh(&mesh, &clipper);
+        let open = |m: &Mesh| -> usize {
+            let key = |p: [f64; 3]| [(p[0] * 1e5).round() as i64, (p[1] * 1e5).round() as i64, (p[2] * 1e5).round() as i64];
+            let mut n: HashMap<([i64; 3], [i64; 3]), usize> = HashMap::new();
+            for t in &m.tris {
+                for k in 0..3 {
+                    let (a, b) = (key(m.positions[t.v[k] as usize]), key(m.positions[t.v[(k + 1) % 3] as usize]));
+                    *n.entry(if a < b { (a, b) } else { (b, a) }).or_default() += 1;
+                }
+            }
+            n.values().filter(|c| **c == 1).count()
+        };
+        assert!(open(&inside) > 0, "the cut leaves the box open");
+        assert_eq!(close_cut(&mut inside, &clipper), 1);
+        assert_eq!(close_cut(&mut outside, &clipper), 1);
+        assert_eq!(open(&inside), 0, "closed inside");
+        assert_eq!(open(&outside), 0, "closed outside");
+    }
+}

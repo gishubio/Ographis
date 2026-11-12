@@ -146,6 +146,8 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("ValueMapper", "default") => param("otherwise").as_deref() == Some("text"),
             ("TerrainAnalyzer", "radius") => param("measure").as_deref() == Some("tpi"),
             ("CustomTool", "each_by") => param("loop").as_deref() == Some("each"),
+            ("JsonBuilder", "gather_by") => param("gather").as_deref() == Some("group"),
+            ("JsonBuilder", "list_name") => param("gather").is_some_and(|g| g != "each"),
             ("StringConcatenator", "fixed") => node.params.get("attributes").is_some_and(|v| match v {
                 serde_json::Value::Array(a) => a.iter().any(|x| x.as_str().is_some_and(|t| t.trim().starts_with('\''))),
                 serde_json::Value::String(t) => t.contains('\''),
@@ -167,8 +169,10 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("SceneRenderer", "sun_azimuth" | "sun_altitude") => !matches!(param("sun").as_deref(), Some("date" | "study")),
             ("SceneRenderer", "study_dates" | "study_from" | "study_to" | "study_every" | "study_folder") => param("sun").as_deref() == Some("study"),
             ("SceneRenderer", "background_colour") => param("background").as_deref() == Some("colour"),
+            ("SceneRenderer", "elevation" | "projection" | "fov") => param("camera").is_none_or(|c| c.is_empty()),
             ("MapRenderer", "width") => param("size_as").as_deref() != Some("print"),
             ("MapRenderer", "grid_every") => !matches!(param("grid").as_deref(), None | Some("none") | Some("")),
+            ("MapRenderer", "overview_size" | "overview_zoom") => !matches!(param("overview").as_deref(), None | Some("none") | Some("")),
             ("MapRenderer", "print_mm" | "print_dpi") => param("size_as").as_deref() == Some("print"),
             ("MapRenderer", "background_colour") => param("background").as_deref() == Some("colour"),
             ("MapRenderer", "basemap") => param("background").as_deref() == Some("map"),
@@ -185,6 +189,11 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("LayeredPdfWriter", "pdf_width" | "pdf_height") => param("pdf_size").as_deref() == Some("custom"),
             ("QgisProjectWriter" | "WebMapWriter", "basemap_own") => param("basemap").as_deref() == Some("own"),
             ("SceneRenderer", "focus") => param("blur").is_some_and(|b| b.trim().parse::<f64>().is_ok_and(|v| v > 0.0)),
+            // Ready rules of the road take the place of the conditions and speeds of one's own.
+            ("ShortestRoute" | "ServiceAreas" | "NetworkAllocation" | "LocationChooser", "mode" | "avoid") => param("rules").is_some_and(|r| r != "own"),
+            ("ShortestRoute" | "ServiceAreas" | "NetworkAllocation" | "LocationChooser", "speed" | "speed_against" | "along" | "against") => {
+                param("rules").is_none_or(|r| r == "own")
+            }
             ("HttpCaller", "folder") => param("answer_as").as_deref() == Some("file"),
             ("SpatialJoiner", "distance") => param("relation").as_deref() == Some("near"),
             ("SpatialJoiner", "numbers" | "count") => param("mode").as_deref() == Some("summary"),
@@ -242,7 +251,9 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
     }
     let ext = format_of(node, folder);
     let text = matches!(ext.as_str(), "csv" | "txt" | "tsv");
-    let sheets = is_spreadsheet(&ext);
+    // A Google sheet has sheets, as a workbook does.
+    let google = og_engine::gsheets::is_sheet(path) || node.params.get("format").and_then(|v| v.as_str()) == Some("gsheet");
+    let sheets = is_spreadsheet(&ext) || google;
     let layered = has_layers || sheets || matches!(ext.as_str(), "gpkg" | "gdb" | "sqlite" | "db");
     let filled = |key: &str| node.params.get(key).and_then(|v| v.as_str()).is_some_and(|v| !v.trim().is_empty());
     // A picture has neither attributes nor anything to add to.
@@ -259,7 +270,16 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         "pdf_quality" => writer && ext == "pdf" && node.params.get("pdf_compress").and_then(|v| v.as_str()) == Some("jpeg"),
         "pm_min" | "pm_max" => writer && ext == "pmtiles",
         "gpkg_version" => writer && ext == "gpkg",
-        "geojson_crs" => writer && matches!(ext.as_str(), "geojson" | "json"),
+        "geojson_crs" => writer && (ext == "geojson" || (ext == "json" && node.params.get("format").and_then(|v| v.as_str()) != Some("json"))),
+        "json_shape" | "json_geometry" => writer && node.params.get("format").and_then(|v| v.as_str()) == Some("json"),
+        "xml_root" | "xml_row" | "xml_geometry" => writer && ext == "xml" && node.params.get("format").and_then(|v| v.as_str()) != Some("landxml"),
+        "schema_files" => writer && matches!(ext.as_str(), "geojson" | "json"),
+        "connection" if writer => node.params.get("format").and_then(|v| v.as_str()) == Some("gsheet") || og_engine::gsheets::is_sheet(path),
+        "json_list_name" => {
+            writer
+                && node.params.get("format").and_then(|v| v.as_str()) == Some("json")
+                && node.params.get("json_shape").and_then(|v| v.as_str()).is_none_or(|s| s == "list")
+        }
         "img_dpi" => writer && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "tif" | "tiff"),
         "img_quality" => {
             writer
@@ -269,7 +289,8 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         "tif_compress" => writer && matches!(ext.as_str(), "tif" | "tiff"),
         "t3_most" | "t3_dz" => writer && node.params.get("format").and_then(|v| v.as_str()) == Some("3dtiles"),
         "citygml_lod" => writer && ext == "gml",
-        "gltf_origin" => writer && matches!(ext.as_str(), "glb" | "obj"),
+        "gltf_origin" => writer && matches!(ext.as_str(), "glb" | "obj" | "usda" | "usdz" | "ply" | "spz"),
+        "usd_layers" | "usd_variants" => writer && matches!(ext.as_str(), "usda" | "usdz"),
         "gltf_name" | "gltf_group" | "gltf_material" | "gltf_georef" | "gltf_sun" => writer && ext == "glb",
         "gltf_when" => writer && ext == "glb" && matches!(node.params.get("gltf_sun").and_then(|v| v.as_str()), Some("sun" | "both")),
         "key" => writer && ext == "gpkg",
@@ -293,17 +314,19 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         "las_classes" | "las_spacing" => reader && matches!(ext.as_str(), "las" | "laz"),
         "las_every" => reader && matches!(ext.as_str(), "las" | "laz" | "e57"),
         "obj_unit" | "obj_up" => reader && matches!(ext.as_str(), "obj" | "gltf" | "glb"),
-        "obj_east" | "obj_north" | "obj_height" | "obj_rotation" => reader && matches!(ext.as_str(), "obj" | "gltf" | "glb" | "ifc"),
+        "obj_east" | "obj_north" | "obj_height" | "obj_rotation" => reader && matches!(ext.as_str(), "obj" | "gltf" | "glb" | "ifc" | "ply" | "spz"),
+        "splat_scale" => reader && matches!(ext.as_str(), "ply" | "spz"),
+        "splat_up" => matches!(ext.as_str(), "ply" | "spz"),
         "ifc_openings" | "ifc_spaces" | "ifc_properties" => reader && ext == "ifc",
         "dxf_blocks" | "dxf_closed" => reader && matches!(ext.as_str(), "dxf" | "dwg"),
         "city_lod" => {
             reader && matches!(ext.as_str(), "gml" | "xml" | "json" | "jsonl") && og_engine::citymodel::is_city_path(&base.join(path).to_string_lossy())
         }
         // A file on the web may say what it is only when it has been fetched.
-        "json_records" | "json_nested" => reader && (matches!(ext.as_str(), "json" | "ndjson" | "jsonl") || web),
+        "json_records" | "json_nested" => reader && (matches!(ext.as_str(), "json" | "ndjson" | "jsonl" | "xml") || web),
         "cell_size" => reader && og_engine::io::is_raster(&ext) && node.params.get("raster_as").and_then(|v| v.as_str()) == Some("grid"),
         "step" => reader && og_engine::io::is_cube(&ext) && matches!(node.params.get("raster_as").and_then(|v| v.as_str()), Some("grid" | "image")),
-        "layer" => layered || (writer && ext == "pmtiles") || (reader && og_engine::io::is_cube(&ext)),
+        "layer" => layered || (writer && ext == "pmtiles") || (reader && (og_engine::io::is_cube(&ext) || ext == "xml")),
         "layer_attr" => layered,
         "header" => sheets,
         "encoding" => text || ext == "shp",
@@ -533,7 +556,9 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
         .filter(|s| relevant(node, s, folder, !layers.is_empty(), cx.base_dir))
         .filter(|s| !(node.kind == "Reader" && s.key == "path_attribute") || paths_in())
         .collect();
-    let sheets = is_spreadsheet(&format_of(node, folder));
+    let sheets = is_spreadsheet(&format_of(node, folder))
+        || node.params.get("path").and_then(|v| v.as_str()).is_some_and(og_engine::gsheets::is_sheet)
+        || node.params.get("format").and_then(|v| v.as_str()) == Some("gsheet");
     let what = if node.kind == "PostgisReader" {
         "tables"
     } else if sheets {
@@ -1173,7 +1198,8 @@ fn is_more(kind: &str, key: &str) -> bool {
                 | "t3_most"
                 | "t3_dz"
         ),
-        "MapRenderer" => matches!(key, "margin" | "background_fade" | "grid_every"),
+        "MapRenderer" => matches!(key, "margin" | "background_fade" | "grid_every" | "overview_size" | "overview_zoom"),
+        "SceneRenderer" => matches!(key, "tree_height" | "tree_height_by" | "tree_kind" | "tree_kind_by"),
         _ => false,
     }
 }

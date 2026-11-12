@@ -3,6 +3,132 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.96.2
+
+Faster on many cores, XML and LandXML, IFC checked against IDS, Gaussian splats, real
+places for game engines, OpenUSD, ready rules of the road, and smaller things for
+databases, 3D and web developers, before 0.97.
+
+**Faster**
+
+- *Dissolve* spreads its work over the cores, also when there are only a few groups: the
+  largest groups go first, and a group of more than 128 areas is merged in pieces of
+  neighbours, one on each core, that are then joined two by two along their seams. Areas
+  that stay apart find what they were made of by their boxes first, which was the slow
+  part with many parts.
+- *Buffer*, *Clip*, *Intersect* and *Join by location* work feature by feature on every
+  core.
+
+**XML and LandXML**
+
+- Input reads **XML** as records, as JSON is: the elements that come again become
+  features, found by themselves or at a path, with elements within elements as adress.ort.
+- **Extract XML values** is a new tool: values out of XML in an attribute, by their paths.
+- Output writes **XML**: an element for each feature and for each attribute.
+- Input reads **LandXML**: surfaces as triangles, points and alignments with their arcs,
+  each a layer. Output writes a TIN and points as LandXML.
+
+**IFC**
+
+- **Check against IDS** is a new tool: the objects of an IFC model checked against an
+  Information Delivery Specification, by class, attributes, property sets, material and
+  storey, with what each object lacks.
+- *Outline from above* has a setting to show the cut in 3D or not.
+
+**Routes on roads**
+
+- *Shortest route*, *Service areas*, *Choose locations* and *Allocate to nearest* have ready
+  **rules of the road** for OpenStreetMap and NVDB: one-way streets, roundabouts, speed
+  limits and the roads that may be used by car, by bicycle or on foot, without conditions
+  written by hand. Motorways, ferries, gravel roads and tolls can be kept away from.
+
+**3D for other programs**
+
+- **Real place for a game engine** is a new tool: a heightmap of 16 bits in the sizes of
+  Unreal Engine, Unity and Godot, masks for forest, water, roads and fields, positions of
+  trees, poles and houses to place as instances, and the roads as splines, with a file that
+  says how to import them.
+- Output writes **OpenUSD**, .usda and .usdz, with a layer for each value of an attribute,
+  variants by another, and the coordinate system and origin in its metadata, for Houdini,
+  Blender, NVIDIA Omniverse and the viewers of Apple.
+
+**Gaussian splats**
+
+- Input reads **Gaussian splats** from PLY and SPZ, and places them on the map, such as in
+  SWEREF 99, by the axis that points up, a scale, an origin and a turn. Output writes them.
+- The **3D view draws splats**, soft and in their colours, also with buildings and other
+  map data in a View.
+- **Make Gaussian splats** is a new tool: a point cloud from a scanner or a drone made
+  splats, flat along the surfaces.
+- Input reads a **PLY of points**, as scanners and drones give.
+
+**Web**
+
+- *HTTP request* can **write every request to a text file**: when, where, what came back
+  and how long it took, for documentation and to look back on.
+
+**Databases**
+
+- Output to PostGIS writes **comments** on the table and its columns (COMMENT ON).
+- Input from PostGIS reads **only the columns** named, so that a wide table is read faster.
+
+**More**
+
+- **Clip** closes a 3D model cut by the edge with a new wall along it.
+- Output writes a **JSON Schema and TypeScript types** beside GeoJSON and JSON.
+- A **start folder** in Settings, where Open and Save as begin.
+
+## 0.96.1
+
+Maps and 3D for the examples of 1.0, JSON and Google Sheets, before 0.97 takes on more CAD
+and BIM.
+
+**Draw map**
+
+- **Ready styles** for the whole map: Light, Dark, Old topographic and Print in black and
+  white. The colours of the layers, the labels and the rasters are made to fit, each layer
+  keeping its own hue, and a background of a colour gets the paper of the style.
+- **Patterns** over the fill of areas: hatched, cross-hatched, lines, squares or dots, in the
+  colour of the line or one of their own, also in the legend and as lines in a PDF.
+- An **opacity** for each layer, so that a background map or relief shows through.
+- An **overview map** in a corner, with the map as a red frame: of what is connected to the
+  new port *Overview*, such as the outline of the county, or of the map seen from further
+  away, with its background map.
+
+**Render 3D scene**
+
+- **Ready places for the camera**: bird's eye, axonometric or straight down.
+- **Roofs by their kind** from an attribute, such as roof_type of LoD2 buildings: flat,
+  gable, hipped, shed and mansard, in English or Swedish, or a colour of their own.
+- **Trees** on the points on the new port *Trees*: leafy with a round crown, or conifers as
+  cones by an attribute with words such as gran, tall or barr, standing on the terrain.
+
+**Outline from above**
+
+- In 3D the node shows the model that comes in, with the height of the cut as a
+  see-through plane.
+
+**JSON**
+
+- **JSON** is a format of Output: a list of objects, JSON Lines or one object, names with a
+  dot as objects within objects, JSON in attributes as JSON, and the geometry as GeoJSON or
+  WKT if asked.
+- *Build JSON* gathers features into **lists**: one of all of them, or one for each value of
+  an attribute, such as the rooms of each storey.
+
+**Google Sheets**
+
+- Input reads a **Google sheet** by its address: one shared with a link at once, and a
+  private one through an API connection of the new kind *A Google service account*, whose
+  key file is read in Settings.
+- Output writes to a Google sheet, over what is there or after it, and adds the sheet when
+  it is not there.
+
+**Changed**
+
+- `CONTRIBUTING.md` and `AGENTS.md` say that Ographis is described in its own words, without
+  comparing it with other ETL programs.
+
 ## 0.96
 
 Tools of your own made of other tools, variables that are asked for, no data that vanishes

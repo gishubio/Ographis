@@ -26,6 +26,9 @@ pub struct Cloud {
     pub rgb: Option<Vec<[u8; 3]>>,
     /// Further attributes, such as the height above ground, a value for each point.
     pub extra: Vec<(Field, Vec<Value>)>,
+    /// The Gaussian splats the points are the middles of, when the cloud is a scene of
+    /// splats: the size, turn, opacity and colour of each.
+    pub splat: Option<crate::splats::Splats>,
 }
 
 /// The names of the columns every cloud has, in order.
@@ -57,12 +60,14 @@ impl Cloud {
             rets: Vec::with_capacity(n),
             rgb: colour.then(|| Vec::with_capacity(n)),
             extra: Vec::new(),
+            splat: None,
         }
     }
 
     /// The bytes the cloud takes in memory, roughly.
     pub fn bytes(&self) -> usize {
         self.len() * (3 * 8 + 1 + 2 + 2 + self.rgb.as_ref().map_or(0, |_| 3) + self.extra.len() * std::mem::size_of::<Value>())
+            + self.splat.as_ref().map_or(0, |s| s.bytes())
     }
 
     /// The fields that name the columns, as a stream of features would have them.
@@ -129,11 +134,19 @@ impl Cloud {
         for ((_, a), (_, b)) in self.extra.iter_mut().zip(&other.extra) {
             a.push(b[i].clone());
         }
+        if let (Some(a), Some(b)) = (&mut self.splat, &other.splat) {
+            a.push_from(b, i);
+        }
     }
 
     /// An empty cloud with the same columns.
     pub fn like(&self) -> Cloud {
-        Cloud { rgb: self.rgb.as_ref().map(|_| Vec::new()), extra: self.extra.iter().map(|(f, _)| (f.clone(), Vec::new())).collect(), ..Default::default() }
+        Cloud {
+            rgb: self.rgb.as_ref().map(|_| Vec::new()),
+            extra: self.extra.iter().map(|(f, _)| (f.clone(), Vec::new())).collect(),
+            splat: self.splat.as_ref().map(|s| s.like()),
+            ..Default::default()
+        }
     }
 
     /// The points for which `keep` says true, and those for which it says false.
@@ -168,6 +181,13 @@ impl Cloud {
         }
         if self.rgb.is_some() && other.rgb.is_none() {
             self.rgb = None;
+        }
+        // Splats stay splats only when both are; points among them would have no size.
+        match (&mut self.splat, &other.splat) {
+            (Some(a), Some(b)) => a.append(b),
+            (Some(_), None) => self.splat = None,
+            (None, Some(b)) if n == 0 => self.splat = Some(b.clone()),
+            _ => {}
         }
         self.x.extend_from_slice(&other.x);
         self.y.extend_from_slice(&other.y);
@@ -378,6 +398,7 @@ pub fn takes_clouds(kind: &str) -> bool {
             | "BuildingHeights"
             | "Lod2Builder"
             | "Reprojector"
+            | "SplatMaker"
     )
 }
 

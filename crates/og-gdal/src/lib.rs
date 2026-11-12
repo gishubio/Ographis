@@ -632,8 +632,36 @@ pub(crate) fn read_layer<L: LayerAccess>(layer: &mut L, opts: &ReadOpts, notes: 
         };
         layer.set_spatial_filter_rect(r[0], r[1], r[2], r[3]);
     }
-    let defs: Vec<(String, OGRFieldType::Type)> = layer.defn().fields().map(|f| (f.name(), f.field_type())).collect();
-    let mut fields: Vec<Field> = defs.iter().map(|(n, t)| Field::new(n.clone(), field_type(*t))).collect();
+    if let Some(w) = opts.filter.as_deref().filter(|w| !w.trim().is_empty()) {
+        layer.set_attribute_filter(w).map_err(|e| gerr(format!("The condition {} could not be used", w), e))?;
+    }
+    let all: Vec<(String, OGRFieldType::Type)> = layer.defn().fields().map(|f| (f.name(), f.field_type())).collect();
+    // Only the columns asked for: GDAL is told to leave the others, and a database then
+    // does not send them.
+    let wanted: Vec<usize> = match &opts.columns {
+        Some(cols) => {
+            let missing: Vec<&String> = cols.iter().filter(|c| !all.iter().any(|(n, _)| n.eq_ignore_ascii_case(c))).collect();
+            if !missing.is_empty() {
+                return Err(GbError(format!(
+                    "There is no column {} here. There are: {}.",
+                    missing.iter().map(|m| m.as_str()).collect::<Vec<_>>().join(", "),
+                    all.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(", ")
+                )));
+            }
+            let ignored: Vec<CString> =
+                all.iter().filter(|(n, _)| !cols.iter().any(|c| c.eq_ignore_ascii_case(n))).filter_map(|(n, _)| CString::new(n.as_str()).ok()).collect();
+            let mut ptrs: Vec<*const std::ffi::c_char> = ignored.iter().map(|c| c.as_ptr()).collect();
+            ptrs.push(std::ptr::null());
+            // SAFETY: the layer is valid, and the names live until the call returns.
+            unsafe {
+                gdal_sys::OGR_L_SetIgnoredFields(layer.c_layer(), ptrs.as_mut_ptr());
+            }
+            (0..all.len()).filter(|i| cols.iter().any(|c| c.eq_ignore_ascii_case(&all[*i].0))).collect()
+        }
+        None => (0..all.len()).collect(),
+    };
+    let defs: Vec<(usize, String, OGRFieldType::Type)> = wanted.iter().map(|i| (*i, all[*i].0.clone(), all[*i].1)).collect();
+    let mut fields: Vec<Field> = defs.iter().map(|(_, n, t)| Field::new(n.clone(), field_type(*t))).collect();
     // A key column of its own name, as when an attribute was made the primary key, is read
     // as the first attribute. The usual fid and ogc_fid are only the numbers of the rows.
     // SAFETY: the layer is valid, and GDAL owns the name it hands back.
@@ -647,7 +675,7 @@ pub(crate) fn read_layer<L: LayerAccess>(layer: &mut L, opts: &ReadOpts, notes: 
     };
     let own_key = !key_column.is_empty()
         && !["fid", "ogc_fid", "objectid", "rowid"].iter().any(|k| key_column.eq_ignore_ascii_case(k))
-        && !defs.iter().any(|(n, _)| n.eq_ignore_ascii_case(&key_column));
+        && !all.iter().any(|(n, _)| n.eq_ignore_ascii_case(&key_column));
     if own_key {
         fields.insert(0, Field::new(key_column.clone(), FieldType::Int));
     }
@@ -668,14 +696,15 @@ pub(crate) fn read_layer<L: LayerAccess>(layer: &mut L, opts: &ReadOpts, notes: 
             attrs.push(f.fid().map_or(Value::Null, |v| Value::Int(v as i64)));
         }
         let shift = own_key as usize;
-        for i in 0..defs.len() {
+        for (k, (i, _, kind)) in defs.iter().enumerate() {
+            let i = *i;
             // Some formats, Excel among them, leave an empty value unset instead of null.
             // The binding only looks for null, and would hand back 0 or an empty text.
             let set = unsafe { gdal_sys::OGR_F_IsFieldSetAndNotNull(f.c_feature(), i as std::ffi::c_int) } != 0;
             // A time of day, as in GTFS, and the lists the binding has no value for are read
             // as the text GDAL gives them.
             let as_text = matches!(
-                defs[i].1,
+                *kind,
                 OGRFieldType::OFTTime | OGRFieldType::OFTIntegerList | OGRFieldType::OFTInteger64List | OGRFieldType::OFTRealList | OGRFieldType::OFTStringList
             );
             let read = if !set {
@@ -701,7 +730,7 @@ pub(crate) fn read_layer<L: LayerAccess>(layer: &mut L, opts: &ReadOpts, notes: 
                 Some(FieldValue::DateTimeValue(d)) => Value::Text(d.format("%Y-%m-%d %H:%M:%S").to_string()),
                 Some(_) => f.field_as_string(i).ok().flatten().map(Value::Text).unwrap_or(Value::Null),
             };
-            attrs.push(coerce(v, fields[i + shift].ty));
+            attrs.push(coerce(v, fields[k + shift].ty));
         }
         let (geom, z) = match f.geometry().filter(|_| has_geom_column) {
             Some(g) => {

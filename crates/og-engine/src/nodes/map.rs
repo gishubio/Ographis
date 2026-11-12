@@ -58,6 +58,13 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
         default: "300",
         hint: "300 for print, 150 for a draft. Lines, points and labels keep the size they have on the screen, measured on paper, and the picture tells Output its resolution",
     },
+    ParamSpec {
+        key: "map_style",
+        label: "Style",
+        kind: ParamKind::Choice(crate::mapdraw::MAP_STYLES),
+        default: "",
+        hint: "A ready look for the whole map: the colours of the layers are made to fit it, each layer keeping its own hue, and a background of a colour gets the paper of the style",
+    },
     ParamSpec { key: "margin", label: "Margin in %", kind: ParamKind::Text, default: "5", hint: "Room around the features, as a share of the larger side" },
     ParamSpec { key: "background", label: "Background", kind: ParamKind::Choice(MAP_BACKGROUNDS), default: "#ffffff", hint: "" },
     ParamSpec { key: "background_colour", label: "Colour", kind: ParamKind::Text, default: "#e8eef2", hint: "Such as #e8eef2, or with opacity as #e8eef280" },
@@ -127,6 +134,27 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
         hint: "In the units of the map, such as 1000 for every km in SWEREF 99 TM. Empty gives a round number by the size",
     },
     ParamSpec {
+        key: "overview",
+        label: "Overview map",
+        kind: ParamKind::Choice(LEGEND_PLACES),
+        default: "none",
+        hint: "A small map in a corner that shows where the map lies, with the map as a red frame: what is connected to Overview, such as the outline of the county, or else the lines and areas of the map seen from further away",
+    },
+    ParamSpec {
+        key: "overview_size",
+        label: "Overview width in %",
+        kind: ParamKind::Text,
+        default: "25",
+        hint: "Of the width of the map",
+    },
+    ParamSpec {
+        key: "overview_zoom",
+        label: "Overview reaches",
+        kind: ParamKind::Text,
+        default: "5",
+        hint: "How many times wider than the map, when nothing is connected to Overview",
+    },
+    ParamSpec {
         key: "source",
         label: "Source",
         kind: ParamKind::Text,
@@ -191,6 +219,19 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
             }
             if let Some(w) = r.get("casing_width").and_then(|v| v.as_f64()) {
                 style.casing_width = w.clamp(0.0, 50.0) as f32;
+            }
+            if let Some(p) = r.get("pattern").and_then(|v| v.as_str()) {
+                style.pattern = p.to_string();
+            }
+            if let Some(Ok(c)) = color("pattern_colour") {
+                style.pattern_colour = c;
+            }
+            if let Some(w) = r.get("pattern_every").and_then(|v| v.as_f64()) {
+                style.pattern_every = w.clamp(2.0, 200.0) as f32;
+            }
+            // One opacity for the layer, whether it is drawn as features or as a raster.
+            if let Some(o) = r.get("opacity").and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(crate::model::parse_number))) {
+                style.opacity = (o / 100.0).clamp(0.0, 1.0) as f32;
             }
             let show = r.get("show").and_then(|v| v.as_bool()).unwrap_or(true);
             let name = r.get("name").and_then(|v| v.as_str()).map(str::to_string).unwrap_or_default();
@@ -285,6 +326,13 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                 if r.style.casing.is_some() {
                     o["casing"] = serde_json::json!(crate::mapdraw::color_text(r.style.casing));
                     o["casing_width"] = serde_json::json!(r.style.casing_width);
+                }
+                if !r.style.pattern.is_empty() {
+                    o["pattern"] = serde_json::json!(r.style.pattern);
+                    o["pattern_every"] = serde_json::json!(r.style.pattern_every);
+                    if r.style.pattern_colour.is_some() {
+                        o["pattern_colour"] = serde_json::json!(crate::mapdraw::color_text(r.style.pattern_colour));
+                    }
                 }
                 let t = &r.theme;
                 let mut put = |k: &str, v: serde_json::Value| {
@@ -390,8 +438,10 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                     o["raster_colors"] =
                         serde_json::json!(ra.colors.iter().map(|(v, c, l)| if l.is_empty() { vec![v, c] } else { vec![v, c, l] }).collect::<Vec<_>>());
                 }
-                if ra.opacity < 1.0 {
-                    o["opacity"] = serde_json::json!((ra.opacity * 100.0).round());
+                // The opacity of the layer, as the form has it for features or a raster.
+                let opacity = ra.opacity.min(r.style.opacity);
+                if opacity < 1.0 {
+                    o["opacity"] = serde_json::json!((opacity * 100.0).round());
                 }
                 o
             })
@@ -419,7 +469,7 @@ pub fn arrange_layers(stored: &[MapLayer], connected: &[String]) -> Vec<MapLayer
     rows
 }
 
-pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let parts: Vec<Part> = ctx.parts.iter().filter(|x| x.port == "Layers").cloned().collect();
     if parts.is_empty() {
         return err("Connect the streams to draw to Layers. Each connection is a layer.");
@@ -482,6 +532,12 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
         "map" | "picture" => Some([255, 255, 255, 255]),
         c => crate::mapdraw::parse_color(c).map_err(GbError)?,
     };
+    // A ready style gives a background of a colour its paper.
+    let map_style = p.get("map_style").unwrap_or_default();
+    let background = match (chosen.as_str(), crate::mapdraw::style_paper(&map_style)) {
+        ("map" | "picture" | "none", _) | (_, None) => background,
+        (_, Some(paper)) => Some(paper),
+    };
     // The coordinate system of the map: given, or that of the bottom layer that has one.
     let crs = match p.crs("crs")? {
         Some(c) => c,
@@ -506,11 +562,31 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
         }
         rows_drawn.push((part, row));
     }
+    if !map_style.is_empty() {
+        for (_, style) in tables.iter_mut() {
+            *style = style.in_style(&map_style);
+        }
+    }
     // What each layer shows of its values, and the legend from the top layer down.
     let mut themes = Vec::new();
     for ((t, style), (part, row)) in tables.iter().zip(&rows_drawn) {
         let th = crate::thematic::prepare(t, style, &row.theme).map_err(|e| GbError(format!("{}: {}", part.label, e.0)))?;
         themes.push(th);
+    }
+    // The colours of values in the style too.
+    if !map_style.is_empty() {
+        let restyle = |l: &mut crate::thematic::Look| {
+            l.fill = l.fill.map(|c| crate::mapdraw::style_colour(&map_style, c, crate::mapdraw::Role::Area));
+            l.stroke = l.stroke.map(|c| crate::mapdraw::style_colour(&map_style, c, crate::mapdraw::Role::Line));
+        };
+        for th in themes.iter_mut() {
+            th.classes.iter_mut().for_each(|(_, l)| restyle(l));
+            if let Some(ls) = &mut th.looks {
+                ls.iter_mut().for_each(restyle);
+            }
+            th.keys.iter_mut().for_each(|k| restyle(&mut k.look));
+            th.size_keys.iter_mut().for_each(|k| restyle(&mut k.look));
+        }
     }
     // How the layers that carry a raster draw it.
     let mut rasters = Vec::new();
@@ -540,6 +616,12 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
             }
         }
         icons.push(ic);
+    }
+    if !map_style.is_empty() {
+        for lb in labels.iter_mut().flatten() {
+            lb.spec.colour = crate::mapdraw::style_colour(&map_style, lb.spec.colour, crate::mapdraw::Role::Text);
+            lb.spec.halo = lb.spec.halo.map(|c| crate::mapdraw::style_colour(&map_style, c, crate::mapdraw::Role::Halo));
+        }
     }
     let legend = match p.get("legend").as_deref() {
         None | Some("none") => None,
@@ -675,7 +757,55 @@ pub(super) fn run_map(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
         geographic: ctx.geographic(Some(crs)).unwrap_or(false),
     };
     let names = rows_drawn.iter().map(|(part, row)| if row.name.trim().is_empty() { part.label.clone() } else { row.name.trim().to_string() }).collect();
+    // The overview map: its own layer when one is connected, else the map seen from further.
+    let overview = match p.get("overview").as_deref() {
+        None | Some("none") | Some("") => None,
+        Some(corner) => {
+            let share = (number_param(p, "overview_size", "Overview width in %")?.unwrap_or(25.0) / 100.0) as f32;
+            let zoom = number_param(p, "overview_zoom", "Overview reaches")?.unwrap_or(5.0);
+            let mut layers = Vec::new();
+            if let Some(t) = inp.get("Overview").filter(|t| t.has_geometry()) {
+                let t = match t.crs {
+                    Some(c) if c != crs => reproject(t, crs, ctx.backend)?,
+                    _ => (**t).clone(),
+                };
+                let style =
+                    crate::mapdraw::LayerStyle { fill: Some([0xe4, 0xe2, 0xdc, 255]), stroke: Some([0x77, 0x77, 0x77, 255]), width: 0.8, ..Default::default() };
+                layers.push((t, style.in_style(&map_style)));
+            }
+            ctx.notes.info(if layers.is_empty() {
+                format!("an overview map in a corner, {} times wider than the map", crate::model::fmt_real(zoom))
+            } else {
+                "an overview map in a corner, of what is connected to Overview".to_string()
+            });
+            let mut ov = crate::mapdraw::Overview { corner: corner.to_string(), share, zoom, layers, backdrop: None };
+            // The background map of the map, fetched for the overview too.
+            if chosen == "map" && ov.layers.is_empty() {
+                let drawn: Vec<(&Table, crate::mapdraw::LayerStyle)> = tables.iter().map(|(t, s)| (t.as_ref(), s.clone())).collect();
+                let f = crate::mapdraw::frame(&drawn, width, margin)?;
+                let main = [f.b[0], f.b[1], f.b[0] + f.width as f64 * f.px, f.b[1] + f.height as f64 * f.px];
+                let ext = ov.extent(main);
+                let (bw, bh) = ov.size(f.width, f.height, ext);
+                let px = (ext[2] - ext[0]) / bw as f64;
+                let small = crate::mapdraw::Frame { b: [ext[0], ext[3] - bh as f64 * px, ext[2], ext[3]], px, width: bw, height: bh };
+                let which = p.get("basemap").unwrap_or_else(|| "osm".into());
+                let name = if which == "own" { p.get("basemap_own").unwrap_or_default() } else { which };
+                let fade = (number_param(p, "background_fade", "Paler by %")?.unwrap_or(0.0).clamp(0.0, 100.0) / 100.0) as f32;
+                if let (Ok(map), Some(b)) = (crate::basemap::find(&name), ctx.backend) {
+                    let gate = ctx.gate;
+                    match crate::basemap::tiles(&map, &small, crs, b, fade, &|| gate.going()) {
+                        Ok((img, _, _)) => ov.backdrop = Some(img),
+                        Err(e) if e.0 == crate::model::STOPPED => return Err(e),
+                        Err(e) => ctx.notes.warn(format!("The overview map is drawn without its background map: {}", e.0)),
+                    }
+                }
+            }
+            Some(ov)
+        }
+    };
     let req = crate::mapdraw::Request {
+        overview,
+        map_style: map_style.clone(),
         furniture,
         names,
         layers: tables.iter().map(|(t, s)| (t.as_ref(), s.clone())).collect(),
@@ -822,7 +952,7 @@ pub(super) const TYPES: &[NodeType] = &[
         group: Group::Transformer,
         category: "Maps",
         desc: "Draws the streams connected to Layers into a picture with coordinates: each stream a layer with its own colours, in the order you set, with values shown by colour and size, labels, icons for points, and a legend. Write the picture to PNG, JPG, GeoTIFF or PDF with an output.",
-        inputs: &["Layers"],
+        inputs: &["Layers", "Overview"],
         outputs: &["Map"],
         ports: None,
         params: MAP_PARAMS,

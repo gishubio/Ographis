@@ -193,6 +193,37 @@ Why Ographis works as it does, and what it does not do yet.
   every step after it has used it, so that the largest step, not all of them, sets the peak
   of memory. The program keeps everything, to show it.
 
+- **Google Sheets with a service account, not a login.** A service account is a key that
+  is kept as an API connection and shared with the sheet, and works the same in a scheduled
+  run as on the screen. A login with a Google account in the browser would need Ographis to
+  be registered and reviewed by Google. A sheet shared with a link needs neither.
+- **A ready map style changes the colours, not the layers.** Light, Dark, Old topographic
+  and black and white are made from the colours each layer has, so that layers stay apart
+  in every style and the model keeps one set of colours.
+- **.json stays GeoJSON.** A file named .json with the format left to the file name is
+  written as GeoJSON, as before 0.96.1; plain JSON is the format JSON chosen in the list.
+
+- **Heavy vector tools use all the cores.** Dissolve merges its groups at once, and a large
+  group in pieces of neighbours that are then merged two by two; Buffer, Clip, Intersect
+  and Join by location work feature by feature on every core. Reading and writing files
+  still go one after the other.
+- **XML is read as JSON is.** An XML file or text is made into the JSON the JSON tools
+  read, so that records are found, flattened and picked by path in one way for both.
+  Elements that come again are lists, XML attributes values under their names.
+- **IDS is checked against what is read of IFC.** Class, attributes, property sets,
+  material and storey are what an IFC object becomes in Ographis, and the requirements are
+  checked against them; classifications are not read, and are left out with a word in the
+  log rather than counted as missing.
+
+- **Splats are points with more to them.** A scene of Gaussian splats is a point cloud whose
+  points are the middles of the splats, with their size, turn, opacity and colour beside,
+  so that the tools for point clouds filter, thin and reproject them, and the map and the
+  table show them as points. The 3D view draws them soft, from far to near, over the
+  surfaces it has drawn.
+- **Ready rules of the road read the attributes as the data names them.** OpenStreetMap has
+  its tags; NVDB has names that differ between exports, so they are found by a part of
+  their name, and the log says which were used.
+
 ## Known limitations
 
 - GeoParquet: only geometry in WKB is read, not the native GeoArrow encoding. Within a
@@ -538,3 +569,19 @@ Why Ographis works as it does, and what it does not do yet.
   which the format *GeoSpatial PDF with layers* gives, drawn by GDAL.
   The letters in it are outlines, so the text cannot be searched or copied.
 - Names bend along a line letter by letter, without kerning between the letters.
+- Google Sheets is tested against a server on this computer that answers as Google does,
+  not against Google itself. Values are written as they are (RAW), so a formula written as
+  text stays text. The trees of Render 3D scene are simple shapes of a few triangles.
+- The overview map shows its background map only when the map has one; otherwise the lines
+  and areas of the map, or what is connected to Overview.
+- IDS: classifications, predefined types and part-of relations other than the storey are
+  not checked. LandXML: spirals are taken as straight lines between their ends, and
+  alignments are read in plan, without their profiles.
+- Gaussian splats: the colours by the side they are seen from are kept only while the
+  splats are written in the axes they were made in; turned on the map, only the colour of
+  each is kept. The 3D view draws the colour of each and not those by side. SPZ is written
+  as version 2.
+- Rules of the road: turns are not forbidden or allowed one by one, and a route may turn
+  back at a junction.
+- OpenUSD is written, not read. Game engines: the heightmap is square, over the whole
+  terrain model; outside it, the lowest height.

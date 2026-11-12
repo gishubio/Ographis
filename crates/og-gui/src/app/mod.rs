@@ -271,6 +271,8 @@ pub struct App {
     /// The classes of the points of a stream with how many of each, for Filter point cloud,
     /// counted once for each stream.
     pub class_counts: std::cell::RefCell<std::collections::HashMap<usize, Vec<(i64, u64)>>>,
+    /// Scenes of Gaussian splats by the table that shows them, for the 3D view.
+    pub splat_sources: std::cell::RefCell<std::collections::HashMap<usize, Arc<og_engine::cloud::Cloud>>>,
     /// Of a cloud shown by every n-th point: n, and how many points it has.
     pub cloud_totals: std::cell::RefCell<std::collections::HashMap<usize, (usize, usize)>>,
     /// A series of rasters as the map shows it with another row than the first picked: the
@@ -487,6 +489,7 @@ impl App {
             cloud_views: Default::default(),
             class_counts: Default::default(),
             cloud_totals: Default::default(),
+            splat_sources: Default::default(),
             series_views: Default::default(),
             focus_form: 0,
             tab_surrender: 0,
@@ -590,8 +593,19 @@ impl App {
             .and_then(|p| p.parent())
             .filter(|p| !p.as_os_str().is_empty())
             .map(|p| p.to_path_buf())
+            .or_else(|| crate::settings::start_folder(&self.settings))
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    /// Where Open and Save as begin: the start folder when one is set, else the folder of the
+    /// model, or of the model last used when none is open.
+    fn dialog_dir(&self) -> PathBuf {
+        let last = || self.recent.list.first().and_then(|p| p.parent()).filter(|d| d.is_dir()).map(|d| d.to_path_buf());
+        crate::settings::start_folder(&self.settings)
+            .or_else(|| self.path.as_ref().and_then(|p| p.parent()).filter(|d| !d.as_os_str().is_empty()).map(|d| d.to_path_buf()))
+            .or_else(last)
+            .unwrap_or_else(|| self.base_dir())
     }
 
     pub fn load(&mut self, path: &Path) -> Result<(), String> {
@@ -694,7 +708,11 @@ impl App {
     fn save(&mut self, ask: bool) -> bool {
         let path = match (&self.path, ask) {
             (Some(p), false) => Some(p.clone()),
-            _ => rfd::FileDialog::new().set_directory(self.base_dir()).set_file_name("model.ographis").add_filter("Ographis model", &["ographis"]).save_file(),
+            _ => rfd::FileDialog::new()
+                .set_directory(if self.path.is_some() { self.base_dir() } else { self.dialog_dir() })
+                .set_file_name("model.ographis")
+                .add_filter("Ographis model", &["ographis"])
+                .save_file(),
         };
         match path {
             Some(p) => {
@@ -743,7 +761,7 @@ impl App {
     }
 
     fn open_dialog(&mut self) {
-        if let Some(p) = rfd::FileDialog::new().set_directory(self.base_dir()).add_filter("Ographis model", &["ographis", "json"]).pick_file() {
+        if let Some(p) = rfd::FileDialog::new().set_directory(self.dialog_dir()).add_filter("Ographis model", &["ographis", "json"]).pick_file() {
             if let Err(e) = self.load(&p) {
                 self.say(e);
             }

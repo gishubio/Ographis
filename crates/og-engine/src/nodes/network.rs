@@ -17,6 +17,30 @@ pub(super) const P_TO: ParamSpec = ParamSpec {
     default: "nearest",
     hint: "Every one gives a route for each pair, as many as From times To",
 };
+pub(super) const RULES: &[(&str, &str)] = &[("own", "My own, below"), ("osm", "OpenStreetMap"), ("nvdb", "NVDB from Lastkajen")];
+pub(super) const MODES: &[(&str, &str)] = &[("car", "By car"), ("bike", "By bicycle"), ("walk", "On foot")];
+pub(super) const AVOIDS: &[(&str, &str)] = &[("motorway", "Motorways"), ("ferry", "Ferries"), ("unpaved", "Gravel and other unpaved roads"), ("toll", "Tolls")];
+pub(super) const P_RULES: ParamSpec = ParamSpec {
+    key: "rules",
+    label: "Rules of the road",
+    kind: ParamKind::Choice(RULES),
+    default: "own",
+    hint: "Ready rules for OpenStreetMap or NVDB: one-way streets, roundabouts, speed limits and which roads may be used, by how one travels. My own: the conditions and speeds below",
+};
+pub(super) const P_MODE: ParamSpec = ParamSpec {
+    key: "mode",
+    label: "Travelling",
+    kind: ParamKind::Choice(MODES),
+    default: "car",
+    hint: "With ready rules: by car at the speed limits, by bicycle at 18 km/h, on foot at 5 km/h",
+};
+pub(super) const P_AVOID: ParamSpec = ParamSpec {
+    key: "avoid",
+    label: "Keep away from",
+    kind: ParamKind::Picks(AVOIDS),
+    default: "",
+    hint: "With ready rules, these roads are left out of the network",
+};
 pub(super) const P_COST: ParamSpec = ParamSpec { key: "cost", label: "By", kind: ParamKind::Choice(COSTS), default: "length", hint: "" };
 pub(super) const P_SPEED: ParamSpec = ParamSpec {
     key: "speed",
@@ -68,7 +92,8 @@ pub(super) const P_TOLERANCE: ParamSpec = ParamSpec {
     hint: "In metres. Lines are joined where their ends are this close, not where they only cross, as at a bridge",
 };
 
-pub(super) const ROUTE_PARAMS: &[ParamSpec] = &[P_TO, P_COST, P_SPEED, P_SPEED_AGAINST, P_DEFAULT_SPEED, P_ALONG, P_AGAINST, P_SNAP, P_TOLERANCE];
+pub(super) const ROUTE_PARAMS: &[ParamSpec] =
+    &[P_TO, P_RULES, P_MODE, P_AVOID, P_COST, P_SPEED, P_SPEED_AGAINST, P_DEFAULT_SPEED, P_ALONG, P_AGAINST, P_SNAP, P_TOLERANCE];
 
 /// The point a feature stands at: a point, the first of several, or the middle of a line
 /// or an area.
@@ -105,7 +130,7 @@ pub(super) fn network_from(p: &P, net_t: &Table, ctx: &mut NodeCtx) -> Result<(N
     let speed = compile("speed", "The speed")?;
     let speed_back = compile("speed_against", "The speed against the line")?;
     let default_speed_given = number_param(p, "default_speed", "The speed where none is given")?;
-    if time && speed.is_none() {
+    if time && speed.is_none() && p.get("rules").is_none_or(|r| r == "own") {
         // Without a speed of its own, every road is as quick: walking, or a rough guess.
         ctx.notes.info(format!("every road at {} km/h, since no speed is given", fmt_real(default_speed_given.unwrap_or(50.0))));
     }
@@ -135,8 +160,48 @@ pub(super) fn network_from(p: &P, net_t: &Table, ctx: &mut NodeCtx) -> Result<(N
             None => Ok(true),
         }
     };
+    // Ready rules of the road, in place of the conditions and speeds of the form.
+    let rules = p.get("rules").unwrap_or_else(|| "own".into());
+    let mode = crate::road_rules::Mode::of(p.get("mode").as_deref());
+    let avoid = crate::road_rules::Avoid::of(&p.list("avoid"));
+    let nvdb_fields = (rules == "nvdb").then(|| crate::road_rules::NvdbFields::find(&names));
+    if let Some(found) = &nvdb_fields {
+        let (have, missing) = found.found(&names);
+        if have.is_empty() {
+            ctx.notes
+                .warn("None of the attributes of NVDB were found on Network, such as F_Hogst_225 or F_ForbjudenFardriktning, so every road is used both ways.");
+        } else {
+            ctx.notes.info(format!("NVDB attributes: {}", have.join(", ")));
+            if time && found.speed_along.is_none() && mode == crate::road_rules::Mode::Car {
+                ctx.notes.warn(format!("No speed limit was found on Network, so every road is taken at {} km/h.", fmt_real(default_speed)));
+            }
+            if !missing.is_empty() {
+                ctx.notes.info(format!("Not found, and so not used: {}", missing.join(", ")));
+            }
+        }
+    }
+    let other_tags = names.iter().position(|n| n == "other_tags");
+    if rules == "osm" && !names.iter().any(|n| n == "highway") {
+        ctx.notes.warn(
+            "There is no attribute highway on Network, as roads from OpenStreetMap have. Read them with the tool for OpenStreetMap, or choose other rules.",
+        );
+    }
+    let ready = |f: &Feature| -> Option<crate::road_rules::Ways> {
+        let text = |i: usize| f.attrs.get(i).filter(|v| !v.is_null()).map(|v| v.to_text());
+        match rules.as_str() {
+            "osm" => {
+                let extra = other_tags.and_then(text).map(|t| osm_other_tags(&t)).unwrap_or_default();
+                let tag = |k: &str| names.iter().position(|n| n == k).and_then(text).or_else(|| extra.get(k).cloned());
+                Some(crate::road_rules::osm(&tag, mode, avoid))
+            }
+            "nvdb" => Some(crate::road_rules::nvdb(nvdb_fields.as_ref().expect("found"), &text, mode, avoid)),
+            _ => None,
+        }
+    };
+    let per_metre = |kmh: f64| if time { 60.0 / ((if kmh > 0.0 { kmh } else { default_speed }) * 1000.0) } else { 1.0 };
     let mut lines = Vec::new();
     let mut not_lines = 0usize;
+    let mut left_out = 0usize;
     for (i, f) in net_t.features.iter().enumerate() {
         let Some(g) = &f.geom else { continue };
         let ls = lines_of(g);
@@ -144,8 +209,18 @@ pub(super) fn network_from(p: &P, net_t: &Table, ctx: &mut NodeCtx) -> Result<(N
             not_lines += 1;
             continue;
         }
-        let along = if allowed(f, &along_if, i)? { Some(rate(f, &speed, i)?) } else { None };
-        let against = if allowed(f, &against_if, i)? { Some(rate(f, if speed_back.is_some() { &speed_back } else { &speed }, i)?) } else { None };
+        let (along, against) = match ready(f) {
+            Some(w) => {
+                if w.along.is_none() && w.against.is_none() {
+                    left_out += 1;
+                }
+                (w.along.map(per_metre), w.against.map(per_metre))
+            }
+            None => (
+                if allowed(f, &along_if, i)? { Some(rate(f, &speed, i)?) } else { None },
+                if allowed(f, &against_if, i)? { Some(rate(f, if speed_back.is_some() { &speed_back } else { &speed }, i)?) } else { None },
+            ),
+        };
         for l in ls {
             lines.push(NetLine { feature: i, line: l, along, against });
         }
@@ -153,12 +228,50 @@ pub(super) fn network_from(p: &P, net_t: &Table, ctx: &mut NodeCtx) -> Result<(N
     if not_lines > 0 {
         ctx.notes.warn(format!("{} features on Network are not lines and were left out.", fmt_count(not_lines as u64)));
     }
+    if left_out > 0 {
+        let how = match mode {
+            crate::road_rules::Mode::Car => "by car",
+            crate::road_rules::Mode::Bike => "by bicycle",
+            crate::road_rules::Mode::Walk => "on foot",
+        };
+        ctx.notes.info(format!(
+            "{} of {} lines may not be travelled {} or are kept away from, and were left out",
+            fmt_count(left_out as u64),
+            fmt_count(net_t.len() as u64),
+            how
+        ));
+    }
     let net = Network::build(lines, tolerance);
     if net.edges.is_empty() {
         return err("The network has no lines to travel along.");
     }
 
     Ok((net, time))
+}
+
+/// The tags of OpenStreetMap that have no attribute of their own: as JSON, or as GDAL writes
+/// them, "key"=>"value","key"=>"value".
+fn osm_other_tags(text: &str) -> std::collections::HashMap<String, String> {
+    let t = text.trim();
+    if t.starts_with('{') {
+        if let Ok(serde_json::Value::Object(m)) = serde_json::from_str::<serde_json::Value>(t) {
+            return m.into_iter().map(|(k, v)| (k, v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string()))).collect();
+        }
+    }
+    let mut out = std::collections::HashMap::new();
+    let mut rest = t;
+    while let Some(start) = rest.find('"') {
+        let after = &rest[start + 1..];
+        let Some(end) = after.find('"') else { break };
+        let key = &after[..end];
+        let tail = &after[end + 1..];
+        let Some(arrow) = tail.find("=>\"") else { break };
+        let value_part = &tail[arrow + 3..];
+        let Some(vend) = value_part.find('"') else { break };
+        out.insert(key.to_string(), value_part[..vend].to_string());
+        rest = &value_part[vend + 1..];
+    }
+    out
 }
 
 /// The coordinate system of a network, which must be in metres.

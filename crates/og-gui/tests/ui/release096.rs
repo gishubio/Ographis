@@ -322,3 +322,131 @@ fn many_attributes_removed_at_once_keep_the_form_its_width() {
     let list_y = h.get_all_by_value("text").next().unwrap().rect().center().y;
     assert!((name_y - list_y).abs() < 3.0, "the lists are beside the name: {name_y} and {list_y}");
 }
+
+/// Outline from above in 3D shows the model that comes in, with the height of the cut as a
+/// see-through plane.
+#[test]
+fn the_cut_of_outline_from_above_is_a_plane_in_3d() {
+    let dir = example_copy();
+    let data = root().join("crates/og-engine/tests/data");
+    for f in ["house.gltf", "house.bin"] {
+        std::fs::copy(data.join(f), dir.join(f)).unwrap();
+    }
+    std::fs::write(
+        dir.join("cut.json"),
+        r#"{
+      "format": "ographis/1", "name": "Cut",
+      "nodes": [
+        {"id": "house", "type": "Reader", "x": 0, "y": 0, "params": {"path": "house.gltf"}},
+        {"id": "plan", "type": "OutlineFromAbove", "name": "Plan", "x": 300, "y": 0, "params": {"cut": "1.5", "height_from": "absolute"}}
+      ],
+      "edges": [{"from": ["house", "Output"], "to": ["plan", "Input"]}]
+    }"#,
+    )
+    .unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("cut.json")).unwrap();
+    app.map.set_tile_source(NO_TILES);
+    app.quiet = true;
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(6);
+    h.state_mut().run_blocking();
+    h.state_mut().focus_node("plan");
+    h.state_mut().map.three_d = true;
+    settle(&mut h);
+    h.run_steps(4);
+    shot(&mut h, "96-outline-cut-plane");
+    let planes = h.state().map.view3d.planes.clone();
+    assert!(!planes.is_empty(), "a plane for the cut");
+    // In the heights of the model: one plane, at 1.5 m.
+    assert_eq!(planes.len(), 1, "{:?}", planes);
+    assert!((planes[0].0 - 1.5).abs() < 1e-6, "{:?}", planes);
+    // Turned off in the tool: the model alone.
+    h.state_mut().snarl.nodes_mut().find(|n| n.id == "plan").unwrap().params.insert("plane_3d".into(), serde_json::json!("false"));
+    h.run_steps(4);
+    assert!(h.state().map.view3d.planes.is_empty(), "no plane when it is turned off");
+}
+
+/// A start folder in the settings is where a model that is not saved yet reads and writes,
+/// and the settings show it.
+#[test]
+fn a_start_folder_is_where_an_unsaved_model_stands() {
+    let dir = scratch("start-folder");
+    let mut h = empty_app();
+    h.state_mut().settings.other.insert("start_folder".into(), serde_json::json!(dir.to_string_lossy()));
+    h.run_steps(2);
+    assert_eq!(h.state().base_dir(), dir);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Comma);
+    h.run_steps(3);
+    assert!(h.query_by_label("Start folder").is_some());
+    assert!(h.query_by_label(&dir.to_string_lossy()).is_some(), "the folder is shown");
+    shot(&mut h, "96-start-folder");
+    // A folder that is not there counts as none.
+    h.state_mut().settings.other.insert("start_folder".into(), serde_json::json!(dir.join("gone").to_string_lossy()));
+    assert_ne!(h.state().base_dir(), dir.join("gone"));
+}
+
+/// Gaussian splats made from a coloured point cloud are drawn soft in 3D, together with the
+/// buildings of a map in a View.
+#[test]
+fn gaussian_splats_are_seen_in_3d_with_map_data() {
+    let dir = example_copy();
+    // A green hill of points, 40 × 40 m, with a red top, as a drone might give, in its own
+    // axes with z up, placed by the input in SWEREF 99 TM.
+    let mut ply = String::from(
+        "ply\nformat ascii 1.0\nelement vertex 3600\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n",
+    );
+    for i in 0..60 {
+        for j in 0..60 {
+            let (x, y) = (i as f64 * 0.66 - 20.0, j as f64 * 0.66 - 20.0);
+            let z = 8.0 * (-(x * x + y * y) / 150.0).exp();
+            let red = if z > 6.0 { 220 } else { 60 };
+            ply.push_str(&format!("{:.2} {:.2} {:.2} {} {} 60\n", x, y, z, red, 170 - red / 3));
+        }
+    }
+    std::fs::write(dir.join("hill.ply"), ply).unwrap();
+    std::fs::write(dir.join("blocks.csv"), "name;wkt\nHouse;POLYGON ((418290 6472540, 418300 6472540, 418300 6472548, 418290 6472548, 418290 6472540))\n")
+        .unwrap();
+    std::fs::write(
+        dir.join("splats.json"),
+        r#"{
+      "format": "ographis/1", "name": "Splats",
+      "nodes": [
+        {"id": "hill", "type": "Reader", "name": "Hill", "x": 0, "y": 0, "params": {"path": "hill.ply", "splat_up": "z", "obj_east": "418280", "obj_north": "6472530", "obj_height": "80", "crs": "EPSG:3006"}},
+        {"id": "make", "type": "SplatMaker", "name": "Splats", "x": 260, "y": 0, "params": {"size": "1.4"}},
+        {"id": "blocks", "type": "Reader", "name": "Blocks", "x": 0, "y": 160, "params": {"path": "blocks.csv", "crs": "EPSG:3006"}},
+        {"id": "high", "type": "HeightSetter", "name": "Up", "x": 260, "y": 160, "params": {"height": "86"}},
+        {"id": "view", "type": "Viewer", "name": "Together", "x": 520, "y": 60, "params": {}}
+      ],
+      "edges": [{"from": ["hill", "Output"], "to": ["make", "Points"]}, {"from": ["blocks", "Output"], "to": ["high", "Input"]},
+        {"from": ["make", "Splats"], "to": ["view", "Input"]}, {"from": ["high", "Output"], "to": ["view", "Input"]}]
+    }"#,
+    )
+    .unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("splats.json")).unwrap();
+    app.map.set_tile_source(NO_TILES);
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(4);
+    h.state_mut().run_blocking();
+    settle(&mut h);
+    let r = h.state().result.clone().unwrap();
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    // The splats alone.
+    h.state_mut().focus_node("make");
+    settle(&mut h);
+    h.get_by_label("3D").click();
+    h.run_steps(4);
+    let (n, pixels) = h.state().map.view3d.splats_shown();
+    assert_eq!(n, 3600);
+    assert!(pixels > 2000, "the splats cover the hill: {} pixels", pixels);
+    shot(&mut h, "96-splats-in-3d");
+    // With the map data in the View: the splats and the house together.
+    h.state_mut().focus_node("view");
+    settle(&mut h);
+    h.run_steps(4);
+    let (n, pixels) = h.state().map.view3d.splats_shown();
+    assert_eq!(n, 3600, "the splats are drawn among the streams of the View");
+    assert!(pixels > 2000);
+    shot(&mut h, "96-splats-with-map-data");
+}

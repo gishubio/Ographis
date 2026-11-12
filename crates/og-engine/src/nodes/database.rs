@@ -41,6 +41,13 @@ pub(super) const POSTGIS_PARAMS: &[ParamSpec] = &[
         hint: "A condition in SQL, such as kommun = 'Skövde', so that the database sends only those rows",
     },
     ParamSpec {
+        key: "columns",
+        label: "Only these columns",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Names with commas, such as namn, kommun: the database sends only those and the geometry, so that a wide table is read faster. Empty reads all",
+    },
+    ParamSpec {
         key: "bbox",
         label: "Only within",
         kind: ParamKind::Text,
@@ -144,6 +151,20 @@ pub(super) const POSTGIS_WRITE_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Attribute("Input"),
         default: "",
         hint: "Its values must all be different and none empty",
+    },
+    ParamSpec {
+        key: "table_comment",
+        label: "Comment on the table",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "What the table holds, kept in the database (COMMENT ON TABLE), where other programs show it",
+    },
+    ParamSpec {
+        key: "column_comments",
+        label: "Comments on columns",
+        kind: ParamKind::Renames("Input"),
+        default: "",
+        hint: "An attribute and what it holds, such as its unit or its source, kept in the database (COMMENT ON COLUMN)",
     },
     ParamSpec {
         key: "sql_before",
@@ -317,11 +338,16 @@ pub(super) fn run_postgis(p: &P, _inp: &Inputs, ctx: &mut NodeCtx) -> Result<Out
         if tables.is_empty() {
             return err("Choose the tables to read, or write an SQL query.");
         }
+        let columns = Some(p.list("columns")).filter(|c| !c.is_empty());
         for table in &tables {
-            // A condition is sent to the database as a query, so that only those rows come.
-            let opts = match &filter {
-                Some(w) => ReadOpts { crs, limit, within, sql: Some(format!("SELECT * FROM {} WHERE {}", sql_name(table), w)), ..Default::default() },
-                None => ReadOpts { crs, limit, within, layer: Some(table.clone()), ..Default::default() },
+            // A condition is sent to the database as a query, so that only those rows come;
+            // with chosen columns, as a filter on the table, so that only those come too.
+            let opts = match (&filter, &columns) {
+                (w, Some(cols)) => {
+                    ReadOpts { crs, limit, within, layer: Some(table.clone()), filter: w.clone(), columns: Some(cols.clone()), ..Default::default() }
+                }
+                (Some(w), None) => ReadOpts { crs, limit, within, sql: Some(format!("SELECT * FROM {} WHERE {}", sql_name(table), w)), ..Default::default() },
+                (None, None) => ReadOpts { crs, limit, within, layer: Some(table.clone()), ..Default::default() },
             };
             let t = b.read_with(path, &opts, &mut ctx.notes, &going).map_err(|e| clean(e, &conn, &shown))?;
             read.push((t, Some(table.clone())));
@@ -364,6 +390,8 @@ pub(super) fn run_postgis_writer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Resu
         },
         sql_before: p.get("sql_before").filter(|s| !s.trim().is_empty()),
         sql_after: p.get("sql_after").filter(|s| !s.trim().is_empty()),
+        table_comment: p.get("table_comment").filter(|s| !s.trim().is_empty()),
+        column_comments: p.pairs("column_comments"),
         analyze: p.get("analyze").as_deref() != Some("false"),
         update_key: if p.get("mode").as_deref() == Some("update") {
             Some(p.need("update_key", "Say which attribute tells the rows apart, to update them by.")?)

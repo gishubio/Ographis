@@ -11,6 +11,7 @@ name = "ographis"
 path = "src/main.rs"
 
 [dependencies]
+rayon = "1.12"
 og-engine = { path = "../og-engine" }
 og-gdal = { path = "../og-gdal" }
 geo.workspace = true

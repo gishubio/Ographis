@@ -45,6 +45,13 @@ const OUTLINE_PARAMS: &[ParamSpec] = &[
         default: "",
         hint: "In square metres: parts of an outline smaller than this are left out, and objects with nothing left go to Other. Empty keeps all",
     },
+    ParamSpec {
+        key: "plane_3d",
+        label: "Cut in 3D",
+        kind: ParamKind::Choice(&[("true", "Shown as a see-through plane"), ("false", "Not shown")]),
+        default: "true",
+        hint: "In the 3D view of the program: the model that comes in, with the height of the cut as a plane",
+    },
 ];
 
 /// A triangle cut to what lies at or below a height: a convex polygon of up to four corners.

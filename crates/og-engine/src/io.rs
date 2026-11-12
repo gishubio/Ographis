@@ -29,6 +29,11 @@ impl Notes {
 #[derive(Debug, Default, Clone)]
 pub struct ReadOpts {
     /// Layer name in files with several layers, such as GeoPackage. Empty means the first layer.
+    /// Only these attributes, by name; the others are not read, and a database does not
+    /// send them. None: all.
+    pub columns: Option<Vec<String>>,
+    /// Only the rows where this condition in SQL holds, sent to a database as it is.
+    pub filter: Option<String>,
     pub layer: Option<String>,
     /// Character encoding for formats that do not state it, such as a Shapefile without .cpg.
     pub encoding: Option<String>,
@@ -177,6 +182,9 @@ pub struct DbWrite {
     pub update_key: Option<String>,
     /// With an update: delete the rows of the table whose key is not in the stream.
     pub delete_missing: bool,
+    /// A comment on the table, and on columns by their attribute, as COMMENT ON.
+    pub table_comment: Option<String>,
+    pub column_comments: Vec<(String, String)>,
 }
 
 /// A name as PostgreSQL likes it, and as the columns of a table written to a database get

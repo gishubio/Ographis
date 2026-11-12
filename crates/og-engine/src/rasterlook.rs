@@ -347,6 +347,8 @@ mod tests {
             attribution: None,
             furniture: Default::default(),
             names: Vec::new(),
+            overview: None,
+            map_style: String::new(),
         };
         let img = crate::mapdraw::draw(&req, &|| true).unwrap();
         let at = |x: usize, y: usize| img.rgba[(y * img.width + x) * 4..][..3].to_vec();

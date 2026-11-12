@@ -79,6 +79,27 @@ fn prepare(case: &str, dir: &Path) {
             }
             std::fs::write(dir.join("squares.csv"), csv).unwrap();
         }
+        "dissolve_groups" | "dissolve_one" | "dissolve_districts" => {
+            // 60 000 uneven round areas of 40 corners that overlap, over 3 × 2 km, as stands
+            // of forest or buffered points, each in one of 400 blocks by where it lies.
+            let mut csv = String::from("id;block;district;wkt\n");
+            for i in 0..60_000u64 {
+                let (cx, cy) = (300_000.0 + noise(i) * 3000.0, 6_400_000.0 + noise(i + 1) * 2000.0);
+                let r = 6.0 + noise(i + 2) * 10.0;
+                let ring: Vec<String> = (0..=40)
+                    .map(|k| {
+                        let a = (k % 40) as f64 / 40.0 * std::f64::consts::TAU;
+                        let rr = r * (0.8 + 0.4 * noise(i * 64 + (k % 40) as u64 + 3));
+                        format!("{:.2} {:.2}", cx + rr * a.cos(), cy + rr * a.sin())
+                    })
+                    .collect();
+                let block = format!("b{}_{}", ((cx - 300_000.0) / 150.0) as u64, ((cy - 6_400_000.0) / 100.0) as u64);
+                // And in one of 120 districts of 250 × 200 m, some 500 areas each.
+                let district = format!("d{}_{}", ((cx - 300_000.0) / 250.0) as u64, ((cy - 6_400_000.0) / 200.0) as u64);
+                csv.push_str(&format!("{};{};{};POLYGON(({}))\n", i, block, district, ring.join(",")));
+            }
+            std::fs::write(dir.join("parcels.csv"), csv).unwrap();
+        }
         "raster_slope" => {
             // A terrain of 4000 × 4000 cells of 2 m: 16 million heights.
             let (w, h) = (4000usize, 4000usize);
@@ -140,6 +161,27 @@ fn model(case: &str) -> &'static str {
           "edges": [{"from": ["squares", "Output"], "to": ["area", "Input"]}, {"from": ["area", "Output"], "to": ["buffer", "Input"]},
             {"from": ["buffer", "Buffered"], "to": ["out", "Input"]}]}"#
         }
+        "dissolve_groups" => {
+            r#"{"nodes": [
+            {"id": "parcels", "type": "Reader", "params": {"path": "parcels.csv", "crs": "EPSG:3006"}},
+            {"id": "dissolve", "type": "Dissolver", "params": {"group_by": ["block"], "count": "parcels"}},
+            {"id": "out", "type": "Writer", "params": {"path": "out/blocks.gpkg"}}],
+          "edges": [{"from": ["parcels", "Output"], "to": ["dissolve", "Input"]}, {"from": ["dissolve", "Dissolved"], "to": ["out", "Input"]}]}"#
+        }
+        "dissolve_districts" => {
+            r#"{"nodes": [
+            {"id": "parcels", "type": "Reader", "params": {"path": "parcels.csv", "crs": "EPSG:3006"}},
+            {"id": "dissolve", "type": "Dissolver", "params": {"group_by": ["district"]}},
+            {"id": "out", "type": "Writer", "params": {"path": "out/districts.gpkg"}}],
+          "edges": [{"from": ["parcels", "Output"], "to": ["dissolve", "Input"]}, {"from": ["dissolve", "Dissolved"], "to": ["out", "Input"]}]}"#
+        }
+        "dissolve_one" => {
+            r#"{"nodes": [
+            {"id": "parcels", "type": "Reader", "params": {"path": "parcels.csv", "crs": "EPSG:3006"}},
+            {"id": "dissolve", "type": "Dissolver", "params": {}},
+            {"id": "out", "type": "Writer", "params": {"path": "out/all.gpkg"}}],
+          "edges": [{"from": ["parcels", "Output"], "to": ["dissolve", "Input"]}, {"from": ["dissolve", "Dissolved"], "to": ["out", "Input"]}]}"#
+        }
         "raster_slope" => {
             r#"{"nodes": [
             {"id": "dem", "type": "Reader", "params": {"path": "terrain.tif", "raster_as": "grid"}},
@@ -161,6 +203,9 @@ fn model(case: &str) -> &'static str {
 const CASES: &[(&str, &str)] = &[
     ("points_join", "1 000 000 points from CSV joined to 100 squares, to GeoPackage"),
     ("polygons_buffer", "200 000 areas from CSV, area and a buffer, to GeoPackage"),
+    ("dissolve_groups", "60 000 overlapping areas dissolved in 400 blocks, to GeoPackage"),
+    ("dissolve_districts", "60 000 overlapping areas dissolved in 120 districts, to GeoPackage"),
+    ("dissolve_one", "60 000 overlapping areas dissolved all together, to GeoPackage"),
     ("raster_slope", "Slope of 4000 × 4000 heights, GeoTIFF to GeoTIFF"),
     ("cloud_raster", "5 000 000 points from LAZ to a 1 m terrain model"),
 ];

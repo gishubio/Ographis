@@ -78,6 +78,8 @@ The program draws it on a canvas, and `og run model.ographis` runs it from the c
 | Charts | `examples/chart.ographis` |
 | Terrain, rasters and 3D | `examples/terrain.ographis`, `examples/raster_tools.ographis`, `examples/extrude_tin.ographis`, `examples/house.ographis` |
 | Point clouds: ground, terrain models, buildings | `examples/point_cloud.ographis` |
+| Gaussian splats from points, OpenUSD | `examples/splats.ographis` |
+| A real place for a game engine | `examples/game_engine.ographis` |
 | 3D models for Blender: terrain with a picture, buildings grouped and named | `examples/blender.ographis` |
 | A folder of files read as one | `examples/stops.ographis` |
 | Analysis: service areas, hot spots, tracks, locations | `examples/proximity.ographis`, `examples/analysis.ographis`, `examples/apis/osm_service_areas.ographis` |
@@ -105,4 +107,6 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`ARCHITECTURE.md`](ARCHITECTURE.md
 out or when its settings make the result empty: no data may vanish without a word (see
 *Adding a tool* in `CONTRIBUTING.md`). A new node type goes in the registry in `crates/og-engine/src/nodes/mod.rs`,
 with a test; then write `docs/nodes.json` and `docs/model.schema.json` again with
-`og nodes --json` and `og schema`, which a test checks.
+`og nodes --json` and `og schema`, which a test checks. Ographis is its own program:
+describe what it does in its own words, in code, documentation, commits and pull requests
+alike, without comparing it with other ETL programs.

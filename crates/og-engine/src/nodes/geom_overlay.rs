@@ -10,7 +10,15 @@ use std::collections::HashMap;
 
 // ---------- Clip (Clipper) ----------
 
-pub(super) fn run_clipper(_p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+pub(super) const CLIPPER_PARAMS: &[ParamSpec] = &[ParamSpec {
+    key: "close",
+    label: "3D models along the edge",
+    kind: ParamKind::Choice(&[("false", "Left open"), ("true", "Closed with a wall")]),
+    default: "false",
+    hint: "A building or another solid cut by the edge is closed with a new wall there, on each side, so that it stands whole in a 3D print or a picture",
+}];
+
+pub(super) fn run_clipper(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let clippee = input(inp, "Clippee");
     let mut clip_table = input(inp, "Clipper").clone();
     if let (Some(a), Some(b)) = (clippee.crs, clip_table.crs) {
@@ -34,18 +42,19 @@ pub(super) fn run_clipper(_p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Out
         }
     };
     if let Some(mesh) = clippee.mesh.as_deref() {
-        return clip_model(clippee, mesh, &clipper, ctx);
+        return clip_model(clippee, mesh, &clipper, p.flag("close"), ctx);
     }
     let mut unsupported = 0usize;
-    for f in &clippee.features {
-        let g = match &f.geom {
-            Some(g) => g,
-            None => {
+    // Each feature is clipped on a core of its own.
+    let clipped = ctx.gate.each(clippee.len(), |i| Ok(clippee.features[i].geom.as_ref().map(|g| clipper.clip(g))))?;
+    for (f, r) in clippee.features.iter().zip(clipped) {
+        let (g, r) = match (&f.geom, r) {
+            (Some(g), Some(r)) => (g, r),
+            _ => {
                 outside.features.push(f.clone());
                 continue;
             }
         };
-        let r = clipper.clip(g);
         if !r.supported {
             unsupported += 1;
         }
@@ -74,8 +83,16 @@ pub(super) fn run_clipper(_p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Out
 /// Clips a 3D model, such as a TIN, a surface or buildings, by the clip areas from above.
 /// Each object goes to the side where it has triangles, and to both when it is cut; its
 /// feature is clipped with it.
-fn clip_model(clippee: &Table, mesh: &crate::mesh::Mesh, clipper: &geom::Clipper, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let (mesh_in, mesh_out) = crate::clip3d::clip_mesh(mesh, clipper);
+fn clip_model(clippee: &Table, mesh: &crate::mesh::Mesh, clipper: &geom::Clipper, close: bool, ctx: &mut NodeCtx) -> Result<Outputs> {
+    let (mut mesh_in, mut mesh_out) = crate::clip3d::clip_mesh(mesh, clipper);
+    if close {
+        let walls = crate::clip3d::close_cut(&mut mesh_in, clipper) + crate::clip3d::close_cut(&mut mesh_out, clipper);
+        ctx.notes.info(if walls > 0 {
+            format!("{} walls close what was cut", fmt_count(walls as u64))
+        } else {
+            "nothing was cut open that could be closed: the models are not closed solids, or the edge does not cross them".to_string()
+        });
+    }
     let rows_with = |m: &crate::mesh::Mesh| -> Vec<usize> {
         let mut has = vec![false; clippee.features.len().max(m.objects.len())];
         for t in &m.tris {
@@ -167,6 +184,7 @@ pub(super) fn is_area(f: &Feature) -> bool {
 }
 
 pub(super) fn run_dissolver(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+    use rayon::prelude::*;
     let table = input(inp, "Input");
     let by = p.list("group_by");
     let count_name = p.get("count");
@@ -196,28 +214,62 @@ pub(super) fn run_dissolver(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Ou
     if let Some(c) = &count_name {
         out.fields.push(Field::new(c.clone(), FieldType::Int));
     }
-    for members in groups(table, &idx, is_area) {
+    // The groups are merged on the cores at once, and a large group is itself spread.
+    let all = groups(table, &idx, is_area);
+    let gate = ctx.gate;
+    // The largest groups first, so that no core is left with a large one at the end.
+    let mut order: Vec<usize> = (0..all.len()).collect();
+    order.sort_by_key(|k| std::cmp::Reverse(all[*k].len()));
+    let by_size: Vec<Vec<Feature>> = gate.each(order.len(), |j| {
+        let members = &all[order[j]];
         let merged = geom::dissolve(members.iter().filter_map(|i| table.features[*i].geom.as_ref()));
         let mut attrs: Vec<Value> = idx.iter().map(|i| table.features[members[0]].attrs[*i].clone()).collect();
         if count_name.is_some() {
             attrs.push(Value::Int(members.len() as i64));
         }
-        match merged {
+        Ok(match merged {
             // Areas that do not touch stay apart, each a feature with what it was made of.
             Some(Geometry::MultiPolygon(mp)) if apart && mp.0.len() > 1 => {
-                for part in mp.0 {
-                    let mut attrs = attrs.clone();
-                    if count_name.is_some() {
-                        let n = members.iter().filter(|i| table.features[**i].geom.as_ref().is_some_and(|g| g.intersects(&part))).count();
-                        *attrs.last_mut().expect("the count") = Value::Int(n.max(1) as i64);
-                    }
-                    out.features.push(Feature { z: None, attrs, geom: Some(Geometry::Polygon(part)) });
-                }
+                // The members of each part, found by their boxes before they are tested.
+                let boxes = if count_name.is_some() { Some(box_index(members.iter().map(|i| table.features[*i].geom.as_ref()))) } else { None };
+                let parts = mp.0;
+                let counts: Vec<i64> = match &boxes {
+                    Some(index) => parts
+                        .par_iter()
+                        .map(|part| {
+                            let Some(r) = part.bounding_rect() else { return 1 };
+                            let env = AABB::from_corners([r.min().x, r.min().y], [r.max().x, r.max().y]);
+                            let n = index
+                                .locate_in_envelope_intersecting(&env)
+                                .filter(|b| table.features[members[b.data]].geom.as_ref().is_some_and(|g| g.intersects(part)))
+                                .count();
+                            n.max(1) as i64
+                        })
+                        .collect(),
+                    None => Vec::new(),
+                };
+                parts
+                    .into_iter()
+                    .enumerate()
+                    .map(|(k, part)| {
+                        let mut attrs = attrs.clone();
+                        if let Some(n) = counts.get(k) {
+                            *attrs.last_mut().expect("the count") = Value::Int(*n);
+                        }
+                        Feature { z: None, attrs, geom: Some(Geometry::Polygon(part)) }
+                    })
+                    .collect()
             }
-            Some(g) => out.features.push(Feature { z: None, attrs, geom: Some(g) }),
-            None => {}
-        }
+            Some(g) => vec![Feature { z: None, attrs, geom: Some(g) }],
+            None => Vec::new(),
+        })
+    })?;
+    // Back in the order the groups first came.
+    let mut merged: Vec<Vec<Feature>> = vec![Vec::new(); all.len()];
+    for (j, features) in by_size.into_iter().enumerate() {
+        merged[order[j]] = features;
     }
+    out.features = merged.into_iter().flatten().collect();
     if out.features.is_empty() && remnants.is_empty() {
         ctx.notes.warn("No areas came in, so there is nothing to dissolve.".to_string());
     } else if out.features.is_empty() {
@@ -470,19 +522,23 @@ pub(super) fn run_spatial_joiner(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Resu
     let mut hits: Vec<Vec<usize>> = vec![Vec::new(); features.len()];
     if relation == "point" {
         let index = area_lookup(join, "Join", features.crs, ctx)?;
-        let mut placed = 0usize;
-        for (k, f) in features.features.iter().enumerate() {
+        // Each feature on a core of its own: the areas it lies in, and whether it was placed
+        // by a point inside it.
+        let found = ctx.gate.each(features.len(), |k| {
+            let f = &features.features[k];
             // A point is where it is. Anything else is placed by a point that lies on it.
-            let at = single_point(f).or_else(|| {
-                let inside = f.geom.as_ref().and_then(|g| geom::center(g, Center::Inside))?;
-                placed += 1;
-                match inside {
-                    Geometry::Point(pt) => Some(pt.0),
-                    _ => None,
-                }
-            });
-            hits[k] = at.map(|c| index.containing(c)).unwrap_or_default();
-        }
+            let (at, by_inside) = match single_point(f) {
+                Some(c) => (Some(c), false),
+                None => match f.geom.as_ref().and_then(|g| geom::center(g, Center::Inside)) {
+                    Some(Geometry::Point(pt)) => (Some(pt.0), true),
+                    Some(_) => (None, true),
+                    None => (None, false),
+                },
+            };
+            Ok((at.map(|c| index.containing(c)).unwrap_or_default(), by_inside))
+        })?;
+        let placed = found.iter().filter(|f| f.1).count();
+        hits = found.into_iter().map(|f| f.0).collect();
         if placed > 0 {
             ctx.notes.info(format!("{} features that are not points were placed by a point inside them", fmt_count(placed as u64)));
         }
@@ -491,15 +547,11 @@ pub(super) fn run_spatial_joiner(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Resu
         let other = moved.as_ref().unwrap_or(join);
         let index = box_index(other.features.iter().map(|f| f.geom.as_ref()));
         let reach = if relation == "near" { distance } else { 0.0 };
-        for (k, f) in features.features.iter().enumerate() {
-            if k % 256 == 0 {
-                if ctx.stopped() {
-                    return err(crate::model::STOPPED);
-                }
-                (ctx.progress)("joined", k as u64, Some(features.len() as u64));
-            }
-            let Some(g) = &f.geom else { continue };
-            let Some(r) = g.bounding_rect() else { continue };
+        // Each feature on a core of its own.
+        hits = ctx.gate.each(features.len(), |k| {
+            let f = &features.features[k];
+            let Some(g) = &f.geom else { return Ok(Vec::new()) };
+            let Some(r) = g.bounding_rect() else { return Ok(Vec::new()) };
             let env = AABB::from_corners([r.min().x - reach, r.min().y - reach], [r.max().x + reach, r.max().y + reach]);
             let mut found: Vec<usize> = index
                 .locate_in_envelope_intersecting(&env)
@@ -508,8 +560,8 @@ pub(super) fn run_spatial_joiner(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Resu
                 .collect();
             // In the order of the stream, so that the first is the same from run to run.
             found.sort_unstable();
-            hits[k] = found;
-        }
+            Ok(found)
+        })?;
     }
     let mut joined = features.like();
     let mut unjoined = features.like();
@@ -1085,10 +1137,9 @@ pub(super) fn run_intersector(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<
     }
     let fetched = fetched_fields(p, features, overlay, "Overlay", ctx)?;
     let index = box_index(over.features.iter().map(|f| f.geom.as_ref().filter(|g| geom::family(g) == geom::Family::Area)));
-    // One clipper for each area, made when it is first needed, and one for all of them to
-    // find what lies outside.
-    let mut clippers: Vec<Option<Option<geom::Clipper>>> = Vec::new();
-    clippers.resize_with(over.len(), || None);
+    // One clipper for each area, made when it is first needed (by whichever core needs it),
+    // and one for all of them to find what lies outside.
+    let clippers: Vec<std::sync::OnceLock<Option<geom::Clipper>>> = (0..over.len()).map(|_| std::sync::OnceLock::new()).collect();
     let everything = geom::Clipper::new(over.features.iter().filter_map(|f| f.geom.as_ref()));
     let mut cut = features.like();
     cut.raster = false;
@@ -1096,21 +1147,23 @@ pub(super) fn run_intersector(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<
     let mut outside = features.like();
     outside.raster = false;
     let mut unsupported = 0usize;
-    for (k, f) in features.features.iter().enumerate() {
-        if k % 256 == 0 && ctx.stopped() {
-            return err(crate::model::STOPPED);
-        }
-        let Some(g) = &f.geom else { continue };
-        let Some(r) = g.bounding_rect() else { continue };
+    // Each feature on a core of its own: its pieces in the areas, what is left outside, and
+    // whether it could be cut.
+    type Pieces = (Vec<Feature>, Option<Feature>, bool);
+    let done: Vec<Pieces> = ctx.gate.each(features.len(), |k| {
+        let f = &features.features[k];
+        let (Some(g), Some(r)) = (&f.geom, f.geom.as_ref().and_then(|g| g.bounding_rect())) else { return Ok((Vec::new(), None, true)) };
         let mut found: Vec<usize> =
             index.locate_in_envelope_intersecting(&AABB::from_corners([r.min().x, r.min().y], [r.max().x, r.max().y])).map(|b| b.data).collect();
         found.sort_unstable();
+        let mut pieces = Vec::new();
+        let mut fine = true;
         for j in found {
-            let clipper = clippers[j].get_or_insert_with(|| geom::Clipper::new(over.features[j].geom.iter()));
+            let clipper = clippers[j].get_or_init(|| geom::Clipper::new(over.features[j].geom.iter()));
             let Some(c) = clipper else { continue };
             let clipped = c.clip(g);
             if !clipped.supported {
-                unsupported += 1;
+                fine = false;
                 break;
             }
             if let Some(piece) = clipped.inside {
@@ -1118,17 +1171,25 @@ pub(super) fn run_intersector(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<
                 let z = if clipped.outside.is_none() { f.z.clone() } else { None };
                 let mut attrs = f.attrs.clone();
                 attrs.extend(fetched.iter().map(|(i, _)| over.features[j].attrs[*i].clone()));
-                cut.features.push(Feature { z, attrs, geom: Some(piece) });
+                pieces.push(Feature { z, attrs, geom: Some(piece) });
             }
         }
         let rest = match &everything {
             None => Some(g.clone()),
             Some(c) => c.clip(g).outside,
         };
-        if let Some(rest) = rest {
+        let rest = rest.map(|rest| {
             let z = if &rest == g { f.z.clone() } else { None };
-            outside.features.push(Feature { z, attrs: f.attrs.clone(), geom: Some(rest) });
+            Feature { z, attrs: f.attrs.clone(), geom: Some(rest) }
+        });
+        Ok((pieces, rest, fine))
+    })?;
+    for (pieces, rest, fine) in done {
+        if !fine {
+            unsupported += 1;
         }
+        cut.features.extend(pieces);
+        outside.features.extend(rest);
     }
     if unsupported > 0 {
         ctx.notes.warn(format!("{} features have a kind of geometry that cannot be cut, and are left out of Intersection.", fmt_count(unsupported as u64)));
@@ -1217,7 +1278,7 @@ pub(super) const TYPES: &[NodeType] = &[
         inputs: &["Clipper", "Clippee"],
         outputs: &["Inside", "Outside"],
         ports: None,
-        params: &[],
+        params: CLIPPER_PARAMS,
         run: run_clipper,
         summary: |_| String::new(),
     },

@@ -26,13 +26,45 @@ pub struct LayerStyle {
     pub casing: Option<[u8; 4]>,
     /// How much wider the edge is than the line, in pixels on each side.
     pub casing_width: f32,
+    /// A pattern over the fill of areas: "" none, or one of [`PATTERNS`].
+    pub pattern: String,
+    /// The colour of the pattern. None: that of the line.
+    pub pattern_colour: Option<[u8; 4]>,
+    /// The space between the lines or dots of the pattern, in pixels.
+    pub pattern_every: f32,
+    /// How much of the layer shows, from 0 (nothing) to 1 (all of it).
+    pub opacity: f32,
 }
 
 impl Default for LayerStyle {
     fn default() -> Self {
-        LayerStyle { fill: None, stroke: Some([0, 0, 0, 255]), width: 1.0, size: 6.0, dash: String::new(), casing: None, casing_width: 1.0 }
+        LayerStyle {
+            fill: None,
+            stroke: Some([0, 0, 0, 255]),
+            width: 1.0,
+            size: 6.0,
+            dash: String::new(),
+            casing: None,
+            casing_width: 1.0,
+            pattern: String::new(),
+            pattern_colour: None,
+            pattern_every: 8.0,
+            opacity: 1.0,
+        }
     }
 }
+
+/// The patterns an area can have over its fill, as they are stored and named.
+pub const PATTERNS: &[(&str, &str)] = &[
+    ("", "No pattern"),
+    ("hatch", "Hatched /"),
+    ("back", "Hatched \\"),
+    ("cross", "Cross-hatched"),
+    ("horizontal", "Horizontal lines"),
+    ("vertical", "Vertical lines"),
+    ("grid", "Squares"),
+    ("dots", "Dots"),
+];
 
 /// The ways a line can be drawn, as they are stored and named.
 pub const DASHES: &[(&str, &str)] = &[("", "Solid"), ("dash", "Dashed"), ("dot", "Dotted"), ("dashdot", "Dash and dot")];
@@ -295,6 +327,10 @@ pub struct Request<'a> {
     /// The names of the layers, in the order of `layers`, for the layers of a PDF or an
     /// SVG of the map. Empty: they are named Layer 1, Layer 2 and so on.
     pub names: Vec<String>,
+    /// A small map in a corner that shows where the map lies.
+    pub overview: Option<Overview>,
+    /// A ready style, which rasters are drawn in too. Empty: as they are.
+    pub map_style: String,
 }
 
 /// What is drawn on a map besides its layers: a scale bar, a north arrow and a grid with
@@ -418,7 +454,7 @@ fn extent(layers: &[(&Table, LayerStyle)]) -> Option<[f64; 4]> {
 
 /// Draws the raster of a layer: each pixel of the picture gets the cell under its middle.
 /// `origin` is the west and north edge of the picture, and `px` the size of a pixel.
-fn draw_raster(pixmap: &mut Canvas, table: &Table, r: &crate::rasterlook::Prepared, origin: [f64; 2], px: f64) {
+fn draw_raster(pixmap: &mut Canvas, table: &Table, r: &crate::rasterlook::Prepared, origin: [f64; 2], px: f64, style: &str) {
     use crate::rasterlook::Paint as RP;
     // The source of the colours: a picture, or the cells of a grid.
     let shaded;
@@ -477,6 +513,7 @@ fn draw_raster(pixmap: &mut Canvas, table: &Table, r: &crate::rasterlook::Prepar
             if c[3] == 0 {
                 continue;
             }
+            let c = if style.is_empty() { c } else { style_colour(style, c, Role::Picture) };
             data[row * pw + col] = tiny_skia::ColorU8::from_rgba(c[0], c[1], c[2], c[3]).premultiply();
         }
     }
@@ -533,11 +570,14 @@ pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
         if !going() {
             return Err(GbError(crate::model::STOPPED.into()));
         }
-        // Each layer is a layer of its own in a PDF or an SVG of the map.
+        // Each layer is a layer of its own in a PDF or an SVG of the map, and as
+        // see-through as its style says.
         pixmap.layer(Some(&name_of(li)));
-        // A raster is drawn cell by cell, rather than its outline.
+        pixmap.set_opacity(style.opacity);
+        // A raster is drawn cell by cell, rather than its outline, with its own opacity.
         if let Some(r) = req.rasters.get(li).and_then(|r| r.as_ref()) {
-            draw_raster(&mut pixmap, table, r, [b[0], top], px);
+            pixmap.set_opacity(1.0);
+            draw_raster(&mut pixmap, table, r, [b[0], top], px, &req.map_style);
             continue;
         }
         // Points with icons are drawn as icons, after the rest of the layer.
@@ -623,6 +663,7 @@ pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
                         if let Some(p) = &fill_paint {
                             pixmap.fill_path(&path, p, FillRule::EvenOdd, Transform::identity(), None);
                         }
+                        draw_pattern(pixmap, g, style, &to_px);
                         if let Some(p) = &line_paint {
                             pixmap.stroke_path(&path, p, &stroke, Transform::identity(), None);
                         }
@@ -655,6 +696,7 @@ pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
             draw_icons(&mut pixmap, req.layers[li].0, style, theme, ic, &to_px);
         }
     }
+    pixmap.set_opacity(1.0);
     // The labels, on top of every layer: those of the top layer first, so that they get
     // the room when there is not enough for all.
     if req.labels.iter().any(|l| l.is_some()) {
@@ -674,6 +716,9 @@ pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
     let credit = req.attribution.as_ref().filter(|a| !a.trim().is_empty());
     pixmap.layer(Some("Frame and legend"));
     draw_furniture(&mut pixmap, &req.furniture, [b[0], b[1], b[0] + width as f64 * px, top], px, credit.is_some())?;
+    if let Some(ov) = &req.overview {
+        draw_overview(&mut pixmap, ov, [b[0], b[1], b[0] + width as f64 * px, top], &req.layers, req.background);
+    }
     if let Some(legend) = &req.legend {
         draw_legend(&mut pixmap, legend)?;
     }
@@ -754,6 +799,104 @@ fn point_of(g: &Geometry<f64>) -> Option<geo::Point<f64>> {
 
 /// The edges of the lines of a layer, all of them under all the lines, so that roads that
 /// meet run into each other without a seam.
+/// The pattern of a style over the areas of a geometry: lines or dots, cut to the area, so
+/// that they are lines in a PDF or SVG too.
+fn draw_pattern(pixmap: &mut Canvas, g: &Geometry<f64>, style: &LayerStyle, to_px: &dyn Fn(f64, f64) -> (f32, f32)) {
+    use geo::{BooleanOps, BoundingRect, Contains, MapCoords};
+    if style.pattern.is_empty() {
+        return;
+    }
+    let Some(colour) = style.pattern_colour.or(style.stroke).or(style.fill.map(|c| [c[0] / 2, c[1] / 2, c[2] / 2, c[3]])) else { return };
+    let areas: Vec<geo::Polygon<f64>> = match g {
+        Geometry::Polygon(p) => vec![p.clone()],
+        Geometry::MultiPolygon(m) => m.0.clone(),
+        Geometry::Rect(r) => vec![r.to_polygon()],
+        Geometry::Triangle(t) => vec![t.to_polygon()],
+        Geometry::GeometryCollection(c) => c.0.iter().filter_map(|g| if let Geometry::Polygon(p) = g { Some(p.clone()) } else { None }).collect(),
+        _ => return,
+    };
+    let every = style.pattern_every.max(2.0) as f64;
+    let width = (style.width * 0.6).clamp(0.5, every as f32 / 3.0);
+    for area in areas {
+        // In pixels, where the spacing is.
+        let px = area.map_coords(|c| {
+            let (x, y) = to_px(c.x, c.y);
+            geo::Coord { x: x as f64, y: y as f64 }
+        });
+        let Some(b) = px.bounding_rect() else { continue };
+        if b.width() < 1.0 || b.height() < 1.0 {
+            continue;
+        }
+        if style.pattern == "dots" {
+            let mut pb = PathBuilder::new();
+            let r = (every as f32 / 6.0).max(0.6);
+            let mut y = (b.min().y / every).floor() * every + every / 2.0;
+            let mut row = 0;
+            while y <= b.max().y {
+                let shift = if row % 2 == 1 { every / 2.0 } else { 0.0 };
+                let mut x = (b.min().x / every).floor() * every + shift;
+                while x <= b.max().x {
+                    if px.contains(&geo::Point::new(x, y)) {
+                        pb.push_circle(x as f32, y as f32, r);
+                    }
+                    x += every;
+                }
+                y += every;
+                row += 1;
+            }
+            if let Some(path) = pb.finish() {
+                pixmap.fill_path(&path, &paint(colour), FillRule::Winding, Transform::identity(), None);
+            }
+            continue;
+        }
+        // The directions of the lines, as the normal (x, y) of each.
+        let dirs: &[(f64, f64)] = match style.pattern.as_str() {
+            "hatch" => &[(1.0, 1.0)],
+            "back" => &[(1.0, -1.0)],
+            "cross" => &[(1.0, 1.0), (1.0, -1.0)],
+            "horizontal" => &[(0.0, 1.0)],
+            "vertical" => &[(1.0, 0.0)],
+            "grid" => &[(0.0, 1.0), (1.0, 0.0)],
+            _ => return,
+        };
+        let mut lines: Vec<geo::LineString<f64>> = Vec::new();
+        let (cx, cy) = (b.center().x, b.center().y);
+        let reach = b.width().hypot(b.height()) / 2.0 + every;
+        for (nx, ny) in dirs {
+            let len = nx.hypot(*ny);
+            let (nx, ny) = (nx / len, ny / len);
+            let (tx, ty) = (-ny, nx);
+            // Lines at whole steps from the corner of the picture, so that the lines of
+            // areas side by side meet.
+            let at = cx * nx + cy * ny;
+            let first = ((at - reach) / every).floor() as i64;
+            let last = ((at + reach) / every).ceil() as i64;
+            for k in first..=last {
+                let d = k as f64 * every - at;
+                let (mx, my) = (cx + nx * d, cy + ny * d);
+                lines.push(geo::LineString::from(vec![(mx - tx * reach, my - ty * reach), (mx + tx * reach, my + ty * reach)]));
+            }
+        }
+        let cut = px.clip(&geo::MultiLineString::new(lines), false);
+        let mut pb = PathBuilder::new();
+        for l in &cut.0 {
+            let mut first = true;
+            for c in &l.0 {
+                if first {
+                    pb.move_to(c.x as f32, c.y as f32);
+                    first = false;
+                } else {
+                    pb.line_to(c.x as f32, c.y as f32);
+                }
+            }
+        }
+        if let Some(path) = pb.finish() {
+            let stroke = Stroke { width, line_cap: tiny_skia::LineCap::Butt, ..Stroke::default() };
+            pixmap.stroke_path(&path, &paint(colour), &stroke, Transform::identity(), None);
+        }
+    }
+}
+
 fn draw_casing(pixmap: &mut Canvas, table: &Table, style: &LayerStyle, to_px: &dyn Fn(f64, f64) -> (f32, f32)) {
     let Some(c) = style.casing.filter(|_| style.casing_width > 0.0) else { return };
     let stroke = style.casing_stroke();
@@ -851,6 +994,9 @@ fn draw_themed(
         let Some((path, area)) = path_of(g, to_px) else { continue };
         if let (Some(c), true) = (l.fill, area) {
             pixmap.fill_path(&path, &paint(c), FillRule::EvenOdd, Transform::identity(), None);
+        }
+        if area {
+            draw_pattern(pixmap, g, style, to_px);
         }
         if let (Some(c), true) = (l.stroke, style.width > 0.0) {
             pixmap.stroke_path(&path, &paint(c), &stroke, Transform::identity(), None);
@@ -1628,6 +1774,11 @@ fn draw_legend(pixmap: &mut Canvas, legend: &Legend) -> Result<()> {
                         if let Some(c) = l.fill {
                             pixmap.fill_path(&p, &paint(c), FillRule::Winding, Transform::identity(), None);
                         }
+                        // The pattern, at the spacing it has on the map.
+                        if let Some(s) = style.filter(|s| !s.pattern.is_empty()) {
+                            let swatch = Geometry::Rect(geo::Rect::new((r.left() as f64, r.top() as f64), (r.right() as f64, r.bottom() as f64)));
+                            draw_pattern(pixmap, &swatch, s, &|x, y| (x as f32, y as f32));
+                        }
                         if let (Some(c), true) = (l.stroke, *width > 0.0) {
                             pixmap.stroke_path(&p, &paint(c), &Stroke { width: width.min(2.0), ..st }, Transform::identity(), None);
                         }
@@ -1693,6 +1844,8 @@ mod tests {
             attribution: None,
             furniture: Default::default(),
             names: Vec::new(),
+            overview: None,
+            map_style: String::new(),
             themes: vec![],
             labels: vec![],
             icons: vec![],
@@ -1717,6 +1870,8 @@ mod tests {
             attribution: None,
             furniture: Default::default(),
             names: Vec::new(),
+            overview: None,
+            map_style: String::new(),
             themes: vec![],
             labels: vec![],
             icons: vec![],
@@ -1736,6 +1891,8 @@ mod tests {
             attribution: None,
             furniture: Default::default(),
             names: Vec::new(),
+            overview: None,
+            map_style: String::new(),
             themes: vec![],
             labels: vec![],
             icons: vec![],
@@ -1757,6 +1914,8 @@ mod tests {
                 attribution: None,
                 furniture: Default::default(),
                 names: Vec::new(),
+                overview: None,
+                map_style: String::new(),
                 themes: vec![],
                 labels: vec![],
                 icons: vec![],
@@ -1777,6 +1936,8 @@ mod tests {
                 attribution: None,
                 furniture: Default::default(),
                 names: Vec::new(),
+                overview: None,
+                map_style: String::new(),
                 themes: vec![],
                 labels: vec![],
                 icons: vec![],
@@ -1819,6 +1980,8 @@ mod tests {
                 attribution: None,
                 furniture: Default::default(),
                 names: Vec::new(),
+                overview: None,
+                map_style: String::new(),
                 themes: vec![],
                 labels: vec![Some(labels)],
                 icons: vec![],
@@ -1857,6 +2020,8 @@ mod tests {
             attribution: None,
             furniture: Default::default(),
             names: Vec::new(),
+            overview: None,
+            map_style: String::new(),
             themes: vec![],
             labels: vec![Some(Labels {
                 spec: LabelSpec { size: 20.0, halo: None, ..LabelSpec::default() },
@@ -1888,6 +2053,8 @@ mod tests {
             attribution: None,
             furniture: Default::default(),
             names: Vec::new(),
+            overview: None,
+            map_style: String::new(),
             themes: vec![],
             labels: vec![],
             icons: vec![Some(Icons { style: "circle".into(), names: vec![Some("hospital"), None] })],
@@ -1901,4 +2068,287 @@ mod tests {
         assert!(px(cx, cy).iter().all(|c| *c > 230), "white in the middle: {:?}", px(cx, cy));
         assert!(px(cx + 17, cy)[0] > 150 && px(cx + 17, cy)[1] < 60, "red around: {:?}", px(cx + 17, cy));
     }
+}
+
+// ---------- Ready map styles ----------
+
+/// The ready styles a map can be drawn in, as they are stored and named.
+pub const MAP_STYLES: &[(&str, &str)] =
+    &[("", "As the layers are set"), ("light", "Light"), ("dark", "Dark"), ("topo", "Old topographic"), ("bw", "Print in black and white")];
+
+/// What a colour is used for, which a ready style treats in its own way.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Role {
+    /// The fill of areas and points.
+    Area,
+    /// Lines, outlines, edges and patterns.
+    Line,
+    /// The letters of labels.
+    Text,
+    /// The halo around labels.
+    Halo,
+    /// The background of the map.
+    Paper,
+    /// The pixels of a raster, such as relief or an orthophoto.
+    Picture,
+}
+
+fn mix(c: [u8; 4], to: [u8; 3], t: f32) -> [u8; 4] {
+    let m = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round().clamp(0.0, 255.0) as u8;
+    [m(c[0], to[0]), m(c[1], to[1]), m(c[2], to[2]), c[3]]
+}
+
+fn grey_of(c: [u8; 4]) -> f32 {
+    (0.299 * c[0] as f32 + 0.587 * c[1] as f32 + 0.114 * c[2] as f32) / 255.0
+}
+
+/// Less of its colour, by a share from 0 (as it is) to 1 (grey).
+fn duller(c: [u8; 4], t: f32) -> [u8; 4] {
+    let g = (grey_of(c) * 255.0).round() as u8;
+    mix(c, [g, g, g], t)
+}
+
+/// The paper of a ready style, for a map whose background is a colour.
+pub fn style_paper(style: &str) -> Option<[u8; 4]> {
+    match style {
+        "light" => Some([0xf7, 0xf6, 0xf2, 255]),
+        "dark" => Some([0x1d, 0x22, 0x28, 255]),
+        "topo" => Some([0xf0, 0xe6, 0xcc, 255]),
+        "bw" => Some([255, 255, 255, 255]),
+        _ => None,
+    }
+}
+
+/// A colour as a ready style draws it: the hue of the layer kept where the style has
+/// colours, so that layers stay apart.
+pub fn style_colour(style: &str, c: [u8; 4], role: Role) -> [u8; 4] {
+    match (style, role) {
+        (_, Role::Paper) => style_paper(style).map_or(c, |p| [p[0], p[1], p[2], c[3]]),
+        ("light", Role::Picture) => mix(duller(c, 0.3), [255, 255, 255], 0.2),
+        ("dark", Role::Picture) => mix(duller(c, 0.35), [0x1d, 0x22, 0x28], 0.45),
+        ("topo", Role::Picture) => mix(duller(c, 0.6), [0xd9, 0xc4, 0x96], 0.3),
+        ("bw", Role::Picture) => {
+            let g = (grey_of(c) * 255.0).round() as u8;
+            [g, g, g, c[3]]
+        }
+        ("light", Role::Area) => mix(duller(c, 0.35), [255, 255, 255], 0.45),
+        ("light", Role::Line) => mix(duller(c, 0.25), [0x55, 0x55, 0x55], 0.15),
+        ("light", Role::Text) => [0x3a, 0x3a, 0x3a, c[3]],
+        ("light", Role::Halo) => [255, 255, 255, c[3]],
+        ("dark", Role::Area) => mix(duller(c, 0.3), [0x1d, 0x22, 0x28], 0.5),
+        ("dark", Role::Line) => mix(duller(c, 0.2), [255, 255, 255], 0.35),
+        ("dark", Role::Text) => [0xe8, 0xe6, 0xe1, c[3]],
+        ("dark", Role::Halo) => [0x1d, 0x22, 0x28, c[3]],
+        // Ink and watercolour on yellowed paper: browns for lines, soft earth tones.
+        ("topo", Role::Area) => mix(duller(c, 0.55), [0xe2, 0xd2, 0xaa], 0.45),
+        ("topo", Role::Line) => mix(duller(c, 0.5), [0x5a, 0x3c, 0x22], 0.45),
+        ("topo", Role::Text) => [0x3b, 0x2a, 0x1a, c[3]],
+        ("topo", Role::Halo) => [0xf0, 0xe6, 0xcc, c[3]],
+        // Greys only: areas light, so that lines and text stand out, and lines dark.
+        ("bw", Role::Area) => {
+            let g = (215.0 + grey_of(c) * 35.0).round() as u8;
+            [g, g, g, c[3]]
+        }
+        ("bw", Role::Line) => {
+            let g = (grey_of(c) * 110.0).round() as u8;
+            [g, g, g, c[3]]
+        }
+        ("bw", Role::Text) => [0, 0, 0, c[3]],
+        ("bw", Role::Halo) => [255, 255, 255, c[3]],
+        _ => c,
+    }
+}
+
+impl LayerStyle {
+    /// The style as a ready map style draws it.
+    pub fn in_style(&self, style: &str) -> LayerStyle {
+        if style.is_empty() {
+            return self.clone();
+        }
+        let f = |c: Option<[u8; 4]>, role: Role| c.map(|c| style_colour(style, c, role));
+        LayerStyle {
+            fill: f(self.fill, Role::Area),
+            stroke: f(self.stroke, Role::Line),
+            casing: f(self.casing, Role::Line),
+            pattern_colour: f(self.pattern_colour, Role::Line),
+            ..self.clone()
+        }
+    }
+}
+
+// ---------- Overview map ----------
+
+/// A small map in a corner that shows where the map lies in a larger area.
+#[derive(Debug, Clone, Default)]
+pub struct Overview {
+    /// The corner, as for the legend: "bottom-left" and so on.
+    pub corner: String,
+    /// Its width, as a share of the width of the map.
+    pub share: f32,
+    /// How many times wider than the map it reaches, when it has no layers of its own.
+    pub zoom: f64,
+    /// Layers of its own, such as the outline of a county, in the coordinate system of the
+    /// map. Empty: the lines and areas of the map itself.
+    pub layers: Vec<(Table, LayerStyle)>,
+    /// A background map under it, as large as its box in pixels.
+    pub backdrop: Option<RasterImage>,
+}
+
+impl Overview {
+    /// What it shows, west, south, east and north: around its own layers, or around the map
+    /// `main`, so many times wider.
+    pub fn extent(&self, main: [f64; 4]) -> [f64; 4] {
+        use geo::BoundingRect;
+        let (cx, cy) = ((main[0] + main[2]) / 2.0, (main[1] + main[3]) / 2.0);
+        let mut ext = if self.layers.is_empty() {
+            let z = self.zoom.max(1.5);
+            let (hw, hh) = ((main[2] - main[0]) / 2.0 * z, (main[3] - main[1]) / 2.0 * z);
+            [cx - hw, cy - hh, cx + hw, cy + hh]
+        } else {
+            let mut e = main;
+            for (t, _) in &self.layers {
+                for f in &t.features {
+                    if let Some(r) = f.geom.as_ref().and_then(|g| g.bounding_rect()) {
+                        e = [e[0].min(r.min().x), e[1].min(r.min().y), e[2].max(r.max().x), e[3].max(r.max().y)];
+                    }
+                }
+            }
+            let pad = (e[2] - e[0]).max(e[3] - e[1]) * 0.05;
+            [e[0] - pad, e[1] - pad, e[2] + pad, e[3] + pad]
+        };
+        if ext[2] - ext[0] <= 0.0 || ext[3] - ext[1] <= 0.0 {
+            ext = [ext[0] - 1.0, ext[1] - 1.0, ext[2] + 1.0, ext[3] + 1.0];
+        }
+        ext
+    }
+
+    /// Its box in whole pixels, on a map of this size, for the extent it shows.
+    pub fn size(&self, width: u32, height: u32, ext: [f64; 4]) -> (u32, u32) {
+        let (ew, eh) = (ext[2] - ext[0], ext[3] - ext[1]);
+        let mut w = width as f64 * self.share.clamp(0.08, 0.5) as f64;
+        let mut h = w * eh / ew;
+        if h > height as f64 * 0.5 {
+            h = height as f64 * 0.5;
+            w = h * ew / eh;
+        }
+        ((w.round() as u32).max(1), (h.round() as u32).max(1))
+    }
+}
+
+/// The overview map in its corner: what lies around the map, and the map as a red frame.
+fn draw_overview(pixmap: &mut Canvas, ov: &Overview, main: [f64; 4], map_layers: &[(&Table, LayerStyle)], paper: Option<[u8; 4]>) {
+    use geo::BooleanOps;
+    let (width, height) = (pixmap.width() as f32, pixmap.height() as f32);
+    let own: Vec<(&Table, &LayerStyle)> = ov.layers.iter().map(|(t, s)| (t, s)).collect();
+    let layers: Vec<(&Table, &LayerStyle)> =
+        if own.is_empty() { map_layers.iter().filter(|(t, _)| t.image.is_none()).map(|(t, s)| (*t, s)).collect() } else { own.clone() };
+    let ext = ov.extent(main);
+    let (bw, bh) = ov.size(pixmap.width(), pixmap.height(), ext);
+    let (w, h) = (bw as f32, bh as f32);
+    let ew = ext[2] - ext[0];
+    let pad = (width.min(height) / 50.0).max(6.0).round();
+    let x0 = if ov.corner.ends_with("left") { pad } else { width - pad - w };
+    let y0 = if ov.corner.starts_with("top") { pad } else { height - pad - h };
+    let scale = w as f64 / ew;
+    let to_px = |x: f64, y: f64| (x0 + ((x - ext[0]) * scale) as f32, y0 + ((ext[3] - y) * scale) as f32);
+    let Some(rect) = tiny_skia::Rect::from_xywh(x0, y0, w, h) else { return };
+    // On the paper of the map, or its background map.
+    let p = paper.filter(|c| c[3] > 0).unwrap_or([255, 255, 255, 255]);
+    pixmap.fill_rect(rect, &paint([p[0], p[1], p[2], 245]), Transform::identity(), None);
+    if let Some(bd) = ov.backdrop.as_ref().filter(|bd| bd.width == bw as usize && bd.height == bh as usize) {
+        let mut data = Vec::with_capacity(bd.rgba.len());
+        for p in bd.rgba.chunks_exact(4) {
+            let a = p[3] as u16;
+            data.extend_from_slice(&[(p[0] as u16 * a / 255) as u8, (p[1] as u16 * a / 255) as u8, (p[2] as u16 * a / 255) as u8, p[3]]);
+        }
+        if let Some(under) = tiny_skia::IntSize::from_wh(bw, bh).and_then(|size| Pixmap::from_vec(data, size)) {
+            pixmap.draw_pixmap(x0 as i32, y0 as i32, under.as_ref(), &tiny_skia::PixmapPaint::default(), Transform::identity(), None);
+        }
+    }
+    // The layers, cut to the box, from the bottom up.
+    let bounds = geo::Rect::new((ext[0], ext[1]), (ext[2], ext[3])).to_polygon();
+    let thin = |s: &LayerStyle| Stroke { width: s.width.clamp(0.0, 1.0).max(0.5), line_join: tiny_skia::LineJoin::Round, ..Stroke::default() };
+    for (t, style) in &layers {
+        let mut areas = PathBuilder::new();
+        let mut lines = PathBuilder::new();
+        let ring = |pb: &mut PathBuilder, ls: &geo::LineString<f64>, close: bool| {
+            for (k, c) in ls.0.iter().enumerate() {
+                let (x, y) = to_px(c.x, c.y);
+                if k == 0 {
+                    pb.move_to(x, y);
+                } else {
+                    pb.line_to(x, y);
+                }
+            }
+            if close && !ls.0.is_empty() {
+                pb.close();
+            }
+        };
+        for f in &t.features {
+            let Some(g) = &f.geom else { continue };
+            match g {
+                Geometry::Polygon(_) | Geometry::MultiPolygon(_) | Geometry::Rect(_) | Geometry::Triangle(_) => {
+                    let mp: geo::MultiPolygon<f64> = match g {
+                        Geometry::Polygon(p) => p.clone().into(),
+                        Geometry::MultiPolygon(m) => m.clone(),
+                        Geometry::Rect(r) => r.to_polygon().into(),
+                        Geometry::Triangle(t) => t.to_polygon().into(),
+                        _ => continue,
+                    };
+                    for p in mp.intersection(&geo::MultiPolygon::from(bounds.clone())).0 {
+                        ring(&mut areas, p.exterior(), true);
+                        for i in p.interiors() {
+                            ring(&mut areas, i, true);
+                        }
+                    }
+                }
+                Geometry::LineString(_) | Geometry::MultiLineString(_) | Geometry::Line(_) => {
+                    let ml: geo::MultiLineString<f64> = match g {
+                        Geometry::LineString(l) => l.clone().into(),
+                        Geometry::MultiLineString(m) => m.clone(),
+                        Geometry::Line(l) => geo::LineString::from(*l).into(),
+                        _ => continue,
+                    };
+                    for l in bounds.clip(&ml, false).0 {
+                        ring(&mut lines, &l, false);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some(path) = areas.finish() {
+            if let Some(c) = style.fill {
+                pixmap.fill_path(&path, &paint(c), FillRule::EvenOdd, Transform::identity(), None);
+            }
+            if let Some(c) = style.stroke {
+                pixmap.stroke_path(&path, &paint(c), &thin(style), Transform::identity(), None);
+            }
+        }
+        if let (Some(path), Some(c)) = (lines.finish(), style.stroke.or(style.fill)) {
+            pixmap.stroke_path(&path, &paint(c), &thin(style), Transform::identity(), None);
+        }
+    }
+    // The map itself, in red: a frame, or a ring around it when it is too small to see.
+    let red = [0xd7, 0x30, 0x27, 255];
+    let (ax, ay) = to_px(main[0], main[3]);
+    let (bx, by) = to_px(main[2], main[1]);
+    let frame_stroke = Stroke { width: (w / 90.0).clamp(1.5, 4.0), line_join: tiny_skia::LineJoin::Miter, ..Stroke::default() };
+    if bx - ax >= 6.0 && by - ay >= 6.0 {
+        if let Some(r) = tiny_skia::Rect::from_ltrb(ax, ay, bx, by) {
+            pixmap.stroke_path(&PathBuilder::from_rect(r), &paint(red), &frame_stroke, Transform::identity(), None);
+        }
+    } else {
+        let mut pb = PathBuilder::new();
+        pb.push_circle((ax + bx) / 2.0, (ay + by) / 2.0, (w / 40.0).max(4.0));
+        if let Some(path) = pb.finish() {
+            pixmap.stroke_path(&path, &paint(red), &frame_stroke, Transform::identity(), None);
+        }
+    }
+    pixmap.stroke_path(
+        &PathBuilder::from_rect(rect),
+        &paint([0x44, 0x44, 0x44, 255]),
+        &Stroke { width: (w / 200.0).clamp(1.0, 2.0), ..Stroke::default() },
+        Transform::identity(),
+        None,
+    );
 }

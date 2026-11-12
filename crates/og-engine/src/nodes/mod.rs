@@ -195,6 +195,25 @@ impl Gate<'_> {
         }
         !self.stop.load(Relaxed)
     }
+
+    /// `work` for each of `n` rows, spread over the cores, with the results in the order of
+    /// the rows. Stops with STOPPED when the run is stopped, and with the first error.
+    pub fn each<T: Send>(&self, n: usize, work: impl Fn(usize) -> crate::model::Result<T> + Sync + Send) -> crate::model::Result<Vec<T>> {
+        use rayon::prelude::*;
+        // Some eight runs of rows for each core: few enough that light work is not lost in
+        // handing it out, many enough that a few groups still go to as many cores.
+        let run = (n / (rayon::current_num_threads() * 8)).max(1);
+        (0..n)
+            .into_par_iter()
+            .with_min_len(run)
+            .map(|i| {
+                if i % run.min(256) == 0 && !self.going() {
+                    return err(crate::model::STOPPED);
+                }
+                work(i)
+            })
+            .collect()
+    }
 }
 
 /// One stream into a port that keeps its streams apart.
@@ -709,6 +728,8 @@ mod pointcloud089;
 pub use pointcloud089::class_port;
 mod audit;
 mod custom096;
+mod engines096;
+mod ifc096;
 mod lengths096;
 mod locate096;
 mod movement096;
@@ -720,7 +741,9 @@ mod raster090;
 mod raster096;
 mod remote;
 mod scene;
+mod scene096;
 mod solid;
+mod splats096;
 mod stats096;
 #[cfg(test)]
 mod tests086;
@@ -790,6 +813,9 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         vector093::TYPES,
         tools094::TYPES,
         tools095::TYPES,
+        ifc096::TYPES,
+        engines096::TYPES,
+        splats096::TYPES,
         stats096::TYPES,
         movement096::TYPES,
         locate096::TYPES,

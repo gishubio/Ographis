@@ -284,7 +284,39 @@ pub(crate) fn write(table: &Table, conn: &str, opts: &DbWrite, notes: &mut Notes
     if there && !opts.append {
         notes.info(format!("replaced {}.{}", schema, name));
     }
+    comment_on(&ds, &table_sql, mssql, opts, notes)?;
     Ok(features.len() as u64)
+}
+
+/// The comments of the table and its columns, as COMMENT ON, so that the database says what
+/// they are, also to other programs. Columns by the names they got in the database.
+fn comment_on(ds: &gdal::Dataset, table_sql: &str, mssql: bool, opts: &DbWrite, notes: &mut Notes) -> Result<()> {
+    let table = opts.table_comment.as_deref().map(str::trim).filter(|c| !c.is_empty());
+    let columns: Vec<&(String, String)> = opts.column_comments.iter().filter(|(c, t)| !c.trim().is_empty() && !t.trim().is_empty()).collect();
+    if table.is_none() && columns.is_empty() {
+        return Ok(());
+    }
+    if mssql {
+        notes.warn("Comments are written to PostgreSQL; SQL Server keeps them otherwise, so they were left out.");
+        return Ok(());
+    }
+    let mut sql = String::new();
+    if let Some(c) = table {
+        sql.push_str(&format!("COMMENT ON TABLE {} IS {};", table_sql, literal(c)));
+    }
+    for (col, text) in &columns {
+        sql.push_str(&format!("COMMENT ON COLUMN {}.{} IS {};", table_sql, ident(&launder(col)), literal(text.trim())));
+    }
+    ds.execute_sql(sql, None, gdal::vector::sql::Dialect::DEFAULT).map_err(|e| gerr("The rows were written, but the comments could not be", e))?;
+    notes.info(format!(
+        "comments on {}{}",
+        if table.is_some() { "the table" } else { "" },
+        match columns.len() {
+            0 => String::new(),
+            n => format!("{}{} columns", if table.is_some() { " and " } else { "" }, n),
+        }
+    ));
+    Ok(())
 }
 
 /// The table that is written to.
@@ -464,6 +496,7 @@ fn update_rows(
             notes.warn(format!("The rows were written, but the statistics of the table could not be updated: {}", e));
         }
     }
+    comment_on(ds, &t, target.mssql, opts, notes)?;
     Ok(features.len() as u64)
 }
 

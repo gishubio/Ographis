@@ -6,7 +6,9 @@
 
 use super::geom_inspect::column;
 use super::geom_transform::number_param;
-use super::network::{network_crs, network_from, P_AGAINST, P_ALONG, P_COST, P_DEFAULT_SPEED, P_SNAP, P_SPEED, P_SPEED_AGAINST, P_TOLERANCE};
+use super::network::{
+    network_crs, network_from, P_AGAINST, P_ALONG, P_AVOID, P_COST, P_DEFAULT_SPEED, P_MODE, P_RULES, P_SNAP, P_SPEED, P_SPEED_AGAINST, P_TOLERANCE,
+};
 use super::network091::{in_crs, places_of};
 use super::*;
 #[cfg(test)]
@@ -53,6 +55,9 @@ const LOCATE_PARAMS: &[ParamSpec] = &[
         default: "to",
         hint: "Matters where there are one-way roads",
     },
+    P_RULES,
+    P_MODE,
+    P_AVOID,
     P_COST,
     P_SPEED,
     P_SPEED_AGAINST,

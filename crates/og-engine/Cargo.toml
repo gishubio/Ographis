@@ -25,6 +25,10 @@ tiny-skia = { version = "0.11", default-features = false, features = ["std", "si
 # Spreads the shading and rendering of terrain over the cores.
 rayon = "1.12"
 e57 = "0.11"
+# Signs the token of a Google service account (RS256), for Google Sheets. Already in the
+# build through rustls, as is base64, which reads its key.
+ring = "0.17"
+base64 = "0.22"
 # Sets the text in charts, in the Inter font that is built in.
 ab_glyph = "0.2"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }

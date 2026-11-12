@@ -1,0 +1,37 @@
+{
+  "format": "ographis/1",
+  "name": "Islands for a game engine",
+  "nodes": [
+    {
+      "id": "heights",
+      "type": "Reader",
+      "name": "Heights",
+      "x": 20,
+      "y": 20,
+      "comment": "A made-up terrain model of the islands",
+      "params": {"path": "islands_heights.tif", "raster_as": "grid"}
+    },
+    {
+      "id": "cover",
+      "type": "Reader",
+      "name": "Land cover",
+      "x": 20,
+      "y": 160,
+      "comment": "Kinds of land named as in Lantmäteriet's land cover: a mask for each",
+      "params": {"path": "islands.geojson"}
+    },
+    {
+      "id": "game",
+      "type": "GameEngineExporter",
+      "name": "For Unreal",
+      "x": 300,
+      "y": 60,
+      "comment": "Heightmap, masks and IMPORT.txt in out/game. Change the engine to Unity or Godot",
+      "params": {"engine": "unreal", "folder": "out/game", "mask_by": "kind"}
+    }
+  ],
+  "edges": [
+    {"from": ["heights", "Output"], "to": ["game", "Heights"]},
+    {"from": ["cover", "Output"], "to": ["game", "Areas"]}
+  ]
+}

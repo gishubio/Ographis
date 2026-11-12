@@ -133,6 +133,13 @@ pub(super) const HTTP_PARAMS: &[ParamSpec] = &[
         hint: "Good answers are kept in the folder http-cache beside the model, and the same request is not sent again in later runs. Delete the folder to ask anew",
     },
     ParamSpec {
+        key: "log",
+        label: "Write every request to",
+        kind: ParamKind::FileSave,
+        default: "",
+        hint: "A text file, such as requests.log, with a line for each request: when, the method, the address, the status, the size and time of the answer, and the body sent. Added to in each run. Secrets of the API connection are hidden. Empty: none",
+    },
+    ParamSpec {
         key: "retries",
         label: "Tries again",
         kind: ParamKind::Text,
@@ -280,10 +287,23 @@ pub(super) fn run_http(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
         })
     };
     let retries = whole("retries", 3, "Tries again")?.min(10) as u32;
+    let log = request_log(p, ctx)?;
+    if let (Some(log), Some(_)) = (&log, &cache_dir) {
+        for key in answers.keys() {
+            log.write(&crate::web::Logged {
+                method: &method,
+                url: &unique[key].0,
+                note: "from http-cache",
+                body: unique[key].1.as_deref(),
+                ..Default::default()
+            });
+        }
+    }
     let new_client = |workers: usize| {
         let mut c = crate::web::Client::new(b, auth.clone(), &stopped).per_second(if per_second > 0.0 { per_second / workers as f64 } else { 0.0 });
         c.timeout_s = timeout;
         c.retries = retries;
+        c.log = log.as_ref();
         c
     };
     if parallel <= 1 || todo.len() <= 1 {
@@ -459,6 +479,32 @@ fn extension_of(bytes: &[u8]) -> &'static str {
 }
 
 /// HTTP request with the answers kept as files: each fetched with GET, as bytes.
+/// A file fetched, and a line about it in the log of requests when there is one.
+fn fetch_logged(b: &dyn Backend, url: &str, headers: &[(String, String)], log: Option<&crate::web::RequestLog>) -> Result<Vec<u8>> {
+    let began = std::time::Instant::now();
+    let got = b.fetch_bytes(url, headers);
+    if let Some(log) = log {
+        let line = crate::web::Logged { method: "GET", url, took: Some(began.elapsed()), body: None, ..Default::default() };
+        match &got {
+            Ok(bytes) => log.write(&crate::web::Logged { status: "200", bytes: Some(bytes.len()), ..line }),
+            Err(e) => log.write(&crate::web::Logged { status: "failed", note: &e.0, ..line }),
+        }
+    }
+    got
+}
+
+/// The log of requests, when one is asked for: the file, beside the model or a whole path.
+fn request_log(p: &P, ctx: &NodeCtx) -> Result<Option<crate::web::RequestLog>> {
+    match p.get("log").filter(|l| !l.trim().is_empty()) {
+        Some(path) => {
+            let path = ctx.resolve(path.trim());
+            let log = crate::web::RequestLog::open(&path)?;
+            Ok(Some(log))
+        }
+        None => Ok(None),
+    }
+}
+
 fn run_http_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let b = ctx.backend("Web requests")?;
     let method = p.get("method").unwrap_or_else(|| "GET".into()).to_uppercase();
@@ -490,6 +536,7 @@ fn run_http_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let folder = ctx.resolve(&p.get("folder").filter(|f| !f.trim().is_empty()).unwrap_or_else(|| "answers".into()));
     std::fs::create_dir_all(&folder).map_err(|e| GbError(format!("Cannot create the folder {}: {}", folder.display(), e)))?;
     let keep = p.get("cache").as_deref() == Some("disk");
+    let log = request_log(p, ctx)?;
     let geographic = ctx.geographic(table.crs);
     let mut out = Table { fields: table.fields.clone(), features: Vec::new(), ..table.like() };
     out.fields.push(Field::new("_file", FieldType::Text));
@@ -524,9 +571,12 @@ fn run_http_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
                 let g = match earlier {
                     Some(path) => {
                         kept += 1;
+                        if let Some(log) = &log {
+                            log.write(&crate::web::Logged { method: "GET", url: &url, note: "kept from before", ..Default::default() });
+                        }
                         Ok(path.to_string_lossy().into_owned())
                     }
-                    None => match b.fetch_bytes(&url, &headers) {
+                    None => match fetch_logged(b, &url, &headers, log.as_ref()) {
                         Ok(bytes) => {
                             fetched += 1;
                             let path = stem.with_extension(extension_of(&bytes));

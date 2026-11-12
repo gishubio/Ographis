@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.96.0",
+  "version": "0.96.2",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a name that is shown, x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -1045,6 +1045,40 @@
           "hint": "Each property as an attribute, such as Pset_WallCommon.IsExternal, also quantities and those of the type"
         },
         {
+          "key": "splat_up",
+          "label": "Upwards in the scene",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "auto",
+              "label": "As the format says: y down for PLY, y up for SPZ"
+            },
+            {
+              "value": "-y",
+              "label": "y down, as COLMAP and the training of splats"
+            },
+            {
+              "value": "y",
+              "label": "y up, as three.js and many viewers"
+            },
+            {
+              "value": "z",
+              "label": "z up, as on maps"
+            }
+          ],
+          "default": "auto",
+          "hint": "Gaussian splats and PLY points: which axis of the file points up"
+        },
+        {
+          "key": "splat_scale",
+          "label": "Metres for a unit of the scene",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "Splats made from photos have no scale of their own: such as 2.5 when a distance of 4 m in the world measures 1.6 in the scene"
+        },
+        {
           "key": "obj_east",
           "label": "Origin of the model, east",
           "kind": "text",
@@ -1100,15 +1134,15 @@
         },
         {
           "key": "json_records",
-          "label": "Records at (JSON)",
+          "label": "Records at (JSON, XML)",
           "kind": "text",
           "shape": "a string",
           "default": "",
-          "hint": "Where the list of records is in the file, such as results or data.items. Empty finds it: the list itself, or a list such as results"
+          "hint": "Where the list of records is in the file, such as results or data.items, or in XML the elements by their path, such as Fastigheter.Fastighet. Empty finds it: the list itself, or a list such as results"
         },
         {
           "key": "json_nested",
-          "label": "Objects in a record (JSON)",
+          "label": "Objects in a record (JSON, XML)",
           "kind": "choice",
           "shape": "one of the values in choices, as a string",
           "choices": [
@@ -1415,6 +1449,10 @@
               "label": "GPX for GPS units (.gpx)"
             },
             {
+              "value": "gsheet",
+              "label": "Google Sheets (the address of the sheet)"
+            },
+            {
               "value": "kml",
               "label": "KML for Google Earth (.kml)"
             },
@@ -1443,6 +1481,14 @@
               "label": "glTF 3D model (.glb)"
             },
             {
+              "value": "usda",
+              "label": "OpenUSD (.usda)"
+            },
+            {
+              "value": "usdz",
+              "label": "OpenUSD package with textures (.usdz)"
+            },
+            {
               "value": "3dtiles",
               "label": "3D Tiles 1.1 (a folder with tileset.json)"
             },
@@ -1451,12 +1497,28 @@
               "label": "JPEG image (.jpg)"
             },
             {
+              "value": "json",
+              "label": "JSON: a list of objects (.json)"
+            },
+            {
+              "value": "landxml",
+              "label": "LandXML surface and points (.xml)"
+            },
+            {
               "value": "las",
               "label": "LAS point cloud (.las)"
             },
             {
               "value": "laz",
               "label": "LAZ point cloud (.laz)"
+            },
+            {
+              "value": "ply",
+              "label": "Gaussian splats or points, PLY (.ply)"
+            },
+            {
+              "value": "spz",
+              "label": "Gaussian splats, compressed SPZ (.spz)"
             },
             {
               "value": "ods",
@@ -1509,6 +1571,10 @@
             {
               "value": "txt",
               "label": "Text (.txt)"
+            },
+            {
+              "value": "xml",
+              "label": "XML (.xml)"
             }
           ],
           "default": "",
@@ -1895,6 +1961,161 @@
           "hint": "PMTiles: the largest, at most 16. 14 has tiles of about 2 km, and maps zoom in beyond it"
         },
         {
+          "key": "connection",
+          "label": "API connection",
+          "kind": "api_connection",
+          "shape": "the name of an API connection in the settings of the user",
+          "default": "",
+          "hint": "Google Sheets: a connection with the key of a Google service account that the sheet is shared with, as an editor"
+        },
+        {
+          "key": "splat_up",
+          "label": "Upwards in the file",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "auto",
+              "label": "As the format says: y down for PLY, y up for SPZ"
+            },
+            {
+              "value": "-y",
+              "label": "y down, as COLMAP and the training of splats"
+            },
+            {
+              "value": "y",
+              "label": "y up, as three.js and many viewers"
+            },
+            {
+              "value": "z",
+              "label": "z up, as on maps"
+            }
+          ],
+          "default": "auto",
+          "hint": "Gaussian splats: y down for PLY and y up for SPZ, as most viewers expect, or z up as on maps"
+        },
+        {
+          "key": "usd_layers",
+          "label": "Layers by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "OpenUSD: a layer for each value, such as buildings, roads and trees, each a file the main file takes in. Empty: one"
+        },
+        {
+          "key": "usd_variants",
+          "label": "Variants by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "OpenUSD: a variant for each value, such as today and plan, to switch between in the 3D program. Empty: none"
+        },
+        {
+          "key": "xml_root",
+          "label": "Outer element",
+          "kind": "text",
+          "shape": "a string",
+          "default": "features",
+          "hint": "XML: the element around all of it"
+        },
+        {
+          "key": "xml_row",
+          "label": "Element of a feature",
+          "kind": "text",
+          "shape": "a string",
+          "default": "feature",
+          "hint": "XML: the element of each feature. Names with a dot become elements within it"
+        },
+        {
+          "key": "xml_geometry",
+          "label": "Geometry in XML",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "Left out"
+            },
+            {
+              "value": "wkt",
+              "label": "As WKT, in geometry"
+            }
+          ],
+          "default": "none"
+        },
+        {
+          "key": "json_shape",
+          "label": "JSON as",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "list",
+              "label": "A list of objects, one for each feature"
+            },
+            {
+              "value": "lines",
+              "label": "JSON Lines: an object on each line"
+            },
+            {
+              "value": "first",
+              "label": "The object of the first feature alone"
+            }
+          ],
+          "default": "list",
+          "hint": "Names with a dot become objects within the object, and attributes that hold JSON, such as from Build JSON, are written as JSON"
+        },
+        {
+          "key": "json_list_name",
+          "label": "List under the name",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Puts the list in an object under this name, such as {\"items\": [...]}. Empty writes the list as it is"
+        },
+        {
+          "key": "json_geometry",
+          "label": "Geometry in JSON",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "Left out"
+            },
+            {
+              "value": "geojson",
+              "label": "As GeoJSON, in geometry"
+            },
+            {
+              "value": "wkt",
+              "label": "As WKT, in geometry"
+            }
+          ],
+          "default": "none",
+          "hint": "In the coordinates of the stream"
+        },
+        {
+          "key": "schema_files",
+          "label": "Schema and TypeScript types",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "false",
+          "hint": "Writes name.schema.json (JSON Schema) and name.d.ts (TypeScript) beside the file, with each attribute, its type and whether it can be empty, for those who use the file in code"
+        },
+        {
           "key": "geojson_crs",
           "label": "Coordinates",
           "kind": "choice",
@@ -2233,6 +2454,10 @@
               "label": "GPX for GPS units (.gpx)"
             },
             {
+              "value": "gsheet",
+              "label": "Google Sheets (the address of the sheet)"
+            },
+            {
               "value": "kml",
               "label": "KML for Google Earth (.kml)"
             },
@@ -2261,6 +2486,14 @@
               "label": "glTF 3D model (.glb)"
             },
             {
+              "value": "usda",
+              "label": "OpenUSD (.usda)"
+            },
+            {
+              "value": "usdz",
+              "label": "OpenUSD package with textures (.usdz)"
+            },
+            {
               "value": "3dtiles",
               "label": "3D Tiles 1.1 (a folder with tileset.json)"
             },
@@ -2269,12 +2502,28 @@
               "label": "JPEG image (.jpg)"
             },
             {
+              "value": "json",
+              "label": "JSON: a list of objects (.json)"
+            },
+            {
+              "value": "landxml",
+              "label": "LandXML surface and points (.xml)"
+            },
+            {
               "value": "las",
               "label": "LAS point cloud (.las)"
             },
             {
               "value": "laz",
               "label": "LAZ point cloud (.laz)"
+            },
+            {
+              "value": "ply",
+              "label": "Gaussian splats or points, PLY (.ply)"
+            },
+            {
+              "value": "spz",
+              "label": "Gaussian splats, compressed SPZ (.spz)"
             },
             {
               "value": "ods",
@@ -2327,6 +2576,10 @@
             {
               "value": "txt",
               "label": "Text (.txt)"
+            },
+            {
+              "value": "xml",
+              "label": "XML (.xml)"
             }
           ],
           "default": "pptx"
@@ -2456,6 +2709,10 @@
               "label": "GPX for GPS units (.gpx)"
             },
             {
+              "value": "gsheet",
+              "label": "Google Sheets (the address of the sheet)"
+            },
+            {
               "value": "kml",
               "label": "KML for Google Earth (.kml)"
             },
@@ -2484,6 +2741,14 @@
               "label": "glTF 3D model (.glb)"
             },
             {
+              "value": "usda",
+              "label": "OpenUSD (.usda)"
+            },
+            {
+              "value": "usdz",
+              "label": "OpenUSD package with textures (.usdz)"
+            },
+            {
               "value": "3dtiles",
               "label": "3D Tiles 1.1 (a folder with tileset.json)"
             },
@@ -2492,12 +2757,28 @@
               "label": "JPEG image (.jpg)"
             },
             {
+              "value": "json",
+              "label": "JSON: a list of objects (.json)"
+            },
+            {
+              "value": "landxml",
+              "label": "LandXML surface and points (.xml)"
+            },
+            {
               "value": "las",
               "label": "LAS point cloud (.las)"
             },
             {
               "value": "laz",
               "label": "LAZ point cloud (.laz)"
+            },
+            {
+              "value": "ply",
+              "label": "Gaussian splats or points, PLY (.ply)"
+            },
+            {
+              "value": "spz",
+              "label": "Gaussian splats, compressed SPZ (.spz)"
             },
             {
               "value": "ods",
@@ -2550,6 +2831,10 @@
             {
               "value": "txt",
               "label": "Text (.txt)"
+            },
+            {
+              "value": "xml",
+              "label": "XML (.xml)"
             }
           ],
           "default": "geopdf"
@@ -2917,6 +3202,10 @@
               "label": "GPX for GPS units (.gpx)"
             },
             {
+              "value": "gsheet",
+              "label": "Google Sheets (the address of the sheet)"
+            },
+            {
               "value": "kml",
               "label": "KML for Google Earth (.kml)"
             },
@@ -2945,6 +3234,14 @@
               "label": "glTF 3D model (.glb)"
             },
             {
+              "value": "usda",
+              "label": "OpenUSD (.usda)"
+            },
+            {
+              "value": "usdz",
+              "label": "OpenUSD package with textures (.usdz)"
+            },
+            {
               "value": "3dtiles",
               "label": "3D Tiles 1.1 (a folder with tileset.json)"
             },
@@ -2953,12 +3250,28 @@
               "label": "JPEG image (.jpg)"
             },
             {
+              "value": "json",
+              "label": "JSON: a list of objects (.json)"
+            },
+            {
+              "value": "landxml",
+              "label": "LandXML surface and points (.xml)"
+            },
+            {
               "value": "las",
               "label": "LAS point cloud (.las)"
             },
             {
               "value": "laz",
               "label": "LAZ point cloud (.laz)"
+            },
+            {
+              "value": "ply",
+              "label": "Gaussian splats or points, PLY (.ply)"
+            },
+            {
+              "value": "spz",
+              "label": "Gaussian splats, compressed SPZ (.spz)"
             },
             {
               "value": "ods",
@@ -3011,6 +3324,10 @@
             {
               "value": "txt",
               "label": "Text (.txt)"
+            },
+            {
+              "value": "xml",
+              "label": "XML (.xml)"
             }
           ],
           "default": "qgis"
@@ -3140,6 +3457,10 @@
               "label": "GPX for GPS units (.gpx)"
             },
             {
+              "value": "gsheet",
+              "label": "Google Sheets (the address of the sheet)"
+            },
+            {
               "value": "kml",
               "label": "KML for Google Earth (.kml)"
             },
@@ -3168,6 +3489,14 @@
               "label": "glTF 3D model (.glb)"
             },
             {
+              "value": "usda",
+              "label": "OpenUSD (.usda)"
+            },
+            {
+              "value": "usdz",
+              "label": "OpenUSD package with textures (.usdz)"
+            },
+            {
               "value": "3dtiles",
               "label": "3D Tiles 1.1 (a folder with tileset.json)"
             },
@@ -3176,12 +3505,28 @@
               "label": "JPEG image (.jpg)"
             },
             {
+              "value": "json",
+              "label": "JSON: a list of objects (.json)"
+            },
+            {
+              "value": "landxml",
+              "label": "LandXML surface and points (.xml)"
+            },
+            {
               "value": "las",
               "label": "LAS point cloud (.las)"
             },
             {
               "value": "laz",
               "label": "LAZ point cloud (.laz)"
+            },
+            {
+              "value": "ply",
+              "label": "Gaussian splats or points, PLY (.ply)"
+            },
+            {
+              "value": "spz",
+              "label": "Gaussian splats, compressed SPZ (.spz)"
             },
             {
               "value": "ods",
@@ -3234,6 +3579,10 @@
             {
               "value": "txt",
               "label": "Text (.txt)"
+            },
+            {
+              "value": "xml",
+              "label": "XML (.xml)"
             }
           ],
           "default": "webmap"
@@ -3448,6 +3797,14 @@
           "hint": "A condition in SQL, such as kommun = 'Skövde', so that the database sends only those rows"
         },
         {
+          "key": "columns",
+          "label": "Only these columns",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Names with commas, such as namn, kommun: the database sends only those and the geometry, so that a wide table is read faster. Empty reads all"
+        },
+        {
           "key": "bbox",
           "label": "Only within",
           "kind": "text",
@@ -3636,6 +3993,10 @@
               "label": "GPX for GPS units (.gpx)"
             },
             {
+              "value": "gsheet",
+              "label": "Google Sheets (the address of the sheet)"
+            },
+            {
               "value": "kml",
               "label": "KML for Google Earth (.kml)"
             },
@@ -3664,6 +4025,14 @@
               "label": "glTF 3D model (.glb)"
             },
             {
+              "value": "usda",
+              "label": "OpenUSD (.usda)"
+            },
+            {
+              "value": "usdz",
+              "label": "OpenUSD package with textures (.usdz)"
+            },
+            {
               "value": "3dtiles",
               "label": "3D Tiles 1.1 (a folder with tileset.json)"
             },
@@ -3672,12 +4041,28 @@
               "label": "JPEG image (.jpg)"
             },
             {
+              "value": "json",
+              "label": "JSON: a list of objects (.json)"
+            },
+            {
+              "value": "landxml",
+              "label": "LandXML surface and points (.xml)"
+            },
+            {
               "value": "las",
               "label": "LAS point cloud (.las)"
             },
             {
               "value": "laz",
               "label": "LAZ point cloud (.laz)"
+            },
+            {
+              "value": "ply",
+              "label": "Gaussian splats or points, PLY (.ply)"
+            },
+            {
+              "value": "spz",
+              "label": "Gaussian splats, compressed SPZ (.spz)"
             },
             {
               "value": "ods",
@@ -3730,6 +4115,10 @@
             {
               "value": "txt",
               "label": "Text (.txt)"
+            },
+            {
+              "value": "xml",
+              "label": "XML (.xml)"
             }
           ],
           "default": "postgis"
@@ -3962,6 +4351,23 @@
           "port": "Input",
           "default": "",
           "hint": "Its values must all be different and none empty"
+        },
+        {
+          "key": "table_comment",
+          "label": "Comment on the table",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "What the table holds, kept in the database (COMMENT ON TABLE), where other programs show it"
+        },
+        {
+          "key": "column_comments",
+          "label": "Comments on columns",
+          "kind": "object",
+          "shape": "an object {\"old name\": \"new name\"}",
+          "port": "Input",
+          "default": "",
+          "hint": "An attribute and what it holds, such as its unit or its source, kept in the database (COMMENT ON COLUMN)"
         },
         {
           "key": "sql_before",
@@ -5301,7 +5707,26 @@
       ],
       "outputs_follow_settings": false,
       "offered": true,
-      "params": []
+      "params": [
+        {
+          "key": "close",
+          "label": "3D models along the edge",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "Left open"
+            },
+            {
+              "value": "true",
+              "label": "Closed with a wall"
+            }
+          ],
+          "default": "false",
+          "hint": "A building or another solid cut by the edge is closed with a new wall there, on each side, so that it stands whole in a 3D print or a picture"
+        }
+      ]
     },
     {
       "type": "Dissolver",
@@ -7732,6 +8157,14 @@
           "hint": "Good answers are kept in the folder http-cache beside the model, and the same request is not sent again in later runs. Delete the folder to ask anew"
         },
         {
+          "key": "log",
+          "label": "Write every request to",
+          "kind": "path",
+          "shape": "a file to write; relative paths start at the folder of the model",
+          "default": "",
+          "hint": "A text file, such as requests.log, with a line for each request: when, the method, the address, the status, the size and time of the answer, and the body sent. Added to in each run. Secrets of the API connection are hidden. Empty: none"
+        },
+        {
           "key": "retries",
           "label": "Tries again",
           "kind": "text",
@@ -7916,6 +8349,42 @@
       ]
     },
     {
+      "type": "XmlExtractor",
+      "title": "Extract XML values",
+      "group": "tool",
+      "category": "JSON",
+      "description": "Takes chosen values out of the XML in an attribute, such as the answer of a web service, each by its path of element names, such as Fastighet.Adress.Ort or Fastighet.Tel[1], into attributes. An XML attribute is taken by its name. A value that is not there is left empty. Features whose attribute is not XML go to Failed.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Output",
+        "Failed"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "attribute",
+          "label": "XML in",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "The attribute with XML text, such as the answer of a web service"
+        },
+        {
+          "key": "paths",
+          "label": "Values to take",
+          "kind": "list",
+          "shape": "a list of [path in the JSON, attribute name]",
+          "port": "Input",
+          "default": "",
+          "hint": "A path of element names and the attribute it goes to, such as Fastighet.Adress.Ort or Fastighet.Tel[1], from the outermost element. An XML attribute is taken by its name, as Fastighet.id. An empty name takes the last part of the path"
+        }
+      ]
+    },
+    {
       "type": "JsonStatReader",
       "title": "JSON-stat to table",
       "group": "tool",
@@ -8018,6 +8487,45 @@
           "hint": "The attribute that gets the JSON text"
         },
         {
+          "key": "gather",
+          "label": "Make",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "each",
+              "label": "An object for each feature"
+            },
+            {
+              "value": "all",
+              "label": "One list of all the features"
+            },
+            {
+              "value": "group",
+              "label": "A list for each value of an attribute"
+            }
+          ],
+          "default": "each",
+          "hint": "A list gathers the objects of the features, all of them or those with the same value, into one feature each, as a web service wants a list of many"
+        },
+        {
+          "key": "gather_by",
+          "label": "Lists by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "The attribute whose values each get a list. The list's feature keeps the value"
+        },
+        {
+          "key": "list_name",
+          "label": "List under the name",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Puts the list in an object under this name, such as {\"features\": [...]}. Empty writes the list as it is"
+        },
+        {
           "key": "nest",
           "label": "Names with a dot as objects",
           "kind": "choice",
@@ -8066,6 +8574,10 @@
             {
               "value": "geojson",
               "label": "As GeoJSON, in geometry"
+            },
+            {
+              "value": "wkt",
+              "label": "As WKT, in geometry"
             }
           ],
           "default": "none",
@@ -8098,7 +8610,8 @@
       "category": "Maps",
       "description": "Draws the streams connected to Layers into a picture with coordinates: each stream a layer with its own colours, in the order you set, with values shown by colour and size, labels, icons for points, and a legend. Write the picture to PNG, JPG, GeoTIFF or PDF with an output.",
       "inputs": [
-        "Layers"
+        "Layers",
+        "Overview"
       ],
       "outputs": [
         "Map"
@@ -8155,6 +8668,36 @@
           "shape": "a string",
           "default": "300",
           "hint": "300 for print, 150 for a draft. Lines, points and labels keep the size they have on the screen, measured on paper, and the picture tells Output its resolution"
+        },
+        {
+          "key": "map_style",
+          "label": "Style",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "",
+              "label": "As the layers are set"
+            },
+            {
+              "value": "light",
+              "label": "Light"
+            },
+            {
+              "value": "dark",
+              "label": "Dark"
+            },
+            {
+              "value": "topo",
+              "label": "Old topographic"
+            },
+            {
+              "value": "bw",
+              "label": "Print in black and white"
+            }
+          ],
+          "default": "",
+          "hint": "A ready look for the whole map: the colours of the layers are made to fit it, each layer keeping its own hue, and a background of a colour gets the paper of the style"
         },
         {
           "key": "margin",
@@ -8396,6 +8939,52 @@
           "shape": "a string",
           "default": "",
           "hint": "In the units of the map, such as 1000 for every km in SWEREF 99 TM. Empty gives a round number by the size"
+        },
+        {
+          "key": "overview",
+          "label": "Overview map",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "None"
+            },
+            {
+              "value": "bottom-left",
+              "label": "Lower left"
+            },
+            {
+              "value": "bottom-right",
+              "label": "Lower right"
+            },
+            {
+              "value": "top-left",
+              "label": "Upper left"
+            },
+            {
+              "value": "top-right",
+              "label": "Upper right"
+            }
+          ],
+          "default": "none",
+          "hint": "A small map in a corner that shows where the map lies, with the map as a red frame: what is connected to Overview, such as the outline of the county, or else the lines and areas of the map seen from further away"
+        },
+        {
+          "key": "overview_size",
+          "label": "Overview width in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "25",
+          "hint": "Of the width of the map"
+        },
+        {
+          "key": "overview_zoom",
+          "label": "Overview reaches",
+          "kind": "text",
+          "shape": "a string",
+          "default": "5",
+          "hint": "How many times wider than the map, when nothing is connected to Overview"
         },
         {
           "key": "source",
@@ -8874,7 +9463,8 @@
         "Terrain",
         "Map",
         "Water",
-        "Lights"
+        "Lights",
+        "Trees"
       ],
       "outputs": [
         "Image"
@@ -8903,6 +9493,32 @@
           "shape": "a string",
           "default": "215",
           "hint": "Degrees clockwise from north: 180 looks north from the south"
+        },
+        {
+          "key": "camera",
+          "label": "Camera",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "",
+              "label": "As set below"
+            },
+            {
+              "value": "birds_eye",
+              "label": "Bird's eye: from high up, in perspective"
+            },
+            {
+              "value": "axonometric",
+              "label": "Axonometric: parallel, from 35° up"
+            },
+            {
+              "value": "top",
+              "label": "Straight down, as a plan"
+            }
+          ],
+          "default": "",
+          "hint": "A ready place for the camera, which sets its height, projection and lens. Looking from and the zoom still count"
         },
         {
           "key": "elevation",
@@ -9244,6 +9860,58 @@
           "shape": "a string",
           "default": "",
           "hint": "Words in the names of materials that give off light in their own colour, such as lamp, neon, sign. Materials with emission in their file glow too"
+        },
+        {
+          "key": "roof_by",
+          "label": "Roofs coloured by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Models",
+          "default": "",
+          "hint": "An attribute of the models with the kind of roof, such as roof_type from LoD2 buildings: flat, gable, hipped, shed or mansard, in English or Swedish (platt, sadel, valm, pulpet), or a colour as #rrggbb. Empty keeps their materials"
+        },
+        {
+          "key": "tree_height",
+          "label": "Trees, height",
+          "kind": "text",
+          "shape": "a string",
+          "default": "10",
+          "hint": "In metres, for the points on Trees"
+        },
+        {
+          "key": "tree_height_by",
+          "label": "Trees, height from",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Trees",
+          "default": "",
+          "hint": "An attribute with the height of each tree. Empty gives all the height above"
+        },
+        {
+          "key": "tree_kind",
+          "label": "Trees, kind",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "leafy",
+              "label": "Leafy, with a round crown"
+            },
+            {
+              "value": "conifer",
+              "label": "Conifers, as cones"
+            }
+          ],
+          "default": "leafy"
+        },
+        {
+          "key": "tree_kind_by",
+          "label": "Trees, kind from",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Trees",
+          "default": "",
+          "hint": "An attribute where words such as conifer, pine, spruce, barr, gran or tall make a conifer, and other values a leafy tree"
         },
         {
           "key": "lit_windows",
@@ -10646,6 +11314,76 @@
           "hint": "In metres: how far from the roads reached the area reaches, for the houses and land along them"
         },
         {
+          "key": "rules",
+          "label": "Rules of the road",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "own",
+              "label": "My own, below"
+            },
+            {
+              "value": "osm",
+              "label": "OpenStreetMap"
+            },
+            {
+              "value": "nvdb",
+              "label": "NVDB from Lastkajen"
+            }
+          ],
+          "default": "own",
+          "hint": "Ready rules for OpenStreetMap or NVDB: one-way streets, roundabouts, speed limits and which roads may be used, by how one travels. My own: the conditions and speeds below"
+        },
+        {
+          "key": "mode",
+          "label": "Travelling",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "car",
+              "label": "By car"
+            },
+            {
+              "value": "bike",
+              "label": "By bicycle"
+            },
+            {
+              "value": "walk",
+              "label": "On foot"
+            }
+          ],
+          "default": "car",
+          "hint": "With ready rules: by car at the speed limits, by bicycle at 18 km/h, on foot at 5 km/h"
+        },
+        {
+          "key": "avoid",
+          "label": "Keep away from",
+          "kind": "picks",
+          "shape": "some of the values in choices: a list of strings, or one string separated by commas",
+          "choices": [
+            {
+              "value": "motorway",
+              "label": "Motorways"
+            },
+            {
+              "value": "ferry",
+              "label": "Ferries"
+            },
+            {
+              "value": "unpaved",
+              "label": "Gravel and other unpaved roads"
+            },
+            {
+              "value": "toll",
+              "label": "Tolls"
+            }
+          ],
+          "default": "",
+          "hint": "With ready rules, these roads are left out of the network"
+        },
+        {
           "key": "cost",
           "label": "By",
           "kind": "choice",
@@ -10776,6 +11514,76 @@
           "shape": "a string",
           "default": "100",
           "hint": "In metres: how far from the roads reached the area reaches, for the houses and land along them"
+        },
+        {
+          "key": "rules",
+          "label": "Rules of the road",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "own",
+              "label": "My own, below"
+            },
+            {
+              "value": "osm",
+              "label": "OpenStreetMap"
+            },
+            {
+              "value": "nvdb",
+              "label": "NVDB from Lastkajen"
+            }
+          ],
+          "default": "own",
+          "hint": "Ready rules for OpenStreetMap or NVDB: one-way streets, roundabouts, speed limits and which roads may be used, by how one travels. My own: the conditions and speeds below"
+        },
+        {
+          "key": "mode",
+          "label": "Travelling",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "car",
+              "label": "By car"
+            },
+            {
+              "value": "bike",
+              "label": "By bicycle"
+            },
+            {
+              "value": "walk",
+              "label": "On foot"
+            }
+          ],
+          "default": "car",
+          "hint": "With ready rules: by car at the speed limits, by bicycle at 18 km/h, on foot at 5 km/h"
+        },
+        {
+          "key": "avoid",
+          "label": "Keep away from",
+          "kind": "picks",
+          "shape": "some of the values in choices: a list of strings, or one string separated by commas",
+          "choices": [
+            {
+              "value": "motorway",
+              "label": "Motorways"
+            },
+            {
+              "value": "ferry",
+              "label": "Ferries"
+            },
+            {
+              "value": "unpaved",
+              "label": "Gravel and other unpaved roads"
+            },
+            {
+              "value": "toll",
+              "label": "Tolls"
+            }
+          ],
+          "default": "",
+          "hint": "With ready rules, these roads are left out of the network"
         },
         {
           "key": "cost",
@@ -13036,6 +13844,235 @@
           "shape": "a string",
           "default": "",
           "hint": "In square metres: parts of an outline smaller than this are left out, and objects with nothing left go to Other. Empty keeps all"
+        },
+        {
+          "key": "plane_3d",
+          "label": "Cut in 3D",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "true",
+              "label": "Shown as a see-through plane"
+            },
+            {
+              "value": "false",
+              "label": "Not shown"
+            }
+          ],
+          "default": "true",
+          "hint": "In the 3D view of the program: the model that comes in, with the height of the cut as a plane"
+        }
+      ]
+    },
+    {
+      "type": "IdsChecker",
+      "title": "Check against IDS",
+      "group": "tool",
+      "category": "3D models and views",
+      "description": "Checks the objects of an IFC model against an Information Delivery Specification (IDS 1.0): for each specification, the objects it applies to by class, attribute, property, material or storey, and what they must have, may have or must not have, with values as they are or as a list, a pattern or a range. Objects that meet every specification that applies go to Passed, the others to Failed with what they lack in ids_failed. The log tells how many meet each specification. Classifications are not read from IFC, so they cannot be checked, and the log says so.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Passed",
+        "Failed"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "path",
+          "label": "IDS file",
+          "kind": "path",
+          "shape": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model",
+          "default": "",
+          "hint": "The requirements as buildingSMART's Information Delivery Specification (.ids), such as a client's demands on the model"
+        }
+      ]
+    },
+    {
+      "type": "GameEngineExporter",
+      "title": "Real place for a game engine",
+      "group": "tool",
+      "category": "3D models and views",
+      "description": "Makes a real place ready for Unreal Engine, Unity or Godot. The terrain model on Heights becomes a square heightmap of 16 bits, as PNG and RAW, in a size the engine takes. The areas on Areas become masks for painting the ground, one for each kind, such as forest, water and fields. Trees, poles and buildings on Instances become a list of positions, each turned and sized, to place as instances. The roads on Roads become splines on the ground, and a mask of their width. Each in the units and axes of the engine, from a corner of the heightmap, with IMPORT.txt, which tells the scale and place to set when importing.",
+      "inputs": [
+        "Heights",
+        "Areas",
+        "Instances",
+        "Roads"
+      ],
+      "outputs": [
+        "Heightmap",
+        "Instances"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "engine",
+          "label": "Engine",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "unreal",
+              "label": "Unreal Engine"
+            },
+            {
+              "value": "unity",
+              "label": "Unity"
+            },
+            {
+              "value": "godot",
+              "label": "Godot"
+            }
+          ],
+          "default": "unreal",
+          "hint": "The units, axes and sizes follow the engine"
+        },
+        {
+          "key": "folder",
+          "label": "Folder",
+          "kind": "text",
+          "shape": "a string",
+          "default": "game",
+          "hint": "Where the files go, beside the model or a whole path: heightmap.png and .r16, masks, instances.csv, roads.json and IMPORT.txt"
+        },
+        {
+          "key": "size",
+          "label": "Size of the heightmap",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "auto",
+              "label": "As fine as the terrain model, up to the largest"
+            },
+            {
+              "value": "small",
+              "label": "About 500 pixels"
+            },
+            {
+              "value": "medium",
+              "label": "About 1000 pixels"
+            },
+            {
+              "value": "large",
+              "label": "About 2000 pixels"
+            },
+            {
+              "value": "huge",
+              "label": "About 4000 pixels"
+            }
+          ],
+          "default": "auto",
+          "hint": "The nearest size the engine takes. The heightmap is square, over the whole terrain model; outside it, the lowest height"
+        },
+        {
+          "key": "mask_by",
+          "label": "Masks by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Areas",
+          "default": "",
+          "hint": "The attribute of the areas that names their kind, such as forest, water or field: a mask for each kind. Empty: one mask of all the areas"
+        },
+        {
+          "key": "kind_by",
+          "label": "Instances by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Instances",
+          "default": "",
+          "hint": "The attribute that names what stands there, such as tree, pole or house. Empty: instance"
+        },
+        {
+          "key": "height_by",
+          "label": "Height of instances",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Instances",
+          "default": "",
+          "hint": "Such as the height of a building or a tree, in metres, for its scale. Empty: none"
+        },
+        {
+          "key": "road_width",
+          "label": "Width of roads",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Roads",
+          "default": "6",
+          "hint": "In metres: a number, or an attribute such as the width in NVDB. For the road mask and the splines"
+        },
+        {
+          "key": "road_name",
+          "label": "Name of roads",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Roads",
+          "default": "",
+          "hint": "An attribute for the name of each spline. Empty: road and its number"
+        }
+      ]
+    },
+    {
+      "type": "SplatMaker",
+      "title": "Make Gaussian splats",
+      "group": "tool",
+      "category": "Point clouds",
+      "description": "Makes a point cloud, such as from a laser scanner or photos from a drone, a scene of Gaussian splats: each point the middle of a small, soft ellipse in its colour, as large as the spacing to its neighbours and, when flat, lying along the surface they make, so that walls, roofs and ground look whole. Write it as PLY or SPZ for viewers of splats, or see it in 3D with map data.",
+      "inputs": [
+        "Points"
+      ],
+      "outputs": [
+        "Splats"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "neighbours",
+          "label": "Neighbours",
+          "kind": "text",
+          "shape": "a string",
+          "default": "8",
+          "hint": "How many of the nearest points give each splat its size and shape"
+        },
+        {
+          "key": "size",
+          "label": "Size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "Larger than 1 to close gaps between the points, smaller for sharper"
+        },
+        {
+          "key": "opacity",
+          "label": "Opacity",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0.9",
+          "hint": "From 0, clear, to 1, solid"
+        },
+        {
+          "key": "shape",
+          "label": "Shape",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "flat",
+              "label": "Flat along the surface, as a coin"
+            },
+            {
+              "value": "round",
+              "label": "Round, as a ball"
+            }
+          ],
+          "default": "flat",
+          "hint": "Flat splats follow walls and ground, and look like a surface"
         }
       ]
     },
@@ -13399,6 +14436,76 @@
           ],
           "default": "to",
           "hint": "Matters where there are one-way roads"
+        },
+        {
+          "key": "rules",
+          "label": "Rules of the road",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "own",
+              "label": "My own, below"
+            },
+            {
+              "value": "osm",
+              "label": "OpenStreetMap"
+            },
+            {
+              "value": "nvdb",
+              "label": "NVDB from Lastkajen"
+            }
+          ],
+          "default": "own",
+          "hint": "Ready rules for OpenStreetMap or NVDB: one-way streets, roundabouts, speed limits and which roads may be used, by how one travels. My own: the conditions and speeds below"
+        },
+        {
+          "key": "mode",
+          "label": "Travelling",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "car",
+              "label": "By car"
+            },
+            {
+              "value": "bike",
+              "label": "By bicycle"
+            },
+            {
+              "value": "walk",
+              "label": "On foot"
+            }
+          ],
+          "default": "car",
+          "hint": "With ready rules: by car at the speed limits, by bicycle at 18 km/h, on foot at 5 km/h"
+        },
+        {
+          "key": "avoid",
+          "label": "Keep away from",
+          "kind": "picks",
+          "shape": "some of the values in choices: a list of strings, or one string separated by commas",
+          "choices": [
+            {
+              "value": "motorway",
+              "label": "Motorways"
+            },
+            {
+              "value": "ferry",
+              "label": "Ferries"
+            },
+            {
+              "value": "unpaved",
+              "label": "Gravel and other unpaved roads"
+            },
+            {
+              "value": "toll",
+              "label": "Tolls"
+            }
+          ],
+          "default": "",
+          "hint": "With ready rules, these roads are left out of the network"
         },
         {
           "key": "cost",
@@ -14976,6 +16083,76 @@
           ],
           "default": "nearest",
           "hint": "Every one gives a route for each pair, as many as From times To"
+        },
+        {
+          "key": "rules",
+          "label": "Rules of the road",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "own",
+              "label": "My own, below"
+            },
+            {
+              "value": "osm",
+              "label": "OpenStreetMap"
+            },
+            {
+              "value": "nvdb",
+              "label": "NVDB from Lastkajen"
+            }
+          ],
+          "default": "own",
+          "hint": "Ready rules for OpenStreetMap or NVDB: one-way streets, roundabouts, speed limits and which roads may be used, by how one travels. My own: the conditions and speeds below"
+        },
+        {
+          "key": "mode",
+          "label": "Travelling",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "car",
+              "label": "By car"
+            },
+            {
+              "value": "bike",
+              "label": "By bicycle"
+            },
+            {
+              "value": "walk",
+              "label": "On foot"
+            }
+          ],
+          "default": "car",
+          "hint": "With ready rules: by car at the speed limits, by bicycle at 18 km/h, on foot at 5 km/h"
+        },
+        {
+          "key": "avoid",
+          "label": "Keep away from",
+          "kind": "picks",
+          "shape": "some of the values in choices: a list of strings, or one string separated by commas",
+          "choices": [
+            {
+              "value": "motorway",
+              "label": "Motorways"
+            },
+            {
+              "value": "ferry",
+              "label": "Ferries"
+            },
+            {
+              "value": "unpaved",
+              "label": "Gravel and other unpaved roads"
+            },
+            {
+              "value": "toll",
+              "label": "Tolls"
+            }
+          ],
+          "default": "",
+          "hint": "With ready rules, these roads are left out of the network"
         },
         {
           "key": "cost",

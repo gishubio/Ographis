@@ -55,6 +55,7 @@ pub const AUTH_KINDS: &[(&str, &str)] = &[
     ("bearer", "A token: Authorization: Bearer"),
     ("basic", "A user and a password"),
     ("oauth2", "OAuth2: a client id and a secret"),
+    ("google", "A Google service account: its key, as JSON"),
 ];
 
 impl ApiConnection {
@@ -115,13 +116,75 @@ pub struct Client<'a> {
     stopped: &'a dyn Fn() -> bool,
     /// How many requests were sent again, for the log.
     pub resent: u32,
+    /// A file each request is written to, when asked for.
+    pub log: Option<&'a RequestLog>,
+}
+
+/// What the log of requests says of one request.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Logged<'a> {
+    pub method: &'a str,
+    pub url: &'a str,
+    pub status: &'a str,
+    pub bytes: Option<usize>,
+    pub took: Option<Duration>,
+    pub note: &'a str,
+    pub body: Option<&'a str>,
+}
+
+/// A text file with a line for each request: when, how, where, what came back and how
+/// long it took. For documentation, and to see afterwards what was asked of a service.
+pub struct RequestLog {
+    file: Mutex<std::fs::File>,
+}
+
+impl RequestLog {
+    /// Opens the file to add to, with a heading when it is new.
+    pub fn open(path: &std::path::Path) -> Result<RequestLog> {
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
+        }
+        let new = !path.exists();
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .map_err(|e| GbError(format!("Cannot write the log of requests {}: {}", path.display(), e)))?;
+        if new {
+            use std::io::Write;
+            let _ = writeln!(file, "time\tmethod\taddress\tstatus\tbytes\tmilliseconds\tnote\tbody");
+        }
+        Ok(RequestLog { file: Mutex::new(file) })
+    }
+
+    /// A line for one request. Tabs and line breaks in the body are written as \t and \n,
+    /// so that each request stays one line.
+    pub fn write(&self, l: &Logged) {
+        use std::io::Write;
+        let Logged { method, url, status, bytes, took, note, body } = *l;
+        let one = |s: &str| s.replace('\\', "\\\\").replace('\t', "\\t").replace('\r', "").replace('\n', "\\n");
+        let line = format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+            method,
+            one(url),
+            status,
+            bytes.map(|b| b.to_string()).unwrap_or_default(),
+            took.map(|t| t.as_millis().to_string()).unwrap_or_default(),
+            note,
+            body.map(one).unwrap_or_default()
+        );
+        if let Ok(mut f) = self.file.lock() {
+            let _ = writeln!(f, "{}", line);
+        }
+    }
 }
 
 static TOKENS: Mutex<Option<HashMap<String, (String, Instant)>>> = Mutex::new(None);
 
 impl<'a> Client<'a> {
     pub fn new(backend: &'a dyn Backend, auth: Option<ApiConnection>, stopped: &'a dyn Fn() -> bool) -> Self {
-        Client { backend, auth, timeout_s: 30, retries: 3, gap: Duration::ZERO, last: None, stopped, resent: 0 }
+        Client { backend, auth, timeout_s: 30, retries: 3, gap: Duration::ZERO, last: None, stopped, resent: 0, log: None }
     }
 
     /// At most this many requests a second. 0 or less is as fast as the service answers.
@@ -146,10 +209,28 @@ impl<'a> Client<'a> {
         loop {
             let (u, h, b) = self.prepare(url, headers, body)?;
             self.wait_turn();
+            let began = Instant::now();
             let answer = self.backend.http_send(method, &u, &h, b.as_deref(), self.timeout_s);
+            if let Some(log) = self.log {
+                // As sent, with the secrets of the connection hidden.
+                let note = if attempt > 0 { format!("sent again, try {}", attempt + 1) } else { String::new() };
+                let body = b.as_deref().map(|b| self.hide(b));
+                let (url, took) = (self.hide(&u), Some(began.elapsed()));
+                let line = Logged { method, url: &url, took, note: &note, body: body.as_deref(), ..Default::default() };
+                match &answer {
+                    Ok(a) => {
+                        let status = a.status.to_string();
+                        log.write(&Logged { status: &status, bytes: Some(a.body.len()), ..line });
+                    }
+                    Err(e) => {
+                        let why = self.hide(&e.0);
+                        log.write(&Logged { status: "no answer", note: &why, ..line });
+                    }
+                }
+            }
             match answer {
                 // A token that has run out is fetched again, once.
-                Ok(a) if a.status == 401 && !tried_token && self.auth.as_ref().is_some_and(|c| c.auth == "oauth2") => {
+                Ok(a) if a.status == 401 && !tried_token && self.auth.as_ref().is_some_and(|c| c.auth == "oauth2" || c.auth == "google") => {
                     tried_token = true;
                     forget_token(self.auth.as_ref().expect("checked"));
                 }
@@ -192,6 +273,7 @@ impl<'a> Client<'a> {
         }
         let key = match c.auth.as_str() {
             "oauth2" => self.token(&c)?,
+            "google" => self.google_token(&c)?,
             _ => c.key().to_string(),
         };
         let mut u = url.replace("{{key}}", &encode(&key));
@@ -200,7 +282,7 @@ impl<'a> Client<'a> {
         match c.auth.as_str() {
             "key_header" => h.push((if param.is_empty() { "X-Api-Key".into() } else { param.to_string() }, key)),
             "key_query" => u = set_query(&u, if param.is_empty() { "key" } else { param }, &key),
-            "bearer" | "oauth2" => h.push(("Authorization".into(), format!("Bearer {}", key))),
+            "bearer" | "oauth2" | "google" => h.push(("Authorization".into(), format!("Bearer {}", key))),
             "basic" => h.push(("Authorization".into(), format!("Basic {}", base64(&format!("{}:{}", c.user, c.secret))))),
             _ => {}
         }
@@ -242,6 +324,46 @@ impl<'a> Client<'a> {
         let token =
             v.get("access_token").and_then(|t| t.as_str()).ok_or_else(|| GbError(format!("The answer for {} has no access_token.", c.name)))?.to_string();
         let life = v.get("expires_in").and_then(|e| e.as_f64().or_else(|| e.as_str().and_then(|s| s.parse().ok()))).unwrap_or(3600.0);
+        if let Ok(mut g) = TOKENS.lock() {
+            g.get_or_insert_with(HashMap::new).insert(c.name.clone(), (token.clone(), Instant::now() + Duration::from_secs_f64(life.max(1.0))));
+        }
+        Ok(token)
+    }
+
+    /// A token for a Google service account: a claim signed with its private key (RS256),
+    /// exchanged for a token at Google, and kept until a minute before it runs out.
+    fn google_token(&mut self, c: &ApiConnection) -> Result<String> {
+        if let Some((t, until)) = TOKENS.lock().ok().and_then(|g| g.as_ref().and_then(|m| m.get(&c.name).cloned())) {
+            if Instant::now() + Duration::from_secs(60) < until {
+                return Ok(t);
+            }
+        }
+        let key: serde_json::Value = serde_json::from_str(c.secret.trim()).map_err(|_| {
+            GbError(format!("The API connection {} is to hold the key of a Google service account: the JSON file Google gives, pasted whole.", c.name))
+        })?;
+        let email = key["client_email"].as_str().ok_or_else(|| GbError(format!("The key of {} has no client_email.", c.name)))?;
+        let pem = key["private_key"].as_str().ok_or_else(|| GbError(format!("The key of {} has no private_key.", c.name)))?;
+        let token_uri = key["token_uri"].as_str().filter(|u| !u.is_empty()).unwrap_or("https://oauth2.googleapis.com/token").to_string();
+        let scope = if c.scope.trim().is_empty() { "https://www.googleapis.com/auth/spreadsheets" } else { c.scope.trim() };
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let claims = serde_json::json!({"iss": email, "scope": scope, "aud": token_uri, "iat": now, "exp": now + 3600});
+        let jwt = sign_rs256(&claims, pem).map_err(|e| GbError(format!("The key of {} could not sign: {}", c.name, e)))?;
+        let form = format!("grant_type={}&assertion={}", encode("urn:ietf:params:oauth:grant-type:jwt-bearer"), jwt);
+        let headers = vec![("Content-Type".to_string(), "application/x-www-form-urlencoded".to_string())];
+        self.wait_turn();
+        let a = self.backend.http_send("POST", &token_uri, &headers, Some(&form), self.timeout_s).map_err(|e| GbError(self.hide(&e.0)))?;
+        if a.status >= 400 {
+            return err(format!(
+                "The token for {} could not be fetched: Google answered {}. Check that the key is that of the service account, and not taken back. {}",
+                c.name,
+                a.status,
+                a.body.chars().take(200).collect::<String>()
+            ));
+        }
+        let v = json::parse(&a.body).map_err(|_| GbError(format!("The answer with the token for {} is not JSON.", c.name)))?;
+        let token =
+            v.get("access_token").and_then(|t| t.as_str()).ok_or_else(|| GbError(format!("The answer for {} has no access_token.", c.name)))?.to_string();
+        let life = v.get("expires_in").and_then(|e| e.as_f64()).unwrap_or(3600.0);
         if let Ok(mut g) = TOKENS.lock() {
             g.get_or_insert_with(HashMap::new).insert(c.name.clone(), (token.clone(), Instant::now() + Duration::from_secs_f64(life.max(1.0))));
         }
@@ -538,4 +660,18 @@ mod service_tests {
         assert_eq!(s("https://example.se/data/kommuner.geojson"), None);
         assert_eq!(service_name("https://example.se/x/collections/a/items", Some("file")), None);
     }
+}
+
+/// A JSON Web Token of these claims, signed with RS256 by a private key in PEM (PKCS #8), as
+/// Google gives the key of a service account.
+pub fn sign_rs256(claims: &serde_json::Value, pem: &str) -> std::result::Result<String, String> {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let body: String = pem.lines().filter(|l| !l.starts_with("-----")).map(str::trim).collect();
+    let der = base64::engine::general_purpose::STANDARD.decode(body.as_bytes()).map_err(|_| "the private key is not PEM".to_string())?;
+    let pair = ring::signature::RsaKeyPair::from_pkcs8(&der).map_err(|e| format!("the private key is not an RSA key in PKCS #8 ({})", e))?;
+    let input = format!("{}.{}", b64.encode(br#"{"alg":"RS256","typ":"JWT"}"#), b64.encode(claims.to_string()));
+    let mut sig = vec![0u8; pair.public().modulus_len()];
+    pair.sign(&ring::signature::RSA_PKCS1_SHA256, &ring::rand::SystemRandom::new(), input.as_bytes(), &mut sig).map_err(|_| "it could not sign".to_string())?;
+    Ok(format!("{}.{}", input, b64.encode(sig)))
 }

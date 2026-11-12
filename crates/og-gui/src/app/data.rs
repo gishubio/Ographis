@@ -163,7 +163,8 @@ impl App {
                     None
                 } else {
                     if self.together.as_ref().is_none_or(|t| t.keys != keys) {
-                        let mut t = together(&shown, chosen_shown.unwrap_or(0), keys, Some(&*self.backend as &dyn Backend));
+                        let splat_of = |t: &Arc<Table>| self.splat_of(t);
+                        let mut t = together(&shown, chosen_shown.unwrap_or(0), keys, Some(&*self.backend as &dyn Backend), &splat_of);
                         // A hidden chosen stream has nothing on the map to pick.
                         if chosen_shown.is_none() {
                             t.len = 0;
@@ -304,6 +305,30 @@ impl App {
         let to_map = |i: usize| -> Option<usize> { shown_rows.as_ref().map_or(Some(i), |r| r.binary_search(&i).ok()) };
         let from_map = |i: usize| -> Option<usize> { shown_rows.as_ref().map_or(Some(i), |r| r.get(i).copied()) };
         let skip = together.as_ref().map(|t| t.models);
+        // Outline from above in 3D: the model that comes in, with the cuts as planes.
+        let cutting =
+            self.map.three_d && self.view.node.as_deref().and_then(|id| self.snarl.nodes().find(|n| n.id == id)).is_some_and(|n| n.kind == "OutlineFromAbove");
+        // The plane of the cut, unless it is turned off in the tool.
+        let plane = self
+            .view
+            .node
+            .as_deref()
+            .and_then(|id| self.snarl.nodes().find(|n| n.id == id))
+            .is_none_or(|n| n.params.get("plane_3d").and_then(|v| v.as_str()) != Some("false"));
+        let (map_table, planes) = match (cutting, self.view.node.clone()) {
+            (true, Some(id)) => match self.input_table(&id, "Input") {
+                Some(model) => (Some(model), if plane { table.as_deref().map(cut_planes).unwrap_or_default() } else { Vec::new() }),
+                None => (map_table, Vec::new()),
+            },
+            _ => (map_table, Vec::new()),
+        };
+        self.map.view3d.planes = planes;
+        // Scenes of Gaussian splats are drawn as splats in 3D.
+        self.map.view3d.splats = match (&together, &map_table) {
+            (Some(t), _) => t.splats.clone(),
+            (None, Some(m)) => self.splat_of(m).map(|c| vec![crate::view3d::SplatSource { cloud: c, first: 0, count: m.len() }]).unwrap_or_default(),
+            _ => Vec::new(),
+        };
         egui::Panel::right("map").resizable(true).default_size(460.0).min_size(200.0).frame(egui::Frame::NONE).show(ui, |ui| {
             let backend: Arc<dyn Backend + Send + Sync> = backend.clone();
             // A picture, such as a rendered one, is shown as it is, also with 3D ticked.
@@ -315,7 +340,7 @@ impl App {
             if self.map.three_d && !picture {
                 // A click on a feature in 3D picks it, as on the map.
                 self.map.view3d.also = self.map.also.clone();
-                if let Some(p) = self.map.view3d.show_skipping(ui, map_table.as_ref(), picked, skip) {
+                if let Some(p) = self.map.view3d.show_skipping(ui, map_table.as_ref(), picked, skip).filter(|_| !cutting) {
                     let hit = p.and_then(|i| i.checked_sub(offset)).filter(|i| *i < len).and_then(from_map);
                     // Ctrl or Shift and a click adds to those picked, as on the map.
                     let keys = ui.input(|i| i.modifiers);
@@ -775,23 +800,48 @@ pub(super) struct Together {
     len: usize,
     /// The features first that the 3D models show already.
     models: usize,
+    /// Scenes of Gaussian splats among the streams, with where their features are.
+    splats: Vec<crate::view3d::SplatSource>,
 }
 /// Puts the streams of a View together in the coordinate system of the chosen one, or of the
 /// first that has one: the features of all, the models of all, and a grid or a picture. The
 /// features have the attributes of the chosen stream, empty for the others. Streams that
 /// cannot be put in that system are left out.
-pub(super) fn together(ports: &[(String, Arc<Table>)], chosen: usize, keys: Vec<usize>, backend: Option<&dyn Backend>) -> Together {
+pub(super) fn together(
+    ports: &[(String, Arc<Table>)],
+    chosen: usize,
+    keys: Vec<usize>,
+    backend: Option<&dyn Backend>,
+    splat_of: &dyn Fn(&Arc<Table>) -> Option<Arc<og_engine::cloud::Cloud>>,
+) -> Together {
     let crs = ports[chosen].1.crs.or_else(|| ports.iter().find_map(|p| p.1.crs));
     let base = &ports[chosen].1;
     let mut tables: Vec<(usize, Arc<Table>)> = Vec::new();
+    let mut scenes: HashMap<usize, Arc<og_engine::cloud::Cloud>> = HashMap::new();
     for (i, (_, t)) in ports.iter().enumerate() {
-        let t = match (t.crs, crs) {
+        let scene = splat_of(t);
+        let moved = match (t.crs, crs) {
             (Some(a), Some(b)) if a != b => match og_engine::nodes::reproject(t, b, backend) {
-                Ok(r) => Arc::new(r),
+                Ok(r) => Some((Arc::new(r), a, b)),
                 Err(_) => continue,
             },
             (None, Some(_)) if t.has_geometry() || t.mesh.is_some() => continue,
-            _ => t.clone(),
+            _ => None,
+        };
+        let t = match moved {
+            Some((r, a, b)) => {
+                // The splats go along, in the same coordinate system.
+                if let Some(c) = scene.and_then(|c| og_engine::cloud::reproject(&c, a, b, backend).ok()) {
+                    scenes.insert(i, Arc::new(c));
+                }
+                r
+            }
+            None => {
+                if let Some(c) = scene {
+                    scenes.insert(i, c);
+                }
+                t.clone()
+            }
         };
         tables.push((i, t));
     }
@@ -801,6 +851,7 @@ pub(super) fn together(ports: &[(String, Arc<Table>)], chosen: usize, keys: Vec<
         Table { fields: base.fields.clone(), crs, features: Vec::new(), raster: false, image: None, grid: None, mesh: None, points: None, series: None };
     let (mut offset, mut len, mut models) = (0, 0, 0);
     let mut meshes = Vec::new();
+    let mut splats = Vec::new();
     for (i, t) in &tables {
         if out.grid.is_none() && out.image.is_none() {
             out.grid = t.grid.clone();
@@ -818,6 +869,9 @@ pub(super) fn together(ports: &[(String, Arc<Table>)], chosen: usize, keys: Vec<
             meshes.push(m.clone());
             models += own.len();
         }
+        if let Some(c) = scenes.get(i) {
+            splats.push(crate::view3d::SplatSource { cloud: c.clone(), first: out.features.len(), count: own.len() });
+        }
         let n = out.fields.len();
         for f in own {
             let mut f = f.clone();
@@ -831,7 +885,7 @@ pub(super) fn together(ports: &[(String, Arc<Table>)], chosen: usize, keys: Vec<
         let refs: Vec<&og_engine::mesh::Mesh> = meshes.iter().map(|m| m.as_ref()).collect();
         out.mesh = Some(if refs.len() == 1 { meshes[0].clone() } else { Arc::new(og_engine::mesh::Mesh::merge(&refs)) });
     }
-    Together { keys, table: Arc::new(out), offset, len, models }
+    Together { keys, table: Arc::new(out), offset, len, models, splats }
 }
 /// A list of names kept in a parameter as a JSON list.
 pub(super) fn og_gui_list(v: Option<&serde_json::Value>) -> Vec<String> {
@@ -839,4 +893,25 @@ pub(super) fn og_gui_list(v: Option<&serde_json::Value>) -> Vec<String> {
         Some(serde_json::Value::Array(a)) => a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect(),
         _ => Vec::new(),
     }
+}
+
+/// The level planes where Outline from above cut, from its outlines: each height of the cut,
+/// over the outlines cut there.
+fn cut_planes(t: &Table) -> Vec<(f64, [f64; 4])> {
+    use geo::BoundingRect;
+    let Some(at) = t.fields.iter().position(|f| f.name == "cut_z") else { return Vec::new() };
+    let mut out: Vec<(f64, [f64; 4])> = Vec::new();
+    for f in &t.features {
+        let (Some(z), Some(r)) = (f.attrs.get(at).and_then(|v| v.as_f64()), f.geom.as_ref().and_then(|g| g.bounding_rect())) else { continue };
+        match out.iter_mut().find(|(h, _)| (*h - z).abs() < 1e-6) {
+            Some((_, b)) => *b = [b[0].min(r.min().x), b[1].min(r.min().y), b[2].max(r.max().x), b[3].max(r.max().y)],
+            None => out.push((z, [r.min().x, r.min().y, r.max().x, r.max().y])),
+        }
+    }
+    // A margin around, so that the plane reaches past the walls.
+    for (_, b) in out.iter_mut() {
+        let pad = ((b[2] - b[0]).max(b[3] - b[1]) * 0.05).max(0.5);
+        *b = [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad];
+    }
+    out
 }

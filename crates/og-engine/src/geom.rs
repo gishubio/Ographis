@@ -718,7 +718,123 @@ pub fn dissolve<'a>(geoms: impl Iterator<Item = &'a Geometry<f64>>) -> Option<Ge
     if polys.is_empty() {
         return None;
     }
-    simplify_polygons(geo::unary_union(polys.iter()))
+    simplify_polygons(union_all(polys))
+}
+
+/// The most areas merged in one piece on one core.
+const UNION_PIECE: usize = 1024;
+/// The fewest areas in a piece; below twice this many, one union on one core is quicker.
+const UNION_PIECE_MIN: usize = 64;
+
+/// The union of many areas, spread over the cores: the areas are put in order of where they
+/// lie (along a Z-order curve), so that each piece holds neighbours, each piece is merged on
+/// a core of its own, and the pieces are then merged two by two until one is left.
+pub fn union_all(polys: Vec<Polygon<f64>>) -> MultiPolygon<f64> {
+    use rayon::prelude::*;
+    let threads = rayon::current_num_threads();
+    if polys.len() < 2 * UNION_PIECE_MIN || (threads == 1 && polys.len() <= UNION_PIECE) {
+        return geo::unary_union(polys.iter());
+    }
+    // Enough pieces for every core to have several, so that none waits on a large one.
+    let piece = (polys.len() / (threads * 4)).clamp(UNION_PIECE_MIN, UNION_PIECE);
+    let boxes: Vec<Rect<f64>> = polys.iter().filter_map(|p| p.bounding_rect()).collect();
+    let all = boxes.iter().skip(1).fold(boxes[0], |a, b| {
+        Rect::new(
+            geo::coord! { x: a.min().x.min(b.min().x), y: a.min().y.min(b.min().y) },
+            geo::coord! { x: a.max().x.max(b.max().x), y: a.max().y.max(b.max().y) },
+        )
+    });
+    let (w, h) = (all.width().max(1e-9), all.height().max(1e-9));
+    // The place of each area on a Z-order curve: its middle, as 16 bits of x and of y woven.
+    let z_of = |p: &Polygon<f64>| -> u64 {
+        let c = p.bounding_rect().map_or(all.min(), |r| r.center());
+        let x = (((c.x - all.min().x) / w).clamp(0.0, 1.0) * 65535.0) as u64;
+        let y = (((c.y - all.min().y) / h).clamp(0.0, 1.0) * 65535.0) as u64;
+        let spread = |mut v: u64| {
+            v = (v | (v << 8)) & 0x00FF_00FF;
+            v = (v | (v << 4)) & 0x0F0F_0F0F;
+            v = (v | (v << 2)) & 0x3333_3333;
+            (v | (v << 1)) & 0x5555_5555
+        };
+        spread(x) | (spread(y) << 1)
+    };
+    let mut ordered: Vec<(u64, Polygon<f64>)> = polys.into_iter().map(|p| (z_of(&p), p)).collect();
+    ordered.par_sort_unstable_by_key(|(z, _)| *z);
+    let ordered: Vec<Polygon<f64>> = ordered.into_iter().map(|(_, p)| p).collect();
+    let mut pieces: Vec<MultiPolygon<f64>> = ordered.par_chunks(piece).map(|chunk| geo::unary_union(chunk.iter())).collect();
+    // Neighbouring pieces two by two, so that what is merged lies close together.
+    while pieces.len() > 1 {
+        let mut pairs: Vec<Vec<MultiPolygon<f64>>> = Vec::new();
+        let mut rest = pieces.into_iter();
+        while let Some(a) = rest.next() {
+            pairs.push(match rest.next() {
+                Some(b) => vec![a, b],
+                None => vec![a],
+            });
+        }
+        pieces = pairs
+            .into_par_iter()
+            .map(|mut pair| match (pair.pop(), pair.pop()) {
+                (Some(b), Some(a)) => merge_pair(a, b),
+                (Some(a), None) => a,
+                _ => MultiPolygon::new(Vec::new()),
+            })
+            .collect();
+    }
+    pieces.pop().unwrap_or_else(|| MultiPolygon::new(Vec::new()))
+}
+
+/// Two merged pieces as one. Only the areas whose boxes meet a box of the other piece can
+/// change, so only they are merged; the others are kept as they are. The pieces lie side by
+/// side, so this is mostly a narrow seam, which keeps the last, largest merges quick.
+fn merge_pair(a: MultiPolygon<f64>, b: MultiPolygon<f64>) -> MultiPolygon<f64> {
+    use rayon::prelude::*;
+    let index = |m: &MultiPolygon<f64>| -> RTree<GeomWithData<Rectangle<[f64; 2]>, usize>> {
+        RTree::bulk_load(
+            m.0.iter()
+                .enumerate()
+                .filter_map(|(i, p)| {
+                    let r = p.bounding_rect()?;
+                    Some(GeomWithData::new(Rectangle::from_corners([r.min().x, r.min().y], [r.max().x, r.max().y]), i))
+                })
+                .collect(),
+        )
+    };
+    let meets = |m: &MultiPolygon<f64>, other: &RTree<GeomWithData<Rectangle<[f64; 2]>, usize>>| -> Vec<bool> {
+        m.0.par_iter()
+            .map(|p| {
+                p.bounding_rect().is_some_and(|r| {
+                    let env = AABB::from_corners([r.min().x, r.min().y], [r.max().x, r.max().y]);
+                    other.locate_in_envelope_intersecting(&env).next().is_some()
+                })
+            })
+            .collect()
+    };
+    let (ia, ib) = rayon::join(|| index(&a), || index(&b));
+    let (ma, mb) = rayon::join(|| meets(&a, &ib), || meets(&b, &ia));
+    // When most of them meet, as when the areas have grown into one, the whole is merged.
+    let meeting = ma.iter().chain(&mb).filter(|m| **m).count();
+    if meeting * 2 > ma.len() + mb.len() {
+        return a.union(&b);
+    }
+    let mut kept: Vec<Polygon<f64>> = Vec::new();
+    let (mut seam_a, mut seam_b) = (Vec::new(), Vec::new());
+    for (p, m) in a.0.into_iter().zip(ma) {
+        if m {
+            seam_a.push(p);
+        } else {
+            kept.push(p);
+        }
+    }
+    for (p, m) in b.0.into_iter().zip(mb) {
+        if m {
+            seam_b.push(p);
+        } else {
+            kept.push(p);
+        }
+    }
+    kept.extend(MultiPolygon::new(seam_a).union(&MultiPolygon::new(seam_b)).0);
+    MultiPolygon::new(kept)
 }
 
 /// Which point stands in for a geometry.
@@ -1268,5 +1384,32 @@ mod tests {
         assert_eq!(gs[0], Geometry::Point(Point::new(101., 4.)));
         assert_eq!(gs[1], Geometry::Polygon(wkt!(POLYGON((100. 0., 110. 0., 110. 20., 100. 0.), (101. 2., 102. 2., 102. 4., 101. 2.)))));
         assert_eq!(gs[2], Geometry::MultiLineString(wkt!(MULTILINESTRING((100. 0., 101. 2.), (105. 10., 106. 12.)))));
+    }
+}
+
+#[cfg(test)]
+mod union_tests {
+    use super::*;
+
+    /// The union spread over the cores is the union on one: the same area and parts.
+    #[test]
+    fn a_union_in_pieces_is_the_union_in_one() {
+        let mut polys = Vec::new();
+        for i in 0..3000 {
+            let (cx, cy) = ((i % 60) as f64 * 7.0, (i / 60) as f64 * 7.0 + (i % 7) as f64);
+            let ring: Vec<(f64, f64)> = (0..=24)
+                .map(|k| {
+                    let a = (k % 24) as f64 / 24.0 * std::f64::consts::TAU;
+                    let r = 4.5 + ((i * 7 + k) % 5) as f64 * 0.3;
+                    (cx + r * a.cos(), cy + r * a.sin())
+                })
+                .collect();
+            polys.push(Polygon::new(LineString::from(ring), vec![]).orient(Direction::Default));
+        }
+        let one = geo::unary_union(polys.iter());
+        let spread = union_all(polys);
+        let (a, b) = (one.unsigned_area(), spread.unsigned_area());
+        assert!((a - b).abs() < a * 1e-8, "{} and {}", a, b);
+        assert_eq!(one.0.len(), spread.0.len());
     }
 }
