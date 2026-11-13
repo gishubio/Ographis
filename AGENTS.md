@@ -3,6 +3,10 @@
 This file is for an assistant that is asked to **write an Ographis model**, or to change the
 code of Ographis. People are welcome to read it too.
 
+An assistant that can use MCP does best through `og mcp`, which gives it the tools to
+describe data, check, try and run a model and look at the result: see
+[`docs/MCP.md`](docs/MCP.md). What follows holds either way.
+
 ## Writing a model
 
 A model is a JSON file, `name.ographis`, with nodes and the connections between their ports.
@@ -81,6 +85,8 @@ The program draws it on a canvas, and `og run model.ographis` runs it from the c
 | Gaussian splats from points, OpenUSD | `examples/splats.ographis` |
 | A real place for a game engine | `examples/game_engine.ographis` |
 | 3D models for Blender: terrain with a picture, buildings grouped and named | `examples/blender.ographis` |
+| Buildings with roofs and windows from OpenStreetMap attributes, a walk-through in the browser | `examples/buildings.ographis`, `examples/walk.ographis` |
+| Heights and a satellite picture of any place, a lighter model for the web | `examples/apis/volcano_hawaii.ographis` |
 | A folder of files read as one | `examples/stops.ographis` |
 | Analysis: service areas, hot spots, tracks, locations | `examples/proximity.ographis`, `examples/analysis.ographis`, `examples/apis/osm_service_areas.ographis` |
 | Cost distance over a raster | `examples/cost_distance.ographis` |

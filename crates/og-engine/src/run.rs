@@ -1355,19 +1355,33 @@ pub(crate) fn carry_models(inputs: &crate::nodes::Inputs, outs: &mut crate::node
     if sources.is_empty() || outs.iter().all(|(_, o)| o.mesh.is_some() || o.features.is_empty()) {
         return;
     }
+    // A feature is found again by its attributes and geometry; where a tool changed the
+    // attributes, as Keep attributes or Calculate do, by its geometry alone, when every
+    // feature has one.
     let key = |f: &crate::model::Feature| format!("{:?}|{:?}", f.attrs, f.geom);
+    let shape = |f: &crate::model::Feature| format!("{:?}", f.geom);
     for src in sources {
-        let mut rows_of: HashMap<String, std::collections::VecDeque<usize>> = HashMap::new();
-        for (i, f) in src.features.iter().enumerate() {
-            rows_of.entry(key(f)).or_default().push_back(i);
-        }
+        let index = |by: &dyn Fn(&crate::model::Feature) -> String| {
+            let mut rows_of: HashMap<String, std::collections::VecDeque<usize>> = HashMap::new();
+            for (i, f) in src.features.iter().enumerate() {
+                rows_of.entry(by(f)).or_default().push_back(i);
+            }
+            rows_of
+        };
         let names = src.field_names();
+        let all_shaped = src.features.iter().all(|f| f.geom.is_some());
+        let (by_all, mut by_shape) = (index(&key), None);
         for (_, out) in outs.iter_mut() {
-            if out.mesh.is_some() || out.features.is_empty() || out.field_names() != names {
+            if out.mesh.is_some() || out.features.is_empty() {
                 continue;
             }
-            let mut taken = rows_of.clone();
-            let rows: Option<Vec<usize>> = out.features.iter().map(|f| taken.get_mut(&key(f)).and_then(|q| q.pop_front())).collect();
+            let same_fields = out.field_names() == names;
+            if !same_fields && !(all_shaped && out.features.iter().all(|f| f.geom.is_some())) {
+                continue;
+            }
+            let (mut taken, by): (_, &dyn Fn(&crate::model::Feature) -> String) =
+                if same_fields { (by_all.clone(), &key) } else { (by_shape.get_or_insert_with(|| index(&shape)).clone(), &shape) };
+            let rows: Option<Vec<usize>> = out.features.iter().map(|f| taken.get_mut(&by(f)).and_then(|q| q.pop_front())).collect();
             if let (Some(rows), Some(m)) = (rows, src.mesh.as_ref()) {
                 out.mesh = Some(Arc::new(m.pick(&rows)));
             }

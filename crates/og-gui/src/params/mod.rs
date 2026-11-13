@@ -258,12 +258,15 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
     let filled = |key: &str| node.params.get(key).and_then(|v| v.as_str()).is_some_and(|v| !v.trim().is_empty());
     // A picture has neither attributes nor anything to add to.
     let image = writer && og_engine::nodes::is_image_format(&ext);
+    let walk = node.params.get("format").and_then(|v| v.as_str()) == Some("walk");
     let full = base.join(path);
     let tiles_file = matches!(ext.as_str(), "mbtiles" | "pmtiles") || (reader && og_engine::nodes::vector_tiles::is_tile_folder(&full));
     match spec.key {
         "vt_zoom" | "vt_pieces" => reader && tiles_file,
         "zip_file" => reader && (path.to_lowercase().ends_with(".zip") || og_engine::nodes::source_ext(path) == "zip"),
-        "mode" | "fields" => !image && !matches!(ext.as_str(), "obj" | "glb" | "gml") && node.params.get("format").and_then(|v| v.as_str()) != Some("3dtiles"),
+        "mode" | "fields" => {
+            !image && !matches!(ext.as_str(), "obj" | "glb" | "gml") && !matches!(node.params.get("format").and_then(|v| v.as_str()), Some("3dtiles" | "walk"))
+        }
         "pdf_size" | "pdf_orientation" | "pdf_margin" | "pdf_title" | "pdf_compress" | "pdf_as" => writer && ext == "pdf",
         "pdf_width" | "pdf_height" => writer && ext == "pdf" && node.params.get("pdf_size").and_then(|v| v.as_str()) == Some("custom"),
         "pdf_dpi" => writer && ext == "pdf" && node.params.get("pdf_size").and_then(|v| v.as_str()) == Some("fit"),
@@ -287,12 +290,18 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
                     || (matches!(ext.as_str(), "tif" | "tiff") && node.params.get("tif_compress").and_then(|v| v.as_str()) == Some("jpeg")))
         }
         "tif_compress" => writer && matches!(ext.as_str(), "tif" | "tiff"),
-        "t3_most" | "t3_dz" => writer && node.params.get("format").and_then(|v| v.as_str()) == Some("3dtiles"),
+        "t3_most" | "t3_dz" | "t3_lod" => writer && node.params.get("format").and_then(|v| v.as_str()) == Some("3dtiles"),
         "citygml_lod" => writer && ext == "gml",
-        "gltf_origin" => writer && matches!(ext.as_str(), "glb" | "obj" | "usda" | "usdz" | "ply" | "spz"),
+        "gltf_origin" => writer && (matches!(ext.as_str(), "glb" | "obj" | "usda" | "usdz" | "ply" | "spz") || walk),
+        "walk_eye" | "walk_speed" | "walk_start" | "walk_utc" => writer && walk,
+        "print_scale" => writer && matches!(ext.as_str(), "stl" | "3mf" | "step" | "stp"),
         "usd_layers" | "usd_variants" => writer && matches!(ext.as_str(), "usda" | "usdz"),
-        "gltf_name" | "gltf_group" | "gltf_material" | "gltf_georef" | "gltf_sun" => writer && ext == "glb",
-        "gltf_when" => writer && ext == "glb" && matches!(node.params.get("gltf_sun").and_then(|v| v.as_str()), Some("sun" | "both")),
+        "cad_template" | "cad_keep" | "cad_layer" | "cad_colour" | "cad_linetype" | "cad_block" | "cad_rotation" | "cad_text" | "cad_text_height"
+        | "cad_version" => writer && matches!(ext.as_str(), "dxf" | "dwg"),
+        "gltf_name" | "gltf_group" | "gltf_material" => writer && (ext == "glb" || walk),
+        "gltf_georef" | "gltf_sun" => writer && ext == "glb",
+        "gltf_compress" => writer && (ext == "glb" || walk || node.params.get("format").and_then(|v| v.as_str()) == Some("3dtiles")),
+        "gltf_when" => writer && ((ext == "glb" && matches!(node.params.get("gltf_sun").and_then(|v| v.as_str()), Some("sun" | "both"))) || walk),
         "key" => writer && ext == "gpkg",
         "key_name" => writer && ext == "gpkg" && node.params.get("key").and_then(|v| v.as_str()) != Some("attribute"),
         "key_attribute" => writer && ext == "gpkg" && node.params.get("key").and_then(|v| v.as_str()) == Some("attribute"),
@@ -313,8 +322,10 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         "osm_tags" => reader && matches!(ext.as_str(), "pbf" | "osm"),
         "las_classes" | "las_spacing" => reader && matches!(ext.as_str(), "las" | "laz"),
         "las_every" => reader && matches!(ext.as_str(), "las" | "laz" | "e57"),
-        "obj_unit" | "obj_up" => reader && matches!(ext.as_str(), "obj" | "gltf" | "glb"),
-        "obj_east" | "obj_north" | "obj_height" | "obj_rotation" => reader && matches!(ext.as_str(), "obj" | "gltf" | "glb" | "ifc" | "ply" | "spz"),
+        "obj_unit" | "obj_up" => reader && matches!(ext.as_str(), "obj" | "gltf" | "glb" | "stl" | "3mf" | "step" | "stp"),
+        "obj_east" | "obj_north" | "obj_height" | "obj_rotation" => {
+            reader && matches!(ext.as_str(), "obj" | "gltf" | "glb" | "ifc" | "ply" | "spz" | "stl" | "3mf" | "step" | "stp")
+        }
         "splat_scale" => reader && matches!(ext.as_str(), "ply" | "spz"),
         "splat_up" => matches!(ext.as_str(), "ply" | "spz"),
         "ifc_openings" | "ifc_spaces" | "ifc_properties" => reader && ext == "ifc",
@@ -840,6 +851,12 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                                     "png",
                                     "jpg",
                                     "tif",
+                                    "asc",
+                                    "hgt",
+                                    "dt0",
+                                    "dt1",
+                                    "dt2",
+                                    "xml",
                                     "pbf",
                                     "zip",
                                     "nc",
@@ -847,8 +864,8 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                                     "zmetadata",
                                 ],
                             )
-                            .add_filter("3D models, IFC and 3D Tiles", &["obj", "gltf", "glb", "ifc", "json", "b3dm"])
-                            .add_filter("Point clouds", &["las", "laz", "e57"])
+                            .add_filter("3D models, IFC and 3D Tiles", &["obj", "gltf", "glb", "ifc", "json", "b3dm", "stl", "3mf", "step", "stp"])
+                            .add_filter("Point clouds and splats", &["las", "laz", "e57", "ply", "spz"])
                             .add_filter("All files", &["*"]);
                         if let Some(p) = dialog.pick_file() {
                             value = stored(&p);

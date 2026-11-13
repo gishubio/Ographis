@@ -1,8 +1,9 @@
 # What is tested
 
-`cargo test` runs 580 tests: expressions, CSV, geometry, whole models, reading and
-writing real files, fetching from a web server on the same computer, and the user
-interface. The interface tests run the program without a window, with simulated clicks,
+`cargo test` runs 604 tests: expressions, CSV, geometry, whole models, reading and
+writing real files, fetching from a web server on the same computer, the server for
+assistants (`og mcp`), spoken to as an assistant would, with its typical tasks and its
+limits, and the user interface. The interface tests run the program without a window, with simulated clicks,
 drags and keys: load, run, pick a row, sort the table, drag a connection between two
 ports, drag a tool onto a connection, click a connection and delete it, drag a selection
 box, move, duplicate, disable and delete nodes, undo and redo, pan, zoom, drop files and

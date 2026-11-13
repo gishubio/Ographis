@@ -3,6 +3,104 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.96.3
+
+Any place on Earth in 3D, a walk-through in the browser, buildings that look real, lighter
+models for realtime, drawings for CAD and models for 3D printing, and Dissolve on land
+cover on every core.
+
+**Assistants: `og mcp`**
+
+- `og mcp` makes Ographis a server of the Model Context Protocol, for Claude Desktop, Claude
+  Code and editors. An assistant describes files and services in short, finds the tools and
+  their settings, builds a model that the user sees on the canvas as it grows, checks it,
+  tries it on the first 100 features of each input without writing anything, looks at the
+  rows of a node a page at a time and at a map, 3D view or chart of what came out, and runs
+  it in full once the trial went well. It can read the model open in Ographis, with its
+  changes and the node selected.
+- It uses only the folders it is given, never sees passwords or keys, never writes over a
+  file it did not make, and reaches the web or writes to a database only when allowed.
+- The guide to the model file, the reference of every node, the examples and the models in
+  the folders are resources; *Build a model*, *Describe data*, *Fix a model* and *Explain a
+  model* are prompts.
+- `build.cmd -Package` also makes an extension of Claude Desktop (`.mcpb`) and the entry of
+  the MCP registry. `tools/mcp-eval` gives typical tasks to real assistants, several models
+  at a time, and judges their work. See `docs/MCP.md`.
+- A model file changed outside Ographis is read again in the window when it has no changes
+  there.
+
+**Any place on Earth**
+
+- **Fetch a place** is a new tool: heights and a picture from above of any place, by its
+  name or its latitude and longitude, a square of the size you give in its UTM zone. The
+  heights come from the Copernicus DEM GLO-30, and the picture is made of the least cloudy
+  Sentinel-2 pictures of a time you choose, the clouds taken away. Both are read over the
+  web, only the part that is needed. `examples/apis/volcano_hawaii.ographis` fetches
+  Kīlauea. The log says what it does as it goes: the place found, the area, each file of
+  heights and each picture as it is read, how cloudy it was and how long it took. The
+  values of the pictures become reflectance by the scale and offset of the catalogue, also
+  for pictures made since 2022, whose values have an offset added, and not twice where the
+  catalogue has taken it away already; the dark ground of forest and lava is lifted by a
+  curve, so that it is not black.
+- Input reads heights from **SRTM** (.hgt), **DTED** (.dt0, .dt1, .dt2) and **ASCII grids**
+  (.asc).
+
+**3D in the browser**
+
+- Output writes a **3D walk-through**: a folder with a page that opens in a browser, with
+  the model inside it. Walk at the height of the eyes, following the ground and stopped by
+  walls, run with Shift or fly with F; click an object for its attributes; move the sun and
+  the shadows with a date and a time. The speed is 3 m/s to begin with and is changed with
+  the wheel or + and − in the page; flying goes across a fortieth of a large model a second.
+  See `examples/walk.ographis`.
+
+**Buildings that look real**
+
+- **Make buildings** is a new tool: footprints raised to their height or storeys, with the
+  roof their attributes give, flat, shed, gable or hipped, along or across, facades with a
+  window in every bay of every storey, and the colours and materials of their kind:
+  plaster for houses, glass for offices and shops, sheet metal for industry, stone for
+  churches and plain walls for garages, or those the attributes give. The attributes of
+  OpenStreetMap, Overture and the property map are recognised by themselves. See
+  `examples/buildings.ographis`.
+
+**Lighter models for realtime**
+
+- **Lighten 3D model** is a new tool: fewer triangles, by meshoptimizer, to a number or a
+  largest change in metres, with the edges of each object kept; textures no larger than
+  needed; and plain colours and textures put together into one texture, an atlas.
+- glTF, 3D Tiles and the walk-through can be **packed** by meshoptimizer
+  (EXT_meshopt_compression), with opaque textures as JPEG.
+- **3D Tiles are coarser further away**: tiles of tiles, each with a lighter model of what
+  they hold, so that a viewer such as Cesium shows a large model at once and streams the
+  detail as one comes near. A single large object, such as a terrain, is split as well.
+
+**CAD and 3D printing**
+
+- Output writes **DXF and DWG** (2010, 2013 and 2018), by acadrust, also from a template
+  drawing whose layers, line types, text styles and blocks are used: the CAD layer, colour,
+  line type and block by attributes, points as blocks with their attributes filled in, and
+  text from an attribute.
+- Output writes **STL, 3MF and STEP**, in millimetres at a scale or as large as a printer
+  plate; 3MF with its colours and STEP as faceted solids with colours. Input reads them: STL,
+  3MF with its colours and units, and STEP where its faces are flat.
+
+**Fixed**
+
+- The 3D view shows a picture draped over a model, such as a satellite picture or a shaded
+  relief on a terrain, where each triangle lies on it, rather than one colour for all.
+- A 3D model, such as one read from IFC, keeps its shapes through tools that change only
+  the attributes, such as *Keep attributes*, and so through filters after them: a storey of
+  a building can be picked and walked through.
+- A terrain with a picture is no longer tinted green in *Render 3D scene*, and the facades
+  of *Make buildings* not darkened by their colour twice.
+
+**Faster**
+
+- *Dissolve* puts the areas into clusters that touch, found on every core, and merges many
+  small clusters at once. Land cover, where every area touches others, is merged on all
+  cores: a test of 24 000 areas of eight kinds takes 1.5 s on two cores, from 2.4 s.
+
 ## 0.96.2
 
 Faster on many cores, XML and LandXML, IFC checked against IDS, Gaussian splats, real

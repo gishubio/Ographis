@@ -37,6 +37,8 @@ streets, people in squares, districts, health centres, a walk with a GPS and win
 | `blender.ographis` | The made-up terrain as a 3D model with its shaded relief draped over it and a block under it, and the blocks raised on it, as glTF for Blender: named by their id, grouped and given materials by their floors, with a sun on a midsummer evening and a camera, both files around the same origin so that they fit together |
 | `diorama.ographis` | Made-up islands off the coast (`islands.geojson`) with land cover named as in Lantmäteriet's and a made-up terrain model (`islands_heights.tif`) for the terraces, made into a diorama and rendered as a toy picture with parallel projection on a see-through background, as PNG, and as glTF for Blender |
 | `game_engine.ographis` | The same islands made ready for Unreal Engine: a heightmap of 16 bits in a size Unreal takes, a mask for each kind of land, and IMPORT.txt with the scale and place to set, in `out/game`. Change the engine to Unity or Godot |
+| `buildings.ographis` | A made-up village drawn with the attributes of OpenStreetMap, made into buildings by *Make buildings*: houses with gable and hipped roofs in their colours, flats of brick, an office of glass, a church with its tower, a hall of sheet metal and a garage, on the made-up terrain. Rendered as a picture, and written as a walk-through in `out/walk_village` |
+| `walk.ographis` | The made-up terrain and the blocks raised on it as a walk-through in the browser: open `out/walk_blocks/index.html`, click and walk along the street among the blocks, fly with F, and move the sun of midsummer |
 | `lollipops.ographis` | The towns raised by the square root of their population with Raise points, as lollipops on the subregions made a floor with Extrude, rendered with parallel projection on a background colour, and the sticks written with their heights to GeoPackage |
 | `tiles.ographis` | Three copies of the house as a 3D Tiles tileset (`tiles/`, made by `tools/make_tiles_example.py`), with a name and a year for each, read and placed on the made-up terrain, rendered in the afternoon sun and listed in a workbook |
 | `json.ographis` | Open data from Västra Götalandsregionen read as JSON from the web: the hospitals as points from xkoord (north) and ykoord (east) in SWEREF 99 TM, written to GeoPackage, and their addresses as JSON with Build JSON. Needs the internet |
@@ -86,6 +88,13 @@ streets, people in squares, districts, health centres, a walk with a GPS and win
   nearest school in 5, 10 and 15 minutes at 5 km/h. Another rectangle in the two downloads
   makes it for another town; NVDB from Trafikverket can be read in place of the roads, with
   its speed limits for driving.
+- **A volcano on Hawaii**: `examples/apis/volcano_hawaii.ographis` fetches Kīlauea with
+  *Fetch a place*: heights of 30 m from the Copernicus DEM on Amazon's open data, and a
+  picture of the summer from Sentinel-2 at Element 84, the least cloudy put together where
+  they are clear, in UTM zone 5. *Terrain model* drapes the picture on the heights for a
+  .glb that Blender imports, and *Render 3D scene* draws it. *Lighten 3D model* makes it
+  light enough to walk on the volcano in the browser, packed, in `out/volcano_walk`. The
+  place and the size are variables: Matterhorn, Isla Isabela or anywhere on Earth.
 - **HERE and TomTom**: their keys go in API connections named HERE and TomTom, of the kind
   *A key only where {{key}} is written*. *Geometry from text* reads HERE's flexible polylines,
   as lines for routes and as areas for isolines, and TomTom's lists of points, as lines for

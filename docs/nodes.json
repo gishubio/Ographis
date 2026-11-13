@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.96.2",
+  "version": "0.96.3",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a name that is shown, x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -896,7 +896,7 @@
             }
           ],
           "default": "auto",
-          "hint": "glTF is in metres. OBJ files do not say: more than 200 across is taken as centimetres"
+          "hint": "glTF is in metres, and 3MF and STEP say theirs. OBJ files do not say: more than 200 across is taken as centimetres. STL is taken as millimetres"
         },
         {
           "key": "obj_up",
@@ -906,7 +906,7 @@
           "choices": [
             {
               "value": "auto",
-              "label": "As the format says: y for glTF, z for OBJ"
+              "label": "As the format says: y for glTF, z for OBJ, STL, 3MF and STEP"
             },
             {
               "value": "z",
@@ -1481,6 +1481,26 @@
               "label": "glTF 3D model (.glb)"
             },
             {
+              "value": "stl",
+              "label": "STL for 3D printing (.stl)"
+            },
+            {
+              "value": "3mf",
+              "label": "3MF for 3D printing (.3mf)"
+            },
+            {
+              "value": "step",
+              "label": "STEP for CAD (.step)"
+            },
+            {
+              "value": "dxf",
+              "label": "AutoCAD DXF drawing (.dxf)"
+            },
+            {
+              "value": "dwg",
+              "label": "AutoCAD DWG drawing (.dwg)"
+            },
+            {
               "value": "usda",
               "label": "OpenUSD (.usda)"
             },
@@ -1491,6 +1511,10 @@
             {
               "value": "3dtiles",
               "label": "3D Tiles 1.1 (a folder with tileset.json)"
+            },
+            {
+              "value": "walk",
+              "label": "3D walk-through in the browser (a folder)"
             },
             {
               "value": "jpg",
@@ -1903,12 +1927,30 @@
           "hint": "glTF: a sun where it stands at the time below, and a camera looking from the south-west"
         },
         {
+          "key": "gltf_compress",
+          "label": "Packed",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "false",
+          "hint": "glTF and the walk-through: smaller files, with the model packed by meshoptimizer and opaque textures as JPEG, for the web and game engines. Read by three.js, Babylon.js, Cesium and glTFast; not every 3D program reads it"
+        },
+        {
           "key": "gltf_when",
           "label": "Time of the sun",
           "kind": "text",
           "shape": "a string",
           "default": "",
-          "hint": "Swedish time, such as 2026-06-21 15:00. Empty: midsummer at three in the afternoon"
+          "hint": "Swedish time, such as 2026-06-21 15:00; for the walk-through, the clock of Hours from UTC, and the time it opens at. Empty: midsummer at three in the afternoon"
         },
         {
           "key": "t3_most",
@@ -1917,6 +1959,24 @@
           "shape": "a string",
           "default": "100000",
           "hint": "3D Tiles: the objects are split into tiles of at most this many triangles, which load quickly"
+        },
+        {
+          "key": "t3_lod",
+          "label": "Coarser further away",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "true",
+          "hint": "3D Tiles: tiles of tiles with a lighter model of what they hold, fewer triangles and without the smallest objects, shown from afar until one comes near; the viewer streams the detail as it is needed"
         },
         {
           "key": "t3_dz",
@@ -1967,6 +2027,156 @@
           "shape": "the name of an API connection in the settings of the user",
           "default": "",
           "hint": "Google Sheets: a connection with the key of a Google service account that the sheet is shared with, as an editor"
+        },
+        {
+          "key": "walk_eye",
+          "label": "Height of the eyes",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1.7",
+          "hint": "Walk-through: in metres above the ground"
+        },
+        {
+          "key": "walk_speed",
+          "label": "Speed",
+          "kind": "text",
+          "shape": "a string",
+          "default": "3",
+          "hint": "Walk-through: in metres a second when walking; Shift goes four times as fast, and flying five times, or across a fortieth of the model a second in a large one. The wheel and + and − change it in the page"
+        },
+        {
+          "key": "walk_start",
+          "label": "Begin at",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Walk-through: x, y in the coordinates of the model. Empty: at the middle of the south edge, looking north"
+        },
+        {
+          "key": "walk_utc",
+          "label": "Hours from UTC",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Walk-through: of the clock that Time of the sun is in, such as -10 for Hawaii. Empty: Swedish time in and near Sweden, else by the longitude"
+        },
+        {
+          "key": "print_scale",
+          "label": "Scale",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "STL, 3MF and STEP, in millimetres from the lowest corner: the denominator, such as 1000 for 1:1000, or 1 for real size. Empty: the largest side 180 mm, as a printer plate takes"
+        },
+        {
+          "key": "cad_template",
+          "label": "Template drawing",
+          "kind": "path",
+          "shape": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model",
+          "default": "",
+          "hint": "DXF and DWG: a drawing whose layers, line types, text styles and blocks are used, such as the CAD standard of the client. Empty: a drawing of its own"
+        },
+        {
+          "key": "cad_keep",
+          "label": "Keep what the template draws",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "true",
+          "hint": "Such as a frame and a title block in model space; no keeps only its tables and blocks"
+        },
+        {
+          "key": "cad_layer",
+          "label": "Layer by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "DXF and DWG: the attribute that names the CAD layer of each feature; a layer the template lacks is made. Empty: layer 0"
+        },
+        {
+          "key": "cad_colour",
+          "label": "Colour by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "A colour as #rrggbb or a number of the AutoCAD colours, 1 to 255. Empty: the colour of the layer"
+        },
+        {
+          "key": "cad_linetype",
+          "label": "Line type by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "The name of a line type of the template, such as DASHED. Empty: that of the layer"
+        },
+        {
+          "key": "cad_block",
+          "label": "Block by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "Points as the block of the template this attribute names, its attributes filled in from the attributes of the same names, such as DJUP. Points without a block are points"
+        },
+        {
+          "key": "cad_rotation",
+          "label": "Rotation of blocks",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "In degrees counterclockwise. Empty: 0"
+        },
+        {
+          "key": "cad_text",
+          "label": "Text by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "A text beside each feature: at a point, inside an area, halfway along a line"
+        },
+        {
+          "key": "cad_text_height",
+          "label": "Height of texts",
+          "kind": "text",
+          "shape": "a string",
+          "default": "2.5",
+          "hint": "In the units of the drawing, usually metres"
+        },
+        {
+          "key": "cad_version",
+          "label": "AutoCAD version",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "2018",
+              "label": "AutoCAD 2018"
+            },
+            {
+              "value": "2013",
+              "label": "AutoCAD 2013"
+            },
+            {
+              "value": "2010",
+              "label": "AutoCAD 2010"
+            }
+          ],
+          "default": "2018",
+          "hint": "The version the drawing is saved as, for those who open it in an older program"
         },
         {
           "key": "splat_up",
@@ -2486,6 +2696,26 @@
               "label": "glTF 3D model (.glb)"
             },
             {
+              "value": "stl",
+              "label": "STL for 3D printing (.stl)"
+            },
+            {
+              "value": "3mf",
+              "label": "3MF for 3D printing (.3mf)"
+            },
+            {
+              "value": "step",
+              "label": "STEP for CAD (.step)"
+            },
+            {
+              "value": "dxf",
+              "label": "AutoCAD DXF drawing (.dxf)"
+            },
+            {
+              "value": "dwg",
+              "label": "AutoCAD DWG drawing (.dwg)"
+            },
+            {
               "value": "usda",
               "label": "OpenUSD (.usda)"
             },
@@ -2496,6 +2726,10 @@
             {
               "value": "3dtiles",
               "label": "3D Tiles 1.1 (a folder with tileset.json)"
+            },
+            {
+              "value": "walk",
+              "label": "3D walk-through in the browser (a folder)"
             },
             {
               "value": "jpg",
@@ -2741,6 +2975,26 @@
               "label": "glTF 3D model (.glb)"
             },
             {
+              "value": "stl",
+              "label": "STL for 3D printing (.stl)"
+            },
+            {
+              "value": "3mf",
+              "label": "3MF for 3D printing (.3mf)"
+            },
+            {
+              "value": "step",
+              "label": "STEP for CAD (.step)"
+            },
+            {
+              "value": "dxf",
+              "label": "AutoCAD DXF drawing (.dxf)"
+            },
+            {
+              "value": "dwg",
+              "label": "AutoCAD DWG drawing (.dwg)"
+            },
+            {
               "value": "usda",
               "label": "OpenUSD (.usda)"
             },
@@ -2751,6 +3005,10 @@
             {
               "value": "3dtiles",
               "label": "3D Tiles 1.1 (a folder with tileset.json)"
+            },
+            {
+              "value": "walk",
+              "label": "3D walk-through in the browser (a folder)"
             },
             {
               "value": "jpg",
@@ -2843,7 +3101,7 @@
           "key": "layers",
           "label": "Layers",
           "kind": "list",
-          "shape": "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}",
+          "shape": "a list of layers, one per stream connected to the port: {\"from\": \"node:port, the id of the node and its output port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}",
           "port": "Layers",
           "default": "",
           "hint": "The top row is drawn on top. A layer that is not ticked is in the PDF, but off when it is opened"
@@ -3234,6 +3492,26 @@
               "label": "glTF 3D model (.glb)"
             },
             {
+              "value": "stl",
+              "label": "STL for 3D printing (.stl)"
+            },
+            {
+              "value": "3mf",
+              "label": "3MF for 3D printing (.3mf)"
+            },
+            {
+              "value": "step",
+              "label": "STEP for CAD (.step)"
+            },
+            {
+              "value": "dxf",
+              "label": "AutoCAD DXF drawing (.dxf)"
+            },
+            {
+              "value": "dwg",
+              "label": "AutoCAD DWG drawing (.dwg)"
+            },
+            {
               "value": "usda",
               "label": "OpenUSD (.usda)"
             },
@@ -3244,6 +3522,10 @@
             {
               "value": "3dtiles",
               "label": "3D Tiles 1.1 (a folder with tileset.json)"
+            },
+            {
+              "value": "walk",
+              "label": "3D walk-through in the browser (a folder)"
             },
             {
               "value": "jpg",
@@ -3336,7 +3618,7 @@
           "key": "layers",
           "label": "Layers",
           "kind": "list",
-          "shape": "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}",
+          "shape": "a list of layers, one per stream connected to the port: {\"from\": \"node:port, the id of the node and its output port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}",
           "port": "Layers",
           "default": "",
           "hint": "The top row is on top in QGIS. A layer that is not ticked is in the project, but turned off"
@@ -3489,6 +3771,26 @@
               "label": "glTF 3D model (.glb)"
             },
             {
+              "value": "stl",
+              "label": "STL for 3D printing (.stl)"
+            },
+            {
+              "value": "3mf",
+              "label": "3MF for 3D printing (.3mf)"
+            },
+            {
+              "value": "step",
+              "label": "STEP for CAD (.step)"
+            },
+            {
+              "value": "dxf",
+              "label": "AutoCAD DXF drawing (.dxf)"
+            },
+            {
+              "value": "dwg",
+              "label": "AutoCAD DWG drawing (.dwg)"
+            },
+            {
               "value": "usda",
               "label": "OpenUSD (.usda)"
             },
@@ -3499,6 +3801,10 @@
             {
               "value": "3dtiles",
               "label": "3D Tiles 1.1 (a folder with tileset.json)"
+            },
+            {
+              "value": "walk",
+              "label": "3D walk-through in the browser (a folder)"
             },
             {
               "value": "jpg",
@@ -3617,7 +3923,7 @@
           "key": "layers",
           "label": "Layers",
           "kind": "list",
-          "shape": "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}",
+          "shape": "a list of layers, one per stream connected to the port: {\"from\": \"node:port, the id of the node and its output port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}",
           "port": "Layers",
           "default": "",
           "hint": "The top row is on top. A layer that is not ticked can be turned on in the legend"
@@ -4025,6 +4331,26 @@
               "label": "glTF 3D model (.glb)"
             },
             {
+              "value": "stl",
+              "label": "STL for 3D printing (.stl)"
+            },
+            {
+              "value": "3mf",
+              "label": "3MF for 3D printing (.3mf)"
+            },
+            {
+              "value": "step",
+              "label": "STEP for CAD (.step)"
+            },
+            {
+              "value": "dxf",
+              "label": "AutoCAD DXF drawing (.dxf)"
+            },
+            {
+              "value": "dwg",
+              "label": "AutoCAD DWG drawing (.dwg)"
+            },
+            {
               "value": "usda",
               "label": "OpenUSD (.usda)"
             },
@@ -4035,6 +4361,10 @@
             {
               "value": "3dtiles",
               "label": "3D Tiles 1.1 (a folder with tileset.json)"
+            },
+            {
+              "value": "walk",
+              "label": "3D walk-through in the browser (a folder)"
             },
             {
               "value": "jpg",
@@ -8623,7 +8953,7 @@
           "key": "layers",
           "label": "Layers",
           "kind": "list",
-          "shape": "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}",
+          "shape": "a list of layers, one per stream connected to the port: {\"from\": \"node:port, the id of the node and its output port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}",
           "port": "Layers",
           "default": "",
           "hint": "Each stream connected to Layers is a layer. The top row is drawn on top"
@@ -11808,6 +12138,205 @@
       ]
     },
     {
+      "type": "BuildingMaker",
+      "title": "Make buildings",
+      "group": "tool",
+      "category": "3D models and views",
+      "description": "Makes buildings that look like buildings from their footprints on Buildings: as high as their height or storeys, with the roof their attributes give (flat, shed, gable or hipped), facades with a window in every bay of every storey, and the colours and materials of their kind: plaster for houses, glass for offices and shops, sheet metal for industry, stone for churches and plain walls for garages. The attributes of OpenStreetMap (building, building:levels, height, roof:shape, roof:height, roof:orientation, building:colour, roof:material), Overture (class, num_floors, roof_shape) and the property map (objekttyp) are recognised by themselves. They stand on the terrain on Terrain, or at 0. For the 3D view, Render 3D scene, glTF and the walk-through.",
+      "inputs": [
+        "Buildings",
+        "Terrain"
+      ],
+      "outputs": [
+        "Buildings"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "kind_by",
+          "label": "Kind by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Buildings",
+          "default": "",
+          "hint": "What the building is, such as house, apartments, office, industrial, church or garage, or Bostad and Industri. Empty: building, class or objekttyp, whichever there is"
+        },
+        {
+          "key": "height_by",
+          "label": "Height by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Buildings",
+          "default": "",
+          "hint": "The height to the top of the roof in metres. Empty: height, if there is one; else from the storeys"
+        },
+        {
+          "key": "levels_by",
+          "label": "Storeys by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Buildings",
+          "default": "",
+          "hint": "The number of storeys below the roof. Empty: building:levels, num_floors or levels, whichever there is"
+        },
+        {
+          "key": "roof_by",
+          "label": "Roof shape by",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Buildings",
+          "default": "",
+          "hint": "flat, skillion, gabled, hipped, pyramidal and the other shapes of OpenStreetMap. Empty: roof:shape or roof_shape"
+        },
+        {
+          "key": "levels",
+          "label": "Storeys when not known",
+          "kind": "text",
+          "shape": "a string",
+          "default": "2",
+          "hint": "For buildings with neither a height nor storeys"
+        },
+        {
+          "key": "storey",
+          "label": "Height of a storey",
+          "kind": "text",
+          "shape": "a string",
+          "default": "3",
+          "hint": "In metres, from floor to floor"
+        },
+        {
+          "key": "roof",
+          "label": "Roof when not known",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "auto",
+              "label": "Gable on houses of up to three storeys and small buildings, else flat"
+            },
+            {
+              "value": "flat",
+              "label": "Flat"
+            },
+            {
+              "value": "gabled",
+              "label": "Gable"
+            },
+            {
+              "value": "hipped",
+              "label": "Hipped"
+            }
+          ],
+          "default": "auto",
+          "hint": "For buildings whose roof shape is not given"
+        },
+        {
+          "key": "pitch",
+          "label": "Pitch of the roofs",
+          "kind": "text",
+          "shape": "a string",
+          "default": "35",
+          "hint": "In degrees, for sloping roofs whose height is not given"
+        },
+        {
+          "key": "windows",
+          "label": "Windows",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "true",
+          "hint": "Facades with a row of windows on each storey, as a texture. No: plain walls in the colours of their kind"
+        }
+      ]
+    },
+    {
+      "type": "ModelLightener",
+      "title": "Lighten 3D model",
+      "group": "tool",
+      "category": "3D models and views",
+      "description": "Makes a 3D model lighter, to be shown in realtime in a browser, a game engine or on a phone: fewer triangles where they show little, by meshoptimizer, to a number of triangles or a largest change in metres, with the edges of each object kept; textures no larger than needed; and the plain colours and textures put together into one texture, an atlas, so that the model is drawn in few calls. Each object keeps its attributes. Write it as glTF with the compression of meshoptimizer, as 3D Tiles or as a walk-through.",
+      "inputs": [
+        "Model"
+      ],
+      "outputs": [
+        "Model"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "most",
+          "label": "Triangles at most",
+          "kind": "text",
+          "shape": "a string",
+          "default": "100000",
+          "hint": "In all, shared among the objects by how many they have. Empty: as few as Largest change allows"
+        },
+        {
+          "key": "error",
+          "label": "Largest change",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "How far in metres the surface may move, such as 0.5. Empty: as far as it must to reach the number of triangles"
+        },
+        {
+          "key": "keep_edges",
+          "label": "Keep the edges",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "true",
+          "hint": "The edges of each object and material stay where they are, so that the pieces still meet without gaps"
+        },
+        {
+          "key": "texture_most",
+          "label": "Largest texture",
+          "kind": "text",
+          "shape": "a string",
+          "default": "2048",
+          "hint": "In pixels on the longer side; larger textures are made smaller. Empty: as they are"
+        },
+        {
+          "key": "atlas",
+          "label": "One texture for the materials",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "true",
+          "hint": "Plain colours and textures that do not repeat go into one texture, an atlas, so that the model is drawn in few calls. Textures that repeat, such as facades, and glass keep their own"
+        }
+      ]
+    },
+    {
       "type": "OvertureDownloader",
       "title": "Overture Maps download",
       "group": "tool",
@@ -14073,6 +14602,113 @@
           ],
           "default": "flat",
           "hint": "Flat splats follow walls and ground, and look like a surface"
+        }
+      ]
+    },
+    {
+      "type": "PlaceFetcher",
+      "title": "Fetch a place",
+      "group": "input",
+      "category": "Terrain",
+      "description": "Fetches heights and a picture from above of any place on Earth, by its name or its latitude and longitude: a square of the size given around it, in the UTM zone it lies in. The heights come from the Copernicus DEM GLO-30, 30 m, and the picture is made of the least cloudy Sentinel-2 pictures of a time, 10 m, the clouds taken away and the rest put together. Both are read over the web, only the part that is needed. Connect them to Shade terrain, Terrain model or Render 3D scene, and write a model for Blender.",
+      "inputs": [],
+      "outputs": [
+        "Heights",
+        "Image",
+        "Area"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "place",
+          "label": "Place",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "A name, such as Kīlauea, Matterhorn or Isla Isabela, found with Nominatim of OpenStreetMap; or latitude and longitude, such as 19.41, -155.28"
+        },
+        {
+          "key": "size",
+          "label": "Size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "20",
+          "hint": "The side of the square around the place, in kilometres"
+        },
+        {
+          "key": "fetch",
+          "label": "Fetch",
+          "kind": "picks",
+          "shape": "some of the values in choices: a list of strings, or one string separated by commas",
+          "choices": [
+            {
+              "value": "heights",
+              "label": "Heights"
+            },
+            {
+              "value": "image",
+              "label": "Picture from above"
+            }
+          ],
+          "default": "heights, image",
+          "hint": "Heights from the Copernicus DEM, 30 m; a picture from Sentinel-2, 10 m"
+        },
+        {
+          "key": "time",
+          "label": "Time of the picture",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "From and to, such as 2025-06-01/2025-09-30, when the place is green or free of snow. Empty: the year before today"
+        },
+        {
+          "key": "cloud",
+          "label": "Most clouds",
+          "kind": "text",
+          "shape": "a string",
+          "default": "30",
+          "hint": "In percent: pictures with more are not used"
+        },
+        {
+          "key": "most",
+          "label": "At most pictures",
+          "kind": "text",
+          "shape": "a string",
+          "default": "6",
+          "hint": "The least cloudy, put together where they are clear"
+        },
+        {
+          "key": "brightness",
+          "label": "Brightness",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "More than 1 for a lighter picture, such as for dark lava or forest"
+        },
+        {
+          "key": "geocoder",
+          "label": "Finder of places",
+          "kind": "text",
+          "shape": "a string",
+          "default": "https://nominatim.openstreetmap.org",
+          "hint": "Nominatim, or another with the same questions. One question a run"
+        },
+        {
+          "key": "dem",
+          "label": "Heights from",
+          "kind": "text",
+          "shape": "a string",
+          "default": "https://copernicus-dem-30m.s3.amazonaws.com",
+          "hint": "The Copernicus DEM GLO-30 as Cloud Optimized GeoTIFF, a file for each degree"
+        },
+        {
+          "key": "stac",
+          "label": "Pictures from",
+          "kind": "text",
+          "shape": "a string",
+          "default": "https://earth-search.aws.element84.com/v1",
+          "hint": "A STAC API with sentinel-2-l2a, its bands red, green, blue and scl"
         }
       ]
     },

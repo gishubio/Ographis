@@ -1,0 +1,403 @@
+{
+  "about": "Typical tasks an assistant connected to og mcp should manage. Each has the request as a user would write it, the data it starts from, a solution with the tools, and checks of the outcome. crates/og-cli/tests/mcp.rs does the solutions; tools/mcp-eval/run.py gives the requests to real assistants and judges their work by the same checks.",
+  "tasks": [
+    {
+      "name": "large_towns",
+      "prompt": "Make a GeoPackage, large_towns.gpkg, of the towns in towns.csv that have more than 10 000 inhabitants.",
+      "data": [
+        "towns.csv"
+      ],
+      "solution": [
+        {
+          "tool": "describe",
+          "arguments": {
+            "path": "towns.csv"
+          }
+        },
+        {
+          "tool": "save_model",
+          "arguments": {
+            "path": "large_towns.ographis",
+            "model": {
+              "format": "ographis/1",
+              "name": "Large towns",
+              "nodes": [
+                {
+                  "id": "towns",
+                  "type": "Reader",
+                  "params": {
+                    "path": "towns.csv",
+                    "x": "lon",
+                    "y": "lat",
+                    "crs": "EPSG:4326"
+                  }
+                },
+                {
+                  "id": "big",
+                  "type": "Tester",
+                  "params": {
+                    "test": "population > 10000"
+                  }
+                },
+                {
+                  "id": "out",
+                  "type": "Writer",
+                  "params": {
+                    "path": "large_towns.gpkg"
+                  }
+                }
+              ],
+              "edges": [
+                {
+                  "from": [
+                    "towns",
+                    "Output"
+                  ],
+                  "to": [
+                    "big",
+                    "Input"
+                  ]
+                },
+                {
+                  "from": [
+                    "big",
+                    "Passed"
+                  ],
+                  "to": [
+                    "out",
+                    "Input"
+                  ]
+                }
+              ]
+            }
+          },
+          "expect": "fine"
+        },
+        {
+          "tool": "run_model",
+          "arguments": {
+            "path": "large_towns.ographis"
+          },
+          "expect": "0 errors"
+        },
+        {
+          "tool": "run_model",
+          "arguments": {
+            "path": "large_towns.ographis",
+            "full": true
+          },
+          "expect": "Written"
+        }
+      ],
+      "checks": [
+        {
+          "file": "large_towns.gpkg",
+          "features": null
+        }
+      ]
+    },
+    {
+      "name": "blocks_buffer",
+      "prompt": "Put a zone of 20 metres around the blocks in blocks.geojson, dissolve the zones that overlap into one area each, and write them to blocks_zone.gpkg.",
+      "data": [
+        "blocks.geojson"
+      ],
+      "solution": [
+        {
+          "tool": "describe",
+          "arguments": {
+            "path": "blocks.geojson"
+          }
+        },
+        {
+          "tool": "save_model",
+          "arguments": {
+            "path": "blocks_zone.ographis",
+            "model": {
+              "format": "ographis/1",
+              "name": "Zones around the blocks",
+              "nodes": [
+                {
+                  "id": "blocks",
+                  "type": "Reader",
+                  "params": {
+                    "path": "blocks.geojson"
+                  }
+                },
+                {
+                  "id": "zone",
+                  "type": "Bufferer",
+                  "params": {
+                    "distance": "20"
+                  }
+                },
+                {
+                  "id": "one",
+                  "type": "Dissolver",
+                  "params": {}
+                },
+                {
+                  "id": "out",
+                  "type": "Writer",
+                  "params": {
+                    "path": "blocks_zone.gpkg"
+                  }
+                }
+              ],
+              "edges": [
+                {
+                  "from": [
+                    "blocks",
+                    "Output"
+                  ],
+                  "to": [
+                    "zone",
+                    "Input"
+                  ]
+                },
+                {
+                  "from": [
+                    "zone",
+                    "Buffered"
+                  ],
+                  "to": [
+                    "one",
+                    "Input"
+                  ]
+                },
+                {
+                  "from": [
+                    "one",
+                    "Dissolved"
+                  ],
+                  "to": [
+                    "out",
+                    "Input"
+                  ]
+                }
+              ]
+            }
+          },
+          "expect": "fine"
+        },
+        {
+          "tool": "run_model",
+          "arguments": {
+            "path": "blocks_zone.ographis"
+          },
+          "expect": "0 errors"
+        },
+        {
+          "tool": "run_model",
+          "arguments": {
+            "path": "blocks_zone.ographis",
+            "full": true
+          },
+          "expect": "Written"
+        }
+      ],
+      "checks": [
+        {
+          "file": "blocks_zone.gpkg",
+          "features": null
+        }
+      ]
+    },
+    {
+      "name": "towns_per_municipality",
+      "prompt": "How many towns and inhabitants are there in each municipality in towns.csv? Write the answer to towns_per_municipality.csv.",
+      "data": [
+        "towns.csv"
+      ],
+      "solution": [
+        {
+          "tool": "describe",
+          "arguments": {
+            "path": "towns.csv"
+          }
+        },
+        {
+          "tool": "save_model",
+          "arguments": {
+            "path": "per_municipality.ographis",
+            "model": {
+              "format": "ographis/1",
+              "name": "Towns per municipality",
+              "nodes": [
+                {
+                  "id": "towns",
+                  "type": "Reader",
+                  "params": {
+                    "path": "towns.csv",
+                    "x": "lon",
+                    "y": "lat",
+                    "crs": "EPSG:4326"
+                  }
+                },
+                {
+                  "id": "stats",
+                  "type": "StatisticsCalculator",
+                  "params": {
+                    "attributes": [
+                      "population"
+                    ],
+                    "group_by": [
+                      "municipality"
+                    ]
+                  }
+                },
+                {
+                  "id": "out",
+                  "type": "Writer",
+                  "params": {
+                    "path": "towns_per_municipality.csv"
+                  }
+                }
+              ],
+              "edges": [
+                {
+                  "from": [
+                    "towns",
+                    "Output"
+                  ],
+                  "to": [
+                    "stats",
+                    "Input"
+                  ]
+                },
+                {
+                  "from": [
+                    "stats",
+                    "Summary"
+                  ],
+                  "to": [
+                    "out",
+                    "Input"
+                  ]
+                }
+              ]
+            }
+          },
+          "expect": "fine"
+        },
+        {
+          "tool": "run_model",
+          "arguments": {
+            "path": "per_municipality.ographis"
+          },
+          "expect": "0 errors"
+        },
+        {
+          "tool": "run_model",
+          "arguments": {
+            "path": "per_municipality.ographis",
+            "full": true
+          },
+          "expect": "Written"
+        }
+      ],
+      "checks": [
+        {
+          "file": "towns_per_municipality.csv",
+          "contains": "Göteborg"
+        }
+      ]
+    },
+    {
+      "name": "towns_sweref",
+      "prompt": "Write the towns of towns.csv to a GeoPackage in SWEREF 99 TM, towns_sweref.gpkg.",
+      "data": [
+        "towns.csv"
+      ],
+      "solution": [
+        {
+          "tool": "describe",
+          "arguments": {
+            "path": "towns.csv"
+          }
+        },
+        {
+          "tool": "save_model",
+          "arguments": {
+            "path": "sweref.ographis",
+            "model": {
+              "format": "ographis/1",
+              "name": "Towns in SWEREF 99 TM",
+              "nodes": [
+                {
+                  "id": "towns",
+                  "type": "Reader",
+                  "params": {
+                    "path": "towns.csv",
+                    "x": "lon",
+                    "y": "lat",
+                    "crs": "EPSG:4326"
+                  }
+                },
+                {
+                  "id": "tm",
+                  "type": "Reprojector",
+                  "params": {
+                    "crs": "EPSG:3006"
+                  }
+                },
+                {
+                  "id": "out",
+                  "type": "Writer",
+                  "params": {
+                    "path": "towns_sweref.gpkg"
+                  }
+                }
+              ],
+              "edges": [
+                {
+                  "from": [
+                    "towns",
+                    "Output"
+                  ],
+                  "to": [
+                    "tm",
+                    "Input"
+                  ]
+                },
+                {
+                  "from": [
+                    "tm",
+                    "Reprojected"
+                  ],
+                  "to": [
+                    "out",
+                    "Input"
+                  ]
+                }
+              ]
+            }
+          },
+          "expect": "fine"
+        },
+        {
+          "tool": "run_model",
+          "arguments": {
+            "path": "sweref.ographis"
+          },
+          "expect": "0 errors"
+        },
+        {
+          "tool": "run_model",
+          "arguments": {
+            "path": "sweref.ographis",
+            "full": true
+          },
+          "expect": "Written"
+        }
+      ],
+      "checks": [
+        {
+          "file": "towns_sweref.gpkg",
+          "features": 39,
+          "crs": "EPSG:3006"
+        }
+      ]
+    }
+  ]
+}

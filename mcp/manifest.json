@@ -1,0 +1,153 @@
+{
+  "manifest_version": "0.3",
+  "name": "ographis",
+  "display_name": "Ographis",
+  "version": "0.96.3",
+  "description": "Spatial ETL on your own computer: describe data, build and run models of Ographis, and see maps of the result.",
+  "long_description": "Ographis reads and writes some hundred formats of maps, rasters, point clouds and 3D models through GDAL and its own readers. With this extension Claude describes your files, finds the tools of Ographis, builds a model while you see it on the canvas, tries it on a sample, runs it and looks at maps of what came out. It works only in the folder you choose, never sees passwords or keys, never writes over a file it did not make, and goes to the web or writes to a database only when you allow it.",
+  "author": {
+    "name": "gishubio",
+    "url": "https://github.com/gishubio"
+  },
+  "homepage": "https://github.com/gishubio/Ographis",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gishubio/Ographis"
+  },
+  "documentation": "https://github.com/gishubio/Ographis/blob/main/docs/MCP.md",
+  "support": "https://github.com/gishubio/Ographis/issues",
+  "license": "MIT OR Apache-2.0",
+  "keywords": [
+    "gis",
+    "maps",
+    "etl",
+    "gdal",
+    "geopackage",
+    "3d"
+  ],
+  "server": {
+    "type": "binary",
+    "entry_point": "og.exe",
+    "mcp_config": {
+      "command": "${__dirname}/og.exe",
+      "args": [
+        "mcp",
+        "--folder",
+        "${user_config.folder}"
+      ],
+      "env": {
+        "OG_MCP_ALLOW_WEB": "${user_config.allow_web}",
+        "OG_MCP_ALLOW_DATABASES": "${user_config.allow_databases}"
+      }
+    }
+  },
+  "user_config": {
+    "folder": {
+      "type": "directory",
+      "title": "Folder of data and models",
+      "description": "Ographis reads and writes only in this folder and the folders in it.",
+      "required": true,
+      "default": "${DOCUMENTS}"
+    },
+    "allow_web": {
+      "type": "boolean",
+      "title": "Allow the web",
+      "description": "Models may fetch data from the web, such as web services, satellite pictures and background maps.",
+      "required": false,
+      "default": false
+    },
+    "allow_databases": {
+      "type": "boolean",
+      "title": "Allow writing to databases",
+      "description": "Models may write to databases, such as PostGIS, through the connections of Ographis.",
+      "required": false,
+      "default": false
+    }
+  },
+  "tools": [
+    {
+      "name": "list_files",
+      "description": "Lists the files of data and the models in an allowed folder and its subfolders."
+    },
+    {
+      "name": "describe",
+      "description": "A file or service in short: layers, attributes and their types, coordinate system, extent, number of features and a few rows. The data stays in Ographis."
+    },
+    {
+      "name": "find_nodes",
+      "description": "Finds node types (inputs, tools, outputs) by words of what they do, with their ports."
+    },
+    {
+      "name": "node_help",
+      "description": "Everything about one node type: its ports and its settings with their keys, kinds, choices and defaults."
+    },
+    {
+      "name": "read_model",
+      "description": "The JSON of a model, without passwords and keys."
+    },
+    {
+      "name": "open_model",
+      "description": "The model the user has open in Ographis now, with changes that are not saved, and the node selected."
+    },
+    {
+      "name": "check_model",
+      "description": "Checks a model without running it: node types, ports, connections, settings and expressions. Says what is wrong and what would be right."
+    },
+    {
+      "name": "save_model",
+      "description": "Saves a model, checks it and shows it on the canvas of Ographis. A file that is there already is not written over unless this session made it."
+    },
+    {
+      "name": "run_model",
+      "description": "Tries a model on the first features of each input, writing nothing (sample, 100); with full: true runs it in full and writes its outputs, once a trial has gone well. Says how each node went."
+    },
+    {
+      "name": "inspect",
+      "description": "The rows, attributes, figures, warnings and log of what came out of a node in the latest run, a page at a time."
+    },
+    {
+      "name": "look",
+      "description": "A picture of what came out of a node: a map of features and rasters, a 3D view of models, a chart, or the picture itself."
+    }
+  ],
+  "prompts": [
+    {
+      "name": "build_model",
+      "description": "Builds an Ographis model step by step, tries it on a sample and shows the result",
+      "arguments": [
+        "task",
+        "data"
+      ],
+      "text": "Build an Ographis model for this task: ${arguments.task}. The data: ${arguments.data}"
+    },
+    {
+      "name": "describe_data",
+      "description": "What is in a file or service: layers, attributes, coordinate system and a map",
+      "arguments": [
+        "path"
+      ],
+      "text": "Describe ${arguments.path} with describe, and show it as a map with look."
+    },
+    {
+      "name": "fix_model",
+      "description": "Finds what is wrong in a model, by checking and trying it, and mends it",
+      "arguments": [
+        "path"
+      ],
+      "text": "The model ${arguments.path} does not work as it should. Check it, try it, find what is wrong and save a mended model under a new name."
+    },
+    {
+      "name": "explain_model",
+      "description": "Tells in plain words what a model does, step by step",
+      "arguments": [
+        "path"
+      ],
+      "text": "Explain the model ${arguments.path} in plain words: what it reads, what each step does and what it writes."
+    }
+  ],
+  "compatibility": {
+    "platforms": [
+      "win32"
+    ]
+  }
+}

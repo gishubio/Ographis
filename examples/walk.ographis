@@ -1,0 +1,155 @@
+{
+  "format": "ographis/1",
+  "name": "Walk through the blocks",
+  "description": "The made-up terrain with its shaded relief, and the blocks raised on it, as a page to walk in with a browser: walk at the height of the eyes along the ground, stopped by the walls, or fly with F; click a block for its attributes, and move the sun with the date and time. Open index.html in the folder out/walk_blocks.",
+  "nodes": [
+    {
+      "id": "dem",
+      "type": "Reader",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid",
+        "within": "rectangle",
+        "min_x": "417800",
+        "min_y": "6472100",
+        "max_x": "418800",
+        "max_y": "6473000"
+      },
+      "comment": "Terrain model"
+    },
+    {
+      "id": "blocks",
+      "type": "Reader",
+      "x": 20,
+      "y": 240,
+      "params": {
+        "path": "blocks.geojson"
+      },
+      "comment": "Footprints"
+    },
+    {
+      "id": "shade",
+      "type": "TerrainShader",
+      "x": 280,
+      "y": 20,
+      "params": {
+        "exaggeration": "2",
+        "haze": "20"
+      },
+      "comment": "Shaded relief"
+    },
+    {
+      "id": "model",
+      "type": "TerrainModel",
+      "x": 540,
+      "y": 20,
+      "params": {
+        "most": "300",
+        "base": "block",
+        "texture_most": "2048"
+      },
+      "comment": "Terrain as a 3D model"
+    },
+    {
+      "id": "raise",
+      "type": "Extruder",
+      "x": 280,
+      "y": 240,
+      "params": {
+        "height": "floors * 3.2",
+        "base": "terrain",
+        "name": "id"
+      },
+      "comment": "Blocks on the terrain"
+    },
+    {
+      "id": "walk",
+      "type": "Writer",
+      "x": 760,
+      "y": 200,
+      "params": {
+        "path": "out/walk_blocks",
+        "format": "walk",
+        "gltf_name": "'Block ' || id",
+        "gltf_material": "if(floors > 3, 'render', 'brick')",
+        "gltf_when": "2026-06-21 17:00",
+        "walk_start": "418300, 6472490"
+      },
+      "comment": "Both the terrain and the blocks go in, as one scene."
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "shade",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "model",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "shade",
+        "Image"
+      ],
+      "to": [
+        "model",
+        "Picture"
+      ]
+    },
+    {
+      "from": [
+        "blocks",
+        "Output"
+      ],
+      "to": [
+        "raise",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "raise",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "model",
+        "Model"
+      ],
+      "to": [
+        "walk",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "raise",
+        "Output"
+      ],
+      "to": [
+        "walk",
+        "Input"
+      ]
+    }
+  ]
+}

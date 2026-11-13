@@ -33,6 +33,7 @@ mod keyboard;
 mod navigator;
 mod palette;
 mod run;
+pub mod shared;
 mod tools;
 mod top_bar;
 mod wires;
@@ -249,6 +250,8 @@ pub struct App {
     crs_list: Arc<Vec<og_engine::io::CrsEntry>>,
     /// Keeps changes that are not saved in a file now and then.
     keeper: crate::recovery::Keeper,
+    /// What this window and an assistant tell each other.
+    pub shared: shared::Shared,
     /// Changes left behind by a program that stopped, to offer.
     pub recoverable: Vec<crate::recovery::Found>,
     /// Set by tests, so that "Show in folder" does not start a file manager. What would
@@ -477,6 +480,7 @@ impl App {
             together: None,
             crs_list: Arc::new(Vec::new()),
             keeper: crate::recovery::Keeper::default(),
+            shared: shared::Shared::default(),
             recoverable: Vec::new(),
             quiet: false,
             shown: Vec::new(),
@@ -647,6 +651,8 @@ impl App {
         self.show_description = !ws.description.trim().is_empty();
         self.name = if ws.name.is_empty() { path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default() } else { ws.name };
         self.path = Some(path.to_path_buf());
+        self.shared.disk = shared::changed_at(path);
+        self.shared.warned = false;
         self.reset_session();
     }
 
@@ -696,6 +702,8 @@ impl App {
         match std::fs::write(path, self.workspace().to_json()) {
             Ok(()) => {
                 self.path = Some(path.to_path_buf());
+                self.shared.disk = shared::changed_at(path);
+                self.shared.warned = false;
                 self.recent.add(path);
                 self.dirty = false;
                 self.say(format!("Saved as {}", path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()));

@@ -93,7 +93,7 @@ pub enum RasterMode {
 
 /// The file extensions that are read as rasters.
 pub fn is_raster(ext: &str) -> bool {
-    matches!(ext, "tif" | "tiff" | "asc" | "img" | "vrt" | "jp2" | "png" | "jpg" | "jpeg" | "bag" | "h5") || is_cube(ext)
+    matches!(ext, "tif" | "tiff" | "asc" | "img" | "vrt" | "jp2" | "png" | "jpg" | "jpeg" | "bag" | "h5" | "hgt" | "dt0" | "dt1" | "dt2") || is_cube(ext)
 }
 
 /// The file extensions of data cubes: variables over a grid, with time or other dimensions,

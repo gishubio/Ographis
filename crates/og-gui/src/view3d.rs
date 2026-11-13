@@ -96,6 +96,13 @@ struct Prepared {
 /// The most triangles of a model that are drawn. More are thinned out.
 const MOST_MODEL: usize = 1_500_000;
 
+impl View3d {
+    /// The colours of the triangles of the model shown, 0 to 255, for the tests.
+    pub fn model_colours(&self) -> Vec<[f32; 3]> {
+        self.prepared.as_ref().map(|p| p.model.iter().map(|m| m.1).collect()).unwrap_or_default()
+    }
+}
+
 pub struct View3d {
     /// Features picked besides the selected one, drawn as picked too.
     pub also: Vec<usize>,
@@ -372,7 +379,17 @@ fn prepare(table: &Table, key: usize, skip: Option<usize>, splat_sources: &[Spla
                 zlo = zlo.min(p[2]);
                 zhi = zhi.max(p[2]);
             }
-            model.push((q, colours.get(t.material as usize).copied().unwrap_or([200.0; 3]), t.object));
+            // A picture draped over the model shows where each triangle lies on it.
+            let mat = m.materials.get(t.material as usize);
+            let colour = match mat.and_then(|x| x.texture.as_deref().map(|tex| (x, tex))) {
+                Some((x, tex)) if t.t.iter().all(|i| (*i as usize) < m.uvs.len()) => {
+                    let uv = t.t.map(|i| m.uvs[i as usize]);
+                    let c = tex.sample((uv[0][0] + uv[1][0] + uv[2][0]) / 3.0, (uv[0][1] + uv[1][1] + uv[2][1]) / 3.0);
+                    [c[0] * x.diffuse[0] * 255.0, c[1] * x.diffuse[1] * 255.0, c[2] * x.diffuse[2] * 255.0]
+                }
+                _ => colours.get(t.material as usize).copied().unwrap_or([200.0; 3]),
+            };
+            model.push((q, colour, t.object));
         }
         with_heights = table.len();
     }

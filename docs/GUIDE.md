@@ -130,6 +130,14 @@ five models.
 | Keep a record of the requests | Give *HTTP request* a file in *Write every request to*, such as requests.log |
 | Bring a real place into a game | *Real place for a game engine*: the terrain model on Heights, land cover on Areas, trees and buildings on Instances, roads on Roads. Read IMPORT.txt in the folder for the settings of the import |
 | Hand a model to Houdini, Blender or Omniverse | An Output to .usda or .usdz; *Layers by* for a file per kind, *Variants by* for alternatives |
+| Let an assistant do the work | Start `og mcp --folder <your folder>` from Claude Desktop, Claude Code or an editor, or install the extension `.mcpb`. Ask in your own words; the model is built on the canvas, tried on a sample and run when you agree. See `docs/MCP.md` |
+| See any place on Earth in 3D | *Fetch a place* with a name or latitude, longitude and a size: Heights and Image to *Terrain to 3D model*, and on to Render 3D scene or a glTF for Blender. See `examples/apis/volcano_hawaii.ographis` |
+| Walk through a model in the browser | An Output with the format *3D walk-through*: open index.html in the folder it writes. Click to look around, W A S D to walk, F to fly, E for the attributes of what is in the middle; the date and time move the sun. See `examples/walk.ographis` |
+| Make buildings that look real | *Make buildings* on footprints from OpenStreetMap, Overture or the property map, with a terrain model on Terrain. The height, storeys, roof shape and colours are taken from their attributes; set *Storeys when not known* and *Roof when not known* for the others. See `examples/buildings.ographis` |
+| Make a model light enough for the web | *Lighten 3D model* with *Triangles at most*, then *Packed* in the Output to glTF, 3D Tiles or the walk-through. 3D Tiles are coarser further away by themselves |
+| Hand a drawing to CAD | An Output to .dxf or .dwg. Give the template drawing of the client in *Template drawing*, and the CAD layer, colour, line type and block by attributes; points become blocks with their attributes filled in |
+| Print a model in 3D | An Output to .stl or .3mf, with *Scale* as 1000 for 1:1000, or empty to fill a plate of 180 mm. Terrain with a block under it, from *Terrain to 3D model*, prints as a solid |
+| Read heights from SRTM, DTED or an ASCII grid | Give the .hgt, .dt1 or .asc file to an Input with *Cells* as a grid of heights |
 | Put a scan of splats on the map | Read the .ply or .spz in an Input, set *Upwards in the scene*, *Metres for a unit of the scene* and the origin, then see it in 3D, alone or in a View with buildings and roads |
 | Make splats of a point cloud | *Make Gaussian splats*, then an Output to .ply or .spz, or the 3D view |
 | Write a report | Connect maps, charts and tables to *Sections* of *Report*, in the order they are to come, and name the tools as the sections should be called. Write a text first and last, and choose a web page or a PDF |

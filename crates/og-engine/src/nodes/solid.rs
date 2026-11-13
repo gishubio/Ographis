@@ -60,7 +60,7 @@ pub(super) fn colour_param(p: &P, key: &str, default: [f32; 3]) -> Result<[f32; 
 }
 
 /// The terrain model on Terrain, in the coordinate system `crs`.
-fn terrain_in(inp: &Inputs, crs: Option<u32>, ctx: &NodeCtx) -> Result<Option<Grid>> {
+pub(super) fn terrain_in(inp: &Inputs, crs: Option<u32>, ctx: &NodeCtx) -> Result<Option<Grid>> {
     let t = input(inp, "Terrain");
     let Some(g) = t.grid.as_deref() else { return Ok(None) };
     Ok(match (g.crs, crs) {

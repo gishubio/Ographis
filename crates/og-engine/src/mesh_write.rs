@@ -40,6 +40,18 @@ fn safe_name(s: &str) -> String {
     }
 }
 
+/// A corner as glTF has it: where it lies, its normal and its texture coordinates, as bits.
+type Corner = ([u32; 3], [u32; 3], [u32; 2]);
+
+fn write_jpeg(t: &crate::mesh::Texture) -> Result<Vec<u8>> {
+    let rgb: Vec<u8> = t.rgba.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect();
+    let mut out = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 88)
+        .encode(&rgb, t.width as u32, t.height as u32, image::ExtendedColorType::Rgb8)
+        .map_err(|e| GbError(format!("A texture cannot be written: {}", e)))?;
+    Ok(out)
+}
+
 fn write_png(t: &crate::mesh::Texture) -> Result<Vec<u8>> {
     let mut out = Vec::new();
     let img = image::RgbaImage::from_raw(t.width as u32, t.height as u32, t.rgba.clone()).ok_or_else(|| GbError("A texture has the wrong size.".into()))?;
@@ -189,6 +201,9 @@ pub struct GltfOpts {
     /// The origin to write around, the same for files that are to fit together in a 3D
     /// program. None: near the middle of the model.
     pub origin: Option<[f64; 3]>,
+    /// Smaller files for the web and game engines: the corners shared between triangles and
+    /// packed by meshoptimizer (EXT_meshopt_compression), and opaque textures as JPEG.
+    pub compress: bool,
 }
 
 /// A 4 × 4 matrix of glTF, by columns, for a node at `at` whose −Z looks along `dir` with
@@ -296,6 +311,8 @@ pub fn write_glb_with(table: &Table, path: &Path, opts: &GltfOpts) -> Result<Vec
     let o = opts.origin.unwrap_or_else(|| origin_of(mesh));
     let apart = mesh.objects.len() <= MOST_NODES && !mesh.objects.is_empty();
     let mut bin: Vec<u8> = Vec::new();
+    // The length of the buffer that packed streams unpack into.
+    let mut fallback_len = 0usize;
     let (mut views, mut accessors, mut meshes, mut nodes) = (Vec::<Json>::new(), Vec::<Json>::new(), Vec::<Json>::new(), Vec::<Json>::new());
     let align = |bin: &mut Vec<u8>| {
         while !bin.len().is_multiple_of(4) {
@@ -311,11 +328,12 @@ pub fn write_glb_with(table: &Table, path: &Path, opts: &GltfOpts) -> Result<Vec
             "roughnessFactor": (1.0 - (m.specular.iter().sum::<f32>() / 3.0) as f64 * 0.8).clamp(0.05, 1.0),
         });
         if let Some(t) = &m.texture {
-            let png = write_png(t)?;
+            let opaque = t.rgba.chunks_exact(4).all(|p| p[3] == 255);
+            let (data, mime) = if opts.compress && opaque { (write_jpeg(t)?, "image/jpeg") } else { (write_png(t)?, "image/png") };
             align(&mut bin);
-            views.push(json!({ "buffer": 0, "byteOffset": bin.len(), "byteLength": png.len() }));
-            bin.extend_from_slice(&png);
-            images.push(json!({ "bufferView": views.len() - 1, "mimeType": "image/png" }));
+            views.push(json!({ "buffer": 0, "byteOffset": bin.len(), "byteLength": data.len() }));
+            bin.extend_from_slice(&data);
+            images.push(json!({ "bufferView": views.len() - 1, "mimeType": mime }));
             textures.push(json!({ "source": images.len() - 1 }));
             pbr["baseColorTexture"] = json!({ "index": textures.len() - 1 });
             pbr["baseColorFactor"] = json!([1.0, 1.0, 1.0, m.opacity.clamp(0.0, 1.0) as f64]);
@@ -389,6 +407,57 @@ pub fn write_glb_with(table: &Table, path: &Path, opts: &GltfOpts) -> Result<Vec
                 lo[k] = lo[k].min(p[k]);
                 hi[k] = hi[k].max(p[k]);
             }
+        }
+        if opts.compress {
+            // The corners shared, and each stream packed by meshoptimizer. The views point
+            // into a second buffer without data, which the decoder fills.
+            let mut index_of: std::collections::HashMap<Corner, u32> = std::collections::HashMap::new();
+            let (mut vp, mut vn, mut vt, mut idx) = (Vec::<[f32; 3]>::new(), Vec::<[f32; 3]>::new(), Vec::<[f32; 2]>::new(), Vec::<u32>::new());
+            for k in 0..pos.len() {
+                let q = if textured { uv[k] } else { [0.0; 2] };
+                let key = (pos[k].map(f32::to_bits), nrm[k].map(f32::to_bits), q.map(f32::to_bits));
+                let i = *index_of.entry(key).or_insert_with(|| {
+                    vp.push(pos[k]);
+                    vn.push(nrm[k]);
+                    vt.push(q);
+                    (vp.len() - 1) as u32
+                });
+                idx.push(i);
+            }
+            let mut packed = |encoded: Vec<u8>, raw: usize, stride: usize, count: usize, mode: &str, target: u32| -> usize {
+                align(&mut bin);
+                let at = bin.len();
+                bin.extend_from_slice(&encoded);
+                while !fallback_len.is_multiple_of(4) {
+                    fallback_len += 1;
+                }
+                let ext = json!({ "buffer": 0, "byteOffset": at, "byteLength": encoded.len(), "byteStride": stride, "count": count, "mode": mode });
+                let mut view = json!({ "buffer": 1, "byteOffset": fallback_len, "byteLength": raw, "target": target });
+                if mode == "ATTRIBUTES" {
+                    view["byteStride"] = json!(stride);
+                }
+                view["extensions"] = json!({ "EXT_meshopt_compression": ext });
+                fallback_len += raw;
+                views.push(view);
+                views.len() - 1
+            };
+            let enc = |r: std::result::Result<Vec<u8>, meshopt::Error>| r.map_err(|e| GbError(format!("The model cannot be packed: {}", e)));
+            let n = vp.len();
+            let v_pos = packed(enc(meshopt::encode_vertex_buffer_level(&vp, 2, Some(0)))?, n * 12, 12, n, "ATTRIBUTES", 34962);
+            let v_nrm = packed(enc(meshopt::encode_vertex_buffer_level(&vn, 2, Some(0)))?, n * 12, 12, n, "ATTRIBUTES", 34962);
+            let v_uv = if textured { Some(packed(enc(meshopt::encode_vertex_buffer_level(&vt, 2, Some(0)))?, n * 8, 8, n, "ATTRIBUTES", 34962)) } else { None };
+            let v_idx = packed(enc(meshopt::encode_index_buffer(&idx, n))?, idx.len() * 4, 4, idx.len(), "TRIANGLES", 34963);
+            accessors.push(json!({ "bufferView": v_pos, "componentType": 5126, "count": n, "type": "VEC3", "min": lo, "max": hi }));
+            let mut attributes = json!({ "POSITION": accessors.len() - 1 });
+            accessors.push(json!({ "bufferView": v_nrm, "componentType": 5126, "count": n, "type": "VEC3" }));
+            attributes["NORMAL"] = json!(accessors.len() - 1);
+            if let Some(v) = v_uv {
+                accessors.push(json!({ "bufferView": v, "componentType": 5126, "count": n, "type": "VEC2" }));
+                attributes["TEXCOORD_0"] = json!(accessors.len() - 1);
+            }
+            accessors.push(json!({ "bufferView": v_idx, "componentType": 5125, "count": idx.len(), "type": "SCALAR" }));
+            by_object.entry(object).or_default().push(json!({ "attributes": attributes, "indices": accessors.len() - 1, "material": material, "mode": 4 }));
+            continue;
         }
         let mut add = |data: &[u8], count: usize, ty: &str, extra: Option<(Json, Json)>| -> usize {
             align(&mut bin);
@@ -503,6 +572,12 @@ pub fn write_glb_with(table: &Table, path: &Path, opts: &GltfOpts) -> Result<Vec
         doc["extensions"] =
             json!({ "KHR_lights_punctual": { "lights": [{ "type": "directional", "name": "Sun", "color": [1.0, 0.96, 0.9], "intensity": 4.0 }] } });
     }
+    if fallback_len > 0 {
+        used.push("EXT_meshopt_compression");
+        doc["extensionsRequired"] = json!(["EXT_meshopt_compression"]);
+        doc["buffers"] =
+            json!([{ "byteLength": bin.len() }, { "byteLength": fallback_len, "extensions": { "EXT_meshopt_compression": { "fallback": true } } }]);
+    }
     if !used.is_empty() {
         doc["extensionsUsed"] = json!(used);
     }
@@ -599,6 +674,50 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_packed_model_is_smaller_and_reads_back_the_same() {
+        let dir = std::env::temp_dir().join(format!("og_mesh_write_packed_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut t = block();
+        // A texture, opaque, that goes as JPEG.
+        let mut m = (**t.mesh.as_ref().unwrap()).clone();
+        // A photo-like texture, uneven, as JPEG is made for.
+        let rgba: Vec<u8> = (0..128 * 128)
+            .flat_map(|i: u32| {
+                let h = i.wrapping_mul(2_654_435_761) >> 24;
+                [(100 + h / 4) as u8, (90 + (i % 128) / 2) as u8, (60 + (i / 128) / 3) as u8, 255]
+            })
+            .collect();
+        m.materials[0].texture = Some(std::sync::Arc::new(crate::mesh::Texture { width: 128, height: 128, rgba }));
+        m.uvs = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+        for tri in m.tris.iter_mut().filter(|tr| tr.material == 0) {
+            tri.t = [0, 1, 2];
+        }
+        t.mesh = Some(std::sync::Arc::new(m));
+        let (plain, packed) = (dir.join("plain.glb"), dir.join("packed.glb"));
+        write_glb_with(&t, &plain, &GltfOpts { georef: true, ..Default::default() }).unwrap();
+        write_glb_with(&t, &packed, &GltfOpts { georef: true, compress: true, ..Default::default() }).unwrap();
+        let j = json_of(&packed);
+        assert_eq!(j["extensionsRequired"], json!(["EXT_meshopt_compression"]));
+        assert_eq!(j["buffers"][1]["extensions"]["EXT_meshopt_compression"]["fallback"], json!(true));
+        assert_eq!(j["images"][0]["mimeType"], json!("image/jpeg"));
+        // The vertices in the version 0 of the format, which EXT_meshopt_compression takes.
+        let b = std::fs::read(&packed).unwrap();
+        let n = u32::from_le_bytes([b[12], b[13], b[14], b[15]]) as usize;
+        let bin = &b[20 + n + 8..];
+        let first = j["bufferViews"].as_array().unwrap().iter().find_map(|v| v["extensions"]["EXT_meshopt_compression"]["byteOffset"].as_u64()).unwrap();
+        assert_eq!(bin[first as usize], 0xa0);
+        assert!(std::fs::metadata(&packed).unwrap().len() < std::fs::metadata(&plain).unwrap().len());
+        let mut notes = crate::io::Notes::default();
+        let opts = crate::obj_io::ObjOpts { y_up: true, ..Default::default() };
+        let a = crate::gltf_io::read_gltf(&plain, &opts, &mut notes).unwrap();
+        let b = crate::gltf_io::read_gltf(&packed, &opts, &mut notes).unwrap();
+        let (ma, mb) = (a.mesh.as_ref().unwrap(), b.mesh.as_ref().unwrap());
+        assert_eq!(ma.tris.len(), mb.tris.len());
+        assert_eq!(ma.bounds(), mb.bounds());
+        assert_eq!(b.features[0].attrs[0], Value::Text("house 1".into()));
+    }
+
     fn json_of(path: &Path) -> Json {
         let b = std::fs::read(path).unwrap();
         let n = u32::from_le_bytes([b[12], b[13], b[14], b[15]]) as usize;
@@ -619,6 +738,7 @@ mod tests {
             sun: Some((225.0, 40.0)),
             camera: true,
             origin: None,
+            compress: false,
         };
         write_glb_with(&t, &path, &opts).unwrap();
         let j = json_of(&path);

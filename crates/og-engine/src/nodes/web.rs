@@ -862,7 +862,7 @@ pub(super) const TYPES: &[NodeType] = &[
 /// The time of a STAC search as RFC 3339, which catalogues such as Earth Search insist on.
 /// A year, a month or a date is the whole of it: 2025-06 is from the first of June to the
 /// end of the 30th. From and to are written with a slash, and an open end as .. or nothing.
-fn stac_datetime(text: &str) -> Result<String> {
+pub(super) fn stac_datetime(text: &str) -> Result<String> {
     use chrono::{Datelike, NaiveDate};
     fn bound(s: &str, end: bool) -> Result<String> {
         let s = s.trim();

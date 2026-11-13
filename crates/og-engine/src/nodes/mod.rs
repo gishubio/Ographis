@@ -706,6 +706,7 @@ mod attr_filter;
 mod attr_table;
 mod attr_text;
 mod attr_values;
+mod buildings096;
 mod chart;
 mod database;
 mod diorama;
@@ -716,6 +717,7 @@ mod geom_shape;
 mod geom_transform;
 mod input;
 mod json;
+mod lighter096;
 mod map;
 mod models091;
 mod more_tools;
@@ -733,6 +735,7 @@ mod ifc096;
 mod lengths096;
 mod locate096;
 mod movement096;
+mod place096;
 mod pointcloud090;
 mod props;
 mod raster;
@@ -806,6 +809,8 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         tools091::TYPES,
         network091::TYPES,
         models091::TYPES,
+        buildings096::TYPES,
+        lighter096::TYPES,
         overture_dl::TYPES,
         raster089::TYPES,
         raster090::TYPES,
@@ -816,6 +821,7 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         ifc096::TYPES,
         engines096::TYPES,
         splats096::TYPES,
+        place096::TYPES,
         stats096::TYPES,
         movement096::TYPES,
         locate096::TYPES,

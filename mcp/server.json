@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.gishubio/ographis",
+  "title": "Ographis",
+  "description": "Spatial ETL: describe GIS data, build and run Ographis models, and see maps of the result.",
+  "repository": {
+    "url": "https://github.com/gishubio/Ographis",
+    "source": "github"
+  },
+  "version": "0.96.3",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/gishubio/Ographis/releases/download/v0.96.3/Ographis-0.96.3-windows.mcpb",
+      "fileSha256": "FILLED-IN-BY-BUILD-PS1",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

@@ -8,7 +8,8 @@ pub(super) const FILENAME_PARTS: &[(&str, &str)] = &[("stem", "Name without exte
 /// What the cells of a raster become.
 pub(super) const OBJ_UNITS: &[(&str, &str)] =
     &[("auto", "As the format says, or from its size"), ("m", "Metres"), ("cm", "Centimetres"), ("mm", "Millimetres"), ("ft", "Feet"), ("in", "Inches")];
-pub(super) const OBJ_UP: &[(&str, &str)] = &[("auto", "As the format says: y for glTF, z for OBJ"), ("z", "z, as on maps"), ("y", "y, as in many 3D programs")];
+pub(super) const OBJ_UP: &[(&str, &str)] =
+    &[("auto", "As the format says: y for glTF, z for OBJ, STL, 3MF and STEP"), ("z", "z, as on maps"), ("y", "y, as in many 3D programs")];
 pub(super) const SPLAT_UP: &[(&str, &str)] = &[
     ("auto", "As the format says: y down for PLY, y up for SPZ"),
     ("-y", "y down, as COLMAP and the training of splats"),
@@ -176,7 +177,7 @@ pub(super) const READER_PARAMS: &[ParamSpec] = &[
         default: "",
         hint: "For a COPC file: only the levels of its octree down to about this many metres between points, such as 2 for an overview. Empty reads all. With a rectangle, only that part is read, also from the web",
     },
-    ParamSpec { key: "obj_unit", label: "Units of the model", kind: ParamKind::Choice(OBJ_UNITS), default: "auto", hint: "glTF is in metres. OBJ files do not say: more than 200 across is taken as centimetres" },
+    ParamSpec { key: "obj_unit", label: "Units of the model", kind: ParamKind::Choice(OBJ_UNITS), default: "auto", hint: "glTF is in metres, and 3MF and STEP say theirs. OBJ files do not say: more than 200 across is taken as centimetres. STL is taken as millimetres" },
     ParamSpec { key: "obj_up", label: "Upwards in the model", kind: ParamKind::Choice(OBJ_UP), default: "auto", hint: "A building lying on its side has the other" },
     ParamSpec {
         key: "dxf_blocks",
@@ -800,7 +801,7 @@ pub(super) fn run_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
                 });
             }
             read.push((model.table, None));
-        } else if matches!(ext.as_str(), "obj" | "gltf" | "glb") {
+        } else if matches!(ext.as_str(), "obj" | "gltf" | "glb" | "stl" | "3mf" | "step" | "stp") {
             // A 3D model: where it stands, and in which units, is set in the input.
             let num = |k: &str, what: &str| number_param(p, k, what).map(|v| v.unwrap_or(0.0));
             let unit = match p.get("obj_unit").as_deref() {
@@ -811,7 +812,7 @@ pub(super) fn run_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
                 Some("in") => Some(0.0254),
                 _ => None,
             };
-            let gltf = ext != "obj";
+            let gltf = matches!(ext.as_str(), "gltf" | "glb");
             let opts = crate::obj_io::ObjOpts {
                 unit,
                 // glTF has y up by its rules; OBJ files most often z, from GIS and CAD.
@@ -829,7 +830,13 @@ pub(super) fn run_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
                 progress("read the file", done, total);
                 gate.going()
             };
-            let t = if gltf { crate::gltf_io::read_gltf(file, &opts, &mut notes) } else { crate::obj_io::read_obj(file, &opts, &mut notes, &going) };
+            let t = match ext.as_str() {
+                "gltf" | "glb" => crate::gltf_io::read_gltf(file, &opts, &mut notes),
+                "stl" => crate::print_io::read_stl(file, &opts, &mut notes),
+                "3mf" => crate::print_io::read_3mf(file, &opts, &mut notes),
+                "step" | "stp" => crate::print_io::read_step(file, &opts, &mut notes),
+                _ => crate::obj_io::read_obj(file, &opts, &mut notes, &going),
+            };
             read.push((t.map_err(named)?, None));
         } else if is_plain_json(file) {
             let (lists, text) = match p.get("json_nested").as_deref() {
@@ -1212,6 +1219,8 @@ pub const READ_FORMATS: &[&str] = &[
     "GeoPackage (.gpkg)",
     "GeoParquet (.parquet)",
     "GeoTIFF, also Cloud Optimized (.tif)",
+    "SRTM, DTED and ASCII grids of heights (.hgt, .dt0, .dt1, .dt2, .asc)",
+    "3D printing and CAD models (.stl, .3mf, .step)",
     "JSON (.json)",
     "XML (.xml)",
     "LandXML surfaces, points and alignments (.xml)",

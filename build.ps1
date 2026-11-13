@@ -424,6 +424,25 @@ if ($Package) {
     $mb = [Math]::Round((Get-Item $zip).Length / 1MB)
     Note "Folder: $dist"
     Note "Zip file: $zip ($mb MB)"
+
+    # The same folder as an extension of Claude Desktop (.mcpb): a zip file with manifest.json
+    # beside og.exe, which starts og mcp. And the entry of the MCP registry, with the checksum
+    # of the extension, to publish with mcp-publisher once the extension is in a release.
+    $bundle = Sub $distRoot "$name-mcpb"
+    if (Test-Path $bundle) { Remove-Item $bundle -Recurse -Force }
+    Copy-Item $dist $bundle -Recurse
+    Copy-Item (Sub (Sub $root "mcp") "manifest.json") (Sub $bundle "manifest.json")
+    $mcpb = Sub $distRoot "$name.mcpb"
+    $mcpbZip = "$mcpb.zip"
+    foreach ($f in @($mcpb, $mcpbZip)) { if (Test-Path $f) { Remove-Item $f -Force } }
+    Compress-Archive -Path (Sub $bundle "*") -DestinationPath $mcpbZip
+    Move-Item $mcpbZip $mcpb
+    Remove-Item $bundle -Recurse -Force
+    $sha = (Get-FileHash $mcpb -Algorithm SHA256).Hash.ToLower()
+    $server = (Get-Content (Sub (Sub $root "mcp") "server.json") -Raw) -replace "FILLED-IN-BY-BUILD-PS1", $sha
+    [IO.File]::WriteAllText((Sub $distRoot "server.json"), $server, $utf8)
+    Note "Extension of Claude Desktop: $mcpb"
+    Note "Entry of the MCP registry: $(Sub $distRoot 'server.json'), SHA-256 $sha"
 }
 
 Write-Host ""

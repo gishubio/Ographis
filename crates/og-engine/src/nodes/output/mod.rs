@@ -66,9 +66,15 @@ pub const WRITER_FORMATS: &[(&str, &str)] = &[
     ("cog", "Cloud Optimized GeoTIFF (.tif)"),
     ("citygml", "CityGML 2.0 buildings (.gml)"),
     ("glb", "glTF 3D model (.glb)"),
+    ("stl", "STL for 3D printing (.stl)"),
+    ("3mf", "3MF for 3D printing (.3mf)"),
+    ("step", "STEP for CAD (.step)"),
+    ("dxf", "AutoCAD DXF drawing (.dxf)"),
+    ("dwg", "AutoCAD DWG drawing (.dwg)"),
     ("usda", "OpenUSD (.usda)"),
     ("usdz", "OpenUSD package with textures (.usdz)"),
     ("3dtiles", "3D Tiles 1.1 (a folder with tileset.json)"),
+    ("walk", "3D walk-through in the browser (a folder)"),
     ("jpg", "JPEG image (.jpg)"),
     ("json", "JSON: a list of objects (.json)"),
     ("landxml", "LandXML surface and points (.xml)"),
@@ -108,9 +114,15 @@ pub const OUTPUT_FORMATS: &[(&str, &str)] = &[
     ("cog", "Cloud Optimized GeoTIFF (.tif)"),
     ("citygml", "CityGML 2.0 buildings (.gml)"),
     ("glb", "glTF 3D model (.glb)"),
+    ("stl", "STL for 3D printing (.stl)"),
+    ("3mf", "3MF for 3D printing (.3mf)"),
+    ("step", "STEP for CAD (.step)"),
+    ("dxf", "AutoCAD DXF drawing (.dxf)"),
+    ("dwg", "AutoCAD DWG drawing (.dwg)"),
     ("usda", "OpenUSD (.usda)"),
     ("usdz", "OpenUSD package with textures (.usdz)"),
     ("3dtiles", "3D Tiles 1.1 (a folder with tileset.json)"),
+    ("walk", "3D walk-through in the browser (a folder)"),
     ("jpg", "JPEG image (.jpg)"),
     ("json", "JSON: a list of objects (.json)"),
     ("landxml", "LandXML surface and points (.xml)"),
@@ -310,11 +322,18 @@ pub(super) const WRITER_PARAMS: &[ParamSpec] = &[
         hint: "glTF: a sun where it stands at the time below, and a camera looking from the south-west",
     },
     ParamSpec {
+        key: "gltf_compress",
+        label: "Packed",
+        kind: ParamKind::Choice(YES_NO),
+        default: "false",
+        hint: "glTF and the walk-through: smaller files, with the model packed by meshoptimizer and opaque textures as JPEG, for the web and game engines. Read by three.js, Babylon.js, Cesium and glTFast; not every 3D program reads it",
+    },
+    ParamSpec {
         key: "gltf_when",
         label: "Time of the sun",
         kind: ParamKind::Text,
         default: "",
-        hint: "Swedish time, such as 2026-06-21 15:00. Empty: midsummer at three in the afternoon",
+        hint: "Swedish time, such as 2026-06-21 15:00; for the walk-through, the clock of Hours from UTC, and the time it opens at. Empty: midsummer at three in the afternoon",
     },
     ParamSpec {
         key: "t3_most",
@@ -322,6 +341,13 @@ pub(super) const WRITER_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Text,
         default: "100000",
         hint: "3D Tiles: the objects are split into tiles of at most this many triangles, which load quickly",
+    },
+    ParamSpec {
+        key: "t3_lod",
+        label: "Coarser further away",
+        kind: ParamKind::Choice(YES_NO),
+        default: "true",
+        hint: "3D Tiles: tiles of tiles with a lighter model of what they hold, fewer triangles and without the smallest objects, shown from afar until one comes near; the viewer streams the detail as it is needed",
     },
     ParamSpec {
         key: "t3_dz",
@@ -357,6 +383,99 @@ pub(super) const WRITER_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::ApiConnection,
         default: "",
         hint: "Google Sheets: a connection with the key of a Google service account that the sheet is shared with, as an editor",
+    },
+    ParamSpec {
+        key: "walk_eye",
+        label: "Height of the eyes",
+        kind: ParamKind::Text,
+        default: "1.7",
+        hint: "Walk-through: in metres above the ground",
+    },
+    ParamSpec {
+        key: "walk_speed",
+        label: "Speed",
+        kind: ParamKind::Text,
+        default: "3",
+        hint: "Walk-through: in metres a second when walking; Shift goes four times as fast, and flying five times, or across a fortieth of the model a second in a large one. The wheel and + and − change it in the page",
+    },
+    ParamSpec {
+        key: "walk_start",
+        label: "Begin at",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Walk-through: x, y in the coordinates of the model. Empty: at the middle of the south edge, looking north",
+    },
+    ParamSpec {
+        key: "walk_utc",
+        label: "Hours from UTC",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Walk-through: of the clock that Time of the sun is in, such as -10 for Hawaii. Empty: Swedish time in and near Sweden, else by the longitude",
+    },
+    ParamSpec {
+        key: "print_scale",
+        label: "Scale",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "STL, 3MF and STEP, in millimetres from the lowest corner: the denominator, such as 1000 for 1:1000, or 1 for real size. Empty: the largest side 180 mm, as a printer plate takes",
+    },
+    ParamSpec {
+        key: "cad_template",
+        label: "Template drawing",
+        kind: ParamKind::FileOpen,
+        default: "",
+        hint: "DXF and DWG: a drawing whose layers, line types, text styles and blocks are used, such as the CAD standard of the client. Empty: a drawing of its own",
+    },
+    ParamSpec {
+        key: "cad_keep",
+        label: "Keep what the template draws",
+        kind: ParamKind::Choice(YES_NO),
+        default: "true",
+        hint: "Such as a frame and a title block in model space; no keeps only its tables and blocks",
+    },
+    ParamSpec {
+        key: "cad_layer",
+        label: "Layer by",
+        kind: ParamKind::Attribute("Input"),
+        default: "",
+        hint: "DXF and DWG: the attribute that names the CAD layer of each feature; a layer the template lacks is made. Empty: layer 0",
+    },
+    ParamSpec {
+        key: "cad_colour",
+        label: "Colour by",
+        kind: ParamKind::Attribute("Input"),
+        default: "",
+        hint: "A colour as #rrggbb or a number of the AutoCAD colours, 1 to 255. Empty: the colour of the layer",
+    },
+    ParamSpec {
+        key: "cad_linetype",
+        label: "Line type by",
+        kind: ParamKind::Attribute("Input"),
+        default: "",
+        hint: "The name of a line type of the template, such as DASHED. Empty: that of the layer",
+    },
+    ParamSpec {
+        key: "cad_block",
+        label: "Block by",
+        kind: ParamKind::Attribute("Input"),
+        default: "",
+        hint: "Points as the block of the template this attribute names, its attributes filled in from the attributes of the same names, such as DJUP. Points without a block are points",
+    },
+    ParamSpec { key: "cad_rotation", label: "Rotation of blocks", kind: ParamKind::Attribute("Input"), default: "", hint: "In degrees counterclockwise. Empty: 0" },
+    ParamSpec {
+        key: "cad_text",
+        label: "Text by",
+        kind: ParamKind::Attribute("Input"),
+        default: "",
+        hint: "A text beside each feature: at a point, inside an area, halfway along a line",
+    },
+    ParamSpec { key: "cad_text_height", label: "Height of texts", kind: ParamKind::Text, default: "2.5", hint: "In the units of the drawing, usually metres" },
+    ParamSpec {
+        key: "cad_version",
+        label: "AutoCAD version",
+        kind: ParamKind::Choice(crate::cad_write::VERSIONS),
+        default: "2018",
+        hint: "The version the drawing is saved as, for those who open it in an older program",
     },
     ParamSpec {
         key: "splat_up",
@@ -532,8 +651,8 @@ pub fn writer_file(path: &str, format: Option<&str>) -> String {
                 path.to_string()
             };
         }
-        // A tileset is a folder: the name without an extension.
-        "3dtiles" => {
+        // A tileset and a walk-through are folders: the name without an extension.
+        "3dtiles" | "walk" => {
             let ext = ext_of(Path::new(path));
             return if WRITER_FORMATS.iter().any(|f| !f.0.is_empty() && f.0 == ext) || ext == "gml" {
                 Path::new(path).with_extension("").to_string_lossy().into_owned()
@@ -678,25 +797,7 @@ fn gltf_opts(p: &P, table: &Table, ctx: &NodeCtx) -> Result<crate::mesh_write::G
         };
         let at = crate::sun::time_on(&date, &time, crate::sun::Clock::Swedish)
             .ok_or_else(|| GbError(format!("The time of the sun is written as 2026-06-21 15:00, not \"{}\".", when.unwrap_or_default())))?;
-        // The place of the model in degrees, for where the sun stands.
-        let middle = table.mesh.as_deref().and_then(|m| m.bounds()).map(|(lo, hi)| ((lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0)).or_else(|| {
-            use geo::BoundingRect;
-            let r = table.features.iter().filter_map(|f| f.geom.as_ref()?.bounding_rect()).reduce(|a, b| {
-                geo::Rect::new(
-                    geo::Coord { x: a.min().x.min(b.min().x), y: a.min().y.min(b.min().y) },
-                    geo::Coord { x: a.max().x.max(b.max().x), y: a.max().y.max(b.max().y) },
-                )
-            })?;
-            Some(((r.min().x + r.max().x) / 2.0, (r.min().y + r.max().y) / 2.0))
-        });
-        let lonlat = match (middle, table.crs, ctx.backend) {
-            (Some((x, y)), Some(4326), _) => Some((x, y)),
-            (Some((x, y)), Some(c), Some(b)) => {
-                let (mut xs, mut ys) = (vec![x], vec![y]);
-                b.transform(c, 4326, &mut xs, &mut ys).ok().map(|_| (xs[0], ys[0]))
-            }
-            _ => None,
-        };
+        let lonlat = place_of(table, ctx);
         // Without a place, Göteborg.
         let (lon, lat) = lonlat.unwrap_or((11.97, 57.71));
         let (az, alt) = crate::sun::position(at, lat, lon);
@@ -712,7 +813,31 @@ fn gltf_opts(p: &P, table: &Table, ctx: &NodeCtx) -> Result<crate::mesh_write::G
         sun,
         camera: matches!(sun_camera.as_str(), "camera" | "both"),
         origin: model_origin(p)?,
+        compress: p.get("gltf_compress").as_deref() == Some("true"),
     })
+}
+
+/// The place of the middle of a model or of features, in degrees of longitude and latitude,
+/// for where the sun stands.
+fn place_of(table: &Table, ctx: &NodeCtx) -> Option<(f64, f64)> {
+    let middle = table.mesh.as_deref().and_then(|m| m.bounds()).map(|(lo, hi)| ((lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0)).or_else(|| {
+        use geo::BoundingRect;
+        let r = table.features.iter().filter_map(|f| f.geom.as_ref()?.bounding_rect()).reduce(|a, b| {
+            geo::Rect::new(
+                geo::Coord { x: a.min().x.min(b.min().x), y: a.min().y.min(b.min().y) },
+                geo::Coord { x: a.max().x.max(b.max().x), y: a.max().y.max(b.max().y) },
+            )
+        })?;
+        Some(((r.min().x + r.max().x) / 2.0, (r.min().y + r.max().y) / 2.0))
+    });
+    match (middle, table.crs, ctx.backend) {
+        (Some((x, y)), Some(4326), _) => Some((x, y)),
+        (Some((x, y)), Some(c), Some(b)) => {
+            let (mut xs, mut ys) = (vec![x], vec![y]);
+            b.transform(c, 4326, &mut xs, &mut ys).ok().map(|_| (xs[0], ys[0]))
+        }
+        _ => None,
+    }
 }
 
 /// The origin a 3D model is written around, as Origin gives it: None near its middle, and
@@ -800,6 +925,8 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         let o = crate::tiles3d_write::TilesOpts {
             most: number_param(p, "t3_most", "Triangles in a tile")?.unwrap_or(100_000.0).max(1000.0) as usize,
             dz: number_param(p, "t3_dz", "Height added")?.unwrap_or(0.0),
+            lod: p.get("t3_lod").as_deref() != Some("false"),
+            compress: p.get("gltf_compress").as_deref() == Some("true"),
         };
         let (files, tiles) = crate::tiles3d_write::write_tileset(table, &path, &o, backend)?;
         let tris = table.mesh.as_deref().map_or(0, |m| m.tris.len());
@@ -811,6 +938,55 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         ));
         if o.dz == 0.0 {
             ctx.notes.info("The heights are taken as heights above the ellipsoid. Heights above the sea, such as RH 2000, lie about 20 to 40 metres too low on the globe of Cesium: add that in Height added.");
+        }
+        ctx.files.extend(files);
+        return Ok(Vec::new());
+    }
+    if p.get("format").as_deref() == Some("walk") {
+        // A walk-through: a page with the model in it, to walk in with a browser.
+        let table = input(inp, "Input");
+        let gltf = gltf_opts(p, table, ctx)?;
+        let place = place_of(table, ctx);
+        let when = p.get("gltf_when").filter(|w| !w.trim().is_empty()).unwrap_or_else(|| format!("{}-06-21 15:00", chrono::Local::now().format("%Y")));
+        let utc = match number_param(p, "walk_utc", "Hours from UTC")? {
+            Some(h) => h,
+            // In Sweden and its neighbours Swedish time, as Time of the sun is; else by the longitude.
+            None => match place {
+                Some((lon, lat)) if !(10.0..=25.0).contains(&lon) || !(54.0..=70.0).contains(&lat) => (lon / 15.0).round(),
+                _ => {
+                    let noon =
+                        chrono::NaiveDate::parse_from_str(when.split_whitespace().next().unwrap_or(""), "%Y-%m-%d").ok().and_then(|d| d.and_hms_opt(12, 0, 0));
+                    noon.map_or(1, crate::sun::swedish_offset) as f64
+                }
+            },
+        };
+        let start = match p.get("walk_start").filter(|t| !t.trim().is_empty()) {
+            None => None,
+            Some(text) => {
+                let v: Vec<f64> = text.split([',', ';', ' ']).filter(|t| !t.trim().is_empty()).filter_map(|t| crate::model::parse_number(t.trim())).collect();
+                match v.as_slice() {
+                    [x, y] => Some([*x, *y]),
+                    _ => return err(format!("Where to begin is written as x, y in the coordinates of the model, such as 418300, 6472550, not \"{}\".", text)),
+                }
+            }
+        };
+        let o = crate::walk_write::WalkOpts {
+            title: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+            latlon: place.map(|(lon, lat)| (lat, lon)),
+            when,
+            utc_offset: utc,
+            eye: number_param(p, "walk_eye", "Height of the eyes")?.unwrap_or(1.7),
+            speed: number_param(p, "walk_speed", "Speed")?.unwrap_or(3.0),
+            start,
+        };
+        if place.is_none() {
+            ctx.notes.warn("The place of the model is not known, so the sun stands as over Göteborg. Give the model a coordinate system.");
+        }
+        let files = crate::walk_write::write_walk(table, &path, &gltf, &o)?;
+        let tris = table.mesh.as_deref().map_or(0, |m| m.tris.len());
+        ctx.notes.info(format!("{} triangles to walk among: open index.html in the folder {} with a browser", fmt_count(tris as u64), path.display()));
+        if tris > 2_000_000 {
+            ctx.notes.warn("More than two million triangles walk slowly in a browser. Make the model lighter first.");
         }
         ctx.files.extend(files);
         return Ok(Vec::new());
@@ -891,6 +1067,84 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         ctx.notes.info(format!("{} points written", fmt_count(n)));
         if flat > 0 {
             ctx.notes.warn(format!("{} points had no height and were written at 0.", fmt_count(flat)));
+        }
+        ctx.files.push(path);
+        return Ok(Vec::new());
+    }
+    if matches!(ext.as_str(), "stl" | "3mf" | "step" | "stp") {
+        // A model for printing or CAD, in millimetres from its lowest corner.
+        let table = input(inp, "Input");
+        let Some(mesh) = table.mesh.as_deref() else {
+            return err("Nothing came in with a 3D model. Make one first, such as with Extrude, Make a diorama or a 3D input, or read a city model or IFC.");
+        };
+        let scale = number_param(p, "print_scale", "The scale")?;
+        let frame = crate::print_io::frame_of(mesh, &crate::print_io::PrintOpts { scale, fit_mm: 180.0 })?;
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
+        }
+        match ext.as_str() {
+            "stl" => crate::print_io::write_stl(mesh, &path, &frame)?,
+            "3mf" => crate::print_io::write_3mf(mesh, &path, &frame)?,
+            _ => crate::print_io::write_step(mesh, &path, &frame)?,
+        }
+        let (lo, hi) = mesh.bounds().expect("checked");
+        let mm = |d: f64| (d * frame.mm_per_m * 10.0).round() / 10.0;
+        ctx.notes.info(format!(
+            "{} triangles at 1:{}, {} × {} × {} mm",
+            fmt_count(mesh.tris.len() as u64),
+            fmt_count(frame.scale.round() as u64),
+            crate::model::fmt_real(mm(hi[0] - lo[0])),
+            crate::model::fmt_real(mm(hi[1] - lo[1])),
+            crate::model::fmt_real(mm(hi[2] - lo[2]))
+        ));
+        ctx.files.push(path);
+        return Ok(Vec::new());
+    }
+    if matches!(ext.as_str(), "dxf" | "dwg") {
+        // A drawing for CAD, by acadrust.
+        let table = input(inp, "Input");
+        let field = |key: &str| -> Result<Option<usize>> { p.get(key).filter(|v| !v.trim().is_empty()).map(|v| table.need_field(&v)).transpose() };
+        let template = p.get("cad_template").filter(|t| !t.trim().is_empty()).map(|t| ctx.resolve(t.trim()));
+        if let Some(t) = &template {
+            if !t.exists() {
+                return err(format!("The template drawing {} is not there.", t.display()));
+            }
+        }
+        let opts = crate::cad_write::CadOpts {
+            template: template.as_deref(),
+            keep_template: p.get("cad_keep").as_deref() != Some("false"),
+            layer_by: field("cad_layer")?,
+            colour_by: field("cad_colour")?,
+            linetype_by: field("cad_linetype")?,
+            block_by: field("cad_block")?,
+            rotation_by: field("cad_rotation")?,
+            text_by: field("cad_text")?,
+            text_height: number_param(p, "cad_text_height", "The height of texts")?.unwrap_or(2.5),
+            version: p.get("cad_version"),
+        };
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
+        }
+        let r = crate::cad_write::write_cad(table, &path, &opts)?;
+        let version = p.get("cad_version").unwrap_or_else(|| "2018".into());
+        ctx.notes.info(format!(
+            "{} entities as AutoCAD {}{}{}",
+            fmt_count(r.entities as u64),
+            version,
+            if r.blocks > 0 { format!(", {} of them blocks", fmt_count(r.blocks as u64)) } else { String::new() },
+            if r.layers_made.is_empty() { String::new() } else { format!(", layers made: {}", r.layers_made.join(", ")) }
+        ));
+        for (name, n) in &r.no_linetype {
+            ctx.notes.warn(format!("The line type {} is not in the template, so {} features have that of their layer.", name, fmt_count(*n as u64)));
+        }
+        for (name, n) in &r.no_block {
+            ctx.notes.warn(format!("The block {} is not in the template, so {} points are written as points.", name, fmt_count(*n as u64)));
+        }
+        if r.left_out > 0 {
+            ctx.notes.warn(format!("{} collections of geometries were left out.", fmt_count(r.left_out as u64)));
+        }
+        if table.crs.is_some() {
+            ctx.notes.info("a drawing does not say its coordinate system: the coordinates are written as they are");
         }
         ctx.files.push(path);
         return Ok(Vec::new());

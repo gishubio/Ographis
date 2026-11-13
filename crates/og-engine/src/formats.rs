@@ -120,8 +120,8 @@ pub const FORMATS: &[Format] = &[
         name: "CAD drawings",
         files: ".dxf, .dwg",
         read: "GDAL and Ographis; DWG through acadrust",
-        write: "",
-        note: "Layers, colours, line types, texts and block attributes as attributes; the header by Ographis. DWG from AutoCAD R13 to 2018 and later is made DXF by acadrust and read as one",
+        write: "acadrust",
+        note: "Layers, colours, line types, texts and block attributes as attributes; the header by Ographis. DWG from AutoCAD R13 to 2018 and later is made DXF by acadrust and read as one. Written as AutoCAD 2010, 2013 or 2018, from a template with its layers, line types and blocks, the attributes of blocks filled in",
     },
     Format { name: "CSV and text", files: ".csv, .txt, .tsv", read: OWN, write: OWN, note: "Coordinates or WKT in columns, encodings and separators" },
     Format {
@@ -168,11 +168,11 @@ pub const FORMATS: &[Format] = &[
         note: "A sheet shared with a link is read as it is; a private one is read and written with a Google service account that it is shared with",
     },
     Format {
-        name: "GeoTIFF and other rasters",
-        files: ".tif, .jp2, .asc and others",
+        name: "GeoTIFF and other rasters, heights from SRTM and DTED",
+        files: ".tif, .jp2, .asc, .hgt, .dt1 and others",
         read: GDAL,
         write: GDAL,
-        note: "Cloud Optimized GeoTIFF read over the web and written; grids of values and pictures",
+        note: "Cloud Optimized GeoTIFF read over the web and written; grids of values and pictures. Heights as ASCII grids (.asc), SRTM (.hgt) and DTED (.dt0, .dt1, .dt2)",
     },
     Format {
         name: "PNG and JPEG pictures",
@@ -227,6 +227,20 @@ pub const FORMATS: &[Format] = &[
     Format { name: "OBJ", files: ".obj", read: OWN, write: OWN, note: "With materials and textures" },
     Format { name: "glTF", files: ".gltf, .glb", read: OWN, write: OWN, note: "Written as .glb around an origin kept in the file" },
     Format {
+        name: "3D printing",
+        files: ".stl, .3mf",
+        read: OWN,
+        write: OWN,
+        note: "Written in millimetres at a scale, standing on the plate; 3MF with an object for each feature and its colours. Read placed as other 3D models",
+    },
+    Format {
+        name: "STEP",
+        files: ".step, .stp",
+        read: OWN,
+        write: OWN,
+        note: "Written as faceted solids, coloured, in millimetres; read where the faces are flat with straight edges or triangles, as from 3D printing and AP242",
+    },
+    Format {
         name: "OpenUSD",
         files: ".usda, .usdz",
         read: "",
@@ -239,6 +253,13 @@ pub const FORMATS: &[Format] = &[
         read: OWN,
         write: OWN,
         note: "Batched and instanced models, from a folder or the web. Written as 3D Tiles 1.1 with glTF tiles, placed on the globe",
+    },
+    Format {
+        name: "3D walk-through",
+        files: "scene.glb in a folder",
+        read: "",
+        write: OWN,
+        note: "A page with three.js and the model in it: walk at the height of the eyes, following the ground and stopped by walls, or fly; click an object for its attributes; the sun and shadows at a date and time",
     },
     Format { name: "Point clouds", files: ".las, .laz, .copc.laz", read: "Ographis (las, laz-rs)", write: "Ographis (las, laz-rs)", note: "COPC read from the web part by part. Written as LAS 1.4 with classes, intensity, returns and colours" },
     Format {
@@ -377,6 +398,7 @@ mod tests {
                 "3dtiles" => assert!(listed("tileset.json")),
                 "qgis" => assert!(listed("qgz")),
                 "webmap" => assert!(listed("index.html")),
+                "walk" => assert!(FORMATS.iter().any(|f| f.name == "3D walk-through")),
                 e => assert!(listed(e), "{} is not on the page", e),
             }
         }

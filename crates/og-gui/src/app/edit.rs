@@ -317,6 +317,7 @@ impl App {
         if asked || self.allow_close {
             // Closed as it should be: the kept changes were saved or let go of.
             self.keeper.clear();
+            og_engine::session::withdraw();
             self.let_go_of_data();
             return;
         }

@@ -266,6 +266,20 @@ Not yet checked on Windows:
   the speed of reading IFC with many cut-outs, measured here only in a debug build.
 - Version 0.96 beta 3: the PDF of shapes opened in Acrobat Reader, Edge and Illustrator, and
   the SVG in Inkscape; here they were checked with qpdf and drawn with Poppler.
+- Version 0.96.3, the assistants: `og mcp` in Claude Desktop and Claude Code on Windows,
+  here driven only by a test that speaks the protocol; the extension `.mcpb` that
+  `build.cmd -Package` makes, as PowerShell could not be run here; the window opening and
+  reading again what the assistant saves, tried here in the tests of the window;
+  `tools/mcp-eval` against real assistants, which needs Claude Code signed in.
+- Version 0.96.3: DWG opened in AutoCAD, BricsCAD or DWG TrueView, which here only
+  acadrust read back (DXF was checked with ezdxf); *Fetch a place* against Nominatim, the
+  Copernicus DEM and Earth Search on the web, tried here only against a server on this
+  computer that answers as they do; the walk-through in Edge, Chrome and Firefox on a real
+  graphics card, here drawn by Chromium in software; 3MF in PrusaSlicer, Bambu Studio or
+  Cura, and STEP in FreeCAD, Fusion or SolidWorks (here read by OpenCASCADE and trimesh);
+  glTF packed by meshoptimizer in Blender and game engines, here read by three.js; 3D Tiles
+  coarser further away in Cesium, here checked with the 3D Tiles validator; how much faster
+  Dissolve is on land cover with many cores, measured here on two.
 - Version 0.96.2: the start folder in Open and Save as on Windows; LandXML from Civil 3D
   and Novapoint; an IDS file from a client against a real model; how much faster Dissolve
   is on a computer with many cores; the heightmap, masks and instances imported in Unreal,

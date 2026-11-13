@@ -58,7 +58,7 @@ const LOD2_PARAMS: &[ParamSpec] = &[
 /// A roof: z as a function of where on it, in the coordinates of the smallest rotated
 /// rectangle around the building: u along its long side and v across, from its middle.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Roof {
+pub(super) enum Roof {
     Flat(f64),
     /// z = a + b·u + c·v.
     Shed(f64, f64, f64),
@@ -73,7 +73,7 @@ enum Roof {
 }
 
 impl Roof {
-    fn name(&self) -> &'static str {
+    pub(super) fn name(&self) -> &'static str {
         match self {
             Roof::Flat(_) => "flat",
             Roof::Shed(..) => "shed",
@@ -81,7 +81,7 @@ impl Roof {
             Roof::Hip(..) => "hipped",
         }
     }
-    fn z(&self, u: f64, v: f64, l: f64, w: f64) -> f64 {
+    pub(super) fn z(&self, u: f64, v: f64, l: f64, w: f64) -> f64 {
         match *self {
             Roof::Flat(a) => a,
             Roof::Shed(a, b, c) => a + b * u + c * v,
@@ -95,15 +95,15 @@ impl Roof {
 /// The frame of a building: its middle, the direction of its long side, and half its length
 /// and width.
 #[derive(Clone, Copy)]
-struct Frame {
-    c: Coord<f64>,
-    e: (f64, f64),
-    l: f64,
-    w: f64,
+pub(super) struct Frame {
+    pub(super) c: Coord<f64>,
+    pub(super) e: (f64, f64),
+    pub(super) l: f64,
+    pub(super) w: f64,
 }
 
 impl Frame {
-    fn of(g: &Geometry<f64>) -> Option<Frame> {
+    pub(super) fn of(g: &Geometry<f64>) -> Option<Frame> {
         use geo::MinimumRotatedRect;
         let r = g.minimum_rotated_rect()?;
         let p = &r.exterior().0;
@@ -119,11 +119,11 @@ impl Frame {
         let c = Coord { x: (p[0].x + p[2].x) / 2.0, y: (p[0].y + p[2].y) / 2.0 };
         Some(Frame { c, e: (long.0 / ll, long.1 / ll), l: ll / 2.0, w: ls / 2.0 })
     }
-    fn uv(&self, x: f64, y: f64) -> (f64, f64) {
+    pub(super) fn uv(&self, x: f64, y: f64) -> (f64, f64) {
         let (dx, dy) = (x - self.c.x, y - self.c.y);
         (dx * self.e.0 + dy * self.e.1, -dx * self.e.1 + dy * self.e.0)
     }
-    fn xy(&self, u: f64, v: f64) -> Coord<f64> {
+    pub(super) fn xy(&self, u: f64, v: f64) -> Coord<f64> {
         Coord { x: self.c.x + u * self.e.0 - v * self.e.1, y: self.c.y + u * self.e.1 + v * self.e.0 }
     }
 }
@@ -215,7 +215,7 @@ fn plane_uv(pts: &[(f64, f64, f64)]) -> Option<([f64; 3], f64)> {
 
 /// The parts of a roof that are each one plane, as polygons in (u, v): where the formula of
 /// the roof bends, at a ridge or a hip, the footprint is cut.
-fn planes_of(roof: &Roof, l: f64, w: f64) -> Vec<Vec<(f64, f64)>> {
+pub(super) fn planes_of(roof: &Roof, l: f64, w: f64) -> Vec<Vec<(f64, f64)>> {
     let e = 4.0 * (l + w) + 10.0;
     match roof {
         Roof::Flat(_) | Roof::Shed(..) => vec![vec![(-e, -e), (e, -e), (e, e), (-e, e)]],
@@ -504,7 +504,13 @@ fn run_terrain_model(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> 
     }
     let mut mesh = Mesh {
         materials: vec![
-            Material { name: "terrain".into(), diffuse: [0.55, 0.62, 0.45], texture: texture.map(Arc::new), ..Default::default() },
+            // With a picture, white, so that the picture shows in its own colours.
+            Material {
+                name: "terrain".into(),
+                diffuse: if texture.is_some() { [1.0; 3] } else { [0.55, 0.62, 0.45] },
+                texture: texture.map(Arc::new),
+                ..Default::default()
+            },
             Material { name: "base".into(), diffuse: [0.42, 0.36, 0.3], ..Default::default() },
         ],
         objects: vec!["terrain".into()],

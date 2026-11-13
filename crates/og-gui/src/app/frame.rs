@@ -101,6 +101,7 @@ impl App {
         }
         self.shortcuts(&ctx);
         self.close_guard(&ctx);
+        self.share();
         clock.lap("dropped files and keys");
 
         egui::Panel::top("top").frame(egui::Frame::new().fill(pal.panel).inner_margin(egui::Margin::symmetric(12, 6))).show(ui, |ui| self.top_bar(ui, &pal));

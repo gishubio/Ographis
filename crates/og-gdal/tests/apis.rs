@@ -695,7 +695,7 @@ fn file_server(dir: PathBuf) -> (String, Arc<Mutex<Vec<String>>>) {
                 }
                 let path = first.split_whitespace().nth(1).unwrap_or("/").to_string();
                 kept.lock().unwrap().push(path.clone());
-                let file = path.split('?').next().unwrap().trim_start_matches("/tiles/");
+                let file = path.split('?').next().unwrap().trim_start_matches("/tiles/").trim_start_matches('/');
                 let mut s = stream;
                 let head = first.starts_with("HEAD");
                 match std::fs::read(dir.join(file)) {
@@ -1307,5 +1307,98 @@ fn every_request_is_written_to_the_log() {
     // A later run adds to the file.
     run(&ws, Some(&b), &dir);
     assert_eq!(std::fs::read_to_string(dir.join("logs/requests.log")).unwrap().lines().count(), 5);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A GeoTIFF of one band in degrees, made with GDAL, its values from a function of the
+/// longitude and latitude of each cell.
+fn degrees_tif(path: &std::path::Path, west: f64, north: f64, cell: f64, n: usize, value: impl Fn(f64, f64) -> f32) {
+    let drv = gdal::DriverManager::get_driver_by_name("GTiff").unwrap();
+    let mut ds = drv.create_with_band_type::<f32, _>(path, n, n, 1).unwrap();
+    ds.set_geo_transform(&[west, cell, 0.0, north, 0.0, -cell]).unwrap();
+    ds.set_spatial_ref(&gdal::spatial_ref::SpatialRef::from_epsg(4326).unwrap()).unwrap();
+    let values: Vec<f32> = (0..n * n).map(|k| value(west + ((k % n) as f64 + 0.5) * cell, north - ((k / n) as f64 + 0.5) * cell)).collect();
+    ds.rasterband(1).unwrap().write((0, 0), (n, n), &mut gdal::raster::Buffer::new((n, n), values)).unwrap();
+}
+
+#[test]
+fn a_place_is_fetched_with_heights_and_a_clear_picture() {
+    let dir = tmp("place");
+    let web = dir.join("web");
+    let tile = "Copernicus_DSM_COG_10_N19_00_W156_00_DEM";
+    std::fs::create_dir_all(web.join("dem").join(tile)).unwrap();
+    std::fs::create_dir_all(web.join("geo")).unwrap();
+    std::fs::create_dir_all(web.join("stac")).unwrap();
+    std::fs::create_dir_all(web.join("s2")).unwrap();
+    // A volcano 1 200 m high at 19.41, -155.28, in the degree of the DEM it lies in.
+    let peak = |lon: f64, lat: f64| (1200.0 * (-((lon + 155.28).powi(2) + (lat - 19.41).powi(2)) / 0.0004).exp()) as f32;
+    degrees_tif(&web.join("dem").join(tile).join(format!("{}.tif", tile)), -156.0, 20.0, 1.0 / 360.0, 360, peak);
+    // Two pictures: a clear one, red where the volcano is, and one under clouds.
+    let near = |lon: f64, lat: f64| (lon + 155.28).abs() < 0.01 && (lat - 19.41).abs() < 0.01;
+    for (name, v) in [("red", 2000.0f32), ("green", 1000.0), ("blue", 500.0)] {
+        degrees_tif(
+            &web.join("s2").join(format!("{}.tif", name)),
+            -155.32,
+            19.45,
+            0.0001,
+            800,
+            |lon, lat| if near(lon, lat) || name != "red" { v } else { 300.0 },
+        );
+        degrees_tif(&web.join("s2").join(format!("cloudy_{}.tif", name)), -155.32, 19.45, 0.0001, 800, |_, _| 9000.0);
+    }
+    degrees_tif(&web.join("s2").join("scl.tif"), -155.32, 19.45, 0.0001, 800, |_, _| 4.0);
+    degrees_tif(&web.join("s2").join("cloudy_scl.tif"), -155.32, 19.45, 0.0001, 800, |_, _| 9.0);
+    let (base, asked) = file_server(web.clone());
+    std::fs::write(web.join("geo/search"), r#"[{"lat": "19.41", "lon": "-155.28", "display_name": "Kīlauea, Hawaiʻi County, Hawaii"}]"#).unwrap();
+    let item = |id: &str, cloud: f64, prefix: &str| {
+        format!(
+            r#"{{"id": "{id}", "properties": {{"eo:cloud_cover": {cloud}, "datetime": "2025-07-0{n}T20:00:00Z"}}, "assets": {{"red": {{"href": "{base}/s2/{prefix}red.tif"}}, "green": {{"href": "{base}/s2/{prefix}green.tif"}}, "blue": {{"href": "{base}/s2/{prefix}blue.tif"}}, "scl": {{"href": "{base}/s2/{prefix}scl.tif"}}}}}}"#,
+            n = if prefix.is_empty() { 1 } else { 2 }
+        )
+    };
+    std::fs::write(web.join("stac/search"), format!(r#"{{"features": [{}, {}]}}"#, item("cloudy", 25.0, "cloudy_"), item("clear", 3.0, ""))).unwrap();
+    let ws = model(
+        &format!(
+            r#"{{"id": "place", "type": "PlaceFetcher", "params": {{"place": "Kilauea", "size": "4", "geocoder": "{b}/geo", "dem": "{b}/dem", "stac": "{b}/stac"}}}}"#,
+            b = base
+        ),
+        "",
+    );
+    let r = run(&ws, Some(&GdalBackend::new()), &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    // In UTM zone 5 north, a square of 4 km.
+    let area = r.output("place", "Area").unwrap();
+    assert_eq!((area.crs, area.features[0].attrs[3].clone()), (Some(32605), Value::Int(32605)));
+    assert!(area.features[0].attrs[0].to_text().starts_with("Kīlauea"));
+    let heights = r.output("place", "Heights").unwrap().grid.clone().unwrap();
+    assert_eq!((heights.width, heights.height, heights.crs), (133, 133, Some(32605)));
+    let top = heights.values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    assert!(top > 1100.0 && top <= 1200.0, "the top of the volcano: {}", top);
+    // The picture: the clear one only, red at the volcano, 10 m pixels.
+    let image = r.output("place", "Image").unwrap().image.clone().unwrap();
+    // The side is whole cells of the heights, 3 990 m, so 399 pixels of 10 m.
+    assert_eq!((image.width, image.height), (399, 399));
+    let mid = (199 * 399 + 199) * 4;
+    assert!(image.rgba[mid] > image.rgba[mid + 2], "red over blue at the volcano: {:?}", &image.rgba[mid..mid + 4]);
+    assert!(r.log.iter().any(|l| l.msg.contains("2025-07-01 (3 % clouds)")), "the clear picture is named");
+    assert!(r.log.iter().any(|l| l.msg.contains("Copernicus DEM")), "the source of the heights is named");
+    // What it does is in the log as it goes, step by step.
+    for step in [
+        "Looking for Kilauea",
+        "Found Kīlauea",
+        "The area: 4 × 4 km",
+        "UTM zone 5",
+        "Heights 1 of",
+        "Heights done in",
+        "Picture: searching",
+        "least cloudy are used",
+        "Picture 1 of",
+        "put together",
+    ] {
+        assert!(r.log.iter().any(|l| l.msg.contains(step)), "{}: {:?}", step, r.log.iter().map(|l| &l.msg).collect::<Vec<_>>());
+    }
+    let asked = asked.lock().unwrap();
+    assert!(asked.iter().any(|a| a.starts_with("/geo/search?format=jsonv2&limit=1&q=Kilauea")), "{:?}", asked);
+    assert!(asked.iter().any(|a| a.contains("eo%3Acloud_cover") || a.contains("eo:cloud_cover")), "{:?}", &asked[..asked.len().min(8)]);
     let _ = std::fs::remove_dir_all(&dir);
 }

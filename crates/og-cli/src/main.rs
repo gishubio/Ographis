@@ -1,5 +1,7 @@
 //! Ographis from the command line: run a model, look at a file, test the installation.
 
+mod mcp;
+
 use og_engine::csv_io::{self, CsvReadOpts};
 use og_engine::io::{Backend, Notes};
 use og_engine::model::{crs_label, Table, Value};
@@ -29,6 +31,14 @@ Usage:
       Exit code: 0 all went well, 3 finished with warnings, 1 a node failed,
       4 the model was running already, 2 the command is written wrong.
       For a folder, the worst of the models.
+  og mcp [--folder DIR]... [--allow-web] [--allow-databases] [--allow-overwrite]
+      Ographis as a server of the Model Context Protocol over standard input and output,
+      for an assistant such as Claude: it describes data, finds tools, builds a model while
+      the user sees it on the canvas, tries it on a sample, runs it and looks at the result.
+      It uses only the folders given (the current folder when none is), never shows
+      passwords or keys, never writes over a file it did not make, and goes to the web or
+      writes to a database only when allowed. In Claude Desktop, under mcpServers:
+        \"ographis\": {\"command\": \"C:\\\\Ographis\\\\og.exe\", \"args\": [\"mcp\", \"--folder\", \"C:\\\\data\"]}
   og history <model.ographis> [--last N] [--unlock]
       Shows the latest runs of a model: when, how long, how it went, what was written.
       --unlock removes a lock left by a run that crashed.
@@ -68,6 +78,7 @@ fn main() -> ExitCode {
     let cmd = args.first().map(|s| s.as_str()).unwrap_or("help");
     match cmd {
         "run" => cmd_run(&args[1..]),
+        "mcp" => mcp::serve(&args[1..]),
         "info" => cmd_info(&args[1..]),
         "history" => cmd_history(&args[1..]),
         "nodes" if args.get(1).map(|a| a.as_str()) == Some("--json") => {

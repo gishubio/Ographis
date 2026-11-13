@@ -100,6 +100,56 @@ fn prepare(case: &str, dir: &Path) {
             }
             std::fs::write(dir.join("parcels.csv"), csv).unwrap();
         }
+        "dissolve_cover" => {
+            // Land cover that covers the ground: 160 × 150 cells of about 50 m, each of one of
+            // eight kinds, with wavy edges of 60 corners each that neighbours share, so that
+            // areas of one kind seldom meet, as in a map of land cover.
+            let (nx, ny, step) = (160u64, 150u64, 50.0);
+            const EDGE: u64 = 60;
+            let corner = |i: u64, j: u64| {
+                let inner = i > 0 && j > 0 && i < nx && j < ny;
+                let (dx, dy) = if inner { ((noise(i * 7919 + j) - 0.5) * 20.0, (noise(j * 7919 + i + 5) - 0.5) * 20.0) } else { (0.0, 0.0) };
+                (400_000.0 + i as f64 * step + dx, 6_500_000.0 + j as f64 * step + dy)
+            };
+            // An edge from one corner to the next, the same seen from both sides.
+            let edge = |a: (u64, u64), b: (u64, u64)| -> Vec<(f64, f64)> {
+                let (lo, hi, flip) = if a <= b { (a, b, false) } else { (b, a, true) };
+                let (p, q) = (corner(lo.0, lo.1), corner(hi.0, hi.1));
+                let seed = lo.0 * 100_003 + lo.1 * 977 + hi.0 * 31 + hi.1;
+                let border = (lo.0 == hi.0 && (lo.0 == 0 || lo.0 == nx)) || (lo.1 == hi.1 && (lo.1 == 0 || lo.1 == ny));
+                let mut pts: Vec<(f64, f64)> = (0..EDGE)
+                    .map(|k| {
+                        let t = k as f64 / EDGE as f64;
+                        // Calm towards the corners, so that the edges of a cell never cross.
+                        let wave = if border || k == 0 { 0.0 } else { (noise(seed * 13 + k) - 0.5) * 4.0 * (t * std::f64::consts::PI).sin() };
+                        let (ex, ey) = (q.0 - p.0, q.1 - p.1);
+                        let len = (ex * ex + ey * ey).sqrt();
+                        (p.0 + ex * t - ey / len * wave, p.1 + ey * t + ex / len * wave)
+                    })
+                    .collect();
+                pts.push(q);
+                if flip {
+                    pts.reverse();
+                }
+                pts.pop();
+                pts
+            };
+            let mut csv = String::from("id;kind;wkt\n");
+            for i in 0..nx {
+                for j in 0..ny {
+                    let c = [(i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1)];
+                    let mut ring: Vec<(f64, f64)> = Vec::new();
+                    for k in 0..4 {
+                        ring.extend(edge(c[k], c[(k + 1) % 4]));
+                    }
+                    ring.push(ring[0]);
+                    let kind = (noise(i * 31_337 + j * 7 + 11) * 8.0) as u64;
+                    let text: Vec<String> = ring.iter().map(|(x, y)| format!("{:.3} {:.3}", x, y)).collect();
+                    csv.push_str(&format!("{};k{};POLYGON(({}))\n", i * ny + j, kind, text.join(",")));
+                }
+            }
+            std::fs::write(dir.join("cover.csv"), csv).unwrap();
+        }
         "raster_slope" => {
             // A terrain of 4000 × 4000 cells of 2 m: 16 million heights.
             let (w, h) = (4000usize, 4000usize);
@@ -168,6 +218,13 @@ fn model(case: &str) -> &'static str {
             {"id": "out", "type": "Writer", "params": {"path": "out/blocks.gpkg"}}],
           "edges": [{"from": ["parcels", "Output"], "to": ["dissolve", "Input"]}, {"from": ["dissolve", "Dissolved"], "to": ["out", "Input"]}]}"#
         }
+        "dissolve_cover" => {
+            r#"{"nodes": [
+            {"id": "cover", "type": "Reader", "params": {"path": "cover.csv", "crs": "EPSG:3006"}},
+            {"id": "dissolve", "type": "Dissolver", "params": {"group_by": ["kind"]}},
+            {"id": "out", "type": "Writer", "params": {"path": "out/cover.gpkg"}}],
+          "edges": [{"from": ["cover", "Output"], "to": ["dissolve", "Input"]}, {"from": ["dissolve", "Dissolved"], "to": ["out", "Input"]}]}"#
+        }
         "dissolve_districts" => {
             r#"{"nodes": [
             {"id": "parcels", "type": "Reader", "params": {"path": "parcels.csv", "crs": "EPSG:3006"}},
@@ -204,6 +261,7 @@ const CASES: &[(&str, &str)] = &[
     ("points_join", "1 000 000 points from CSV joined to 100 squares, to GeoPackage"),
     ("polygons_buffer", "200 000 areas from CSV, area and a buffer, to GeoPackage"),
     ("dissolve_groups", "60 000 overlapping areas dissolved in 400 blocks, to GeoPackage"),
+    ("dissolve_cover", "24 000 areas of land cover in eight kinds that cover the ground, dissolved by kind, to GeoPackage"),
     ("dissolve_districts", "60 000 overlapping areas dissolved in 120 districts, to GeoPackage"),
     ("dissolve_one", "60 000 overlapping areas dissolved all together, to GeoPackage"),
     ("raster_slope", "Slope of 4000 × 4000 heights, GeoTIFF to GeoTIFF"),
@@ -224,8 +282,16 @@ fn one(case: &str) {
     let r = og_engine::run_opts(&ws, Some(&b), &dir, &mut |_| {}, og_engine::RunOptions { lean: true, ..Default::default() });
     let seconds = start.elapsed().as_secs_f64();
     assert_eq!(r.errors, 0, "{}: {:?}", case, r.log);
+    // With OG_PERF_LOG, what each step said and how long it took.
+    if std::env::var("OG_PERF_LOG").is_ok() {
+        for l in &r.log {
+            println!("{}", l.msg);
+        }
+    }
     let peak = peak_mb();
-    let _ = std::fs::remove_dir_all(&dir);
+    if std::env::var("OG_PERF_KEEP").is_err() {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     // The peak while preparing may be higher than the run's; then the run's is not known.
     let run_peak = match (before, peak) {
         (Some(a), Some(b)) if b > a => format!("{:.0}", b),

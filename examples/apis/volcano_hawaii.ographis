@@ -1,0 +1,177 @@
+{
+  "format": "ographis/1",
+  "name": "A volcano on Hawaii",
+  "variables": [
+    {
+      "name": "place",
+      "value": "Kīlauea"
+    },
+    {
+      "name": "size",
+      "value": "20"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "place",
+      "type": "PlaceFetcher",
+      "name": "Fetch the place",
+      "x": 20,
+      "y": 60,
+      "comment": "Heights from the Copernicus DEM and a cloud-free Sentinel-2 picture of the summer, read over the web. Change the place to Matterhorn, Isla Isabela or anywhere",
+      "params": {
+        "place": "$(place)",
+        "size": "$(size)",
+        "time": "2025-05-01/2025-10-31",
+        "brightness": "1.4"
+      }
+    },
+    {
+      "id": "model",
+      "type": "TerrainModel",
+      "name": "Terrain with the picture",
+      "x": 300,
+      "y": 20,
+      "params": {
+        "most": "400",
+        "exaggerate": "1.5",
+        "base": "block",
+        "texture_most": "4096"
+      }
+    },
+    {
+      "id": "glb",
+      "type": "Writer",
+      "name": "For Blender",
+      "x": 580,
+      "y": 20,
+      "comment": "File, Import, glTF 2.0 in Blender",
+      "params": {
+        "path": "out/volcano.glb"
+      }
+    },
+    {
+      "id": "render",
+      "type": "SceneRenderer",
+      "name": "A picture of it",
+      "x": 300,
+      "y": 180,
+      "params": {
+        "width": "1600",
+        "height": "1000",
+        "view_azimuth": "200",
+        "elevation": "30",
+        "sun": "angles",
+        "sun_azimuth": "300",
+        "sun_altitude": "35"
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "name": "Rendering",
+      "x": 580,
+      "y": 180,
+      "params": {
+        "path": "out/volcano.png"
+      }
+    },
+    {
+      "id": "light",
+      "type": "ModelLightener",
+      "name": "Lighter for the web",
+      "x": 580,
+      "y": 320,
+      "params": {
+        "most": "60000",
+        "texture_most": "2048"
+      }
+    },
+    {
+      "id": "walk",
+      "type": "Writer",
+      "name": "Walk on the volcano",
+      "x": 840,
+      "y": 320,
+      "params": {
+        "path": "out/volcano_walk",
+        "format": "walk",
+        "gltf_compress": "true",
+        "walk_eye": "1.7",
+        "walk_speed": "3"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "place",
+        "Heights"
+      ],
+      "to": [
+        "model",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "place",
+        "Image"
+      ],
+      "to": [
+        "model",
+        "Picture"
+      ]
+    },
+    {
+      "from": [
+        "model",
+        "Model"
+      ],
+      "to": [
+        "glb",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "model",
+        "Model"
+      ],
+      "to": [
+        "render",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "render",
+        "Image"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "model",
+        "Model"
+      ],
+      "to": [
+        "light",
+        "Model"
+      ]
+    },
+    {
+      "from": [
+        "light",
+        "Model"
+      ],
+      "to": [
+        "walk",
+        "Input"
+      ]
+    }
+  ]
+}

@@ -53,7 +53,7 @@ pub fn kind_of(kind: &ParamKind) -> Kind {
         ParamKind::Model => k("model", "a model as an object, with nodes and edges as in a model file, whose ToolInput and ToolOutput nodes are the ports", None),
         ParamKind::MapLayers(p) => k(
             "list",
-            "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}",
+            "a list of layers, one per stream connected to the port: {\"from\": \"node:port, the id of the node and its output port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}",
             Some(p),
         ),
     }

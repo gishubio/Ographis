@@ -344,6 +344,7 @@ impl App {
                     &[
                         "gpkg", "shp", "geojson", "json", "fgb", "parquet", "sqlite", "db", "dxf", "dwg", "gpx", "gml", "kml", "kmz", "000", "bag", "h5",
                         "xlsx", "ods", "tif", "tiff", "csv", "txt", "zip", "obj", "gltf", "glb", "ifc", "b3dm", "las", "laz", "e57", "ply", "spz", "xml",
+                        "asc", "hgt", "dt0", "dt1", "dt2",
                     ],
                 )
                 .add_filter("All files", &["*"]);

@@ -726,10 +726,198 @@ const UNION_PIECE: usize = 1024;
 /// The fewest areas in a piece; below twice this many, one union on one core is quicker.
 const UNION_PIECE_MIN: usize = 64;
 
-/// The union of many areas, spread over the cores: the areas are put in order of where they
-/// lie (along a Z-order curve), so that each piece holds neighbours, each piece is merged on
-/// a core of its own, and the pieces are then merged two by two until one is left.
+/// The union of many areas, spread over the cores. First the areas that touch or overlap are
+/// found, on all the cores, and put in clusters; an area that touches no other is kept as it
+/// is, and each cluster is merged by itself, the largest first. Land cover and other data
+/// that cover the ground, where areas of one kind seldom meet, so need little merging.
 pub fn union_all(polys: Vec<Polygon<f64>>) -> MultiPolygon<f64> {
+    MultiPolygon::new(union_batched(polys, None).into_iter().map(|(p, _)| p).collect())
+}
+
+/// The union of areas by clusters of those that touch: an area that touches no other is kept
+/// as it is, and the clusters are packed whole into batches of up to UNION_PIECE areas, each
+/// merged on a core of its own. Clusters do not touch one another, so the batches need no
+/// merging after. With the owner of each area, each part comes with how many owners it
+/// was made of, found by a point inside each area.
+fn union_batched(polys: Vec<Polygon<f64>>, owner: Option<&[usize]>) -> Vec<(Polygon<f64>, usize)> {
+    use geo::{Contains, InteriorPoint};
+    use rayon::prelude::*;
+    use rstar::{primitives::GeomWithData, RTree, AABB};
+    if polys.len() < 2 {
+        return polys.into_iter().filter(|p| p.unsigned_area() > 0.0).map(|p| (p, 1)).collect();
+    }
+    let groups = clusters(&polys);
+    let mut slots: Vec<Option<Polygon<f64>>> = polys.into_iter().map(Some).collect();
+    // Each part with how many owners, and the first area it holds, to keep the order the
+    // areas came in.
+    let mut out: Vec<(Polygon<f64>, usize, usize)> = Vec::new();
+    // Batches of whole clusters, by the numbers of their areas.
+    let mut batches: Vec<Vec<usize>> = Vec::new();
+    let mut open: Vec<usize> = Vec::new();
+    for g in &groups {
+        if g.len() == 1 {
+            out.push((slots[g[0]].take().expect("each once"), 1, g[0]));
+        } else if g.len() >= UNION_PIECE {
+            batches.push(g.clone());
+        } else {
+            if open.len() + g.len() > UNION_PIECE {
+                batches.push(std::mem::take(&mut open));
+            }
+            open.extend_from_slice(g);
+        }
+    }
+    if !open.is_empty() {
+        batches.push(open);
+    }
+    let work: Vec<(Vec<usize>, Vec<Polygon<f64>>)> = batches
+        .into_iter()
+        .map(|b| {
+            let members: Vec<Polygon<f64>> = b.iter().map(|i| slots[*i].take().expect("each once")).collect();
+            (b, members)
+        })
+        .collect();
+    let merged: Vec<Vec<(Polygon<f64>, usize, usize)>> = work
+        .into_par_iter()
+        .map(|(ids, members)| {
+            let first = ids.iter().copied().min().unwrap_or(0);
+            let points: Vec<Option<geo::Point<f64>>> = if owner.is_some() { members.iter().map(|p| p.interior_point()).collect() } else { Vec::new() };
+            let parts: Vec<Polygon<f64>> = if members.len() >= UNION_PIECE { union_cluster(members).0 } else { geo::unary_union(members.iter()).0 };
+            // One part holds them all; without owners, the order is by where it starts.
+            let count_all = |ids: &[usize]| {
+                let mut o: Vec<usize> = ids.iter().map(|i| owner.map_or(*i, |o| o[*i])).collect();
+                o.sort_unstable();
+                o.dedup();
+                o.len()
+            };
+            if parts.len() == 1 {
+                return parts.into_iter().map(|p| (p, count_all(&ids), first)).collect();
+            }
+            if owner.is_none() {
+                return parts.into_iter().map(|p| (p, 1, first)).collect();
+            }
+            // Which part each area lies in, by a point inside it, and so how many owners.
+            let tree = RTree::bulk_load(
+                parts
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(k, p)| {
+                        p.bounding_rect()
+                            .map(|r| GeomWithData::new(rstar::primitives::Rectangle::from_corners([r.min().x, r.min().y], [r.max().x, r.max().y]), k))
+                    })
+                    .collect(),
+            );
+            let mut owners: Vec<Vec<usize>> = vec![Vec::new(); parts.len()];
+            let mut firsts: Vec<usize> = vec![usize::MAX; parts.len()];
+            for (i, pt) in ids.iter().zip(&points) {
+                let Some(pt) = pt else { continue };
+                let env = AABB::from_point([pt.x(), pt.y()]);
+                if let Some(k) = tree.locate_in_envelope_intersecting(&env).map(|g| g.data).find(|k| parts[*k].contains(pt) || parts[*k].intersects(pt)) {
+                    owners[k].push(owner.map_or(*i, |o| o[*i]));
+                    firsts[k] = firsts[k].min(*i);
+                }
+            }
+            parts
+                .into_iter()
+                .zip(owners)
+                .zip(firsts)
+                .map(|((p, mut o), f)| {
+                    o.sort_unstable();
+                    o.dedup();
+                    (p, o.len().max(1), if f == usize::MAX { first } else { f })
+                })
+                .collect()
+        })
+        .collect();
+    out.extend(merged.into_iter().flatten());
+    out.retain(|(p, _, _)| p.unsigned_area() > 0.0);
+    out.sort_by_key(|(_, _, first)| *first);
+    out.into_iter().map(|(p, n, _)| (p, n)).collect()
+}
+
+/// The areas that touch or overlap, in clusters, found on all the cores: each cluster the
+/// numbers of its areas, the largest cluster first, then by its first area, so that the
+/// order is the same each time.
+fn clusters(polys: &[Polygon<f64>]) -> Vec<Vec<usize>> {
+    use geo::Intersects;
+    use rayon::prelude::*;
+    use rstar::{primitives::GeomWithData, RTree, AABB};
+    let boxes: Vec<Option<Rect<f64>>> = polys.par_iter().map(|p| p.bounding_rect()).collect();
+    let tree = RTree::bulk_load(
+        boxes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, b)| b.map(|r| GeomWithData::new(rstar::primitives::Rectangle::from_corners([r.min().x, r.min().y], [r.max().x, r.max().y]), i)))
+            .collect(),
+    );
+    // The areas joined as they are found to touch, on all the cores at once. A pair already
+    // in one cluster is not tested, which saves most tests where the areas overlap much.
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let parent: Vec<AtomicUsize> = (0..polys.len()).map(AtomicUsize::new).collect();
+    let find = |mut x: usize| loop {
+        let p = parent[x].load(Ordering::Relaxed);
+        if p == x {
+            return x;
+        }
+        let gp = parent[p].load(Ordering::Relaxed);
+        let _ = parent[x].compare_exchange(p, gp, Ordering::Relaxed, Ordering::Relaxed);
+        x = gp;
+    };
+    let join = |a: usize, b: usize| loop {
+        let (ra, rb) = (find(a), find(b));
+        if ra == rb {
+            return;
+        }
+        let (lo, hi) = (ra.min(rb), ra.max(rb));
+        if parent[hi].compare_exchange(hi, lo, Ordering::AcqRel, Ordering::Relaxed).is_ok() {
+            return;
+        }
+    };
+    (0..polys.len()).into_par_iter().for_each(|i| {
+        let Some(r) = boxes[i] else { return };
+        let env = AABB::from_corners([r.min().x, r.min().y], [r.max().x, r.max().y]);
+        for g in tree.locate_in_envelope_intersecting(&env) {
+            let j = g.data;
+            if j > i && find(i) != find(j) && polys[i].intersects(&polys[j]) {
+                join(i, j);
+            }
+        }
+    });
+    let mut parent: Vec<usize> = parent.into_iter().map(|a| a.into_inner()).collect();
+    fn root(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    let mut by_root: std::collections::HashMap<usize, Vec<usize>> = std::collections::HashMap::new();
+    for i in 0..polys.len() {
+        let r = root(&mut parent, i);
+        by_root.entry(r).or_default().push(i);
+    }
+    let mut groups: Vec<Vec<usize>> = by_root.into_values().collect();
+    groups.sort_by(|a, b| b.len().cmp(&a.len()).then(a[0].cmp(&b[0])));
+    groups
+}
+
+/// Dissolves areas into the parts that stay apart, each with how many of the geometries it
+/// was made of.
+pub fn dissolve_parts<'a>(geoms: impl Iterator<Item = &'a Geometry<f64>>) -> Vec<(Polygon<f64>, usize)> {
+    let mut polys: Vec<Polygon<f64>> = Vec::new();
+    let mut owner: Vec<usize> = Vec::new();
+    for (k, g) in geoms.enumerate() {
+        for p in polygons_of(g) {
+            polys.push(p.orient(Direction::Default));
+            owner.push(k);
+        }
+    }
+    union_batched(polys, Some(&owner))
+}
+
+/// The union of areas that hang together: put in order of where they lie (along a Z-order
+/// curve), so that each piece holds neighbours, each piece merged on a core of its own, and
+/// the pieces then merged two by two until one is left.
+fn union_cluster(polys: Vec<Polygon<f64>>) -> MultiPolygon<f64> {
     use rayon::prelude::*;
     let threads = rayon::current_num_threads();
     if polys.len() < 2 * UNION_PIECE_MIN || (threads == 1 && polys.len() <= UNION_PIECE) {

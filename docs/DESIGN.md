@@ -224,6 +224,36 @@ Why Ographis works as it does, and what it does not do yet.
   its tags; NVDB has names that differ between exports, so they are found by a part of
   their name, and the log says which were used.
 
+- **An assistant works through the tools of Ographis, not around them.** `og mcp` gives it
+  what a person at the canvas has: the data in short, the tools, a model it can check, try
+  and look at. What it makes is an ordinary model, which stays and runs without it. It
+  gets summaries, pages of rows and pictures, not whole files, so that large data works and
+  stays on the computer; and it works within limits set by the user when the server is
+  started, not by asking the assistant to be careful: folders, no secrets, nothing written
+  over, a trial first, the web and databases only when allowed.
+- **Dissolve merges what touches, not what is near.** The areas are put in clusters that
+  touch, found on every core, and small clusters are merged many at once while a large one
+  is merged in pieces of neighbours. Land cover, where every area touches others, is merged
+  on all cores, and the count of each part is found from where its members lie.
+- **DXF and DWG are written by acadrust.** It is in Rust and under MPL-2.0, writes DWG of
+  2010, 2013 and 2018 without a library from Autodesk or the ODA, and reads the template,
+  so that the tables, styles and blocks of a client are kept as they are.
+- **STEP is written as faceted solids.** Each triangle is a face of a closed solid, which
+  CAD programs read as a body they can measure and cut; curved surfaces are not made.
+- **A place is fetched from open data on the web.** The Copernicus DEM and Sentinel-2 are
+  read where they lie, only the part that is needed, without an account; the picture is
+  made of several clear dates, cloud by cloud.
+- **The walk-through is one page.** The model is inside it, so that it opens from the disk
+  without a server; three.js comes from unpkg. The sun is worked out in the page, so that
+  the time can be moved there.
+- **Buildings are made from their attributes, not from a library of models.** A roof shape,
+  a height and a kind give a building that looks like one at a distance of a street, and a
+  facade is one texture of a bay and a storey, repeated, so that it costs little to draw.
+- **Lighter models are made by meshoptimizer.** It is the library that game engines and the
+  glTF tools use; its simplification keeps the edges of each piece, and its packing is the
+  EXT_meshopt_compression that web viewers read. Textures are not made KTX2, which needs an
+  encoder of its own; JPEG is what packed models get.
+
 ## Known limitations
 
 - GeoParquet: only geometry in WKB is read, not the native GeoArrow encoding. Within a
@@ -585,3 +615,19 @@ Why Ographis works as it does, and what it does not do yet.
   back at a junction.
 - OpenUSD is written, not read. Game engines: the heightmap is square, over the whole
   terrain model; outside it, the lowest height.
+- STEP is read where its faces are flat with straight edges or are triangles; curved faces,
+  such as cylinders and B-splines, are left out with a word in the log. DXF and DWG are
+  written with the entities of 2D and 3D that features become, not with hatches or
+  dimensions.
+- *Fetch a place*: the clouds are found by the scene classification of Sentinel-2, which
+  misses thin clouds and their shadows now and then. The heights of the Copernicus DEM are
+  those of the surface, with trees and buildings, and 0 over the sea.
+- The walk-through needs a browser with WebGL and three.js from unpkg, so it needs the web
+  the first time it is opened. Walking is stopped by walls at the knees and the chest, not
+  by what hangs lower or higher.
+- *Make buildings*: roofs other than flat, shed, gable and hipped (mansard, dome, onion and
+  others) are made as gable or hipped, with a word in the log. Buildings are made one by
+  one: parts that stand on each other, as building:part of OpenStreetMap, are not put
+  together.
+- *Lighten 3D model*: textures that repeat, such as facades, and see-through materials
+  keep their own and are not put into the atlas.

@@ -450,3 +450,67 @@ fn gaussian_splats_are_seen_in_3d_with_map_data() {
     assert!(pixels > 2000);
     shot(&mut h, "96-splats-with-map-data");
 }
+
+/// A picture draped over a terrain model shows in the 3D view in its own colours, where each
+/// triangle lies on it, and not as one colour for the whole model.
+#[test]
+fn a_picture_draped_over_a_terrain_shows_in_3d() {
+    let dir = example_copy();
+    let mut app = App::new();
+    app.load(&dir.join("blender.ographis")).unwrap();
+    app.map.set_tile_source(NO_TILES);
+    app.quiet = true;
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(6);
+    h.state_mut().run_blocking();
+    h.state_mut().focus_node("model");
+    h.state_mut().map.three_d = true;
+    settle(&mut h);
+    h.run_steps(4);
+    shot(&mut h, "96-terrain-with-picture-3d");
+    let colours = h.state().map.view3d.model_colours();
+    assert!(!colours.is_empty(), "the model is drawn");
+    // The shaded relief in its many colours, lighter and darker, and not one for all.
+    let mut seen: Vec<[u32; 3]> = colours.iter().map(|c| c.map(|v| v.round() as u32)).collect();
+    seen.sort_unstable();
+    seen.dedup();
+    assert!(seen.len() > 100, "{} colours", seen.len());
+}
+
+/// A model that an assistant changes on disk is read again in the window when it has no
+/// changes there; the window tells what it has open, and opens a model it is asked to.
+#[test]
+fn a_model_changed_by_an_assistant_is_shown_and_the_open_one_is_told() {
+    let dir = example_copy();
+    let model = |n: usize| {
+        let nodes: Vec<String> =
+            (0..n).map(|k| format!(r#"{{"id": "n{}", "type": "Reader", "x": {}, "y": 0, "params": {{"path": "towns.csv"}}}}"#, k, k * 260)).collect();
+        format!(r#"{{"format": "ographis/1", "name": "Built", "nodes": [{}]}}"#, nodes.join(","))
+    };
+    let file = dir.join("built.ographis");
+    std::fs::write(&file, model(1)).unwrap();
+    let mut app = App::new();
+    app.load(&file).unwrap();
+    app.map.set_tile_source(NO_TILES);
+    app.quiet = true;
+    app.shared.when_quiet = true;
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(4);
+    assert_eq!(h.state().snarl.nodes().count(), 1);
+    // The assistant adds a node; a second later the window has it.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    std::fs::write(&file, model(2)).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    h.run_steps(4);
+    assert_eq!(h.state().snarl.nodes().count(), 2, "read again");
+    // What is open is told, and a model asked for is opened.
+    let open = og_engine::session::open_models();
+    assert!(open.iter().any(|m| m.path.as_deref() == Some(file.as_path()) && m.model.contains("n1")), "{:?}", open.iter().map(|m| &m.path).collect::<Vec<_>>());
+    let other = dir.join("other.ographis");
+    std::fs::write(&other, model(3)).unwrap();
+    assert!(og_engine::session::ask_to_open(&other));
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    h.run_steps(4);
+    assert_eq!(h.state().path.as_deref(), Some(other.as_path()), "opened when asked");
+    assert_eq!(h.state().snarl.nodes().count(), 3);
+}

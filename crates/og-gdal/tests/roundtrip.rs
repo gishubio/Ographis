@@ -4116,3 +4116,148 @@ fn a_real_place_is_made_ready_for_game_engines() {
     assert!(notes.contains("Scale: X") && notes.contains("EPSG:3006"), "{}", notes);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn heights_are_read_from_ascii_grids_srtm_and_dted() {
+    let b = GdalBackend::new();
+    let dir = tmp("heights_formats");
+    // An ASCII grid, and the same heights made SRTM and DTED by GDAL.
+    let mut text = "ncols 4\nnrows 3\nxllcorner 17.0\nyllcorner 59.0\ncellsize 0.25\nNODATA_value -9999\n".to_string();
+    text += "10 20 30 40\n50 60 70 80\n90 100 110 120\n";
+    std::fs::write(dir.join("hills.asc"), text).unwrap();
+    let src = gdal::Dataset::open(dir.join("hills.asc")).unwrap();
+    let mem = gdal::DriverManager::get_driver_by_name("MEM").unwrap();
+    // SRTM: 1201 × 1201 cells over one degree, named after its south-west corner.
+    let mut srtm = mem.create_with_band_type::<i16, _>("", 1201, 1201, 1).unwrap();
+    srtm.set_geo_transform(&[16.9995833, 1.0 / 1200.0, 0.0, 60.0004167, 0.0, -1.0 / 1200.0]).unwrap();
+    srtm.set_spatial_ref(&gdal::spatial_ref::SpatialRef::from_epsg(4326).unwrap()).unwrap();
+    let values: Vec<i16> = (0..1201 * 1201).map(|k| (k % 1201) as i16).collect();
+    srtm.rasterband(1).unwrap().write((0, 0), (1201, 1201), &mut gdal::raster::Buffer::new((1201, 1201), values)).unwrap();
+    srtm.create_copy(&gdal::DriverManager::get_driver_by_name("SRTMHGT").unwrap(), dir.join("N59E017.hgt"), &gdal::cpl::CslStringList::new()).unwrap();
+    srtm.create_copy(&gdal::DriverManager::get_driver_by_name("DTED").unwrap(), dir.join("e017_n59.dt1"), &gdal::cpl::CslStringList::new()).unwrap();
+    drop(src);
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "asc", "type": "Reader", "params": {"path": "hills.asc", "raster_as": "grid", "crs": "EPSG:4326"}},
+        {"id": "hgt", "type": "Reader", "params": {"path": "N59E017.hgt", "raster_as": "grid"}},
+        {"id": "dted", "type": "Reader", "params": {"path": "e017_n59.dt1", "raster_as": "grid"}}],
+      "edges": []}"#,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let asc = r.output("asc", "Output").unwrap().grid.clone().unwrap();
+    assert_eq!((asc.width, asc.height, asc.values[5]), (4, 3, 60.0));
+    let hgt = r.output("hgt", "Output").unwrap().grid.clone().unwrap();
+    assert_eq!((hgt.crs, hgt.width, hgt.height, hgt.values[100]), (Some(4326), 1201, 1201, 100.0));
+    // DTED level 1 has half as many columns north of 50°, as its cells are wider there.
+    let dted = r.output("dted", "Output").unwrap().grid.clone().unwrap();
+    assert_eq!((dted.crs, dted.width, dted.height), (Some(4326), 601, 1201));
+    // The heights come through as GDAL made them, within those of the source.
+    assert!(dted.values.iter().all(|v| (0.0..=1200.0).contains(v)));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A terrain too large for one tile is written as tiles of tiles, each with a lighter model of
+/// what it holds: fewer triangles above, the whole surface in the tiles at the bottom.
+#[test]
+fn large_models_are_written_as_3d_tiles_coarser_further_away() {
+    let b = GdalBackend::new();
+    let dir = tmp("tiles3d_lod");
+    let drv = gdal::DriverManager::get_driver_by_name("GTiff").unwrap();
+    let n = 120;
+    {
+        let mut ds = drv.create_with_band_type::<f32, _>(dir.join("hills.tif"), n, n, 1).unwrap();
+        ds.set_geo_transform(&[319000.0, 5.0, 0.0, 6400000.0, 0.0, -5.0]).unwrap();
+        ds.set_spatial_ref(&gdal::spatial_ref::SpatialRef::from_epsg(3006).unwrap()).unwrap();
+        let values: Vec<f32> = (0..n * n).map(|k| (50.0 + 8.0 * ((k % n) as f64 * 0.08).sin() * ((k / n) as f64 * 0.06).cos()) as f32).collect();
+        ds.rasterband(1).unwrap().write((0, 0), (n, n), &mut gdal::raster::Buffer::new((n, n), values)).unwrap();
+    }
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "dem", "type": "Reader", "params": {"path": "hills.tif", "raster_as": "grid"}},
+        {"id": "model", "type": "TerrainModel", "params": {}},
+        {"id": "tiles", "type": "Writer", "params": {"path": "out/hills", "format": "3dtiles", "t3_most": "2000"}}],
+      "edges": [{"from": ["dem", "Output"], "to": ["model", "Heights"]}, {"from": ["model", "Model"], "to": ["tiles", "Input"]}]}"#,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    assert!(matches!(r.nodes["tiles"].status, Status::Ok | Status::Warn), "{:?}", r.log);
+    let whole = r.output("model", "Model").unwrap().mesh.as_deref().unwrap().tris.len();
+    let folder = dir.join("out/hills");
+    let set: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(folder.join("tileset.json")).unwrap()).unwrap();
+    // The triangles of a tile, from its glTF.
+    let tris = |uri: &str| -> usize {
+        let g = std::fs::read(folder.join(uri)).unwrap();
+        let len = u32::from_le_bytes([g[12], g[13], g[14], g[15]]) as usize;
+        let j: serde_json::Value = serde_json::from_slice(&g[20..20 + len]).unwrap();
+        j["meshes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|m| m["primitives"].as_array().unwrap())
+            .map(|p| j["accessors"][p["attributes"]["POSITION"].as_u64().unwrap() as usize]["count"].as_u64().unwrap() as usize / 3)
+            .sum()
+    };
+    // Every tile with tiles below it shows fewer triangles than they do, with a larger error.
+    fn check(n: &serde_json::Value, tris: &dyn Fn(&str) -> usize, leaves: &mut usize, levels: usize) -> (usize, usize) {
+        let kids = n["children"].as_array().cloned().unwrap_or_default();
+        let own = n["content"]["uri"].as_str().map(tris);
+        if kids.is_empty() {
+            assert_eq!(n["geometricError"].as_f64(), Some(0.0));
+            *leaves += own.unwrap();
+            return (own.unwrap(), levels);
+        }
+        let mut below = 0;
+        let mut deepest = levels;
+        for k in &kids {
+            assert!(k["geometricError"].as_f64().unwrap() < n["geometricError"].as_f64().unwrap());
+            let (t, d) = check(k, tris, leaves, levels + 1);
+            below += t;
+            deepest = deepest.max(d);
+        }
+        if let Some(t) = own {
+            assert_eq!(n["refine"], "REPLACE");
+            assert!(t < below && t <= 2000, "{} {}", t, below);
+        }
+        (below, deepest)
+    }
+    let mut leaves = 0;
+    let (_, depth) = check(&set["root"], &tris, &mut leaves, 0);
+    assert_eq!(leaves, whole);
+    assert!(depth >= 4, "{}", depth);
+    assert!(set["root"]["children"][0]["content"]["uri"].is_string());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A model keeps its 3D shapes through tools that change only the attributes, such as Keep
+/// attributes, and through filters after them, so that a part of an IFC model can be walked
+/// through.
+#[test]
+fn a_model_keeps_its_shapes_when_its_attributes_are_changed() {
+    let b = GdalBackend::new();
+    let dir = tmp("carry_after_keep");
+    let data = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../og-engine/tests/data");
+    for f in ["house.gltf", "house.bin"] {
+        std::fs::copy(data.join(f), dir.join(f)).unwrap();
+    }
+    let ws = Workspace::from_json(
+        r#"{"nodes": [
+        {"id": "house", "type": "Reader", "params": {"path": "house.gltf"}},
+        {"id": "keep", "type": "AttributeKeeper", "params": {"keep": ["name"]}},
+        {"id": "some", "type": "ValueFilter", "params": {"attribute": "name"}},
+        {"id": "walk", "type": "Writer", "params": {"path": "out/walk", "format": "walk"}}],
+      "edges": [{"from": ["house", "Output"], "to": ["keep", "Input"]}, {"from": ["keep", "Output"], "to": ["some", "Input"]},
+                {"from": ["some", "Other"], "to": ["walk", "Input"]}]}"#,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let whole = r.output("house", "Output").unwrap().mesh.as_deref().unwrap().tris.len();
+    for (node, port) in [("keep", "Output"), ("some", "Other")] {
+        let m = r.output(node, port).unwrap().mesh.clone();
+        assert_eq!(m.map(|m| m.tris.len()), Some(whole), "{} keeps the model", node);
+    }
+    assert!(dir.join("out/walk/index.html").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -184,7 +184,6 @@ pub(super) fn is_area(f: &Feature) -> bool {
 }
 
 pub(super) fn run_dissolver(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    use rayon::prelude::*;
     let table = input(inp, "Input");
     let by = p.list("group_by");
     let count_name = p.get("count");
@@ -222,47 +221,30 @@ pub(super) fn run_dissolver(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Ou
     order.sort_by_key(|k| std::cmp::Reverse(all[*k].len()));
     let by_size: Vec<Vec<Feature>> = gate.each(order.len(), |j| {
         let members = &all[order[j]];
-        let merged = geom::dissolve(members.iter().filter_map(|i| table.features[*i].geom.as_ref()));
         let mut attrs: Vec<Value> = idx.iter().map(|i| table.features[members[0]].attrs[*i].clone()).collect();
         if count_name.is_some() {
             attrs.push(Value::Int(members.len() as i64));
         }
-        Ok(match merged {
-            // Areas that do not touch stay apart, each a feature with what it was made of.
-            Some(Geometry::MultiPolygon(mp)) if apart && mp.0.len() > 1 => {
-                // The members of each part, found by their boxes before they are tested.
-                let boxes = if count_name.is_some() { Some(box_index(members.iter().map(|i| table.features[*i].geom.as_ref()))) } else { None };
-                let parts = mp.0;
-                let counts: Vec<i64> = match &boxes {
-                    Some(index) => parts
-                        .par_iter()
-                        .map(|part| {
-                            let Some(r) = part.bounding_rect() else { return 1 };
-                            let env = AABB::from_corners([r.min().x, r.min().y], [r.max().x, r.max().y]);
-                            let n = index
-                                .locate_in_envelope_intersecting(&env)
-                                .filter(|b| table.features[members[b.data]].geom.as_ref().is_some_and(|g| g.intersects(part)))
-                                .count();
-                            n.max(1) as i64
-                        })
-                        .collect(),
-                    None => Vec::new(),
-                };
-                parts
-                    .into_iter()
-                    .enumerate()
-                    .map(|(k, part)| {
-                        let mut attrs = attrs.clone();
-                        if let Some(n) = counts.get(k) {
-                            *attrs.last_mut().expect("the count") = Value::Int(*n);
-                        }
-                        Feature { z: None, attrs, geom: Some(Geometry::Polygon(part)) }
-                    })
-                    .collect()
+        let geoms = members.iter().filter_map(|i| table.features[*i].geom.as_ref());
+        let r = Ok(if apart {
+            // Areas that do not touch stay apart, each a feature with how many it was made of.
+            geom::dissolve_parts(geoms)
+                .into_iter()
+                .map(|(part, n)| {
+                    let mut attrs = attrs.clone();
+                    if count_name.is_some() {
+                        *attrs.last_mut().expect("the count") = Value::Int(n as i64);
+                    }
+                    Feature { z: None, attrs, geom: Some(Geometry::Polygon(part)) }
+                })
+                .collect()
+        } else {
+            match geom::dissolve(geoms) {
+                Some(g) => vec![Feature { z: None, attrs, geom: Some(g) }],
+                None => Vec::new(),
             }
-            Some(g) => vec![Feature { z: None, attrs, geom: Some(g) }],
-            None => Vec::new(),
-        })
+        });
+        r
     })?;
     // Back in the order the groups first came.
     let mut merged: Vec<Vec<Feature>> = vec![Vec::new(); all.len()];

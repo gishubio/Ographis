@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.96.2. Written by og schema.",
+  "description": "A model of Ographis 0.96.3. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -193,6 +193,8 @@
             "NetworkAllocation",
             "Lod2Builder",
             "TerrainModel",
+            "BuildingMaker",
+            "ModelLightener",
             "OvertureDownloader",
             "RasterSampler",
             "ZonalStatistics",
@@ -228,6 +230,7 @@
             "IdsChecker",
             "GameEngineExporter",
             "SplatMaker",
+            "PlaceFetcher",
             "HotSpots",
             "SpatialAutocorrelation",
             "PointClusters",
@@ -572,7 +575,7 @@
                   },
                   "obj_unit": {
                     "title": "Units of the model",
-                    "description": "one of the values in choices, as a string. glTF is in metres. OBJ files do not say: more than 200 across is taken as centimetres",
+                    "description": "one of the values in choices, as a string. glTF is in metres, and 3MF and STEP say theirs. OBJ files do not say: more than 200 across is taken as centimetres. STL is taken as millimetres",
                     "anyOf": [
                       {
                         "enum": [
@@ -1001,9 +1004,15 @@
                           "cog",
                           "citygml",
                           "glb",
+                          "stl",
+                          "3mf",
+                          "step",
+                          "dxf",
+                          "dwg",
                           "usda",
                           "usdz",
                           "3dtiles",
+                          "walk",
                           "jpg",
                           "json",
                           "landxml",
@@ -1267,14 +1276,48 @@
                     ],
                     "default": "none"
                   },
+                  "gltf_compress": {
+                    "title": "Packed",
+                    "description": "one of the values in choices, as a string. glTF and the walk-through: smaller files, with the model packed by meshoptimizer and opaque textures as JPEG, for the web and game engines. Read by three.js, Babylon.js, Cesium and glTFast; not every 3D program reads it",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "false"
+                  },
                   "gltf_when": {
                     "title": "Time of the sun",
-                    "description": "a string. Swedish time, such as 2026-06-21 15:00. Empty: midsummer at three in the afternoon"
+                    "description": "a string. Swedish time, such as 2026-06-21 15:00; for the walk-through, the clock of Hours from UTC, and the time it opens at. Empty: midsummer at three in the afternoon"
                   },
                   "t3_most": {
                     "title": "Triangles in a tile",
                     "description": "a string. 3D Tiles: the objects are split into tiles of at most this many triangles, which load quickly",
                     "default": "100000"
+                  },
+                  "t3_lod": {
+                    "title": "Coarser further away",
+                    "description": "one of the values in choices, as a string. 3D Tiles: tiles of tiles with a lighter model of what they hold, fewer triangles and without the smallest objects, shown from afar until one comes near; the viewer streams the detail as it is needed",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
                   },
                   "t3_dz": {
                     "title": "Height added",
@@ -1311,6 +1354,96 @@
                   "connection": {
                     "title": "API connection",
                     "description": "the name of an API connection in the settings of the user. Google Sheets: a connection with the key of a Google service account that the sheet is shared with, as an editor"
+                  },
+                  "walk_eye": {
+                    "title": "Height of the eyes",
+                    "description": "a string. Walk-through: in metres above the ground",
+                    "default": "1.7"
+                  },
+                  "walk_speed": {
+                    "title": "Speed",
+                    "description": "a string. Walk-through: in metres a second when walking; Shift goes four times as fast, and flying five times, or across a fortieth of the model a second in a large one. The wheel and + and − change it in the page",
+                    "default": "3"
+                  },
+                  "walk_start": {
+                    "title": "Begin at",
+                    "description": "a string. Walk-through: x, y in the coordinates of the model. Empty: at the middle of the south edge, looking north"
+                  },
+                  "walk_utc": {
+                    "title": "Hours from UTC",
+                    "description": "a string. Walk-through: of the clock that Time of the sun is in, such as -10 for Hawaii. Empty: Swedish time in and near Sweden, else by the longitude"
+                  },
+                  "print_scale": {
+                    "title": "Scale",
+                    "description": "a string. STL, 3MF and STEP, in millimetres from the lowest corner: the denominator, such as 1000 for 1:1000, or 1 for real size. Empty: the largest side 180 mm, as a printer plate takes"
+                  },
+                  "cad_template": {
+                    "title": "Template drawing",
+                    "description": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model. DXF and DWG: a drawing whose layers, line types, text styles and blocks are used, such as the CAD standard of the client. Empty: a drawing of its own"
+                  },
+                  "cad_keep": {
+                    "title": "Keep what the template draws",
+                    "description": "one of the values in choices, as a string. Such as a frame and a title block in model space; no keeps only its tables and blocks",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
+                  },
+                  "cad_layer": {
+                    "title": "Layer by",
+                    "description": "the name of one attribute of the stream on the port. DXF and DWG: the attribute that names the CAD layer of each feature; a layer the template lacks is made. Empty: layer 0"
+                  },
+                  "cad_colour": {
+                    "title": "Colour by",
+                    "description": "the name of one attribute of the stream on the port. A colour as #rrggbb or a number of the AutoCAD colours, 1 to 255. Empty: the colour of the layer"
+                  },
+                  "cad_linetype": {
+                    "title": "Line type by",
+                    "description": "the name of one attribute of the stream on the port. The name of a line type of the template, such as DASHED. Empty: that of the layer"
+                  },
+                  "cad_block": {
+                    "title": "Block by",
+                    "description": "the name of one attribute of the stream on the port. Points as the block of the template this attribute names, its attributes filled in from the attributes of the same names, such as DJUP. Points without a block are points"
+                  },
+                  "cad_rotation": {
+                    "title": "Rotation of blocks",
+                    "description": "the name of one attribute of the stream on the port. In degrees counterclockwise. Empty: 0"
+                  },
+                  "cad_text": {
+                    "title": "Text by",
+                    "description": "the name of one attribute of the stream on the port. A text beside each feature: at a point, inside an area, halfway along a line"
+                  },
+                  "cad_text_height": {
+                    "title": "Height of texts",
+                    "description": "a string. In the units of the drawing, usually metres",
+                    "default": "2.5"
+                  },
+                  "cad_version": {
+                    "title": "AutoCAD version",
+                    "description": "one of the values in choices, as a string. The version the drawing is saved as, for those who open it in an older program",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "2018",
+                          "2013",
+                          "2010"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "2018"
                   },
                   "splat_up": {
                     "title": "Upwards in the file",
@@ -1660,9 +1793,15 @@
                           "cog",
                           "citygml",
                           "glb",
+                          "stl",
+                          "3mf",
+                          "step",
+                          "dxf",
+                          "dwg",
                           "usda",
                           "usdz",
                           "3dtiles",
+                          "walk",
                           "jpg",
                           "json",
                           "landxml",
@@ -1784,9 +1923,15 @@
                           "cog",
                           "citygml",
                           "glb",
+                          "stl",
+                          "3mf",
+                          "step",
+                          "dxf",
+                          "dwg",
                           "usda",
                           "usdz",
                           "3dtiles",
+                          "walk",
                           "jpg",
                           "json",
                           "landxml",
@@ -1819,7 +1964,7 @@
                   },
                   "layers": {
                     "title": "Layers",
-                    "description": "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}. The top row is drawn on top. A layer that is not ticked is in the PDF, but off when it is opened"
+                    "description": "a list of layers, one per stream connected to the port: {\"from\": \"node:port, the id of the node and its output port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}. The top row is drawn on top. A layer that is not ticked is in the PDF, but off when it is opened"
                   },
                   "crs": {
                     "title": "Coordinate system",
@@ -2070,9 +2215,15 @@
                           "cog",
                           "citygml",
                           "glb",
+                          "stl",
+                          "3mf",
+                          "step",
+                          "dxf",
+                          "dwg",
                           "usda",
                           "usdz",
                           "3dtiles",
+                          "walk",
                           "jpg",
                           "json",
                           "landxml",
@@ -2105,7 +2256,7 @@
                   },
                   "layers": {
                     "title": "Layers",
-                    "description": "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}. The top row is on top in QGIS. A layer that is not ticked is in the project, but turned off"
+                    "description": "a list of layers, one per stream connected to the port: {\"from\": \"node:port, the id of the node and its output port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}. The top row is on top in QGIS. A layer that is not ticked is in the project, but turned off"
                   },
                   "crs": {
                     "title": "Coordinate system",
@@ -2181,9 +2332,15 @@
                           "cog",
                           "citygml",
                           "glb",
+                          "stl",
+                          "3mf",
+                          "step",
+                          "dxf",
+                          "dwg",
                           "usda",
                           "usdz",
                           "3dtiles",
+                          "walk",
                           "jpg",
                           "json",
                           "landxml",
@@ -2237,7 +2394,7 @@
                   },
                   "layers": {
                     "title": "Layers",
-                    "description": "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}. The top row is on top. A layer that is not ticked can be turned on in the legend"
+                    "description": "a list of layers, one per stream connected to the port: {\"from\": \"node:port, the id of the node and its output port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}. The top row is on top. A layer that is not ticked can be turned on in the legend"
                   },
                   "basemap": {
                     "title": "Background map",
@@ -2498,9 +2655,15 @@
                           "cog",
                           "citygml",
                           "glb",
+                          "stl",
+                          "3mf",
+                          "step",
+                          "dxf",
+                          "dwg",
                           "usda",
                           "usdz",
                           "3dtiles",
+                          "walk",
                           "jpg",
                           "json",
                           "landxml",
@@ -6084,7 +6247,7 @@
                 "properties": {
                   "layers": {
                     "title": "Layers",
-                    "description": "a list of layers, one per stream connected to the port: {\"from\": \"node.port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}. Each stream connected to Layers is a layer. The top row is drawn on top"
+                    "description": "a list of layers, one per stream connected to the port: {\"from\": \"node:port, the id of the node and its output port\", \"fill\": \"#rrggbb\", \"stroke\", \"width\", \"size\", \"label\": attribute, …}. Each stream connected to Layers is a layer. The top row is drawn on top"
                   },
                   "size_as": {
                     "title": "Size",
@@ -8399,6 +8562,157 @@
           "if": {
             "properties": {
               "type": {
+                "const": "BuildingMaker"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "kind_by": {
+                    "title": "Kind by",
+                    "description": "the name of one attribute of the stream on the port. What the building is, such as house, apartments, office, industrial, church or garage, or Bostad and Industri. Empty: building, class or objekttyp, whichever there is"
+                  },
+                  "height_by": {
+                    "title": "Height by",
+                    "description": "the name of one attribute of the stream on the port. The height to the top of the roof in metres. Empty: height, if there is one; else from the storeys"
+                  },
+                  "levels_by": {
+                    "title": "Storeys by",
+                    "description": "the name of one attribute of the stream on the port. The number of storeys below the roof. Empty: building:levels, num_floors or levels, whichever there is"
+                  },
+                  "roof_by": {
+                    "title": "Roof shape by",
+                    "description": "the name of one attribute of the stream on the port. flat, skillion, gabled, hipped, pyramidal and the other shapes of OpenStreetMap. Empty: roof:shape or roof_shape"
+                  },
+                  "levels": {
+                    "title": "Storeys when not known",
+                    "description": "a string. For buildings with neither a height nor storeys",
+                    "default": "2"
+                  },
+                  "storey": {
+                    "title": "Height of a storey",
+                    "description": "a string. In metres, from floor to floor",
+                    "default": "3"
+                  },
+                  "roof": {
+                    "title": "Roof when not known",
+                    "description": "one of the values in choices, as a string. For buildings whose roof shape is not given",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "auto",
+                          "flat",
+                          "gabled",
+                          "hipped"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "auto"
+                  },
+                  "pitch": {
+                    "title": "Pitch of the roofs",
+                    "description": "a string. In degrees, for sloping roofs whose height is not given",
+                    "default": "35"
+                  },
+                  "windows": {
+                    "title": "Windows",
+                    "description": "one of the values in choices, as a string. Facades with a row of windows on each storey, as a texture. No: plain walls in the colours of their kind",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ModelLightener"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "most": {
+                    "title": "Triangles at most",
+                    "description": "a string. In all, shared among the objects by how many they have. Empty: as few as Largest change allows",
+                    "default": "100000"
+                  },
+                  "error": {
+                    "title": "Largest change",
+                    "description": "a string. How far in metres the surface may move, such as 0.5. Empty: as far as it must to reach the number of triangles"
+                  },
+                  "keep_edges": {
+                    "title": "Keep the edges",
+                    "description": "one of the values in choices, as a string. The edges of each object and material stay where they are, so that the pieces still meet without gaps",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
+                  },
+                  "texture_most": {
+                    "title": "Largest texture",
+                    "description": "a string. In pixels on the longer side; larger textures are made smaller. Empty: as they are",
+                    "default": "2048"
+                  },
+                  "atlas": {
+                    "title": "One texture for the materials",
+                    "description": "one of the values in choices, as a string. Plain colours and textures that do not repeat go into one texture, an atlas, so that the model is drawn in few calls. Textures that repeat, such as facades, and glass keep their own",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "true"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "OvertureDownloader"
               }
             }
@@ -10078,6 +10392,72 @@
                       }
                     ],
                     "default": "flat"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "PlaceFetcher"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "place": {
+                    "title": "Place",
+                    "description": "a string. A name, such as Kīlauea, Matterhorn or Isla Isabela, found with Nominatim of OpenStreetMap; or latitude and longitude, such as 19.41, -155.28"
+                  },
+                  "size": {
+                    "title": "Size",
+                    "description": "a string. The side of the square around the place, in kilometres",
+                    "default": "20"
+                  },
+                  "fetch": {
+                    "title": "Fetch",
+                    "description": "some of the values in choices: a list of strings, or one string separated by commas. Heights from the Copernicus DEM, 30 m; a picture from Sentinel-2, 10 m",
+                    "default": "heights, image"
+                  },
+                  "time": {
+                    "title": "Time of the picture",
+                    "description": "a string. From and to, such as 2025-06-01/2025-09-30, when the place is green or free of snow. Empty: the year before today"
+                  },
+                  "cloud": {
+                    "title": "Most clouds",
+                    "description": "a string. In percent: pictures with more are not used",
+                    "default": "30"
+                  },
+                  "most": {
+                    "title": "At most pictures",
+                    "description": "a string. The least cloudy, put together where they are clear",
+                    "default": "6"
+                  },
+                  "brightness": {
+                    "title": "Brightness",
+                    "description": "a string. More than 1 for a lighter picture, such as for dark lava or forest",
+                    "default": "1"
+                  },
+                  "geocoder": {
+                    "title": "Finder of places",
+                    "description": "a string. Nominatim, or another with the same questions. One question a run",
+                    "default": "https://nominatim.openstreetmap.org"
+                  },
+                  "dem": {
+                    "title": "Heights from",
+                    "description": "a string. The Copernicus DEM GLO-30 as Cloud Optimized GeoTIFF, a file for each degree",
+                    "default": "https://copernicus-dem-30m.s3.amazonaws.com"
+                  },
+                  "stac": {
+                    "title": "Pictures from",
+                    "description": "a string. A STAC API with sentinel-2-l2a, its bands red, green, blue and scl",
+                    "default": "https://earth-search.aws.element84.com/v1"
                   }
                 }
               }

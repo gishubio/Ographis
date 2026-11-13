@@ -26,6 +26,7 @@ run, so the run's own is not known, only that it was lower.
 | dissolve_groups | 60 000 overlapping areas of 40 corners, dissolved in 400 blocks by a group attribute (0.96.2) |
 | dissolve_districts | The same 60 000 areas dissolved in 120 districts of some 500 areas each (0.96.2) |
 | dissolve_one | The same 60 000 areas dissolved into one (0.96.2) |
+| dissolve_cover | 24 000 areas of land cover of eight kinds that cover the ground with shared, wavy edges, dissolved by kind (0.96.3) |
 
 ## Results
 
@@ -42,6 +43,23 @@ In 0.96.2 the heavy vector tools work on every core. On the same two cores:
 | --- | --- | --- | --- | --- | --- | --- |
 | 0.96.1 | 5.9 s, 723 MB | 3.2 s, 488 MB | 4.6 s, 352 MB | 4.2 s, 1 199 MB | 2.2 s | 2.3 s |
 | 0.96.2 | 3.2 s, 750 MB | 2.0 s, 526 MB | 2.2 s, 364 MB | 2.1 s, 390 MB | 2.1 s, 303 MB | 2.2 s, 246 MB |
+
+In 0.96.3 Dissolve finds first which areas touch, and merges clusters that touch rather
+than groups. On the same two cores, from a run of all the cases:
+
+| Version | points_join | polygons_buffer | dissolve_groups | dissolve_districts | dissolve_one | dissolve_cover | raster_slope | cloud_raster |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0.96.3 | 3.8 s, 786 MB | 1.8 s, 526 MB | 2.8 s, 368 MB | 2.5 s, 379 MB | 3.1 s, 394 MB | 2.8 s, 579 MB | 1.9 s, 303 MB | 2.2 s, 246 MB |
+
+Land cover is what gained: the step of Dissolve in dissolve_cover takes 1.6 s, from 2.4 s
+with the way of 0.96.2, and the rest of the case is reading the areas from CSV and
+writing 18 039 parts. There every area touches its neighbours, so a group of a kind is
+neither one cluster nor many apart, and finding the clusters on every core is what lets the
+merging be shared. The other cases are within some tenths of a second of 0.96.2, which is
+how much the times vary between runs on this computer; dissolve_one may be a little slower,
+as finding the clusters is work that a single group does not need. A case run by itself with
+`OG_PERF_CASE=dissolve_cover` and `OG_PERF_LOG=1` prints the time of each step;
+`OG_PERF_KEEP=1` keeps the folder of the data.
 
 Dissolving into one area now merges pieces of neighbours and then the pieces two by two,
 rather than everything at once, and so holds a third of the memory.

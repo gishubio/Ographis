@@ -53,8 +53,11 @@ og run examples/skaraborg.ographis            the same model from the command li
 - **The command line** `og` runs the same models on a schedule (Model → Schedule sets it up
   in the Task Scheduler), with variables, a history and lineage of runs and exit codes.
   See [docs/GUIDE.md](docs/GUIDE.md).
-- **For AI assistants**: a reference of every tool as JSON, a schema of the model format and
-  `og check`, which tells an assistant what is wrong in a model it wrote. See
+- **For AI assistants**: `og mcp`, a server of the Model Context Protocol through which Claude
+  and other assistants describe your data, build a model you watch on the canvas, try it on a
+  sample, run it and look at maps of the result, within the folders you allow and without
+  ever seeing passwords; an extension for Claude Desktop. Also a reference of every tool as
+  JSON, a schema of the model format and `og check`. See [docs/MCP.md](docs/MCP.md) and
   [AGENTS.md](AGENTS.md).
 
 Passwords and API keys are kept in the Windows Credential Manager, not in the model or the
@@ -116,6 +119,7 @@ run as they did, and its settings are taken over the first time Ographis starts.
 | `docs/PERFORMANCE.md` | How long large data takes and how much memory, in four fixed cases, version by version. |
 | `docs/BUILD-WINDOWS.md` | Step by step on Windows 11, and what has been checked. |
 | `docs/FORMATS.html` | The formats Ographis reads and writes, and whether GDAL or Ographis itself handles each, as written by `og formats --html`. |
+| `docs/MCP.md`, `mcp/`, `tools/mcp-eval/` | `og mcp` for assistants: how to start it and what it may do, the manifest of the extension of Claude Desktop and the entry of the MCP registry, and the evaluation against real assistants. |
 | `CHANGELOG.md` | What changed in each version. |
 | `AGENTS.md`, `docs/nodes.json`, `docs/model.schema.json` | For AI assistants that write models: how, the reference of every node type, and a JSON Schema of the model format. |
 | `ARCHITECTURE.md`, `CONTRIBUTING.md` | How the code hangs together, and how to build, test and add a tool. |
