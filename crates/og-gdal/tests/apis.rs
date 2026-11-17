@@ -129,6 +129,13 @@ fn pages_are_followed_by_link_offset_and_number() {
                 let p: usize = r.query("p").unwrap().parse().unwrap();
                 (200, vec![], format!("[{}]", if p <= 2 { items(p, 1) } else { String::new() }))
             }
+            // A cursor in the answer, sent back as a parameter: a number, then a text, then none.
+            "/cursor" => match r.query("cursorId").as_deref() {
+                None => (200, vec![], format!("{{\"items\": [{}], \"nextCursorId\": 4711}}", items(1, 2))),
+                Some("4711") => (200, vec![], format!("{{\"items\": [{}], \"nextCursorId\": \"ab-12\"}}", items(3, 2))),
+                Some("ab-12") => (200, vec![], format!("{{\"items\": [{}], \"nextCursorId\": null}}", items(5, 1))),
+                _ => (400, vec![], "{}".into()),
+            },
             // The Link header, as GitHub and many others.
             "/linked" => {
                 let p: usize = r.query("page").and_then(|p| p.parse().ok()).unwrap_or(1);
@@ -144,6 +151,7 @@ fn pages_are_followed_by_link_offset_and_number() {
                {{"id": "offset", "type": "HttpCaller", "params": {{"url": "{b}/offset", "paging": "offset", "page_param": "offset", "size_param": "limit", "page_size": "2", "items_path": "results"}}}},
                {{"id": "numbered", "type": "HttpCaller", "params": {{"url": "{b}/numbered", "paging": "page", "page_param": "p"}}}},
                {{"id": "linked", "type": "HttpCaller", "params": {{"url": "{b}/linked", "paging": "next"}}}},
+               {{"id": "cursor", "type": "HttpCaller", "params": {{"url": "{b}/cursor", "paging": "cursor", "cursor_path": "nextCursorId", "page_param": "cursorId"}}}},
                {{"id": "most", "type": "HttpCaller", "params": {{"url": "{b}/kolada?page=1", "paging": "next", "next_path": "next_page", "max_pages": "2"}}}}"#,
             b = base
         ),
@@ -158,9 +166,11 @@ fn pages_are_followed_by_link_offset_and_number() {
     assert_eq!(pages("offset").len(), 3);
     assert_eq!(pages("numbered").len(), 3, "the empty page is the third and last");
     assert_eq!(pages("linked").len(), 2);
+    assert_eq!(pages("cursor").len(), 3, "until the cursor is null");
     assert_eq!(pages("most").len(), 2);
     let paths: Vec<String> = log.lock().unwrap().iter().map(|r| r.path.clone()).collect();
     assert!(paths.contains(&"/offset?offset=4&limit=2".to_string()), "{:?}", paths);
+    assert!(paths.contains(&"/cursor?cursorId=4711".to_string()) && paths.contains(&"/cursor?cursorId=ab-12".to_string()), "{:?}", paths);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -250,6 +260,36 @@ fn keys_tokens_and_busy_services() {
         "",
     );
     let r = run(&ws, Some(&b), &dir);
+    let tokens_in_run = *tokens.lock().unwrap();
+    let sent_elsewhere = log.lock().unwrap().iter().filter(|q| q.route() == "/header").count();
+    // One request tried from the form: with the connection, and the key never shown.
+    let params =
+        |url: &str, conn: &str| -> og_engine::nodes::Params { serde_json::from_str(&format!(r#"{{"url": "{}", "connection": "{}"}}"#, url, conn)).unwrap() };
+    let t = og_engine::nodes::try_request(&b, &params("", "Header"), &format!("{}/header", base), None).unwrap();
+    assert_eq!((t.status, t.body.as_str(), t.method.as_str()), (200, "{\"ok\": 1}", "GET"));
+    let t = og_engine::nodes::try_request(&b, &params("", "Query"), &format!("{}/query", base), None).unwrap();
+    assert_eq!(t.status, 200);
+    assert!(t.url.contains("key=•••") && !t.url.contains("s3cret"), "{}", t.url);
+    assert!(og_engine::nodes::try_request(&b, &params("", "Header"), "not an address", None).is_err());
+    assert_eq!(og_engine::nodes::constant_text(&format!("'{}/a?b=' || 2", base)), Some(format!("{}/a?b=2", base)));
+    assert_eq!(og_engine::nodes::constant_text("'x' || name"), None, "an address built from attributes needs a feature");
+    // Test the connection: a new token, and the test address with the key.
+    let conn = |name: &str| og_engine::settings::current().unwrap().apis.iter().find(|c| c.name == name).cloned().unwrap();
+    let mut header = conn("Header");
+    header.test_url = format!("{}/header", base);
+    let said = og_engine::web::try_connection(&b, &header).unwrap();
+    assert!(said.contains("answered 200"), "{}", said);
+    header.secret = "wrong".into();
+    let said = og_engine::web::try_connection(&b, &header).unwrap_err();
+    assert!(said.contains("answered 403") && said.contains("key was not accepted"), "{}", said);
+    let lm = conn("Lantmäteriet");
+    assert_eq!(og_engine::web::try_connection(&b, &lm).unwrap(), "A token was fetched. Write a test address to try a request too.");
+    assert_eq!(*tokens.lock().unwrap(), tokens_in_run + 1, "the test fetches a new token");
+    let mut wrong = lm.clone();
+    wrong.secret = "nope".into();
+    let said = og_engine::web::try_connection(&b, &wrong).unwrap_err();
+    assert!(said.contains("could not be fetched") && said.contains("401") && !said.contains("nope"), "{}", said);
+    assert!(og_engine::web::try_connection(&b, &conn("Text")).unwrap_err().contains("Write a test address"));
     use_settings(None);
     for (id, n) in &r.nodes {
         if let Some(e) = &n.error {
@@ -261,7 +301,7 @@ fn keys_tokens_and_busy_services() {
     assert_eq!(ok("query"), [Value::Int(200)]);
     assert_eq!(ok("xml"), [Value::Int(200)], "{:?}", r.log);
     assert_eq!(ok("oauth"), [Value::Int(200)], "a token that is refused is fetched again");
-    assert_eq!(*tokens.lock().unwrap(), 2);
+    assert_eq!(tokens_in_run, 2);
     assert_eq!(ok("busy"), [Value::Int(200)], "a busy service is asked again");
     // The key is not sent to an address it is not for, and is never shown.
     let why = |id: &str| match &col(r.output(id, "Failed").unwrap(), "_error")[0] {
@@ -271,7 +311,6 @@ fn keys_tokens_and_busy_services() {
     let e = why("elsewhere");
     assert!(e.contains("begin with https://api.trafikinfo") && !e.contains("s3cret"), "{}", e);
     assert!(why("nokey").contains("{{key}} is written"));
-    let sent_elsewhere = log.lock().unwrap().iter().filter(|q| q.route() == "/header").count();
     assert_eq!(sent_elsewhere, 1, "only the node with the right connection sent to /header");
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -1400,5 +1439,905 @@ fn a_place_is_fetched_with_heights_and_a_clear_picture() {
     let asked = asked.lock().unwrap();
     assert!(asked.iter().any(|a| a.starts_with("/geo/search?format=jsonv2&limit=1&q=Kilauea")), "{:?}", asked);
     assert!(asked.iter().any(|a| a.contains("eo%3Acloud_cover") || a.contains("eo:cloud_cover")), "{:?}", &asked[..asked.len().min(8)]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The example of Hunneberg: the roads and lakes of OpenStreetMap drawn over the picture of
+/// a place, and the map draped over its terrain, with the services of the web played by
+/// servers on this computer.
+#[test]
+fn roads_and_lakes_are_drawn_over_the_picture_of_a_place_and_draped() {
+    let dir = tmp("hunneberg");
+    let web = dir.join("web");
+    let tile = "Copernicus_DSM_COG_10_N58_00_E012_00_DEM";
+    for d in [web.join("dem").join(tile), web.join("geo"), web.join("stac"), web.join("s2")] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    // A table mountain 100 m high around 58.33, 12.47.
+    let hill = |lon: f64, lat: f64| if ((lon - 12.47) / 0.04).powi(2) + ((lat - 58.33) / 0.02).powi(2) < 1.0 { 150.0 } else { 50.0 };
+    degrees_tif(&web.join("dem").join(tile).join(format!("{}.tif", tile)), 12.0, 59.0, 1.0 / 1200.0, 1200, hill);
+    for (name, v) in [("red", 500.0f32), ("green", 900.0), ("blue", 400.0)] {
+        degrees_tif(&web.join("s2").join(format!("{}.tif", name)), 12.38, 58.38, 0.0002, 900, |_, _| v);
+    }
+    degrees_tif(&web.join("s2").join("scl.tif"), 12.38, 58.38, 0.0002, 900, |_, _| 4.0);
+    let (base, _) = file_server(web.clone());
+    let item = format!(
+        r#"{{"features": [{{"id": "clear", "properties": {{"eo:cloud_cover": 1, "datetime": "2025-07-01T10:00:00Z"}}, "assets": {{"red": {{"href": "{b}/s2/red.tif"}}, "green": {{"href": "{b}/s2/green.tif"}}, "blue": {{"href": "{b}/s2/blue.tif"}}, "scl": {{"href": "{b}/s2/scl.tif"}}}}}}]}}"#,
+        b = base
+    );
+    std::fs::write(web.join("stac/search"), item).unwrap();
+    // Overpass: a main road across the middle, and a lake north of it.
+    let (overpass, _) = server(Arc::new(|r: &Req| {
+        let body = if r.body.contains("highway") {
+            r#"{"elements": [{"type": "way", "id": 1, "tags": {"highway": "primary", "name": "Väg 44"}, "geometry": [{"lat": 58.330, "lon": 12.42}, {"lat": 58.330, "lon": 12.52}]}]}"#
+        } else {
+            r#"{"elements": [{"type": "way", "id": 2, "tags": {"natural": "water", "name": "Sjön"}, "geometry": [{"lat": 58.336, "lon": 12.46}, {"lat": 58.336, "lon": 12.48}, {"lat": 58.341, "lon": 12.48}, {"lat": 58.341, "lon": 12.46}, {"lat": 58.336, "lon": 12.46}]}]}"#
+        };
+        (200, vec![], body.into())
+    }));
+    // The example as it is, with the places of the services and without the slow rendering.
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/apis/hunneberg_roads.ographis");
+    let mut m: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    for n in m["nodes"].as_array_mut().unwrap() {
+        let id = n["id"].as_str().unwrap().to_string();
+        let p = &mut n["params"];
+        match id.as_str() {
+            "place" => {
+                p["size"] = serde_json::json!("6");
+                p["dem"] = serde_json::json!(format!("{}/dem", base));
+                p["stac"] = serde_json::json!(format!("{}/stac", base));
+            }
+            "roads" | "water" => p["server"] = serde_json::json!(format!("{}/api/interpreter", overpass)),
+            "map" => p["width"] = serde_json::json!("1200"),
+            "scene" | "png" => n["disabled"] = serde_json::json!(true),
+            _ => {}
+        }
+    }
+    let ws = Workspace::from_json(&m.to_string()).unwrap();
+    let r = run(&ws, Some(&GdalBackend::new()), &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    // The map: in the system of the picture, with the road in its yellow and the lake in blue.
+    let map = r.output("map", "Map").unwrap();
+    assert_eq!(map.crs, Some(32633));
+    let img = map.image.as_ref().unwrap();
+    let count = |rgba: &[u8], c: [u8; 3]| rgba.chunks_exact(4).filter(|p| (0..3).all(|k| (p[k] as i32 - c[k] as i32).abs() < 12)).count();
+    assert!(count(&img.rgba, [0xff, 0xd2, 0x7a]) > 200, "the road is drawn");
+    assert!(count(&img.rgba, [0x3f, 0x6f, 0x9e]) > 200, "the lake is drawn");
+    // The road crosses the middle of the map, as the place lies on it; in UTM a parallel leans
+    // a little, as north on the grid is not quite north on the Earth.
+    let (mx, my) = (img.width / 2, img.height / 2);
+    let yellow = |x: usize, y: usize| {
+        let p = &img.rgba[(y * img.width + x) * 4..][..3];
+        (p[0] as i32 - 0xff).abs() < 12 && (p[1] as i32 - 0xd2).abs() < 12
+    };
+    assert!((my - 15..my + 15).any(|y| yellow(mx, y)), "the road in its place");
+    // The terrain carries the map, and the glTF is written.
+    let model = r.output("model", "Model").unwrap().mesh.clone().unwrap();
+    let tex = model.materials[0].texture.as_ref().expect("the map draped");
+    assert!(count(&tex.rgba, [0xff, 0xd2, 0x7a]) > 50, "the road on the terrain");
+    assert!(dir.join("out/apis/hunneberg.glb").exists());
+}
+
+/// A coverage service as GeoServer answers in WCS 1.0.0, with heights of 10 m cells over
+/// 10 × 10 km that rise to the east: a tenth of a metre for each metre. GetCoverage makes a
+/// GeoTIFF of the part asked for, at the size asked for.
+fn wcs_server() -> (String, Arc<Mutex<Vec<String>>>) {
+    const CAP: &str = r#"<?xml version="1.0"?><WCS_Capabilities version="1.0.0" xmlns="http://www.opengis.net/wcs" xmlns:gml="http://www.opengis.net/gml" xmlns:xlink="http://www.w3.org/1999/xlink">
+<Service><name>WCS</name><label>Heights</label></Service>
+<Capability><Request><GetCapabilities><DCPType><HTTP><Get><OnlineResource xlink:href="BASE?"/></Get></HTTP></DCPType></GetCapabilities>
+<DescribeCoverage><DCPType><HTTP><Get><OnlineResource xlink:href="BASE?"/></Get></HTTP></DCPType></DescribeCoverage>
+<GetCoverage><DCPType><HTTP><Get><OnlineResource xlink:href="BASE?"/></Get></HTTP></DCPType></GetCoverage></Request>
+<Exception><Format>application/vnd.ogc.se_xml</Format></Exception></Capability>
+<ContentMetadata>
+<CoverageOfferingBrief><name>dem:heights</name><label>Heights 2022</label><lonLatEnvelope srsName="urn:ogc:def:crs:OGC:1.3:CRS84"><gml:pos>11.7 57.6</gml:pos><gml:pos>11.9 57.8</gml:pos></lonLatEnvelope></CoverageOfferingBrief>
+<CoverageOfferingBrief><name>dem:slope</name><label>Slope</label><lonLatEnvelope srsName="urn:ogc:def:crs:OGC:1.3:CRS84"><gml:pos>11.7 57.6</gml:pos><gml:pos>11.9 57.8</gml:pos></lonLatEnvelope></CoverageOfferingBrief>
+</ContentMetadata></WCS_Capabilities>"#;
+    const DESC: &str = r#"<?xml version="1.0"?><CoverageDescription version="1.0.0" xmlns="http://www.opengis.net/wcs" xmlns:gml="http://www.opengis.net/gml">
+<CoverageOffering><name>NAME</name><label>Heights 2022</label>
+<lonLatEnvelope srsName="urn:ogc:def:crs:OGC:1.3:CRS84"><gml:pos>11.7 57.6</gml:pos><gml:pos>11.9 57.8</gml:pos></lonLatEnvelope>
+<domainSet><spatialDomain><gml:Envelope srsName="EPSG:3006"><gml:pos>300000 6400000</gml:pos><gml:pos>310000 6410000</gml:pos></gml:Envelope>
+<gml:RectifiedGrid dimension="2" srsName="EPSG:3006"><gml:limits><gml:GridEnvelope><gml:low>0 0</gml:low><gml:high>999 999</gml:high></gml:GridEnvelope></gml:limits>
+<gml:axisName>x</gml:axisName><gml:axisName>y</gml:axisName><gml:origin><gml:pos>300005 6409995</gml:pos></gml:origin>
+<gml:offsetVector>10 0</gml:offsetVector><gml:offsetVector>0 -10</gml:offsetVector></gml:RectifiedGrid></spatialDomain></domainSet>
+<rangeSet><RangeSet><name>height</name><label>height</label></RangeSet></rangeSet>
+<supportedCRSs><requestResponseCRSs>EPSG:3006</requestResponseCRSs></supportedCRSs>
+<supportedFormats><formats>GeoTIFF</formats></supportedFormats></CoverageOffering></CoverageDescription>"#;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base = format!("http://{}/geoserver/wcs", addr);
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let kept = log.clone();
+    let here = base.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let (kept, here) = (kept.clone(), here.clone());
+            std::thread::spawn(move || {
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut first = String::new();
+                if reader.read_line(&mut first).unwrap_or(0) == 0 {
+                    return;
+                }
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                }
+                let path = first.split_whitespace().nth(1).unwrap_or("/").to_string();
+                kept.lock().unwrap().push(path.clone());
+                let query: HashMap<String, String> = path
+                    .split_once('?')
+                    .map(|(_, q)| q.split('&').filter_map(|kv| kv.split_once('=')).map(|(k, v)| (k.to_lowercase(), v.replace("%3A", ":"))).collect())
+                    .unwrap_or_default();
+                let (kind, body): (&str, Vec<u8>) = match query.get("request").map(|r| r.to_lowercase()).as_deref() {
+                    Some("getcapabilities") => ("text/xml", CAP.replace("BASE", &here).into_bytes()),
+                    Some("describecoverage") => ("text/xml", DESC.replace("NAME", query.get("coverage").map_or("dem:heights", |c| c.as_str())).into_bytes()),
+                    Some("getcoverage") => {
+                        let b: Vec<f64> = query["bbox"].split(',').map(|v| v.parse().unwrap()).collect();
+                        let (w, h): (usize, usize) = (query["width"].parse().unwrap(), query["height"].parse().unwrap());
+                        let (dx, dy) = ((b[2] - b[0]) / w as f64, (b[3] - b[1]) / h as f64);
+                        let values: Vec<f32> = (0..w * h).map(|i| ((b[0] + ((i % w) as f64 + 0.5) * dx - 300000.0) / 10.0) as f32).collect();
+                        let file = std::env::temp_dir().join(format!("og-wcs-{}-{}.tif", std::process::id(), kept.lock().unwrap().len()));
+                        {
+                            let driver = gdal::DriverManager::get_driver_by_name("GTiff").unwrap();
+                            let mut ds = driver.create_with_band_type::<f32, _>(&file, w, h, 1).unwrap();
+                            ds.set_geo_transform(&[b[0], dx, 0.0, b[3], 0.0, -dy]).unwrap();
+                            ds.set_spatial_ref(&gdal::spatial_ref::SpatialRef::from_epsg(3006).unwrap()).unwrap();
+                            let mut buf = gdal::raster::Buffer::new((w, h), values);
+                            ds.rasterband(1).unwrap().write((0, 0), (w, h), &mut buf).unwrap();
+                        }
+                        let bytes = std::fs::read(&file).unwrap();
+                        let _ = std::fs::remove_file(&file);
+                        ("image/tiff", bytes)
+                    }
+                    _ => ("text/plain", b"?".to_vec()),
+                };
+                let mut s = stream;
+                let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", kind, body.len());
+                let _ = s.write_all(&body);
+            });
+        }
+    });
+    (base, log)
+}
+
+#[test]
+fn a_coverage_of_a_wcs_is_read_within_a_rectangle() {
+    let dir = tmp("wcs");
+    let b = GdalBackend::new();
+    let (url, log) = wcs_server();
+    // The coverages are the layers of the service.
+    use og_engine::io::Backend;
+    let service = format!("WCS:{}?version=1.0.0", url);
+    let names: Vec<String> = b.layers(std::path::Path::new(&service)).unwrap().into_iter().map(|l| l.name).collect();
+    assert_eq!(names, ["dem:heights", "dem:slope"]);
+    assert_eq!(og_engine::nodes::service_name(&format!("{}?service=WCS&request=GetCapabilities", url), None).as_deref().map(|s| &s[..4]), Some("WCS:"));
+    let ws = model(
+        &format!(
+            r#"{{"id": "grid", "type": "Reader", "params": {{"path": "{u}?service=WCS&version=1.0.0", "layer": "dem:heights", "raster_as": "grid",
+                  "within": "rectangle", "min_x": "302000", "min_y": "6405000", "max_x": "303000", "max_y": "6406000"}}}},
+               {{"id": "points", "type": "Reader", "params": {{"path": "{u}", "web_as": "wcs", "raster_as": "points",
+                  "within": "rectangle", "min_x": "302000", "min_y": "6405000", "max_x": "302100", "max_y": "6405100"}}}},
+               {{"id": "whole", "type": "Reader", "params": {{"path": "{u}?service=WCS&version=1.0.0&coverage=dem:heights", "raster_as": "grid"}}}}"#,
+            u = url
+        ),
+        "",
+    );
+    let r = run(&ws, Some(&b), &dir);
+    let grid = r.output("grid", "Output").unwrap_or_else(|| panic!("{:?}", r.nodes["grid"].error)).grid.clone().expect("a grid");
+    assert_eq!((grid.width, grid.height), (100, 100));
+    assert_eq!(grid.crs, Some(3006));
+    assert!((grid.geotransform[0] - 302000.0).abs() < 1e-6 && (grid.geotransform[3] - 6406000.0).abs() < 1e-6, "{:?}", grid.geotransform);
+    assert!((grid.values[0] - 200.5).abs() < 0.01 && (grid.values[99] - 299.5).abs() < 0.01, "{} {}", grid.values[0], grid.values[99]);
+    // Points of the cells, from the first coverage when none is chosen.
+    let points = r.output("points", "Output").unwrap_or_else(|| panic!("{:?}", r.nodes["points"].error));
+    assert_eq!(points.len(), 100);
+    assert!(r.nodes["points"].warnings.is_empty());
+    assert!(r.log.iter().any(|l| l.msg.contains("the first of 2 coverages, dem:heights")), "{:?}", r.log);
+    // Without a rectangle the whole coverage is not fetched.
+    assert!(r.nodes["whole"].error.as_deref().is_some_and(|e| e.contains("within a rectangle")), "{:?}", r.nodes["whole"].error);
+    // Only the parts were asked for, not the whole coverage of 1000 × 1000 cells.
+    let asked: Vec<String> = log.lock().unwrap().iter().filter(|p| p.to_lowercase().contains("request=getcoverage")).cloned().collect();
+    assert!(!asked.is_empty());
+    for a in &asked {
+        let size = |k: &str| a.split('&').find_map(|kv| kv.strip_prefix(k)).and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
+        assert!(size("WIDTH=") <= 101 && size("HEIGHT=") <= 101, "{}", a);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A server of files that answers HEAD and parts asked for with Range, as GDAL reads files on
+/// the web, and wants a login for those under /dl/. Also the token, and JSON by address.
+type Routes = Arc<Mutex<HashMap<String, (String, Vec<u8>)>>>;
+fn ranged_server(log: Arc<Mutex<Vec<String>>>) -> (String, Routes) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let routes: Routes = Arc::new(Mutex::new(HashMap::new()));
+    let kept = routes.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let (routes, log) = (kept.clone(), log.clone());
+            std::thread::spawn(move || {
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                loop {
+                    let mut first = String::new();
+                    if reader.read_line(&mut first).unwrap_or(0) == 0 {
+                        return;
+                    }
+                    let mut headers: HashMap<String, String> = HashMap::new();
+                    loop {
+                        let mut line = String::new();
+                        if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                            break;
+                        }
+                        if let Some((k, v)) = line.split_once(':') {
+                            headers.insert(k.trim().to_lowercase(), v.trim().to_string());
+                        }
+                    }
+                    let mut sent = String::new();
+                    if let Some(n) = headers.get("content-length").and_then(|n| n.parse::<usize>().ok()) {
+                        let mut body = vec![0u8; n];
+                        let _ = reader.read_exact(&mut body);
+                        sent = String::from_utf8_lossy(&body).into_owned();
+                    }
+                    let mut parts = first.split_whitespace();
+                    let method = parts.next().unwrap_or("").to_string();
+                    let path = parts.next().unwrap_or("/").to_string();
+                    let route = path.split('?').next().unwrap_or("").to_string();
+                    let authorized = headers.get("authorization").is_some_and(|a| a == "Bearer tok-123");
+                    // A search that takes only POST, and only with the login, as those of the
+                    // national geodata platform: the page asked for is in the body.
+                    if route == "/ngp/v1/search" {
+                        let mut s = stream.try_clone().unwrap();
+                        let answer = if method != "POST" {
+                            None
+                        } else if !authorized {
+                            Some(None)
+                        } else {
+                            let page = if sent.contains("\"page\":2") { "#2" } else { "#1" };
+                            Some(routes.lock().unwrap().get(&format!("{}{}", route, page)).cloned())
+                        };
+                        log.lock().unwrap().push(format!("{} {} {}", method, path, sent));
+                        let _ = match answer {
+                            None => write!(s, "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n"),
+                            Some(None) => write!(s, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n"),
+                            Some(Some((_, body))) => {
+                                let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Type: application/geo+json\r\nContent-Length: {}\r\n\r\n", body.len());
+                                s.write_all(&body)
+                            }
+                        };
+                        continue;
+                    }
+                    log.lock().unwrap().push(format!("{} {} {}", method, path, if authorized { "with login" } else { "" }));
+                    // A file sent on to storage elsewhere, which refuses a login of its own,
+                    // as storage with signed addresses does.
+                    if route.starts_with("/dl/moved/") && authorized {
+                        let to = route.replace("/dl/moved/", "/storage/");
+                        let mut s = stream.try_clone().unwrap();
+                        let _ = write!(s, "HTTP/1.1 302 Found\r\nLocation: {}\r\nContent-Length: 0\r\n\r\n", to);
+                        continue;
+                    }
+                    if route.starts_with("/storage/") && headers.contains_key("authorization") {
+                        let mut s = stream.try_clone().unwrap();
+                        let _ = write!(s, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n");
+                        continue;
+                    }
+                    let found = if route == "/token" {
+                        Some(("application/json".to_string(), br#"{"access_token": "tok-123", "expires_in": 3600}"#.to_vec()))
+                    } else if route.starts_with("/dl/") && !authorized {
+                        None
+                    } else {
+                        // JSON by the address with its query, or a file by its path.
+                        let r = routes.lock().unwrap();
+                        r.get(&path).or_else(|| r.get(&route)).cloned()
+                    };
+                    let mut s = stream.try_clone().unwrap();
+                    let Some((kind, body)) = found else {
+                        let status = if route.starts_with("/dl/") { "401 Unauthorized" } else { "404 Not Found" };
+                        let _ = write!(s, "HTTP/1.1 {}\r\nContent-Length: 0\r\n\r\n", status);
+                        continue;
+                    };
+                    let range = headers.get("range").and_then(|r| r.strip_prefix("bytes=")).and_then(|r| r.split_once('-')).map(|(a, b)| {
+                        let a: usize = a.parse().unwrap_or(0);
+                        let b: usize = b.parse().unwrap_or(body.len() - 1).min(body.len() - 1);
+                        (a, b)
+                    });
+                    let (status, piece, extra) = match range {
+                        Some((a, b)) if a < body.len() => ("206 Partial Content", &body[a..=b], format!("Content-Range: bytes {}-{}/{}\r\n", a, b, body.len())),
+                        _ => ("200 OK", &body[..], String::new()),
+                    };
+                    // A kind written as type|name gives the name of the file as the server would.
+                    let (kind, extra) = match kind.split_once('|') {
+                        Some((k, name)) => (k.to_string(), format!("{}Content-Disposition: attachment; filename=\"{}\"\r\n", extra, name)),
+                        None => (kind, extra),
+                    };
+                    let _ =
+                        write!(s, "HTTP/1.1 {}\r\nContent-Type: {}\r\nAccept-Ranges: bytes\r\n{}Content-Length: {}\r\n\r\n", status, kind, extra, piece.len());
+                    if method != "HEAD" {
+                        let _ = s.write_all(piece);
+                    }
+                }
+            });
+        }
+    });
+    (base, routes)
+}
+
+/// A GeoTIFF in SWEREF 99 TM, of `bands` bands made by `value`, as bytes.
+fn geotiff(gt: [f64; 6], w: usize, h: usize, bands: usize, byte: bool, value: impl Fn(usize, usize, usize) -> f64) -> Vec<u8> {
+    let file = std::env::temp_dir().join(format!("og-geodata-{}-{}.tif", std::process::id(), gt[0] as i64 + gt[3] as i64 + bands as i64 * 7 + w as i64));
+    {
+        let driver = gdal::DriverManager::get_driver_by_name("GTiff").unwrap();
+        let mut ds = if byte {
+            // Red, green, blue and infrared, as photos from above are: the fourth is not alpha.
+            let mut list = gdal::cpl::CslStringList::new();
+            list.set_name_value("PHOTOMETRIC", "RGB").unwrap();
+            list.set_name_value("ALPHA", "UNSPECIFIED").unwrap();
+            driver.create_with_band_type_with_options::<u8, _>(&file, w, h, bands, &list).unwrap()
+        } else {
+            driver.create_with_band_type::<f32, _>(&file, w, h, bands).unwrap()
+        };
+        ds.set_geo_transform(&gt).unwrap();
+        ds.set_spatial_ref(&gdal::spatial_ref::SpatialRef::from_epsg(3006).unwrap()).unwrap();
+        for b in 0..bands {
+            let mut band = ds.rasterband(b + 1).unwrap();
+            if byte {
+                let mut buf = gdal::raster::Buffer::new((w, h), (0..w * h).map(|i| value(b, i % w, i / w) as u8).collect());
+                band.write((0, 0), (w, h), &mut buf).unwrap();
+            } else {
+                let mut buf = gdal::raster::Buffer::new((w, h), (0..w * h).map(|i| value(b, i % w, i / w) as f32).collect());
+                band.write((0, 0), (w, h), &mut buf).unwrap();
+            }
+        }
+    }
+    let bytes = std::fs::read(&file).unwrap();
+    let _ = std::fs::remove_file(&file);
+    bytes
+}
+
+#[test]
+fn geodata_is_fetched_from_the_catalogue_of_a_provider_with_its_login() {
+    let _turn = SETTINGS_TURN.lock().unwrap_or_else(|e| e.into_inner());
+    use og_engine::io::{Backend, WriteOpts};
+    let dir = tmp("geodata");
+    let b = GdalBackend::new();
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let (base, routes) = ranged_server(log.clone());
+    // Where a rectangle of SWEREF 99 TM lies in degrees, as the catalogue gives it.
+    let degrees = |r: [f64; 4]| {
+        let (mut xs, mut ys) = (vec![r[0], r[2], r[0], r[2]], vec![r[1], r[1], r[3], r[3]]);
+        b.transform(3006, 4326, &mut xs, &mut ys).unwrap();
+        let lo = |v: &[f64]| v.iter().copied().fold(f64::INFINITY, f64::min);
+        let hi = |v: &[f64]| v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        [lo(&xs), lo(&ys), hi(&xs), hi(&ys)]
+    };
+    let item = |id: &str, collection: &str, when: &str, r: [f64; 4], file: &str| {
+        let d = degrees(r);
+        serde_json::json!({"type": "Feature", "id": id, "collection": collection, "bbox": d,
+            "geometry": {"type": "Polygon", "coordinates": [[[d[0], d[1]], [d[2], d[1]], [d[2], d[3]], [d[0], d[3]], [d[0], d[1]]]]},
+            "properties": {"datetime": when}, "assets": {"data": {"href": format!("{}/dl/{}", base, file)}}})
+    };
+    let json = |v: serde_json::Value| ("application/json".to_string(), v.to_string().into_bytes());
+    {
+        let mut r = routes.lock().unwrap();
+        // Heights: two tiles of 2024 side by side, and an older one under both.
+        r.insert(
+            "/stac-hojd/v1/collections".into(),
+            json(serde_json::json!({"collections": [
+                {"id": "laserdata-skog", "title": "Laserdata skog", "license": "CC-BY-4.0"},
+                {"id": "dtm-cog", "title": "Markhöjdmodell, 1 m", "license": "CC-BY-4.0"}]})),
+        );
+        let tiles = serde_json::json!({"type": "FeatureCollection", "features": [
+            item("old", "dtm-cog", "2019-05-01T00:00:00Z", [300000.0, 6400000.0, 300200.0, 6400100.0], "old.tif"),
+            item("a", "dtm-cog", "2024-05-01T00:00:00Z", [300000.0, 6400000.0, 300100.0, 6400100.0], "a.tif"),
+            item("b", "dtm-cog", "2024-05-01T00:00:00Z", [300100.0, 6400000.0, 300200.0, 6400100.0], "b.tif")]});
+        r.insert("/stac-hojd/v1/search".into(), json(tiles));
+        // Another, read without the login.
+        r.insert("/closed/v1/collections".into(), json(serde_json::json!({"collections": [{"id": "dtm-cog"}]})));
+        r.insert(
+            "/closed/v1/search".into(),
+            json(serde_json::json!({"features": [item("c", "dtm-cog", "2024-05-01T00:00:00Z", [300000.0, 6400000.0, 300200.0, 6400100.0], "c.tif")]})),
+        );
+        r.insert("/moved/v1/collections".into(), json(serde_json::json!({"collections": [{"id": "dtm-cog"}]})));
+        r.insert(
+            "/moved/v1/search".into(),
+            json(serde_json::json!({"features": [item("m", "dtm-cog", "2024-05-01T00:00:00Z", [300000.0, 6400000.0, 300200.0, 6400100.0], "moved/m.tif")]})),
+        );
+        r.insert(
+            "/storage/m.tif".into(),
+            ("image/tiff".into(), geotiff([300000.0, 1.0, 0.0, 6400100.0, 0.0, -1.0], 200, 100, 1, false, |_, x, _| 30.0 + x as f64)),
+        );
+        r.insert("/dl/c.tif".into(), ("image/tiff".into(), geotiff([300000.0, 1.0, 0.0, 6400100.0, 0.0, -1.0], 200, 100, 1, false, |_, _, _| 5.0)));
+        r.insert("/dl/a.tif".into(), ("image/tiff".into(), geotiff([300000.0, 1.0, 0.0, 6400100.0, 0.0, -1.0], 100, 100, 1, false, |_, _, _| 10.0)));
+        r.insert("/dl/b.tif".into(), ("image/tiff".into(), geotiff([300100.0, 1.0, 0.0, 6400100.0, 0.0, -1.0], 100, 100, 1, false, |_, _, _| 20.0)));
+        r.insert("/dl/old.tif".into(), ("image/tiff".into(), geotiff([300000.0, 1.0, 0.0, 6400100.0, 0.0, -1.0], 200, 100, 1, false, |_, _, _| 999.0)));
+        // A photo of red, green, blue and infrared.
+        r.insert(
+            "/stac-bild/v1/collections".into(),
+            json(serde_json::json!({"collections": [{"id": "ortofoto-ir", "title": "Ortofoto IR"}, {"id": "ortofoto", "title": "Ortofoto färg"}]})),
+        );
+        r.insert(
+            "/stac-bild/v1/search".into(),
+            json(serde_json::json!({"type": "FeatureCollection", "features": [item("p", "ortofoto", "2023-06-01T00:00:00Z", [300000.0, 6400000.0, 300200.0, 6400100.0], "p.tif")]})),
+        );
+        r.insert(
+            "/dl/p.tif".into(),
+            ("image/tiff".into(), geotiff([300000.0, 0.5, 0.0, 6400100.0, 0.0, -0.5], 400, 200, 4, true, |band, _, _| [200.0, 100.0, 50.0, 7.0][band])),
+        );
+    }
+    // A point cloud and a zip with a GeoPackage of two layers.
+    let mut points = Table { fields: vec![og_engine::Field::new("classification", og_engine::FieldType::Int)], crs: Some(3006), ..Default::default() };
+    for i in 0..100 {
+        let (x, y) = (300000.0 + (i % 10) as f64 * 20.0 + 5.0, 6400000.0 + (i / 10) as f64 * 10.0 + 5.0);
+        points.features.push(og_engine::Feature {
+            attrs: vec![Value::Int(if i % 2 == 0 { 2 } else { 5 })],
+            geom: Some(geo::Geometry::Point(geo::Point::new(x, y))),
+            z: Some(vec![50.0].into()),
+        });
+    }
+    let laz = dir.join("forest.laz");
+    og_engine::pointcloud::write_las(&points, &laz, None).unwrap();
+    let gpkg = dir.join("topo.gpkg");
+    let mut notes = og_engine::io::Notes::default();
+    let roads = Table {
+        fields: vec![og_engine::Field::new("kind", og_engine::FieldType::Text)],
+        crs: Some(3006),
+        features: vec![
+            og_engine::Feature {
+                attrs: vec![Value::Text("road".into())],
+                geom: Some(geo::Geometry::LineString(geo::LineString::from(vec![(300010.0, 6400050.0), (300090.0, 6400050.0)]))),
+                z: None,
+            },
+            og_engine::Feature {
+                attrs: vec![Value::Text("far".into())],
+                geom: Some(geo::Geometry::LineString(geo::LineString::from(vec![(310010.0, 6410050.0), (310090.0, 6410050.0)]))),
+                z: None,
+            },
+        ],
+        ..Default::default()
+    };
+    b.write(&roads, &gpkg, &WriteOpts { layer: Some("vagnat".into()), ..Default::default() }, &mut notes).unwrap();
+    let houses = Table {
+        fields: vec![og_engine::Field::new("use", og_engine::FieldType::Text)],
+        crs: Some(3006),
+        features: vec![og_engine::Feature {
+            attrs: vec![Value::Text("home".into())],
+            geom: Some(geo::Geometry::Point(geo::Point::new(300050.0, 6400050.0))),
+            z: None,
+        }],
+        ..Default::default()
+    };
+    b.write(&houses, &gpkg, &WriteOpts { layer: Some("byggnad".into()), ..Default::default() }, &mut notes).unwrap();
+    let zip_file = dir.join("topo.zip");
+    {
+        let mut z = zip::ZipWriter::new(std::fs::File::create(&zip_file).unwrap());
+        z.start_file("topografi10_test.gpkg", zip::write::SimpleFileOptions::default()).unwrap();
+        z.write_all(&std::fs::read(&gpkg).unwrap()).unwrap();
+        z.finish().unwrap();
+    }
+    {
+        let mut r = routes.lock().unwrap();
+        r.insert(
+            "/stac-hojd/v1/search?collections=laserdata-skog".into(),
+            ("application/json".into(), serde_json::json!({"features": [item("l", "laserdata-skog", "2022-01-01T00:00:00Z", [300000.0, 6400000.0, 300200.0, 6400100.0], "forest.laz")]}).to_string().into_bytes()),
+        );
+        r.insert("/dl/forest.laz".into(), ("application/octet-stream".into(), std::fs::read(&laz).unwrap()));
+        r.insert(
+            "/stac-vektor/v1/collections".into(),
+            json(serde_json::json!({"collections": [{"id": "topografi-100", "title": "Topografi 100"}, {"id": "topografi-10", "title": "Topografi 10"}]})),
+        );
+        r.insert(
+            "/stac-vektor/v1/search".into(),
+            json(serde_json::json!({"features": [item("t", "topografi-10", "2025-01-01T00:00:00Z", [300000.0, 6400000.0, 300200.0, 6400100.0], "topo.zip")]})),
+        );
+        r.insert("/dl/topo.zip".into(), ("application/zip".into(), std::fs::read(&zip_file).unwrap()));
+    }
+    // The search for the laser data is told apart by its collection.
+    let laser_search = {
+        let r = routes.lock().unwrap();
+        r.get("/stac-hojd/v1/search?collections=laserdata-skog").cloned().unwrap()
+    };
+    use_settings(Some(Settings {
+        apis: vec![ApiConnection {
+            name: "LM".into(),
+            auth: "oauth2".into(),
+            user: "key".into(),
+            secret: "secret".into(),
+            token_url: format!("{}/token", base),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }));
+    let area = r#""bbox": "300050, 6400020, 300150, 6400080", "connection": "LM""#;
+    let ws = model(
+        &format!(
+            r#"{{"id": "heights", "type": "GeodataFetcher", "params": {{"product": "lm_heights", "catalogue": "{b}/stac-hojd/v1", {a}}}}},
+               {{"id": "photo", "type": "GeodataFetcher", "params": {{"product": "lm_photo", "catalogue": "{b}/stac-bild/v1", "cell_size": "1", {a}}}}},
+               {{"id": "topo", "type": "GeodataFetcher", "params": {{"product": "lm_topo10", "catalogue": "{b}/stac-vektor/v1", "layers": "vagnat, byggnad", {a}}}}},
+               {{"id": "nologin", "type": "GeodataFetcher", "params": {{"product": "lm_heights", "catalogue": "{b}/closed/v1", "bbox": "300050, 6400020, 300150, 6400080"}}}},
+               {{"id": "moved", "type": "GeodataFetcher", "params": {{"product": "lm_heights", "catalogue": "{b}/moved/v1", {a}}}}},
+               {{"id": "large", "type": "GeodataFetcher", "params": {{"product": "lm_heights", "catalogue": "{b}/stac-hojd/v1", "bbox": "300000, 6400000, 310000, 6410000", "connection": "LM"}}}}"#,
+            b = base,
+            a = area
+        ),
+        "",
+    );
+    let r = run(&ws, Some(&b), &dir);
+    let ok = |id: &str| r.output(id, "Output").unwrap_or_else(|| panic!("{}: {:?}", id, r.nodes[id].error)).clone();
+    // Heights: from the tiles of 2024, the older one not read where they cover it.
+    let grid = ok("heights").grid.clone().expect("a grid");
+    assert_eq!((grid.width, grid.height, grid.crs), (100, 60, Some(3006)));
+    assert!(grid.values.iter().all(|v| *v == 10.0 || *v == 20.0), "{:?}", &grid.values[..5]);
+    assert_eq!(grid.values[0], 10.0);
+    assert_eq!(grid.values[99], 20.0);
+    let files = r.output("heights", "Files").unwrap();
+    assert_eq!(files.len(), 3);
+    let used = files.field_index("used").unwrap();
+    assert_eq!(files.features.iter().map(|f| f.attrs[used].clone()).collect::<Vec<_>>(), vec![Value::Int(1), Value::Int(1), Value::Int(0)]);
+    // A file sent on to storage that refuses the login is fetched without it.
+    let moved = ok("moved").grid.clone().expect("a grid");
+    assert_eq!((moved.width, moved.height), (100, 60));
+    assert!((moved.values[0] - 80.0).abs() < 1.0, "{}", moved.values[0]);
+    assert!(r.log.iter().any(|l| l.node.as_deref() == Some("moved") && l.msg.contains("fetched whole instead")));
+    // The photo: red, green and blue, not the infrared, at the cell size asked for.
+    let photo = ok("photo").image.clone().expect("a picture");
+    assert_eq!((photo.width, photo.height), (100, 60));
+    let clear = photo.rgba.chunks(4).filter(|p| p[3] == 0).count();
+    assert_eq!(
+        &photo.rgba[..4],
+        &[200, 100, 50, 255],
+        "{} clear; {:?}; {:?}",
+        clear,
+        r.nodes["photo"].warnings,
+        r.log.iter().filter(|l| l.node.as_deref() == Some("photo")).map(|l| &l.msg).collect::<Vec<_>>()
+    );
+    assert!(r.log.iter().any(|l| l.msg.contains("Collection: ortofoto, Ortofoto färg")), "{:?}", r.log.iter().map(|l| &l.msg).collect::<Vec<_>>());
+    // Topografi 10, not 100: both layers, only what reaches into the area.
+    let topo = ok("topo");
+    let layer = topo.field_index("layer").unwrap();
+    let mut layers: Vec<String> = topo.features.iter().map(|f| f.attrs[layer].to_text()).collect();
+    layers.sort();
+    assert_eq!(layers, ["byggnad", "vagnat"]);
+    assert_eq!(topo.crs, Some(3006));
+    // Without the login the files are refused, and it is said.
+    assert!(r.nodes["nologin"].error.as_deref().is_some_and(|e| e.contains("401") && e.contains("choose an API connection")), "{:?}", r.nodes["nologin"].error);
+    assert!(r.nodes["large"].error.as_deref().is_some_and(|e| e.contains("100 km²")), "{:?}", r.nodes["large"].error);
+    // The token was fetched with the key, and the files with the token.
+    let asked = log.lock().unwrap().clone();
+    assert!(asked.iter().any(|l| l.starts_with("POST /token")));
+    assert!(asked.iter().any(|l| l.contains("/dl/a.tif with login")));
+    // Laser data: the search tells the collection; the file is fetched whole.
+    {
+        let mut r2 = routes.lock().unwrap();
+        r2.insert("/stac-hojd/v1/search".into(), laser_search);
+    }
+    let ws = model(
+        &format!(
+            r#"{{"id": "laser", "type": "GeodataFetcher", "params": {{"product": "lm_laser_forest", "catalogue": "{b}/stac-hojd/v1", "las_classes": "2", {a}}}}}"#,
+            b = base,
+            a = area
+        ),
+        "",
+    );
+    let r = run(&ws, Some(&b), &dir);
+    let cloud = r.output("laser", "Output").unwrap_or_else(|| panic!("{:?}", r.nodes["laser"].error)).clone();
+    let (c, _) = og_engine::cloud::cloud_of(&cloud);
+    // The points of class 2 in the area: 5 of the 10 columns, 6 rows, every other point.
+    assert!(!c.is_empty() && c.len() < 50, "{}", c.len());
+    assert!(c.class.iter().all(|k| *k == 2));
+    assert!(c.x.iter().all(|x| (300050.0..=300150.0).contains(x)));
+    // How many points there will be is told before they are fetched; more than allowed are
+    // not read, and it is said what to do.
+    let ws = model(
+        &format!(
+            r#"{{"id": "many", "type": "GeodataFetcher", "params": {{"product": "lm_laser_forest", "catalogue": "{b}/stac-hojd/v1", "max_points": "10", {a}}}}},
+               {{"id": "thin", "type": "GeodataFetcher", "params": {{"product": "lm_laser_forest", "catalogue": "{b}/stac-hojd/v1", "las_every": "2", {a}}}}},
+               {{"id": "capped", "type": "GeodataFetcher", "params": {{"product": "lm_laser_forest", "catalogue": "{b}/stac-hojd/v1", "las_classes": "2, 5", "max_points": "5", {a}}}}}"#,
+            b = base,
+            a = area
+        ),
+        "",
+    );
+    let r = run(&ws, Some(&b), &dir);
+    let many = r.nodes["many"].error.clone().unwrap_or_default();
+    assert!(many.contains("about") && many.contains("Most points"), "{}", many);
+    assert!(r.log.iter().any(|l| l.node.as_deref() == Some("many") && l.msg.starts_with("About ")));
+    let thin = og_engine::cloud::cloud_of(r.output("thin", "Output").unwrap_or_else(|| panic!("{:?}", r.nodes["thin"].error))).0.len();
+    let full = og_engine::cloud::cloud_of(&cloud).0.len() * 2;
+    assert!(thin > 0 && thin <= full, "{} of {}", thin, full);
+    assert!(r.nodes["capped"].error.as_deref().is_some_and(|e| e.contains("more than the 5 points")), "{:?}", r.nodes["capped"].error);
+    // Every file of the area kept in a folder, the photo and its PDF too, and read from there.
+    {
+        let mut r2 = routes.lock().unwrap();
+        let d = degrees([300000.0, 6400000.0, 300200.0, 6400100.0]);
+        r2.insert("/kept/v1/collections".into(), ("application/json".into(), br#"{"collections": [{"id": "ortofoto", "title": "Ortofoto"}]}"#.to_vec()));
+        r2.insert(
+            "/kept/v1/search".into(),
+            (
+                "application/json".into(),
+                serde_json::json!({"features": [{"type": "Feature", "id": "k", "bbox": d, "properties": {"datetime": "2023-06-01T00:00:00Z"},
+                    "assets": {"data": {"href": format!("{}/dl/k.tif", base)}, "map": {"href": format!("{}/dl/k.pdf", base)}}}]})
+                .to_string()
+                .into_bytes(),
+            ),
+        );
+        r2.insert(
+            "/dl/k.tif".into(),
+            ("image/tiff".into(), geotiff([300000.0, 0.5, 0.0, 6400100.0, 0.0, -0.5], 400, 200, 3, true, |band, _, _| [10.0, 20.0, 30.0][band])),
+        );
+        r2.insert("/dl/k.pdf".into(), ("application/pdf".into(), b"%PDF-1.4 a map".to_vec()));
+    }
+    let ws = model(
+        &format!(
+            r#"{{"id": "kept", "type": "GeodataFetcher", "params": {{"product": "lm_photo", "catalogue": "{b}/kept/v1", "cell_size": "1", "keep_in": "kept", {a}}}}}"#,
+            b = base,
+            a = area
+        ),
+        "",
+    );
+    let r = run(&ws, Some(&b), &dir);
+    let photo = r.output("kept", "Output").unwrap_or_else(|| panic!("{:?}", r.nodes["kept"].error)).image.clone().unwrap();
+    assert_eq!(&photo.rgba[..4], &[10, 20, 30, 255]);
+    assert!(dir.join("kept/ortofoto/k.tif").is_file() && dir.join("kept/ortofoto/k.pdf").is_file());
+    let files = r.output("kept", "Files").unwrap();
+    let file = files.field_index("file").unwrap();
+    assert!(files.features[0].attrs[file].to_text().ends_with("k.tif"));
+    // Again: from the folder, nothing fetched.
+    let asked = log.lock().unwrap().len();
+    let r = run(&ws, Some(&b), &dir);
+    assert!(r.output("kept", "Output").is_some());
+    assert!(log.lock().unwrap()[asked..].iter().all(|l| !l.contains("/dl/k.")), "{:?}", &log.lock().unwrap()[asked..]);
+    assert!(r.log.iter().any(|l| l.msg.contains("0 files fetched and kept, 2 there already")));
+    use_settings(None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The plans of the national geodata platform: a catalogue of one dataset, searched with POST
+/// and the login, whose items are in SWEREF 99 TM and are the features themselves; their
+/// files, given by the server's own names, kept beside. And a scanned map with a table of
+/// colours, as the national military map.
+#[test]
+fn plans_are_items_and_their_files_are_kept_and_a_map_of_colours_is_a_picture() {
+    let _turn = SETTINGS_TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tmp("ngp");
+    let b = GdalBackend::new();
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let (base, routes) = ranged_server(log.clone());
+    let plan = |id: &str, x: f64, name: &str, asset: &str| {
+        serde_json::json!({"type": "Feature", "id": id, "bbox": [x, 6400000.0, x + 100.0, 6400100.0],
+            "geometry": {"type": "Polygon", "coordinates": [[[x, 6400000.0], [x + 100.0, 6400000.0], [x + 100.0, 6400100.0], [x, 6400100.0], [x, 6400000.0]]]},
+            "properties": {"namn": name, "status": "laga kraft", "antal": 2, "beslut": {"datum": "2024-01-01"}},
+            "assets": {"plankarta": {"href": format!("{}/dl/asset/{}", base, asset)}}})
+    };
+    {
+        let mut r = routes.lock().unwrap();
+        r.insert(
+            "/ngp/v1/search#1".into(),
+            (
+                "".into(),
+                serde_json::json!({"type": "FeatureCollection", "features": [plan("p1", 300000.0, "Centrum", "a1"), plan("p2", 300100.0, "Hamnen", "a2")],
+                "links": [{"rel": "next", "href": format!("{}/ngp/v1/search", base), "method": "POST", "merge": true, "body": {"page": 2}}]})
+                .to_string()
+                .into_bytes(),
+            ),
+        );
+        r.insert(
+            "/ngp/v1/search#2".into(),
+            ("".into(), serde_json::json!({"type": "FeatureCollection", "features": [plan("p3", 300050.0, "Torget", "a3")]}).to_string().into_bytes()),
+        );
+        for a in ["a1", "a2", "a3"] {
+            r.insert(format!("/dl/asset/{}", a), ("application/pdf|plankarta.pdf".into(), format!("%PDF-1.4 {}", a).into_bytes()));
+        }
+        // A map of four colours, two by two cells of 10 m.
+        r.insert(
+            "/stac-karta/v1/collections".into(),
+            ("application/json".into(), br#"{"collections": [{"id": "nmk250"}, {"id": "nmk50", "title": "NMK50"}]}"#.to_vec()),
+        );
+    }
+    let file = std::env::temp_dir().join(format!("og-nmk-{}.tif", std::process::id()));
+    {
+        let driver = gdal::DriverManager::get_driver_by_name("GTiff").unwrap();
+        let mut ds = driver.create_with_band_type::<u8, _>(&file, 20, 10, 1).unwrap();
+        ds.set_geo_transform(&[300000.0, 10.0, 0.0, 6400100.0, 0.0, -10.0]).unwrap();
+        ds.set_spatial_ref(&gdal::spatial_ref::SpatialRef::from_epsg(3006).unwrap()).unwrap();
+        let mut band = ds.rasterband(1).unwrap();
+        let mut table = gdal::raster::ColorTable::new(gdal::raster::PaletteInterpretation::Rgba);
+        table.set_color_entry(0, &gdal::raster::ColorEntry::rgba(0, 0, 0, 255));
+        table.set_color_entry(1, &gdal::raster::ColorEntry::rgba(30, 120, 200, 255));
+        band.set_color_table(&table);
+        let mut buf = gdal::raster::Buffer::new((20, 10), vec![1u8; 200]);
+        band.write((0, 0), (20, 10), &mut buf).unwrap();
+    }
+    let degrees = {
+        use og_engine::io::Backend;
+        let (mut xs, mut ys): (Vec<f64>, Vec<f64>) = (vec![300000.0, 300200.0], vec![6400000.0, 6400100.0]);
+        b.transform(3006, 4326, &mut xs, &mut ys).unwrap();
+        [xs[0].min(xs[1]), ys[0].min(ys[1]), xs[0].max(xs[1]), ys[0].max(ys[1])]
+    };
+    {
+        let mut r = routes.lock().unwrap();
+        r.insert(
+            "/stac-karta/v1/search".into(),
+            ("application/json".into(), serde_json::json!({"features": [{"type": "Feature", "id": "m", "collection": "nmk50", "bbox": degrees, "geometry": null,
+                "properties": {"datetime": "2020-01-01T00:00:00Z"}, "assets": {"data": {"href": format!("{}/dl/m.tif", base)}, "pdf": {"href": format!("{}/dl/m.pdf", base)}}}]}).to_string().into_bytes()),
+        );
+        r.insert("/dl/m.tif".into(), ("image/tiff".into(), std::fs::read(&file).unwrap()));
+        r.insert("/dl/m.pdf".into(), ("application/pdf".into(), b"%PDF-1.4 map".to_vec()));
+    }
+    let _ = std::fs::remove_file(&file);
+    use_settings(Some(Settings {
+        apis: vec![ApiConnection {
+            name: "LM".into(),
+            auth: "oauth2".into(),
+            user: "key".into(),
+            secret: "secret".into(),
+            token_url: format!("{}/token", base),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }));
+    // Two municipalities on Extent, each fetched on its own with its name.
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("areas.csv"),
+        "kommun;wkt\nVästby;POLYGON((300000 6400000,300200 6400000,300200 6400100,300000 6400100,300000 6400000))\nÖstby;POLYGON((300050 6400000,300150 6400000,300150 6400100,300050 6400100,300050 6400000))\n",
+    )
+    .unwrap();
+    let ws = model(
+        &format!(
+            r#"{{"id": "areas", "type": "Reader", "params": {{"path": "{d}/areas.csv", "wkt": "wkt", "crs": "EPSG:3006"}}}},
+               {{"id": "each", "type": "GeodataFetcher", "params": {{"product": "ngp_detailed_plans", "catalogue": "{b}/ngp/v1", "areas": "each", "connection": "LM"}}}},
+               {{"id": "plans", "type": "GeodataFetcher", "params": {{"product": "ngp_detailed_plans", "catalogue": "{b}/ngp/v1", "bbox": "300000, 6400000, 300200, 6400100", "connection": "LM", "keep_in": "kept"}}}},
+               {{"id": "again", "type": "GeodataFetcher", "params": {{"product": "ngp_detailed_plans", "catalogue": "{b}/ngp/v1", "bbox": "300000, 6400000, 300200, 6400100", "connection": "LM", "keep_in": "kept"}}}},
+               {{"id": "map", "type": "GeodataFetcher", "params": {{"product": "lm_nmk50", "catalogue": "{b}/stac-karta/v1", "bbox": "300000, 6400000, 300200, 6400100", "connection": "LM", "cell_size": "10", "keep_in": "kept"}}}}"#,
+            b = base,
+            d = dir.display()
+        ),
+        r#"{"from": ["areas", "Output"], "to": ["each", "Extent"]}"#,
+    );
+    let r = run(&ws, Some(&b), &dir);
+    let each = r.output("each", "Output").unwrap_or_else(|| panic!("{:?}", r.nodes["each"].error)).clone();
+    let k = each.field_index("kommun").expect("the attributes of the area");
+    assert_eq!(each.len(), 6, "the made-up service gives the three plans to each search");
+    assert_eq!(each.features.iter().map(|f| f.attrs[k].to_text()).collect::<Vec<_>>(), ["Västby", "Västby", "Västby", "Östby", "Östby", "Östby"]);
+    let plans = r.output("plans", "Output").unwrap_or_else(|| panic!("{:?}", r.nodes["plans"].error)).clone();
+    // All three plans, from both pages, in SWEREF 99 TM where they lie.
+    assert_eq!(plans.len(), 3);
+    assert_eq!(plans.crs, Some(3006));
+    let namn = plans.field_index("namn").unwrap();
+    assert_eq!(plans.features.iter().map(|f| f.attrs[namn].to_text()).collect::<Vec<_>>(), ["Centrum", "Hamnen", "Torget"]);
+    assert_eq!(plans.features[0].attrs[plans.field_index("antal").unwrap()], Value::Int(2));
+    assert!(plans.features[0].attrs[plans.field_index("beslut").unwrap()].to_text().contains("2024-01-01"));
+    use geo::BoundingRect;
+    let r0 = plans.features[0].geom.as_ref().unwrap().bounding_rect().unwrap();
+    assert!((r0.min().x - 300000.0).abs() < 0.01 && (r0.max().y - 6400100.0).abs() < 0.01, "{:?}", r0);
+    // The files, under the server's name, the second of the same name not written over.
+    let kept = dir.join("kept/Detaljplan");
+    let mut names: Vec<String> = std::fs::read_dir(&kept).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    names.sort();
+    assert_eq!(names, [".ographis-files.json", "p2_plankarta.pdf", "p3_plankarta.pdf", "plankarta.pdf"]);
+    assert_eq!(std::fs::read_to_string(kept.join("p2_plankarta.pdf")).unwrap(), "%PDF-1.4 a2");
+    // Not fetched again.
+    let asked = log.lock().unwrap().clone();
+    assert_eq!(asked.iter().filter(|l| l.starts_with("GET /dl/asset/a1 ")).count(), 1, "{:?}", asked);
+    assert!(
+        asked.iter().any(|l| l.starts_with("POST /ngp/v1/search") && l.contains("\"page\":2") && l.contains("bbox")),
+        "the next page merges with the search"
+    );
+    // The map: its colours, not the numbers of them, and its PDF kept.
+    let map = r.output("map", "Output").unwrap_or_else(|| panic!("{:?}", r.nodes["map"].error)).image.clone().expect("a picture");
+    assert_eq!(&map.rgba[..4], &[30, 120, 200, 255]);
+    assert!(dir.join("kept/nmk50/m.pdf").is_file() && dir.join("kept/nmk50/m.tif").is_file());
+    use_settings(None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The models for Swedish public APIs, each on a made-up copy of its service: the paths,
+/// the pages by offset and by cursor, the key in a header, and the geometry put together.
+#[test]
+fn the_swedish_api_examples_work_on_copies_of_the_services() {
+    let dir = tmp("swedish-apis");
+    let b = GdalBackend::new();
+    let (url, log) = server(Arc::new(|r: &Req| {
+        let num = |k: &str| r.query(k).and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
+        let body = match r.route() {
+            "/ibww/api/version/1/warning.json" => r#"[{"id": 1, "event": {"sv": "Vind"}, "warningAreas": [
+                {"id": 9, "approximateStart": "2026-11-17T10:00:00Z", "approximateEnd": "2026-11-18T10:00:00Z", "areaName": {"sv": "Skåne"}, "warningLevel": {"sv": "Gul"}, "eventDescription": {"sv": "Kuling"},
+                 "area": {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[14.1, 55.7], [14.2, 55.7], [14.2, 55.8], [14.1, 55.7]]]}, "properties": {}}},
+                {"id": 10, "approximateStart": "2026-11-17T10:00:00Z", "areaName": {"sv": "Halland"}, "warningLevel": {"sv": "Orange"}, "eventDescription": {"sv": "Storm"},
+                 "area": {"type": "Feature", "geometry": {"type": "MultiPolygon", "coordinates": [[[[12.1, 56.7], [12.2, 56.7], [12.2, 56.8], [12.1, 56.7]]]]}, "properties": {}}}]}]"#
+                .to_string(),
+            "/api/data" => r#"{"Header": {"Column": []}, "Rows": [
+                {"Cell": [{"Column": "ar", "Value": "2024", "IsMeasure": false}, {"Column": "reglan", "Name": "01", "Value": "Stockholms län", "IsMeasure": false}, {"Column": "nyregunder", "Value": "1234", "IsMeasure": true}]},
+                {"Cell": [{"Column": "ar", "Value": "2024", "IsMeasure": false}, {"Column": "reglan", "Name": "14", "Value": "Västra Götalands län", "IsMeasure": false}, {"Column": "nyregunder", "Value": "987", "IsMeasure": true}]}]}"#
+                .to_string(),
+            "/store/search" => {
+                let (off, lim) = (num("offset"), num("limit"));
+                let children: Vec<String> = (off..(off + lim).min(230))
+                    .map(|i| {
+                        format!(
+                            r#"{{"entryId": "{i}", "metadata": {{"@graph": [{{"@type": "schema:LodgingBusiness", "schema:name": {{"@value": "Hotel {i}", "@language": "sv"}}, "schema:url": {{"@id": "https://h/{i}"}}, "schema:geo": {{"@id": "_:g{i}"}}}}, {{"@id": "_:g{i}", "@type": "schema:GeoCoordinates", "schema:latitude": "55.{i:03}", "schema:longitude": "13.4"}}]}}}}"#
+                        )
+                    })
+                    .collect();
+                format!(r#"{{"offset": {off}, "limit": {lim}, "results": 230, "resource": {{"children": [{}]}}}}"#, children.join(","))
+            }
+            "/search" => {
+                let (off, lim) = (num("offset"), num("limit"));
+                let hits: Vec<String> = (off..(off + lim).min(150))
+                    .map(|i| format!(r#"{{"id": "{i}", "headline": "Job {i}", "employer": {{"name": "E"}}, "workplace_address": {{"municipality": "Göteborg", "coordinates": [11.97, 57.7]}}}}"#))
+                    .collect();
+                format!(r#"{{"total": {{"value": 150}}, "hits": [{}]}}"#, hits.join(","))
+            }
+            "/api/events" => r#"[{"id": 1, "datetime": "2026-11-17 4:42:02 +01:00", "name": "x", "type": "Rån", "location": {"name": "Göteborg", "gps": "57.70887,11.97456"}}]"#.to_string(),
+            "/v1/arbetsstallen" if r.headers.get("x-api-key").map(String::as_str) == Some("k3y") => match r.query("cursorId") {
+                None => r#"{"pagination": {"nextCursorId": 50, "limit": 50, "hasMore": true}, "arbetsstallen": [{"cfarNr": 1, "namn": "A"}, {"cfarNr": 2, "namn": "B"}]}"#.to_string(),
+                Some(_) => r#"{"pagination": {"limit": 50, "hasMore": false}, "arbetsstallen": [{"cfarNr": 3, "namn": "C"}]}"#.to_string(),
+            },
+            "/v1/arbetsstallen" => return (401, vec![], "{}".into()),
+            _ => return (404, vec![], "{}".into()),
+        };
+        (200, vec![], body)
+    }));
+    let _turn = SETTINGS_TURN.lock().unwrap_or_else(|e| e.into_inner());
+    use_settings(Some(
+        serde_json::from_str(r#"{"apis": [{"name": "SCB företagsregister", "auth": "key_header", "param": "X-API-Key", "secret": "k3y"}]}"#).unwrap(),
+    ));
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/apis");
+    let run_example = |file: &str, hosts: &[&str]| {
+        let mut text = std::fs::read_to_string(examples.join(file)).unwrap().replace("\"cache\": \"disk\"", "\"cache\": \"none\"");
+        for h in hosts {
+            text = text.replace(h, &url);
+        }
+        let r = run(&Workspace::from_json(&text).unwrap(), Some(&b), &dir);
+        // An Output turned off in the example is not a failure.
+        let errors: Vec<_> = r.nodes.iter().filter_map(|(k, n)| n.error.clone().filter(|e| e != "The node is disabled.").map(|e| (k.clone(), e))).collect();
+        assert!(errors.is_empty(), "{}: {:?}", file, errors);
+        r
+    };
+    let r = run_example("smhi_warnings.ographis", &["https://opendata-download-warnings.smhi.se"]);
+    let w = r.output("geom", "Output").unwrap();
+    assert_eq!((w.len(), w.crs), (2, Some(4326)), "a polygon and a multipolygon, put together again");
+    assert_eq!(col(w, "w.warningLevel.sv"), [Value::Text("Gul".into()), Value::Text("Orange".into())]);
+
+    let r = run_example("trafa_new_cars.ographis", &["https://api.trafa.se"]);
+    let t = r.output("keep", "Output").unwrap();
+    assert_eq!(col(t, "county_code"), [Value::Text("01".into()), Value::Text("14".into())]);
+    assert_eq!(col(t, "new_cars")[1].to_text(), "987");
+
+    let r = run_example("visit_sweden_lodging.ographis", &["https://data.visitsweden.com"]);
+    let p = r.output("points", "Points").unwrap();
+    assert_eq!(p.len(), 230, "three pages of 100");
+    assert_eq!(col(p, "name")[229], Value::Text("Hotel 229".into()));
+
+    let r = run_example("jobsearch_gothenburg.ographis", &["https://jobsearch.api.jobtechdev.se"]);
+    assert_eq!(r.output("points", "Points").unwrap().len(), 150);
+
+    let r = run_example("police_events.ographis", &["https://polisen.se"]);
+    let p = r.output("points", "Points").unwrap();
+    assert_eq!((col(p, "lat")[0].to_text(), col(p, "lon")[0].to_text()), ("57.70887".into(), "11.97456".into()));
+    assert!(
+        log.lock()
+            .unwrap()
+            .iter()
+            .any(|q| q.route() == "/api/events" && q.query("locationname").is_some_and(|l| l == "V%C3%A4stra%20G%C3%B6talands%20l%C3%A4n")),
+        "åäö and spaces are sent encoded"
+    );
+
+    // Pages by a cursor deep in the answer, with a key in a header; and an answer kept in
+    // http-cache with one setting for the pages is not taken for another.
+    let scb = format!(
+        r#"{{"nodes": [{{"id": "afr", "type": "HttpCaller", "params": {{"url": "'{url}/v1/arbetsstallen?kommun=1480'", "connection": "SCB företagsregister", "paging": "cursor",
+               "cursor_path": "pagination.nextCursorId", "page_param": "cursorId", "items_path": "arbetsstallen", "cache": "disk"}}}},
+             {{"id": "items", "type": "JsonExploder", "params": {{"attribute": "_response", "path": "arbetsstallen"}}}}],
+           "edges": [{{"from": ["afr", "Output"], "to": ["items", "Input"]}}]}}"#
+    );
+    let wrong = scb.replace("\"pagination.nextCursorId\"", "\"nextCursorId\"");
+    let rows = |text: &str| run(&Workspace::from_json(text).unwrap(), Some(&b), &dir).output("items", "Exploded").unwrap().len();
+    assert_eq!(rows(&wrong), 2, "the cursor is not found: one page");
+    assert_eq!(rows(&scb), 3, "the pages are followed, not the one page kept");
+    assert_eq!(rows(&scb), 3, "and then taken from http-cache");
+    assert!(log.lock().unwrap().iter().any(|q| q.query("cursorId").as_deref() == Some("50") && q.query("kommun").as_deref() == Some("1480")));
+    use_settings(None);
     let _ = std::fs::remove_dir_all(&dir);
 }

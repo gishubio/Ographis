@@ -5,30 +5,28 @@
     {
       "id": "roads",
       "type": "Reader",
-      "name": "Streets",
+      "comment": "Streets. A made-up small town, from tools/make_analysis_example.py. Speeds in km/h",
       "x": 20,
       "y": 20,
       "params": {
         "path": "analysis/roads.geojson"
-      },
-      "comment": "A made-up small town, from tools/make_analysis_example.py. Speeds in km/h"
+      }
     },
     {
       "id": "walk",
       "type": "AttributeCreator",
-      "name": "On foot",
+      "comment": "On foot. Walking at 5 km/h on every street",
       "x": 280,
       "y": 20,
       "params": {
         "name": "walk_kmh",
         "expression": "5"
-      },
-      "comment": "Walking at 5 km/h on every street"
+      }
     },
     {
       "id": "net",
       "type": "NetworkBuilder",
-      "name": "Streets as a network",
+      "comment": "Streets as a network",
       "x": 540,
       "y": -180,
       "params": {}
@@ -36,18 +34,17 @@
     {
       "id": "people",
       "type": "Reader",
-      "name": "People",
+      "comment": "People in squares of 250 m",
       "x": 20,
       "y": 220,
       "params": {
         "path": "analysis/people.geojson"
-      },
-      "comment": "People in squares of 250 m"
+      }
     },
     {
       "id": "districts",
       "type": "Reader",
-      "name": "Districts",
+      "comment": "Districts",
       "x": 20,
       "y": 420,
       "params": {
@@ -57,7 +54,7 @@
     {
       "id": "centres",
       "type": "Reader",
-      "name": "Health centres",
+      "comment": "Health centres",
       "x": 20,
       "y": 620,
       "params": {
@@ -67,7 +64,7 @@
     {
       "id": "cands",
       "type": "Reader",
-      "name": "Places for a new one",
+      "comment": "Places for a new one",
       "x": 20,
       "y": 820,
       "params": {
@@ -77,7 +74,7 @@
     {
       "id": "areas",
       "type": "ServiceAreas",
-      "name": "Within 10, 20 and 30 minutes on foot",
+      "comment": "Within 10, 20 and 30 minutes on foot. Walking to the nearest health centre at 5 km/h, as an outline over the blocks between the streets",
       "x": 540,
       "y": 20,
       "params": {
@@ -86,13 +83,12 @@
         "breaks": "10, 20, 30",
         "shape": "outline",
         "width": "60"
-      },
-      "comment": "Walking to the nearest health centre at 5 km/h, as an outline over the blocks between the streets"
+      }
     },
     {
       "id": "alloc",
       "type": "NetworkAllocation",
-      "name": "Minutes on foot to the nearest",
+      "comment": "Minutes on foot to the nearest",
       "x": 540,
       "y": 260,
       "params": {
@@ -103,7 +99,7 @@
     {
       "id": "near",
       "type": "AttributeCreator",
-      "name": "People within 20 minutes",
+      "comment": "People within 20 minutes",
       "x": 800,
       "y": 260,
       "params": {
@@ -114,18 +110,17 @@
     {
       "id": "realloc",
       "type": "AreaReallocator",
-      "name": "People in each district",
+      "comment": "People in each district. The squares that a border cuts are shared by area",
       "x": 1060,
       "y": 360,
       "params": {
         "counts": "people, people_near"
-      },
-      "comment": "The squares that a border cuts are shared by area"
+      }
     },
     {
       "id": "share",
       "type": "AttributeCreator",
-      "name": "Share within 20 minutes",
+      "comment": "Share within 20 minutes",
       "x": 1320,
       "y": 360,
       "params": {
@@ -136,7 +131,7 @@
     {
       "id": "share_out",
       "type": "Writer",
-      "name": "Districts",
+      "comment": "Districts",
       "x": 1580,
       "y": 360,
       "params": {
@@ -146,7 +141,7 @@
     {
       "id": "choose",
       "type": "LocationChooser",
-      "name": "Three health centres",
+      "comment": "Three health centres. The two there are, and the best of the eight places for a third, by the least walking for all",
       "x": 540,
       "y": 700,
       "params": {
@@ -155,13 +150,12 @@
         "count": "3",
         "weight": "people",
         "required": "there"
-      },
-      "comment": "The two there are, and the best of the eight places for a third, by the least walking for all"
+      }
     },
     {
       "id": "chosen_out",
       "type": "Writer",
-      "name": "The chosen",
+      "comment": "The chosen",
       "x": 800,
       "y": 700,
       "params": {
@@ -171,7 +165,7 @@
     {
       "id": "map",
       "type": "MapRenderer",
-      "name": "Map",
+      "comment": "Map",
       "x": 1580,
       "y": 60,
       "params": {
@@ -221,7 +215,7 @@
     {
       "id": "map_out",
       "type": "Writer",
-      "name": "Map as PNG",
+      "comment": "Map as PNG",
       "x": 1840,
       "y": 60,
       "params": {

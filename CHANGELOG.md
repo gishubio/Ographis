@@ -3,6 +3,109 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.96.4
+
+### Added
+
+- **Fetch geodata**, one tool for the products of a national mapping agency, chosen from a
+  list. From Lantmäteriet: Markhöjdmodell as a grid of heights, Ortofoto as a picture,
+  Laserdata skog as a point cloud, Belägenhetsadress, Kommun, Län och Rike and Topografi 10, 50, 250 and 1M as features,
+  NMK 50 and NMK 250, the national military maps, as pictures in their colours, and from the
+  national geodata platform Detaljplan and Översiktsplan, the plans with what is said of
+  each as attributes and their documents kept when asked for. The area
+  is a rectangle, chosen on the map, or what comes in on Extent. The files are found in the
+  provider's STAC catalogue; heights and photos are read only where they reach into the
+  area, at the cell size asked for, and where several years cover a place the latest is
+  used. The login is an API connection: the user and password of Geotorget, or OAuth2
+  with a key and secret of Lantmäteriet's API portal, whose address for tokens is filled in. *Files* gives each file
+  with where it lies. A new product or provider is a line in its list, not a new tool.
+  Example: `examples/apis/lantmateriet.ographis`.
+  - *Keep the files in* keeps every file of the area whole in a folder, all the provider
+    offers with each, such as pictures and PDF, under their own names by collection. A file
+    that is there already is not fetched again, and *Files* says where each is kept.
+    Without it, only what is needed is read, and files that must be fetched whole are kept
+    for a while in the temporary folder of the computer.
+  - Point clouds are counted from the headers of the files before anything is fetched, and
+    the run stops with a word at *Most points*, 50 million unless raised, rather than fill
+    the memory. *Every n-th point* and *Spacing between points* thin them.
+  - A photo is put together as colours, a quarter of the memory of before.
+- **HTTP request follows a cursor**: the pages of a service that gives a value such as
+  `nextCursorId` in each answer, sent back as a parameter of the next request, until it is
+  missing.
+- **Try one request** in HTTP request sends only the first request and shows the answer:
+  the status, the time, the headers and the JSON as a tree. A value clicked in the tree
+  becomes *Cursor at* or *Next page at*, with the pages set to match, or *Items at* for a
+  list, or is taken out by a new *Extract JSON values* after the node. A link among links
+  is told by its rel, as `links[rel=next].href`.
+- **Test the connection** among the API connections in the settings: a new token for
+  OAuth2 and Google service accounts, and a request to a *Test address*, or else the
+  address the connection is for. It says what went wrong, such as a key that was not
+  accepted or an address with nothing at it.
+- **Fetch geodata for each area on its own.** *Several on Extent* → *Each on its own*
+  fetches for each feature that comes in, such as a municipality at a time, each with its
+  own rectangle and largest area, and what is fetched gets the attributes of its area.
+- **GeoJSON kept whole in Explode JSON list.** *Objects in an element* → *An attribute per
+  value, but GeoJSON kept whole* leaves an area such as those of SMHI's warnings as one
+  attribute, which *Geometry from text* reads as it is; *Kept whole* keeps every object as
+  JSON.
+- **`url_encode(text)`** makes a value safe to put in a web address, also with &, # and
+  å, ä and ö.
+- **Ten models for Swedish public APIs** in `examples/apis`: comprehensive plans from
+  the national geodata platform, Visit Sweden, Krisinformation.se, job ads from Arbetsförmedlingen, events of the police,
+  Trafikanalys, the vehicle register of Transportstyrelsen, Boverket, Skolverket and the
+  warnings of SMHI. See EXAMPLES.
+- **Settings to another computer.** Settings → *General* → *Export settings…* writes the
+  database and API connections, the background maps and the other settings to a file,
+  without any password, key or secret, for a colleague or another computer. *Import
+  settings…* takes them in: those with a name that is there already take its place but
+  keep its password, and it says how many still need one written in.
+- **WCS in Input.** A coverage service is read as a raster: an address with
+  `service=WCS`, or *WCS* under *The address is*. The coverages are its layers. Only
+  the part within the rectangle is asked for, at the cell size asked for, as a grid, a
+  picture, points or squares; without a rectangle, only the outline. An API connection
+  gives it a login.
+
+### Changed
+
+- **How long is left.** A long step says about how long it has left, from how long the
+  part done took, in the status line and the log: *Fetch geodata: 3 of 12 files (25 %) ·
+  about 30 s left*. Files from the web are counted one by one, and a step that counts
+  files, tiles or rounds names them instead of calling them features.
+- **The error of a node can be copied**, with its name and its warnings, by *Copy* in
+  its form, and the message under the canvas by right-clicking it.
+- **How many rows are selected** in the table is shown beside the filter.
+- **No value in the table is an empty cell**, no longer a dash, and an empty text is
+  shown as `''`, so that the two are told apart.
+- **The arrow keys in the table.** Once the table under the canvas is clicked, up and down
+  pick the row before or after, and left and right scroll the attributes to the side,
+  instead of moving the selected node. Buttons ◀ ▶ beside the filter scroll it too, for
+  tables with many attributes.
+- **A run does not change the size of the nodes.** How long a node took, how it went,
+  whether it is cached and *▸ n attributes* are shown under the node instead of in it, and
+  the counts on the ports have their room before the run. Nodes lined up in a group stay
+  as they were put. From 100 000 a count on a port is written short, as *120 k*, and in
+  full when pointed at.
+
+### Fixed
+
+- **Pages and http-cache.** An answer kept in http-cache with its pages is only taken again
+  with the same settings for the pages: a changed *Cursor at* or *Items at* asks anew,
+  instead of giving the pages that were followed before.
+- **The help of a setting shows once** when the pointer rests on its name, not twice.
+- **A crash when showing a few features with very many corners**, such as the borders of
+  the whole country: the map asked the graphics card for more than it takes in one go.
+  Above 400 000 corners in view the features are drawn as an image, as many features are.
+- **A long error** under the canvas is cut beside the buttons of the map, and shown whole
+  when pointed at and in the log, instead of pushing the panel over the settings of the
+  node.
+- **Walk-through:** flying goes where one looks, also up and down, not only along the
+  ground. In a model higher than a kilometre, such as a volcano, the walk starts on the
+  ground and not under it at the bottom of the model.
+- **Ctrl+Shift+C** puts a picture of the model on the clipboard again. On Windows the
+  shortcut came as *Copy*, so the selected nodes were copied instead.
+- **Model → Schedule** shows what the Task Scheduler says with å, ä and ö, and *Is it
+  there?* and *Remove it* say plainly when there is no task of that name.
+
 ## 0.96.3
 
 Any place on Earth in 3D, a walk-through in the browser, buildings that look real, lighter

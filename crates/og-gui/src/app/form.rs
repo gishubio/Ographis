@@ -256,6 +256,15 @@ impl App {
                 });
                 ui.add_space(4.0);
             }
+            // HTTP request sends its first request alone, to show what the service answers.
+            if kind == "HttpCaller" {
+                let busy = self.try_answer.as_ref().is_some_and(|t| t.waiting());
+                let tip = "Sends only the first request and shows the answer as a tree. Click a value to use its path for the pages, or to take it out with Extract JSON values";
+                if ui.add_enabled(!busy, egui::Button::new("Try one request")).on_hover_text(tip).clicked() {
+                    self.try_request_of(node_id);
+                }
+                ui.add_space(4.0);
+            }
             if open_db {
                 self.open_postgis(node_id, kind == "PostgisWriter", None);
             }
@@ -459,7 +468,18 @@ impl App {
                             .fill(pal.err_soft)
                             .corner_radius(4)
                             .inner_margin(egui::Margin::symmetric(8, 6))
-                            .show(ui, |ui| ui.label(RichText::new(e).color(pal.err)));
+                            .show(ui, |ui| {
+                                ui.label(RichText::new(e).color(pal.err));
+                                // The error, with the node and its warnings, to paste in a mail or a chat.
+                                if ui.small_button("Copy").on_hover_text("Copies the error, with the name of the node and its warnings").clicked() {
+                                    let mut text = format!("{} ({}): {}", self.snarl[node_id].name, graph::title_of(&kind), e);
+                                    for w in &r.warnings {
+                                        text.push_str(&format!("\n{}", w));
+                                    }
+                                    ui.ctx().copy_text(text);
+                                    self.say("The error is copied.");
+                                }
+                            });
                     }
                 }
                 for w in &r.warnings {

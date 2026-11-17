@@ -1,0 +1,294 @@
+{
+  "format": "ographis/1",
+  "name": "Hunneberg with roads and lakes",
+  "description": "Hunneberg and Halleberg, the table mountains by Vänersborg, in 3D: the heights of the Copernicus DEM and a cloud-free Sentinel-2 picture, with the roads, paths and lakes of OpenStreetMap drawn over the picture by Draw map, and the map draped over the terrain. Written as glTF for Blender, and rendered as a picture. Everything is read over the web when the model runs. Change the place and the size: a name or latitude, longitude, and kilometres.",
+  "variables": [
+    {
+      "name": "place",
+      "value": "58.33, 12.47"
+    },
+    {
+      "name": "size",
+      "value": "12"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "place",
+      "type": "PlaceFetcher",
+      "comment": "Fetch the place. Heights from the Copernicus DEM and a clear picture of the summer",
+      "x": 40,
+      "y": 60,
+      "params": {
+        "place": "$(place)",
+        "size": "$(size)",
+        "time": "2025-05-15/2025-08-31",
+        "brightness": "1.1"
+      }
+    },
+    {
+      "id": "roads",
+      "type": "OsmDownloader",
+      "comment": "Roads and paths. Within the square of the place; Draw map puts it in the system of the picture",
+      "x": 320,
+      "y": 260,
+      "params": {
+        "what": "roads",
+        "max_km2": "200",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "water",
+      "type": "OsmDownloader",
+      "comment": "Lakes and streams",
+      "x": 320,
+      "y": 440,
+      "params": {
+        "what": "water",
+        "max_km2": "200",
+        "crs": "EPSG:4326"
+      }
+    },
+    {
+      "id": "big",
+      "type": "Tester",
+      "comment": "Larger roads",
+      "x": 600,
+      "y": 260,
+      "params": {
+        "test": "highway in ('motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'motorway_link', 'trunk_link', 'primary_link', 'secondary_link')"
+      }
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "comment": "The picture with roads and lakes. The top row is drawn on top. 4096 pixels: some 3 m a pixel over 12 km",
+      "x": 880,
+      "y": 120,
+      "params": {
+        "width": "4096",
+        "margin": "0",
+        "background": "none",
+        "layers": [
+          {
+            "from": "big:Passed",
+            "stroke": "#ffd27a",
+            "width": 3.5
+          },
+          {
+            "from": "big:Failed",
+            "stroke": "#f7f2e6",
+            "width": 1.4
+          },
+          {
+            "from": "water:Output",
+            "fill": "#3f6f9e",
+            "stroke": "#35618c",
+            "width": 1
+          },
+          {
+            "from": "place:Image"
+          }
+        ]
+      }
+    },
+    {
+      "id": "model",
+      "type": "TerrainModel",
+      "comment": "Terrain with the map",
+      "x": 1160,
+      "y": 60,
+      "params": {
+        "most": "600"
+      }
+    },
+    {
+      "id": "glb",
+      "type": "Writer",
+      "comment": "For Blender. File, Import, glTF 2.0 in Blender; set Clip Start to 10 m and Clip End to 100 km",
+      "x": 1440,
+      "y": 40,
+      "params": {
+        "path": "out/apis/hunneberg.glb"
+      }
+    },
+    {
+      "id": "scene",
+      "type": "SceneRenderer",
+      "comment": "Render it",
+      "x": 1160,
+      "y": 300,
+      "params": {
+        "width": "1600",
+        "height": "1000",
+        "view_azimuth": "200",
+        "elevation": "30",
+        "sun_azimuth": "250",
+        "sun_altitude": "30"
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "comment": "The rendering",
+      "x": 1440,
+      "y": 300,
+      "params": {
+        "path": "out/apis/hunneberg.png"
+      }
+    },
+    {
+      "id": "map_png",
+      "type": "Writer",
+      "comment": "The map flat",
+      "x": 1160,
+      "y": 520,
+      "params": {
+        "path": "out/apis/hunneberg_map.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "place",
+        "Area"
+      ],
+      "to": [
+        "roads",
+        "Extent"
+      ]
+    },
+    {
+      "from": [
+        "place",
+        "Area"
+      ],
+      "to": [
+        "water",
+        "Extent"
+      ]
+    },
+    {
+      "from": [
+        "roads",
+        "Output"
+      ],
+      "to": [
+        "big",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "big",
+        "Passed"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "big",
+        "Failed"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "water",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "place",
+        "Image"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "place",
+        "Heights"
+      ],
+      "to": [
+        "model",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "model",
+        "Picture"
+      ]
+    },
+    {
+      "from": [
+        "model",
+        "Model"
+      ],
+      "to": [
+        "glb",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "place",
+        "Heights"
+      ],
+      "to": [
+        "scene",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "scene",
+        "Map"
+      ]
+    },
+    {
+      "from": [
+        "scene",
+        "Image"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "map_png",
+        "Input"
+      ]
+    }
+  ]
+}

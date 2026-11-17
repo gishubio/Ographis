@@ -281,6 +281,25 @@ pub struct Settings {
     pub other: serde_json::Map<String, serde_json::Value>,
 }
 
+/// What importing settings from another computer did.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Imported {
+    /// Connections and maps that were not here before.
+    pub added: usize,
+    /// Those that were, by the same name, and were put in place of them.
+    pub replaced: usize,
+    /// How many of them need a password, a key or a secret written in.
+    pub need_secret: usize,
+}
+
+/// A connection that needs a secret to work: a password, a key or a client secret.
+fn wants_secret(auth: &str) -> bool {
+    !auth.trim().is_empty()
+}
+
+/// Settings that belong to one computer and are not handed on: a folder there.
+const LOCAL: &[&str] = &["start_folder"];
+
 /// The settings that a run uses when the program has given them, instead of the file. The
 /// program sets them as they are edited; the tests set their own.
 static IN_USE: RwLock<Option<Settings>> = RwLock::new(None);
@@ -288,6 +307,95 @@ static IN_USE: RwLock<Option<Settings>> = RwLock::new(None);
 impl Settings {
     /// The settings from the file. A missing file gives none; a broken one is an error, so
     /// that it is not written over.
+    /// The settings to hand to someone else or another computer: the connections and maps
+    /// with every password, key and secret taken out, and without what only belongs here.
+    pub fn without_secrets(&self) -> Settings {
+        let mut s = self.clone();
+        s.vault.clear();
+        for c in s.connections.iter_mut() {
+            c.password.clear();
+        }
+        for a in s.apis.iter_mut() {
+            a.secret.clear();
+        }
+        for m in s.maps.iter_mut() {
+            m.secret.clear();
+        }
+        for k in LOCAL {
+            s.other.remove(*k);
+        }
+        s
+    }
+
+    /// Takes in settings exported elsewhere. A connection or map by a name that is here
+    /// already takes its place, but keeps the password here when the one taken in has none.
+    /// The other settings are taken as they come, except what belongs to one computer.
+    pub fn import(&mut self, from: Settings) -> Imported {
+        let mut done = Imported::default();
+        fn take<T>(list: &mut Vec<T>, new: T, name: impl Fn(&T) -> &str, keep: impl Fn(&T, &mut T), done: &mut Imported) {
+            match list.iter_mut().find(|x| name(x).trim() == name(&new).trim()) {
+                Some(old) => {
+                    let mut new = new;
+                    keep(old, &mut new);
+                    *old = new;
+                    done.replaced += 1;
+                }
+                None => {
+                    list.push(new);
+                    done.added += 1;
+                }
+            }
+        }
+        for c in from.connections {
+            take(
+                &mut self.connections,
+                c,
+                |c| &c.name,
+                |old, new| {
+                    if new.password.is_empty() {
+                        new.password = old.password.clone();
+                    }
+                },
+                &mut done,
+            );
+        }
+        for a in from.apis {
+            take(
+                &mut self.apis,
+                a,
+                |a| &a.name,
+                |old, new| {
+                    if new.secret.is_empty() {
+                        new.secret = old.secret.clone();
+                    }
+                },
+                &mut done,
+            );
+        }
+        for m in from.maps {
+            take(
+                &mut self.maps,
+                m,
+                |m| &m.name,
+                |old, new| {
+                    if new.secret.is_empty() {
+                        new.secret = old.secret.clone();
+                    }
+                },
+                &mut done,
+            );
+        }
+        done.need_secret = self.connections.iter().filter(|c| c.password.is_empty() && !c.user.trim().is_empty()).count()
+            + self.apis.iter().filter(|a| a.secret.is_empty() && wants_secret(&a.auth)).count()
+            + self.maps.iter().filter(|m| m.secret.is_empty() && wants_secret(&m.auth)).count();
+        for (k, v) in from.other {
+            if !LOCAL.contains(&k.as_str()) && k != "vault" {
+                self.other.insert(k, v);
+            }
+        }
+        done
+    }
+
     pub fn load() -> Result<Settings> {
         match settings_file() {
             Some(file) => Settings::load_from(&file),
@@ -495,6 +603,37 @@ mod tests {
             assert_eq!(std::fs::metadata(dir.join("settings.json")).unwrap().permissions().mode() & 0o777, 0o600);
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn settings_are_handed_on_without_secrets_and_taken_in_by_name() {
+        let mine = Settings {
+            connections: vec![Connection { name: "GIS".into(), user: "magnus".into(), password: "pw".into(), ..Default::default() }],
+            apis: vec![crate::web::ApiConnection { name: "LM".into(), auth: "oauth2".into(), user: "id".into(), secret: "s".into(), ..Default::default() }],
+            maps: vec![BackgroundMap { name: "Ortho".into(), auth: "basic".into(), secret: "m".into(), ..Default::default() }],
+            vault: vec!["db:GIS".into()],
+            other: serde_json::from_str(r#"{"start_folder": "C:\\Data", "ui_scale": 1.25}"#).unwrap(),
+        };
+        let out = mine.without_secrets();
+        let text = serde_json::to_string(&out).unwrap();
+        assert!(!text.contains("\"pw\"") && !text.contains("\"s\"") && !text.contains("\"m\"") && !text.contains("vault"), "{}", text);
+        assert!(!text.contains("start_folder") && text.contains("ui_scale"), "{}", text);
+        // Another computer, with a connection of the same name and one of its own.
+        let mut theirs = Settings {
+            apis: vec![
+                crate::web::ApiConnection { name: "LM".into(), auth: "key_header".into(), secret: "theirs".into(), ..Default::default() },
+                crate::web::ApiConnection { name: "Own".into(), auth: "bearer".into(), secret: "t".into(), ..Default::default() },
+            ],
+            other: serde_json::from_str(r#"{"start_folder": "D:\\Work"}"#).unwrap(),
+            ..Default::default()
+        };
+        let done = theirs.import(serde_json::from_str(&text).unwrap());
+        assert_eq!(done, Imported { added: 2, replaced: 1, need_secret: 2 });
+        let lm = theirs.apis.iter().find(|a| a.name == "LM").unwrap();
+        assert_eq!((lm.auth.as_str(), lm.secret.as_str()), ("oauth2", "theirs"), "the secret that was here is kept");
+        assert_eq!(theirs.apis.len(), 2);
+        assert_eq!(theirs.other.get("start_folder").and_then(|v| v.as_str()), Some("D:\\Work"));
+        assert_eq!(theirs.other.get("ui_scale").and_then(|v| v.as_f64()), Some(1.25));
     }
 
     #[test]

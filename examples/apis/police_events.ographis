@@ -1,0 +1,205 @@
+{
+  "format": "ographis/1",
+  "name": "Events reported by the police",
+  "nodes": [
+    {
+      "id": "events",
+      "type": "HttpCaller",
+      "name": "HTTP request",
+      "x": -64.0,
+      "y": 136.0,
+      "params": {
+        "url": "'https://polisen.se/api/events?locationname=' || url_encode('$(places)')"
+      },
+      "comment": "Polisen: the 500 latest events, which is all the service gives, in the counties named, separated by ;. No key. Every event is placed in its county, even when it happened in a municipality: its address tells the municipality, as brand-goteborg"
+    },
+    {
+      "id": "each",
+      "type": "JsonExploder",
+      "name": "Explode JSON list",
+      "x": 217.0,
+      "y": 133.0,
+      "params": {
+        "attribute": "_response",
+        "path": ""
+      },
+      "comment": "A feature per event",
+      "comment_box": [
+        0.0,
+        -44.0,
+        123.0,
+        26.0
+      ]
+    },
+    {
+      "id": "lat",
+      "type": "AttributeCreator",
+      "name": "Create attribute",
+      "x": 477.0,
+      "y": 133.0,
+      "params": {
+        "expression": "to_real(regexp_substr(\"location.gps\", '^[^,]+'))",
+        "name": "lat"
+      },
+      "comment": "The coordinate is text: latitude,longitude",
+      "comment_box": [
+        20.0,
+        -53.0,
+        138.0,
+        42.0
+      ]
+    },
+    {
+      "id": "lon",
+      "type": "AttributeCreator",
+      "name": "Create attribute",
+      "x": 737.0,
+      "y": 133.0,
+      "params": {
+        "expression": "to_real(regexp_substr(\"location.gps\", '[^,]+$'))",
+        "name": "lon"
+      },
+      "comment": "Longitude",
+      "comment_box": [
+        49.0,
+        -44.0,
+        70.0,
+        26.0
+      ]
+    },
+    {
+      "id": "points",
+      "type": "PointCreator",
+      "name": "Create points from x and y",
+      "x": 1021.0,
+      "y": 133.0,
+      "params": {
+        "crs": "EPSG:4326",
+        "x": "lon",
+        "y": "lat"
+      },
+      "comment": "Events as points, all of a county on its middle: the service gives no closer place"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1321.0,
+      "y": 130.0,
+      "params": {
+        "path": "out/police_events.gpkg"
+      },
+      "comment": "Events\nGeoPackage",
+      "comment_box": [
+        17.0,
+        -57.0,
+        85.0,
+        44.0
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "each",
+        "Exploded"
+      ],
+      "to": [
+        "lat",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "events",
+        "Output"
+      ],
+      "to": [
+        "each",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "lat",
+        "Output"
+      ],
+      "to": [
+        "lon",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "lon",
+        "Output"
+      ],
+      "to": [
+        "points",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "points",
+        "Points"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "Input",
+      "x": -86.0,
+      "y": -25.0,
+      "w": 211.0,
+      "h": 313.0,
+      "locked": true
+    },
+    {
+      "name": "Manage JSON and attributes",
+      "x": 184.0,
+      "y": 32.0,
+      "w": 754.0,
+      "h": 238.0,
+      "color": "orange",
+      "locked": true
+    },
+    {
+      "name": "Geometry",
+      "x": 1001.0,
+      "y": 17.0,
+      "w": 239.0,
+      "h": 242.0,
+      "color": "purple",
+      "locked": true
+    },
+    {
+      "name": "Output",
+      "x": 1295.0,
+      "y": 42.0,
+      "w": 171.0,
+      "h": 189.0,
+      "color": "pink",
+      "locked": true
+    }
+  ],
+  "notes": [
+    {
+      "text": "Task\nGet the latest 500 police events in Västra Götaland, Sweden",
+      "x": 430.0,
+      "y": -131.0,
+      "w": 369.0,
+      "h": 18.0
+    }
+  ],
+  "variables": [
+    {
+      "name": "places",
+      "value": "Västra Götalands län"
+    }
+  ]
+}

@@ -194,7 +194,7 @@ pub(super) fn run_web(p: &P, ctx: &mut NodeCtx, url: &str, headers: &[(String, S
                 if !ctx.gate.going() {
                     return err(crate::model::STOPPED);
                 }
-                (ctx.progress)("fetched tiles", done, Some(count as u64));
+                (ctx.progress)("tiles", done, Some(count as u64));
                 done += 1;
                 let address = url.replace("{z}", &z.to_string()).replace("{x}", &x.to_string()).replace("{y}", &y.to_string());
                 let bytes = match b.fetch_bytes(&address, headers) {
@@ -234,7 +234,7 @@ pub(super) fn run_web(p: &P, ctx: &mut NodeCtx, url: &str, headers: &[(String, S
     })();
     let _ = std::fs::remove_dir_all(&dir);
     result?;
-    (ctx.progress)("fetched tiles", count as u64, Some(count as u64));
+    (ctx.progress)("tiles", count as u64, Some(count as u64));
     if tables.is_empty() {
         ctx.notes.warn(format!("None of the {} tiles at zoom level {} had any features.", fmt_count(count as u64), z));
         return Ok(vec![("Output".into(), Table { crs: Some(3857), ..Default::default() })]);

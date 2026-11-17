@@ -10,6 +10,10 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 /// No more features than this in view are drawn as shapes. More are drawn as an image.
 pub const SHAPE_LIMIT: usize = 40_000;
+/// Above this many corners in view the features are drawn as an image as well, however few
+/// they are: the borders of a whole country are a few features with millions of corners,
+/// more than the graphics card takes in one go as shapes.
+pub const CORNER_LIMIT: usize = 400_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -198,6 +202,16 @@ impl Store {
         [(view[0] - o[0]) as f32, (view[1] - o[1]) as f32, (view[2] - o[0]) as f32, (view[3] - o[1]) as f32]
     }
 
+    /// How many corners these features have together.
+    pub fn corners(&self, list: &[u32]) -> usize {
+        list.iter()
+            .map(|i| {
+                let f = &self.feats[*i as usize];
+                (self.parts[f.end as usize] - self.parts[f.first as usize]) as usize
+            })
+            .sum()
+    }
+
     /// The features in a box of world coordinates.
     pub fn in_view(&self, view: [f64; 4], limit: usize) -> InView {
         let v = self.local(view);
@@ -230,7 +244,7 @@ impl Store {
         }
         found.sort_unstable();
         found.dedup();
-        if found.len() > limit {
+        if found.len() > limit || self.corners(&found) > CORNER_LIMIT {
             InView::Many(found.len())
         } else {
             InView::Few(found)

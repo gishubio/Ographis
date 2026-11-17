@@ -1,9 +1,9 @@
 {
   "program": "Ographis",
-  "version": "0.96.3",
+  "version": "0.96.4",
   "model": {
     "format": "ographis/1",
-    "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a name that is shown, x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
+    "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a comment that says what it does in this model (keep the name of the tool, without a name of its own), x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
     "example": {
       "format": "ographis/1",
       "name": "Towns as points",
@@ -128,6 +128,12 @@
         "min_args": 1,
         "max_args": 1,
         "help": "lower(text) gives lower case"
+      },
+      {
+        "name": "url_encode",
+        "min_args": 1,
+        "max_args": 1,
+        "help": "url_encode(text) makes text safe to put in a web address, such as a value after ?q=: url_encode('Rock & Roll') gives Rock%20%26%20Roll"
       },
       {
         "name": "initcap",
@@ -561,6 +567,10 @@
               "label": "ArcGIS feature service (FeatureServer, MapServer)"
             },
             {
+              "value": "wcs",
+              "label": "WCS: a raster, read within the rectangle"
+            },
+            {
               "value": "3dtiles",
               "label": "3D Tiles (a tileset.json)"
             },
@@ -578,7 +588,7 @@
             }
           ],
           "default": "auto",
-          "hint": "A service is read through its own pages, and only what reaches into a rectangle when one is set: OGC API Features (/collections), WFS, or an ArcGIS FeatureServer. A GeoTIFF (.tif) and a COPC point cloud (.copc.laz) are read where they are: only the rectangle, and a GeoTIFF from its overviews when read coarser"
+          "hint": "A service is read through its own pages, and only what reaches into a rectangle when one is set: OGC API Features (/collections), WFS, or an ArcGIS FeatureServer. A WCS gives its coverages as rasters, read within the rectangle. A GeoTIFF (.tif) and a COPC point cloud (.copc.laz) are read where they are: only the rectangle, and a GeoTIFF from its overviews when read coarser"
         },
         {
           "key": "connection",
@@ -8365,6 +8375,10 @@
             {
               "value": "page",
               "label": "A page number: 1, 2, 3…"
+            },
+            {
+              "value": "cursor",
+              "label": "A cursor from the answer, such as nextCursorId"
             }
           ],
           "default": "none",
@@ -8379,12 +8393,20 @@
           "hint": "The path to the address of the next page, such as next_page, links[rel=next].href or @odata.nextLink. Empty uses the Link header"
         },
         {
+          "key": "cursor_path",
+          "label": "Cursor at",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The path to the value in the answer that asks for the next page, such as nextCursorId or meta.next_cursor. The pages stop when it is missing or empty"
+        },
+        {
           "key": "page_param",
           "label": "Parameter of the page",
           "kind": "text",
           "shape": "a string",
           "default": "",
-          "hint": "Such as offset, skip, start or page"
+          "hint": "Such as offset, skip, start or page; for a cursor the parameter it is sent as, such as cursorId (cursor if empty)"
         },
         {
           "key": "size_param",
@@ -8622,6 +8644,28 @@
           "shape": "the name of an attribute to add, or empty for none",
           "default": "",
           "hint": "The place of each element in its list, from 0, in an attribute"
+        },
+        {
+          "key": "objects",
+          "label": "Objects in an element",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "flatten",
+              "label": "An attribute per value: adress.ort"
+            },
+            {
+              "value": "geojson",
+              "label": "An attribute per value, but GeoJSON kept whole"
+            },
+            {
+              "value": "json",
+              "label": "Kept whole, as JSON in one attribute: adress"
+            }
+          ],
+          "default": "flatten",
+          "hint": "Kept whole as JSON when they are to be read as a whole: a GeoJSON area for Geometry from text, or an object to explode or extract from later"
         },
         {
           "key": "keep",
@@ -14709,6 +14753,230 @@
           "shape": "a string",
           "default": "https://earth-search.aws.element84.com/v1",
           "hint": "A STAC API with sentinel-2-l2a, its bands red, green, blue and scl"
+        }
+      ]
+    },
+    {
+      "type": "GeodataFetcher",
+      "title": "Fetch geodata",
+      "group": "input",
+      "category": "Web",
+      "description": "Fetches the geodata of a national mapping agency for an area and puts it together: heights of the ground as a grid, a photo from above as a picture, a point cloud, features such as addresses and map features, maps as pictures, or the plans of the national geodata platform with their documents. One tool for all the products, chosen from a list; from Lantmäteriet first. The files are found in the provider's catalogue, read only where they reach into the area, and the photos and heights only the part that is needed. The files need a login: an API connection with the provider's key, and the products ordered from the provider. Files gives where each file lies, and where it is kept.",
+      "inputs": [
+        "Extent"
+      ],
+      "outputs": [
+        "Output",
+        "Files"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "provider",
+          "label": "From",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "lantmateriet",
+              "label": "Lantmäteriet, Sweden"
+            }
+          ],
+          "default": "lantmateriet",
+          "hint": "Who the geodata comes from"
+        },
+        {
+          "key": "product",
+          "label": "Product",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "lm_addresses",
+              "label": "Belägenhetsadress: addresses"
+            },
+            {
+              "value": "ngp_detailed_plans",
+              "label": "Detaljplan: detailed plans, from the national geodata platform"
+            },
+            {
+              "value": "lm_divisions",
+              "label": "Kommun, Län och Rike: municipalities, counties and the country"
+            },
+            {
+              "value": "lm_laser_forest",
+              "label": "Laserdata skog: point cloud"
+            },
+            {
+              "value": "lm_heights",
+              "label": "Markhöjdmodell: heights of the ground, 1 m"
+            },
+            {
+              "value": "lm_nmk50",
+              "label": "NMK 50: Nationell militär karta 1:50 000, as a picture"
+            },
+            {
+              "value": "lm_nmk250",
+              "label": "NMK 250: Nationell militär karta 1:250 000, as a picture"
+            },
+            {
+              "value": "lm_photo",
+              "label": "Ortofoto: photo from above"
+            },
+            {
+              "value": "lm_topo10",
+              "label": "Topografi 10: map features, 1:10 000"
+            },
+            {
+              "value": "lm_topo50",
+              "label": "Topografi 50: map features, 1:50 000"
+            },
+            {
+              "value": "lm_topo250",
+              "label": "Topografi 250: map features, 1:250 000"
+            },
+            {
+              "value": "lm_topo1m",
+              "label": "Topografi 1M: map features, 1:1 000 000"
+            },
+            {
+              "value": "ngp_comprehensive_plans",
+              "label": "Översiktsplan: comprehensive plans, from the national geodata platform"
+            }
+          ],
+          "default": "lm_heights",
+          "hint": "What to fetch"
+        },
+        {
+          "key": "bbox",
+          "label": "Area",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "A rectangle: west, south, east, north, such as 319000, 6399000, 321000, 6401000. A stream on Extent is used instead, if one is connected"
+        },
+        {
+          "key": "bbox_crs",
+          "label": "Area in",
+          "kind": "crs",
+          "shape": "a coordinate system, such as \"EPSG:3006\"",
+          "default": "EPSG:3006",
+          "hint": "The coordinate system of the rectangle"
+        },
+        {
+          "key": "areas",
+          "label": "Several on Extent",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "together",
+              "label": "As one area: the rectangle around them all"
+            },
+            {
+              "value": "each",
+              "label": "Each on its own, with its attributes"
+            }
+          ],
+          "default": "together",
+          "hint": "Each on its own: a municipality at a time, say, each with its own rectangle and largest area, and what is fetched gets its attributes"
+        },
+        {
+          "key": "max_km2",
+          "label": "Largest area, km²",
+          "kind": "text",
+          "shape": "a string",
+          "default": "25",
+          "hint": "A larger area is not fetched, as the files are many and large"
+        },
+        {
+          "key": "cell_size",
+          "label": "Cell size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Heights and photos: the side of a cell in metres. Empty: 1 m for heights, 0.5 m for photos"
+        },
+        {
+          "key": "year",
+          "label": "Year",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Heights and photos: only from this year, or from and to, such as 2021/2024. Empty: the latest of each place"
+        },
+        {
+          "key": "layers",
+          "label": "Layers",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Features: the layers to read, separated by commas, such as vagnat, byggnad. Empty: all"
+        },
+        {
+          "key": "las_classes",
+          "label": "Classes",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Point clouds: only these classes, such as 2 for the ground. Empty: all"
+        },
+        {
+          "key": "las_every",
+          "label": "Every n-th point",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "Point clouds: thins them, 10 reads one point in ten. 1 reads all"
+        },
+        {
+          "key": "las_spacing",
+          "label": "Spacing between points",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Point clouds: only the levels of the files down to about this many metres between points, such as 2 for an overview of a large area. Empty reads all"
+        },
+        {
+          "key": "max_points",
+          "label": "Most points",
+          "kind": "text",
+          "shape": "a string",
+          "default": "50000000",
+          "hint": "Point clouds: more are not read, so that the memory of the computer is not filled. How many there will be is told before anything is fetched; thin them, or raise this if the computer has the memory"
+        },
+        {
+          "key": "keep_in",
+          "label": "Keep the files in",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "A folder where every file of the area is kept whole, all that the provider offers with it, such as pictures and PDF, under their own names, by collection: to read again later or in other programs. Relative to the folder of the model, such as data/lantmateriet. A file that is there already is not fetched again. Empty: only what is needed is read, and files that must be fetched whole are kept for a while in the temporary folder of the computer"
+        },
+        {
+          "key": "connection",
+          "label": "API connection",
+          "kind": "api_connection",
+          "shape": "the name of an API connection in the settings of the user",
+          "default": "",
+          "hint": "The login for the files. For Lantmäteriet: a user and a password, those of Geotorget; or OAuth2 with a key and secret of its API portal. The products must be ordered on Geotorget"
+        },
+        {
+          "key": "collection",
+          "label": "Collection",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The collection of the catalogue, when another than the one found by itself. The log lists them"
+        },
+        {
+          "key": "catalogue",
+          "label": "Catalogue",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Another address of the STAC API of the product. Empty: the provider's"
         }
       ]
     },

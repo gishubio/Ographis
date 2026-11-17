@@ -72,6 +72,10 @@ impl App {
         let Some(nid) = self.snarl.nodes_ids_data().find(|(_, n)| n.value.id == id).map(|(k, _)| k) else { return };
         let text = format!("{:.5}, {:.5}, {:.5}, {:.5}", r[0], r[1], r[2], r[3]);
         self.snarl[nid].params.insert("bbox".into(), serde_json::Value::String(text.clone()));
+        // Chosen on the map, in degrees.
+        if self.snarl[nid].kind == "GeodataFetcher" {
+            self.snarl[nid].params.insert("bbox_crs".into(), serde_json::Value::String("EPSG:4326".into()));
+        }
         self.changed(true);
         self.say(format!("The rectangle {} is set.", text));
     }
@@ -154,6 +158,12 @@ impl App {
             return;
         }
         if self.selected.is_empty() {
+            return;
+        }
+        // The arrow keys belong to the table under the canvas when it was clicked last, or
+        // the pointer is over it.
+        let over_table = self.table_area.zip(ctx.pointer_hover_pos()).is_some_and(|(a, p)| a.contains(p));
+        if self.table_area.is_some() && (self.table_keys || over_table) {
             return;
         }
         let (dx, dy, step) = ctx.input(|i| {

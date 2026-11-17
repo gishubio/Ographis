@@ -8,7 +8,8 @@ use std::path::Path;
 /// The byte order mark some servers put first, also in front of the first key of a record.
 const BOM: char = '\u{feff}';
 
-fn clean_key(k: &str) -> String {
+/// A key without the byte order mark some servers put in front of it.
+pub fn clean_key(k: &str) -> String {
     k.trim_start_matches(BOM).to_string()
 }
 

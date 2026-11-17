@@ -54,7 +54,7 @@ pub(super) const READER_PARAMS: &[ParamSpec] = &[
         label: "The address is",
         kind: ParamKind::Choice(WEB_SERVICES),
         default: "auto",
-        hint: "A service is read through its own pages, and only what reaches into a rectangle when one is set: OGC API Features (/collections), WFS, or an ArcGIS FeatureServer. A GeoTIFF (.tif) and a COPC point cloud (.copc.laz) are read where they are: only the rectangle, and a GeoTIFF from its overviews when read coarser",
+        hint: "A service is read through its own pages, and only what reaches into a rectangle when one is set: OGC API Features (/collections), WFS, or an ArcGIS FeatureServer. A WCS gives its coverages as rasters, read within the rectangle. A GeoTIFF (.tif) and a COPC point cloud (.copc.laz) are read where they are: only the rectangle, and a GeoTIFF from its overviews when read coarser",
     },
     ParamSpec {
         key: "connection",
@@ -322,6 +322,7 @@ pub const WEB_SERVICES: &[(&str, &str)] = &[
     ("ogcapi", "OGC API Features"),
     ("wfs", "WFS"),
     ("arcgis", "ArcGIS feature service (FeatureServer, MapServer)"),
+    ("wcs", "WCS: a raster, read within the rectangle"),
     ("3dtiles", "3D Tiles (a tileset.json)"),
     ("vectortiles", "Vector tiles ({z}/{x}/{y}.pbf)"),
     ("cog", "Cloud Optimized GeoTIFF: read where it is"),
@@ -357,10 +358,15 @@ pub fn is_tileset(path: &str, web_as: Option<&str>) -> bool {
 }
 
 /// The prefixes of the names a service is read by.
-pub const SERVICE_PREFIXES: [&str; 3] = ["OAPIF:", "WFS:", "ARCGIS:"];
+pub const SERVICE_PREFIXES: [&str; 4] = ["OAPIF:", "WFS:", "ARCGIS:", "WCS:"];
+
+/// Is this the name of a coverage service, a WCS, whose layers are rasters?
+pub fn is_wcs(path: &Path) -> bool {
+    path.to_string_lossy().starts_with("WCS:")
+}
 
 /// The service an address is, by the choice or by how the address looks, as the name GDAL
-/// reads it by: OAPIF:…, WFS:… or ARCGIS:…. None for a file.
+/// reads it by: OAPIF:…, WFS:…, ARCGIS:… or WCS:…. None for a file.
 pub fn service_name(url: &str, choice: Option<&str>) -> Option<String> {
     let u = url.trim();
     let low = u.to_lowercase();
@@ -369,10 +375,15 @@ pub fn service_name(url: &str, choice: Option<&str>) -> Option<String> {
         "ogcapi" => "OAPIF:",
         "wfs" => "WFS:",
         "arcgis" => "ARCGIS:",
+        "wcs" => "WCS:",
         _ => {
             let path = low.split('?').next().unwrap_or("");
             if path.contains("/featureserver") || path.contains("/mapserver") {
                 "ARCGIS:"
+            } else if (low.contains("service=wcs") || path.ends_with("/wcs") || path.contains("/wcs/")) && !low.contains("request=getcoverage") {
+                // A coverage service, read as a raster a part at a time; an address that
+                // asks for one picture of it is a file.
+                "WCS:"
             } else if (low.contains("service=wfs") || path.ends_with("/wfs") || path.contains("/wfs/")) && !low.contains("request=getfeature") {
                 // An address that asks for the features themselves, such as GeoJSON from a
                 // GeoServer, is a file; the service itself is read through its pages.
@@ -385,6 +396,17 @@ pub fn service_name(url: &str, choice: Option<&str>) -> Option<String> {
         }
     };
     Some(format!("{}{}", kind, u))
+}
+
+/// How the input reads the cells of a raster.
+fn raster_mode(p: &P) -> RasterMode {
+    match p.get("raster_as").as_deref() {
+        Some("cells") => RasterMode::Cells,
+        Some("extent") => RasterMode::Extent,
+        Some("image") => RasterMode::Image,
+        Some("grid") => RasterMode::Grid,
+        _ => RasterMode::Points,
+    }
 }
 
 /// Is this the name of a web service rather than of a file?
@@ -597,7 +619,10 @@ pub(super) fn run_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
                 if room == Some(0) {
                     break;
                 }
-                let opts = ReadOpts { layer: layer.clone(), crs, limit: room, within, headers: web_headers.clone(), ..Default::default() };
+                // The cells of a coverage are read as the input asks, like those of a file.
+                let raster = raster_mode(p);
+                let cell_size = number_param(p, "cell_size", "The cell size")?.filter(|c| *c > 0.0);
+                let opts = ReadOpts { layer: layer.clone(), crs, limit: room, within, headers: web_headers.clone(), raster, cell_size, ..Default::default() };
                 let (progress, gate) = (ctx.progress, ctx.gate);
                 let going = |done, total| {
                     progress("read", done, total);
@@ -915,13 +940,7 @@ pub(super) fn run_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
                 if room == Some(0) {
                     break;
                 }
-                let raster = match p.get("raster_as").as_deref() {
-                    Some("cells") => RasterMode::Cells,
-                    Some("extent") => RasterMode::Extent,
-                    Some("image") => RasterMode::Image,
-                    Some("grid") => RasterMode::Grid,
-                    _ => RasterMode::Points,
-                };
+                let raster = raster_mode(p);
                 let cell_size = number_param(p, "cell_size", "The cell size")?.filter(|c| *c > 0.0);
                 let opts = ReadOpts {
                     columns: None,

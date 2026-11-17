@@ -7,11 +7,11 @@
     "url": "https://github.com/gishubio/Ographis",
     "source": "github"
   },
-  "version": "0.96.3",
+  "version": "0.96.4",
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/gishubio/Ographis/releases/download/v0.96.3/Ographis-0.96.3-windows.mcpb",
+      "identifier": "https://github.com/gishubio/Ographis/releases/download/v0.96.4/Ographis-0.96.4-windows.mcpb",
       "fileSha256": "FILLED-IN-BY-BUILD-PS1",
       "transport": {
         "type": "stdio"

@@ -100,6 +100,9 @@ impl App {
             self.drop_files_at(&dropped, at);
         }
         self.shortcuts(&ctx);
+        // Drawn again below, if it still shows.
+        self.table_was = self.table_area.is_some();
+        self.table_area = None;
         self.close_guard(&ctx);
         self.share();
         clock.lap("dropped files and keys");
@@ -148,6 +151,7 @@ impl App {
         self.description_dialog(&ctx, &pal);
         self.postgis_dialog(&ctx, &pal);
         self.settings_dialog(&ctx, &pal);
+        self.trial_dialog(&ctx, &pal);
         // Last in the frame, so that everything a mouse button did when it was let go of
         // ends up in one step: a tool dragged onto a connection is moved and put in at once.
         self.take_in_when_idle(&ctx);
@@ -160,9 +164,12 @@ impl App {
 
     pub(super) fn shortcuts(&mut self, ctx: &egui::Context) {
         let typing = ctx.egui_wants_keyboard_input();
-        if !typing && ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::C)) {
+        // The window of the system sends Ctrl+Shift+C as Copy alone, with Shift held, and not
+        // as a key; the tests send it as a key.
+        let copy_with_shift = |i: &egui::InputState| i.modifiers.command && i.modifiers.shift && i.events.iter().any(|e| matches!(e, egui::Event::Copy));
+        if !typing && ctx.input_mut(|i| copy_with_shift(i) || i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::C)) {
             self.copy_picture(ctx);
-            // The system may also have sent it as Copy, which is not for the nodes.
+            // The Copy is not for the nodes.
             ctx.input_mut(|i| i.events.retain(|e| !matches!(e, egui::Event::Copy)));
             return;
         }

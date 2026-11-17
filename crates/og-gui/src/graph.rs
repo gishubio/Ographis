@@ -764,6 +764,18 @@ pub struct Viewer<'a> {
 
 /// A small cylinder, as a sign of a store of data: the result of the node is in the cache.
 /// Filled when it is up to date, an outline when the node has changed since.
+/// A number of features, short enough for the room beside a port: 99 999 in full, then in
+/// thousands, millions and billions.
+pub fn short_count(n: u64) -> String {
+    let short = |v: f64, unit: &str| if v < 10.0 { format!("{:.1} {}", v, unit) } else { format!("{:.0} {}", v, unit) };
+    match n {
+        0..=99_999 => fmt_count(n),
+        100_000..=999_499 => short(n as f64 / 1e3, "k"),
+        999_500..=999_499_999 => short(n as f64 / 1e6, "M"),
+        _ => short(n as f64 / 1e9, "G"),
+    }
+}
+
 fn cache_mark(ui: &mut Ui, pal: &Palette, fresh: bool, taken: bool) {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(11.0, 13.0), egui::Sense::hover());
     let color = if fresh { pal.accent } else { pal.muted };
@@ -1003,6 +1015,90 @@ impl Viewer<'_> {
         }
     }
 
+    /// Under a node, outside it: what the last run told of it. Its attributes, folded in, to
+    /// the left; to the right whether it runs or how it went, whether it is cached, and how
+    /// long it took. Kept out of the node, so that the node keeps its size after a run and
+    /// stays where it was put among the others and in its group.
+    fn show_caption(&mut self, node: NodeId, rect: Rect, ui: &mut Ui, snarl: &Snarl<GNode>) {
+        let n = &snarl[node];
+        if n.is_note() || n.disabled {
+            return;
+        }
+        // Under the sheets of a stack, when the node reads many files.
+        let below = if self.files.contains_key(&n.id) { 13.0 } else { 1.0 };
+        let row = Rect::from_min_size(egui::pos2(rect.left() + 4.0, rect.bottom() + below), egui::vec2((rect.width() - 8.0).max(60.0), 15.0));
+        // What a run tells, from the right; the attributes in the room left of it. Neither
+        // wraps, so that they do not run into each other under a narrow node.
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(row).layout(egui::Layout::right_to_left(egui::Align::Center)));
+        let ui = &mut child;
+        ui.spacing_mut().item_spacing.x = 5.0;
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+        let small = |text: &str| RichText::new(text).font(theme::mono(10.5));
+        (|| {
+            if self.running == Some(n.id.as_str()) {
+                if self.paused {
+                    ui.label(small("paused").color(self.pal.warn));
+                } else {
+                    ui.label(small("running").color(self.pal.xform));
+                    ui.add(egui::Spinner::new().size(11.0).color(self.pal.xform));
+                }
+                return;
+            }
+            // How long the node took at the last run; the one that took most of it stands out.
+            if let Some((r, total)) = self.result.and_then(|all| all.nodes.get(&n.id).map(|r| (r, all.ms))) {
+                if !r.cached && matches!(r.status, Status::Ok | Status::Warn) && r.ms >= 1.0 {
+                    let slow = total > 500.0 && r.ms >= total * 0.4;
+                    let text = og_engine::model::fmt_duration(r.ms);
+                    let color = if slow && !self.stale { self.pal.warn } else { self.pal.muted };
+                    let tip = if slow {
+                        format!("{} of the {} the run took", text, og_engine::model::fmt_duration(total))
+                    } else {
+                        format!("{} at the last run", text)
+                    };
+                    ui.label(small(&text).color(color)).on_hover_text(tip);
+                }
+            }
+            if let Some(fresh) = self.cache_state.get(&n.id) {
+                let taken = self.result.and_then(|r| r.nodes.get(&n.id)).is_some_and(|r| r.cached);
+                cache_mark(ui, &self.pal, *fresh, taken);
+            }
+            // A sign as well as a colour, for those who do not tell the colours apart.
+            let badge = match self.status(n) {
+                Some(Status::Error) => Some(("✖ error", self.pal.err)),
+                Some(Status::Warn) => Some(("▲ warning", self.pal.warn)),
+                Some(Status::Skipped) => Some(("– skipped", self.pal.warn)),
+                _ => None,
+            };
+            if let Some((text, color)) = badge {
+                ui.label(small(text).color(color));
+            }
+        })();
+        let left = ui.available_rect_before_wrap();
+        if left.width() < 30.0 {
+            return;
+        }
+        let mut room = ui.new_child(egui::UiBuilder::new().max_rect(left).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        let ui = &mut room;
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+        if !self.expanded.contains(&n.id) {
+            if let Some(lists) = attributes(n, self.result) {
+                let total: usize = lists.iter().map(|l| l.1.len()).sum();
+                let label = match (lists.len(), total) {
+                    (1, 0) => "no attributes".to_string(),
+                    (1, 1) => "1 attribute".to_string(),
+                    (1, k) => format!("{} attributes", k),
+                    _ => "attributes".to_string(),
+                };
+                let color = if self.stale { self.pal.muted } else { self.pal.xform };
+                let text = small(&format!("▸ {}", label)).color(color);
+                if ui.add(egui::Label::new(text).sense(egui::Sense::click())).on_hover_text("Show the attributes that are available after this step").clicked()
+                {
+                    self.events.toggle_attributes = Some(n.id.clone());
+                }
+            }
+        }
+    }
+
     /// A reader that stands for many files is drawn as a stack: two more sheets stick out
     /// behind it.
     fn show_stacks(&self, ui: &mut Ui, snarl: &Snarl<GNode>) {
@@ -1123,40 +1219,8 @@ impl SnarlViewer<GNode> for Viewer<'_> {
             let text = format!("{} {}", count, if *count == 1 { "file" } else { "files" });
             ui.label(RichText::new(text).font(theme::mono(10.5)).color(self.pal.reader)).on_hover_text("This input reads all the files that match in a folder");
         }
-        if self.running == Some(n.id.as_str()) && self.paused {
-            ui.label(RichText::new("paused").font(theme::mono(10.5)).color(self.pal.warn));
-            return;
-        }
-        if self.running == Some(n.id.as_str()) {
-            ui.add(egui::Spinner::new().size(11.0).color(self.pal.xform));
-            ui.label(RichText::new("running").font(theme::mono(10.5)).color(self.pal.xform));
-            return;
-        }
-        // A sign as well as a colour, for those who do not tell the colours apart.
-        let badge = match self.status(n) {
-            Some(Status::Error) => Some(("✖ error", self.pal.err)),
-            Some(Status::Warn) => Some(("▲ warning", self.pal.warn)),
-            Some(Status::Skipped) => Some(("– skipped", self.pal.warn)),
-            _ => None,
-        };
-        if let Some((text, color)) = badge {
-            ui.label(RichText::new(text).font(theme::mono(10.5)).color(color));
-        }
-        if let Some(fresh) = self.cache_state.get(&n.id) {
-            let taken = self.result.and_then(|r| r.nodes.get(&n.id)).is_some_and(|r| r.cached);
-            cache_mark(ui, &self.pal, *fresh, taken);
-        }
-        // How long the node took at the last run; the one that took most of it stands out.
-        if let Some((r, total)) = self.result.and_then(|all| all.nodes.get(&n.id).map(|r| (r, all.ms))) {
-            if !r.cached && matches!(r.status, Status::Ok | Status::Warn) && r.ms >= 1.0 {
-                let slow = total > 500.0 && r.ms >= total * 0.4;
-                let text = og_engine::model::fmt_duration(r.ms);
-                let color = if slow && !self.stale { self.pal.warn } else { self.pal.muted };
-                let tip =
-                    if slow { format!("{} of the {} the run took", text, og_engine::model::fmt_duration(total)) } else { format!("{} at the last run", text) };
-                ui.label(RichText::new(text).font(theme::mono(10.5)).color(color)).on_hover_text(tip);
-            }
-        }
+        // What a run tells of the node is shown under it, by show_caption, so that a run does
+        // not change the size of the node.
     }
 
     fn inputs(&mut self, node: &GNode) -> usize {
@@ -1215,12 +1279,21 @@ impl SnarlViewer<GNode> for Viewer<'_> {
         if ports > 1 {
             self.port_menu(label, pin.id.node, true, pin.id.output, ports);
         }
+        // The number of features is given room before there is one, so that a run does not
+        // make the node wider; a large number is written short, and in full when pointed at.
+        let font = theme::mono(11.5);
+        let size = ui.fonts_mut(|f| f.layout_no_wrap("99 999".into(), font.clone(), Color32::WHITE).size());
+        let (slot, _) = ui.allocate_exact_size(egui::vec2(size.x + 8.0, size.y), egui::Sense::hover());
         if let Some(c) = count {
+            // In a place of its own, so that it is no higher than the name of the port.
+            let mut room = ui.new_child(egui::UiBuilder::new().max_rect(slot).layout(egui::Layout::right_to_left(egui::Align::Center)));
             let color = if self.stale { self.pal.muted } else { self.pal.ink };
-            let badge = egui::Frame::new().fill(self.pal.bg).corner_radius(3).inner_margin(egui::Margin::symmetric(4, 1));
-            let r = badge
-                .show(ui, |ui| ui.add(egui::Label::new(RichText::new(fmt_count(c as u64)).font(theme::mono(11.5)).color(color)).sense(egui::Sense::click())));
-            clicked |= r.inner.clicked();
+            let badge = egui::Frame::new().fill(self.pal.bg).corner_radius(3).inner_margin(egui::Margin::symmetric(4, 0));
+            let r = badge.show(&mut room, |ui| {
+                ui.add(egui::Label::new(RichText::new(short_count(c as u64)).font(font.clone()).color(color)).sense(egui::Sense::click()))
+            });
+            let r = if c >= 100_000 { r.inner.on_hover_text(format!("{} features", fmt_count(c as u64))) } else { r.inner };
+            clicked |= r.clicked();
         }
         if clicked {
             self.events.inspect = Some((pin.id.node, name.to_string()));
@@ -1283,7 +1356,8 @@ impl SnarlViewer<GNode> for Viewer<'_> {
     }
 
     fn has_footer(&mut self, node: &GNode) -> bool {
-        !node.is_note() && attributes(node, self.result).is_some()
+        // Folded in, the attributes are offered under the node, by show_caption.
+        !node.is_note() && self.expanded.contains(&node.id) && attributes(node, self.result).is_some()
     }
 
     /// Under the ports: the comment about the node, and the attributes as they are after
@@ -1328,8 +1402,9 @@ impl SnarlViewer<GNode> for Viewer<'_> {
         });
     }
 
-    fn final_node_rect(&mut self, node: NodeId, rect: Rect, _ui: &mut Ui, _snarl: &mut Snarl<GNode>) {
+    fn final_node_rect(&mut self, node: NodeId, rect: Rect, ui: &mut Ui, snarl: &mut Snarl<GNode>) {
         self.events.rects.push((node, rect));
+        self.show_caption(node, rect, ui, snarl);
     }
 
     fn has_graph_menu(&mut self, _pos: Pos2, _snarl: &mut Snarl<GNode>) -> bool {
@@ -1955,6 +2030,15 @@ mod tests {
 #[cfg(test)]
 mod align_tests {
     use super::*;
+
+    #[test]
+    fn counts_are_written_short_beside_a_port() {
+        assert_eq!(short_count(99_999), "99 999");
+        assert_eq!(short_count(123_456), "123 k");
+        assert_eq!(short_count(999_600), "1.0 M");
+        assert_eq!(short_count(12_345_678), "12 M");
+        assert_eq!(short_count(2_500_000_000), "2.5 G");
+    }
 
     #[test]
     fn boxes_are_lined_up_and_spread() {

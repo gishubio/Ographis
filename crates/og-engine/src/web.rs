@@ -46,6 +46,10 @@ pub struct ApiConnection {
     /// Empty sends it to any address.
     #[serde(default)]
     pub base_url: String,
+    /// An address that Test the connection asks, such as one that lists something small.
+    /// Empty asks the address the connection is for.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub test_url: String,
 }
 
 pub const AUTH_KINDS: &[(&str, &str)] = &[
@@ -92,6 +96,12 @@ pub enum Paging {
         size: u64,
         start: u64,
         items: Option<Vec<Step>>,
+    },
+    /// A value in the answer, such as nextCursorId, sent as a parameter of the next request:
+    /// ?cursor=… Pages stop when the answer has no value there.
+    Cursor {
+        path: Vec<Step>,
+        param: String,
     },
     /// A page number: ?page=1, 2, 3…, with the size of a page if the service takes one.
     Page {
@@ -460,6 +470,14 @@ impl<'a> Client<'a> {
                     Some(k) if k > 0 && (k as u64) >= *size => Some(set_query(&address, offset_param, &(start + size * n as u64).to_string())),
                     _ => None,
                 },
+                Paging::Cursor { path, param } => {
+                    let value = parsed.as_ref().and_then(|v| json::get(v, path)).and_then(|x| match x {
+                        serde_json::Value::String(s) => Some(s.trim().to_string()),
+                        serde_json::Value::Number(n) => Some(n.to_string()),
+                        _ => None,
+                    });
+                    value.filter(|s| !s.is_empty()).map(|s| set_query(&address, param, &s))
+                }
                 Paging::Page { page_param, size, size_param, start, items } => match count(items) {
                     Some(k) if k > 0 && (size_param.is_empty() || (k as u64) >= *size) => {
                         Some(set_query(&address, page_param, &(start + n as u64).to_string()))
@@ -472,6 +490,62 @@ impl<'a> Client<'a> {
                 _ => return Ok(n),
             }
         }
+    }
+}
+
+/// Tries a connection, as Test in the settings does: a connection that fetches a token fetches
+/// a new one, and a request goes to its test address, or else to the address it is for. Ok
+/// says what worked; Err says what went wrong, in words to show.
+pub fn try_connection(backend: &dyn Backend, c: &ApiConnection) -> std::result::Result<String, String> {
+    if c.auth.trim().is_empty() {
+        return Err("Choose the kind of connection first.".into());
+    }
+    let stopped = || false;
+    let mut client = Client::new(backend, Some(c.clone()), &stopped);
+    client.retries = 0;
+    client.timeout_s = 20;
+    let mut said = Vec::new();
+    if matches!(c.auth.as_str(), "oauth2" | "google") {
+        forget_token(c);
+        if c.auth == "oauth2" {
+            client.token(c).map_err(|e| e.0)?;
+        } else {
+            client.google_token(c).map_err(|e| e.0)?;
+        }
+        said.push("A token was fetched.".to_string());
+    }
+    let address = if c.test_url.trim().is_empty() { c.base_url.trim() } else { c.test_url.trim() };
+    if !(address.starts_with("http://") || address.starts_with("https://")) {
+        if said.is_empty() {
+            return Err("Write a test address: an address of the service that answers when the key is right, such as one that lists something small.".into());
+        }
+        said.push("Write a test address to try a request too.".into());
+        return Ok(said.join(" "));
+    }
+    let shown = client.hide(address);
+    let a = client.send("GET", address, &[], None).map_err(|e| e.0)?;
+    let text: String = a.body.chars().take(160).collect();
+    let text = client.hide(text.trim());
+    match a.status {
+        200..=299 => {
+            said.push(format!("{} answered {}.", shown, a.status));
+            Ok(said.join(" "))
+        }
+        401 | 403 => Err(format!(
+            "{} answered {}: the {} was not accepted, or does not give access to this address. {}",
+            shown,
+            a.status,
+            match c.auth.as_str() {
+                "basic" => "user or password",
+                "oauth2" | "google" => "token",
+                _ => "key",
+            },
+            text
+        )
+        .trim()
+        .to_string()),
+        404 => Err(format!("{} answered 404: there is nothing at that address. The connection may still be right; try another test address.", shown)),
+        s => Err(format!("{} answered {}. {}", shown, s, text).trim().to_string()),
     }
 }
 
@@ -604,6 +678,10 @@ pub fn paging_of(get: &dyn Fn(&str) -> Option<String>) -> Result<Paging> {
             size: num("page_size", 100)?.max(1),
             start: num("start", 0)?,
             items: path("items_path")?,
+        },
+        Some("cursor") => Paging::Cursor {
+            path: path("cursor_path")?.ok_or_else(|| GbError("Write where the cursor is in the answer, such as nextCursorId, under Cursor at.".into()))?,
+            param: text("page_param", "cursor"),
         },
         Some("page") => Paging::Page {
             page_param: text("page_param", "page"),

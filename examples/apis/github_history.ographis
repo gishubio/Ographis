@@ -15,18 +15,17 @@
     {
       "id": "repo",
       "type": "Reader",
-      "name": "Repository history",
+      "comment": "Repository history. A line for each run of github_statistics.ographis",
       "x": 20,
       "y": 20,
       "params": {
         "path": "out/github/repository_history.csv"
-      },
-      "comment": "A line for each run of github_statistics.ographis"
+      }
     },
     {
       "id": "repo_day",
       "type": "AttributeCreator",
-      "name": "Day",
+      "comment": "Day",
       "x": 280,
       "y": 20,
       "params": {
@@ -37,7 +36,7 @@
     {
       "id": "stars_what",
       "type": "AttributeCreator",
-      "name": "Stars",
+      "comment": "Stars",
       "x": 540,
       "y": -115.0,
       "params": {
@@ -48,7 +47,7 @@
     {
       "id": "stars_n",
       "type": "AttributeCreator",
-      "name": "Count",
+      "comment": "Count",
       "x": 800,
       "y": -115.0,
       "params": {
@@ -59,7 +58,7 @@
     {
       "id": "watching_what",
       "type": "AttributeCreator",
-      "name": "Watching",
+      "comment": "Watching",
       "x": 540,
       "y": -25.0,
       "params": {
@@ -70,7 +69,7 @@
     {
       "id": "watching_n",
       "type": "AttributeCreator",
-      "name": "Count",
+      "comment": "Count",
       "x": 800,
       "y": -25.0,
       "params": {
@@ -81,7 +80,7 @@
     {
       "id": "forks_what",
       "type": "AttributeCreator",
-      "name": "Forks",
+      "comment": "Forks",
       "x": 540,
       "y": 65.0,
       "params": {
@@ -92,7 +91,7 @@
     {
       "id": "forks_n",
       "type": "AttributeCreator",
-      "name": "Count",
+      "comment": "Count",
       "x": 800,
       "y": 65.0,
       "params": {
@@ -103,7 +102,7 @@
     {
       "id": "open_issues_and_prs_what",
       "type": "AttributeCreator",
-      "name": "Open issues and pull requests",
+      "comment": "Open issues and pull requests",
       "x": 540,
       "y": 155.0,
       "params": {
@@ -114,7 +113,7 @@
     {
       "id": "open_issues_and_prs_n",
       "type": "AttributeCreator",
-      "name": "Count",
+      "comment": "Count",
       "x": 800,
       "y": 155.0,
       "params": {
@@ -125,7 +124,7 @@
     {
       "id": "repo_chart",
       "type": "ChartDrawer",
-      "name": "The repository over time",
+      "comment": "The repository over time",
       "x": 1060,
       "y": 20,
       "params": {
@@ -146,7 +145,7 @@
     {
       "id": "repo_chart_png",
       "type": "Writer",
-      "name": "The repository over time as PNG",
+      "comment": "The repository over time as PNG",
       "x": 1320,
       "y": 20,
       "params": {
@@ -156,18 +155,17 @@
     {
       "id": "clones",
       "type": "Reader",
-      "name": "Clones history",
+      "comment": "Clones history. The days of each run. A day that came in several runs is taken at its highest count, as the last run saw it whole",
       "x": 20,
       "y": 360,
       "params": {
         "path": "out/github/clones_history.csv"
-      },
-      "comment": "The days of each run. A day that came in several runs is taken at its highest count, as the last run saw it whole"
+      }
     },
     {
       "id": "clones_all",
       "type": "AttributeCreator",
-      "name": "Clones",
+      "comment": "Clones",
       "x": 280,
       "y": 310,
       "params": {
@@ -178,7 +176,7 @@
     {
       "id": "clones_all_n",
       "type": "AttributeCreator",
-      "name": "Count",
+      "comment": "Count",
       "x": 540,
       "y": 310,
       "params": {
@@ -189,7 +187,7 @@
     {
       "id": "clones_uniq",
       "type": "AttributeCreator",
-      "name": "Unique cloners",
+      "comment": "Unique cloners",
       "x": 280,
       "y": 410,
       "params": {
@@ -200,7 +198,7 @@
     {
       "id": "clones_uniq_n",
       "type": "AttributeCreator",
-      "name": "Count",
+      "comment": "Count",
       "x": 540,
       "y": 410,
       "params": {
@@ -211,7 +209,7 @@
     {
       "id": "clones_chart",
       "type": "ChartDrawer",
-      "name": "Clones over time",
+      "comment": "Clones over time",
       "x": 800,
       "y": 360,
       "params": {
@@ -232,7 +230,7 @@
     {
       "id": "clones_chart_png",
       "type": "Writer",
-      "name": "Clones over time as PNG",
+      "comment": "Clones over time as PNG",
       "x": 1060,
       "y": 360,
       "params": {
@@ -242,18 +240,17 @@
     {
       "id": "views",
       "type": "Reader",
-      "name": "Views history",
+      "comment": "Views history. The days of each run. A day that came in several runs is taken at its highest count, as the last run saw it whole",
       "x": 20,
       "y": 620,
       "params": {
         "path": "out/github/views_history.csv"
-      },
-      "comment": "The days of each run. A day that came in several runs is taken at its highest count, as the last run saw it whole"
+      }
     },
     {
       "id": "views_all",
       "type": "AttributeCreator",
-      "name": "Views",
+      "comment": "Views",
       "x": 280,
       "y": 570,
       "params": {
@@ -264,7 +261,7 @@
     {
       "id": "views_all_n",
       "type": "AttributeCreator",
-      "name": "Count",
+      "comment": "Count",
       "x": 540,
       "y": 570,
       "params": {
@@ -275,7 +272,7 @@
     {
       "id": "views_uniq",
       "type": "AttributeCreator",
-      "name": "Unique visitors",
+      "comment": "Unique visitors",
       "x": 280,
       "y": 670,
       "params": {
@@ -286,7 +283,7 @@
     {
       "id": "views_uniq_n",
       "type": "AttributeCreator",
-      "name": "Count",
+      "comment": "Count",
       "x": 540,
       "y": 670,
       "params": {
@@ -297,7 +294,7 @@
     {
       "id": "views_chart",
       "type": "ChartDrawer",
-      "name": "Views over time",
+      "comment": "Views over time",
       "x": 800,
       "y": 620,
       "params": {
@@ -318,7 +315,7 @@
     {
       "id": "views_chart_png",
       "type": "Writer",
-      "name": "Views over time as PNG",
+      "comment": "Views over time as PNG",
       "x": 1060,
       "y": 620,
       "params": {

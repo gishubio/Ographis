@@ -5,18 +5,17 @@
     {
       "id": "people",
       "type": "Reader",
-      "name": "People",
+      "comment": "People. Made-up people in squares of 250 m, from tools/make_analysis_example.py",
       "x": 20,
       "y": 20,
       "params": {
         "path": "analysis/people.geojson"
-      },
-      "comment": "Made-up people in squares of 250 m, from tools/make_analysis_example.py"
+      }
     },
     {
       "id": "hot",
       "type": "HotSpots",
-      "name": "Hot spots of people",
+      "comment": "Hot spots of people",
       "x": 280,
       "y": 20,
       "params": {
@@ -27,7 +26,7 @@
     {
       "id": "moran",
       "type": "SpatialAutocorrelation",
-      "name": "Do many live near many?",
+      "comment": "Do many live near many?",
       "x": 280,
       "y": 220,
       "params": {
@@ -39,7 +38,7 @@
     {
       "id": "moran_out",
       "type": "Writer",
-      "name": "Moran's I",
+      "comment": "Moran's I",
       "x": 540,
       "y": 260,
       "params": {
@@ -49,7 +48,7 @@
     {
       "id": "hot_map",
       "type": "MapRenderer",
-      "name": "Map of hot spots",
+      "comment": "Map of hot spots",
       "x": 540,
       "y": 20,
       "params": {
@@ -75,7 +74,7 @@
     {
       "id": "hot_png",
       "type": "Writer",
-      "name": "Hot spots as PNG",
+      "comment": "Hot spots as PNG",
       "x": 800,
       "y": 20,
       "params": {
@@ -85,7 +84,7 @@
     {
       "id": "walk",
       "type": "Reader",
-      "name": "A walk with a GPS",
+      "comment": "A walk with a GPS. A point every 20 seconds, with a coffee, a lost signal and a point that jumps",
       "x": 20,
       "y": 460,
       "params": {
@@ -93,13 +92,12 @@
         "x": "e",
         "y": "n",
         "crs": "EPSG:3006"
-      },
-      "comment": "A point every 20 seconds, with a coffee, a lost signal and a point that jumps"
+      }
     },
     {
       "id": "tracks",
       "type": "TrackBuilder",
-      "name": "Tracks and stops",
+      "comment": "Tracks and stops",
       "x": 280,
       "y": 460,
       "params": {
@@ -113,7 +111,7 @@
     {
       "id": "tracks_out",
       "type": "Writer",
-      "name": "Tracks",
+      "comment": "Tracks",
       "x": 540,
       "y": 420,
       "params": {
@@ -123,7 +121,7 @@
     {
       "id": "clusters",
       "type": "PointClusters",
-      "name": "Where it lingered",
+      "comment": "Where it lingered",
       "x": 540,
       "y": 540,
       "params": {
@@ -134,7 +132,7 @@
     {
       "id": "walk_map",
       "type": "MapRenderer",
-      "name": "Map of the walk",
+      "comment": "Map of the walk",
       "x": 800,
       "y": 460,
       "params": {
@@ -167,7 +165,7 @@
     {
       "id": "walk_png",
       "type": "Writer",
-      "name": "Walk as PNG",
+      "comment": "Walk as PNG",
       "x": 1060,
       "y": 460,
       "params": {
@@ -177,7 +175,7 @@
     {
       "id": "wind",
       "type": "Reader",
-      "name": "Wind",
+      "comment": "Wind",
       "x": 20,
       "y": 700,
       "params": {
@@ -190,7 +188,7 @@
     {
       "id": "wind_map",
       "type": "MapRenderer",
-      "name": "Map of the wind",
+      "comment": "Map of the wind",
       "x": 280,
       "y": 700,
       "params": {
@@ -218,7 +216,7 @@
     {
       "id": "wind_png",
       "type": "Writer",
-      "name": "Wind as PNG",
+      "comment": "Wind as PNG",
       "x": 540,
       "y": 700,
       "params": {
@@ -228,19 +226,18 @@
     {
       "id": "terrain",
       "type": "Reader",
-      "name": "Terrain",
+      "comment": "Terrain. The made-up terrain, 20 m",
       "x": 20,
       "y": 900,
       "params": {
         "path": "terrain.tif",
         "raster_as": "grid"
-      },
-      "comment": "The made-up terrain, 20 m"
+      }
     },
     {
       "id": "hollows",
       "type": "Depressions",
-      "name": "Hollows",
+      "comment": "Hollows",
       "x": 280,
       "y": 900,
       "params": {
@@ -251,7 +248,7 @@
     {
       "id": "hollows_out",
       "type": "Writer",
-      "name": "Hollows",
+      "comment": "Hollows",
       "x": 540,
       "y": 860,
       "params": {
@@ -261,7 +258,7 @@
     {
       "id": "roads",
       "type": "Reader",
-      "name": "Streets",
+      "comment": "Streets",
       "x": 20,
       "y": 1100,
       "params": {
@@ -271,7 +268,7 @@
     {
       "id": "wet",
       "type": "SpatialJoiner",
-      "name": "Streets in hollows",
+      "comment": "Streets in hollows",
       "x": 540,
       "y": 1000,
       "params": {
@@ -283,7 +280,7 @@
     {
       "id": "wet_out",
       "type": "Writer",
-      "name": "Streets under water",
+      "comment": "Streets under water",
       "x": 800,
       "y": 1000,
       "params": {
@@ -293,19 +290,18 @@
     {
       "id": "classes",
       "type": "ImageClassifier",
-      "name": "Kinds of land",
+      "comment": "Kinds of land. The terrain put in five groups by height, as a picture of several bands would be by colour",
       "x": 280,
       "y": 1100,
       "params": {
         "method": "kmeans",
         "classes": "5"
-      },
-      "comment": "The terrain put in five groups by height, as a picture of several bands would be by colour"
+      }
     },
     {
       "id": "classes_out",
       "type": "Writer",
-      "name": "Kinds of land as GeoTIFF",
+      "comment": "Kinds of land as GeoTIFF",
       "x": 540,
       "y": 1140,
       "params": {

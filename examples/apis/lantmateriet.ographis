@@ -1,0 +1,214 @@
+{
+  "format": "ographis/1",
+  "name": "Lantmäteriet: Skövde in 3D",
+  "description": "Heights, a photo from above, map features and addresses of the middle of Skövde from Lantmäteriet, with one tool, Fetch geodata. The heights and the photo become a 3D model for Blender and a picture; the map features and the addresses a GeoPackage. Needs an API connection called Lantmäteriet, of the kind A user and a password, with the user and password of Geotorget, and the products ordered there. Nodes of products not ordered can be turned off.",
+  "variables": [
+    {
+      "name": "area",
+      "value": "436000, 6471000, 438000, 6473000"
+    },
+    {
+      "name": "connection",
+      "value": "Lantmäteriet"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "heights",
+      "type": "GeodataFetcher",
+      "comment": "Heights",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "product": "lm_heights",
+        "bbox": "$(area)",
+        "cell_size": "2",
+        "connection": "$(connection)"
+      }
+    },
+    {
+      "id": "photo",
+      "type": "GeodataFetcher",
+      "comment": "Photo from above",
+      "x": 20,
+      "y": 180,
+      "params": {
+        "product": "lm_photo",
+        "bbox": "$(area)",
+        "cell_size": "1",
+        "connection": "$(connection)"
+      }
+    },
+    {
+      "id": "topo",
+      "type": "GeodataFetcher",
+      "comment": "Map features",
+      "x": 20,
+      "y": 340,
+      "params": {
+        "product": "lm_topo10",
+        "bbox": "$(area)",
+        "connection": "$(connection)"
+      }
+    },
+    {
+      "id": "addresses",
+      "type": "GeodataFetcher",
+      "comment": "Addresses",
+      "x": 20,
+      "y": 500,
+      "params": {
+        "product": "lm_addresses",
+        "bbox": "$(area)",
+        "connection": "$(connection)"
+      }
+    },
+    {
+      "id": "model",
+      "type": "TerrainModel",
+      "comment": "Terrain with the photo",
+      "x": 300,
+      "y": 60,
+      "params": {}
+    },
+    {
+      "id": "glb",
+      "type": "Writer",
+      "comment": "Model for Blender",
+      "x": 560,
+      "y": 20,
+      "params": {
+        "path": "out/apis/skovde.glb"
+      }
+    },
+    {
+      "id": "scene",
+      "type": "SceneRenderer",
+      "comment": "Picture",
+      "x": 560,
+      "y": 160,
+      "params": {
+        "width": "1600",
+        "height": "1000",
+        "view_azimuth": "200",
+        "elevation": "35",
+        "sun_azimuth": "230",
+        "sun_altitude": "25"
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "comment": "Picture file",
+      "x": 820,
+      "y": 160,
+      "params": {
+        "path": "out/apis/skovde.png"
+      }
+    },
+    {
+      "id": "gpkg_topo",
+      "type": "Writer",
+      "comment": "Map features file",
+      "x": 300,
+      "y": 340,
+      "params": {
+        "path": "out/apis/skovde.gpkg",
+        "layer": "topografi10"
+      }
+    },
+    {
+      "id": "gpkg_addresses",
+      "type": "Writer",
+      "comment": "Addresses file",
+      "x": 300,
+      "y": 500,
+      "params": {
+        "path": "out/apis/skovde.gpkg",
+        "layer": "addresses"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "heights",
+        "Output"
+      ],
+      "to": [
+        "model",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "photo",
+        "Output"
+      ],
+      "to": [
+        "model",
+        "Picture"
+      ]
+    },
+    {
+      "from": [
+        "model",
+        "Model"
+      ],
+      "to": [
+        "glb",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "heights",
+        "Output"
+      ],
+      "to": [
+        "scene",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "photo",
+        "Output"
+      ],
+      "to": [
+        "scene",
+        "Map"
+      ]
+    },
+    {
+      "from": [
+        "scene",
+        "Image"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "topo",
+        "Output"
+      ],
+      "to": [
+        "gpkg_topo",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "addresses",
+        "Output"
+      ],
+      "to": [
+        "gpkg_addresses",
+        "Input"
+      ]
+    }
+  ]
+}

@@ -38,7 +38,7 @@ og run examples/skaraborg.ographis            the same model from the command li
 
 - **Reads and writes** GeoPackage, Shapefile, GeoJSON, FlatGeobuf, GeoParquet, CSV, Excel,
   LibreOffice Calc, DXF, GeoTIFF, CityGML, CityJSON, IFC, OBJ, glTF and 3D Tiles, PostGIS
-  and SQL Server, files on the web, WFS, OGC API Features, ArcGIS FeatureServer, STAC,
+  and SQL Server, files on the web, WFS, WCS, OGC API Features, ArcGIS FeatureServer, STAC,
   OpenStreetMap, Overture Maps and vector tiles (MBTiles, PMTiles, which it also writes). DWG
   drawings, GPX, geotagged photos and LAS/LAZ point clouds too. The whole list is in [docs/FORMATS.html](docs/FORMATS.html).
 - **Over a hundred tools** for attributes, geometry, joins by attribute and by location,

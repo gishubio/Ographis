@@ -77,6 +77,26 @@ const MAP_KINDS: &[(&str, &str)] = &[("xyz", "Tiles: an address with {z}/{x}/{y}
 const MAP_LOGINS: &[(&str, &str)] =
     &[("", "None"), ("basic", "A user and a password"), ("key_query", "A key in the address"), ("key_header", "A key in a header")];
 
+/// Writes the settings to a file to hand on, without passwords, keys or secrets.
+pub fn export_settings(settings: &Settings, file: &std::path::Path) -> Result<String, String> {
+    let text = serde_json::to_string_pretty(&settings.without_secrets()).map_err(|e| e.to_string())?;
+    std::fs::write(file, text).map_err(|e| format!("{} could not be written: {}", file.display(), e))?;
+    let n = settings.connections.len() + settings.apis.len() + settings.maps.len();
+    Ok(format!("{} {} written to {}, without passwords and keys.", n, if n == 1 { "connection or map" } else { "connections and maps" }, file.display()))
+}
+
+/// Takes in settings that were exported, and says what came in.
+pub fn import_settings(settings: &mut Settings, file: &std::path::Path) -> Result<String, String> {
+    let text = std::fs::read_to_string(file).map_err(|e| format!("{} could not be read: {}", file.display(), e))?;
+    let from: Settings = serde_json::from_str(&text).map_err(|_| format!("{} is not a file of settings of Ographis.", file.display()))?;
+    let done = settings.import(from);
+    let mut said = format!("{} added, {} put in place of those with the same name.", done.added, done.replaced);
+    if done.need_secret > 0 {
+        said.push_str(&format!(" Write the password or key of {} under their tabs.", done.need_secret));
+    }
+    Ok(said)
+}
+
 pub struct SettingsWindow {
     pub tab: Tab,
     /// The connection that is shown, by its place in the list.
@@ -84,6 +104,11 @@ pub struct SettingsWindow {
     /// The answer to Test, and the connection it was for.
     pub tested: Option<(usize, Result<String, String>)>,
     testing: Option<(usize, Receiver<Layers>)>,
+    /// The answer to Test for an API connection, and the connection it was for.
+    pub api_tested: Option<(usize, Result<String, String>)>,
+    api_testing: Option<(usize, Receiver<Result<String, String>>)>,
+    /// What exporting or importing the settings did.
+    pub moved: Option<Result<String, String>>,
     /// What went wrong when the settings were written, if anything.
     pub save_error: Option<String>,
     /// The API connection that is shown.
@@ -99,6 +124,9 @@ impl SettingsWindow {
             selected: if settings.connections.is_empty() { None } else { Some(0) },
             tested: None,
             testing: None,
+            api_tested: None,
+            api_testing: None,
+            moved: None,
             save_error: None,
             api: if settings.apis.is_empty() { None } else { Some(0) },
             map: if settings.maps.is_empty() { None } else { Some(0) },
@@ -106,7 +134,18 @@ impl SettingsWindow {
     }
 
     pub fn busy(&self) -> bool {
-        self.testing.is_some()
+        self.testing.is_some() || self.api_testing.is_some()
+    }
+
+    /// Tries an API connection in a thread: a token, and a request to its test address.
+    fn test_api(&mut self, i: usize, c: &og_engine::web::ApiConnection, backend: Arc<og_gdal::GdalBackend>) {
+        let (tx, rx) = channel();
+        let c = c.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(og_engine::web::try_connection(&*backend as &dyn Backend, &c));
+        });
+        self.api_testing = Some((i, rx));
+        self.api_tested = None;
     }
 
     /// Lists the tables of a connection in a thread, to see that it works.
@@ -136,6 +175,14 @@ impl SettingsWindow {
                 let answer = found.map(|l| format!("Connected. The database has {} {} with geometry.", l.len(), if l.len() == 1 { "table" } else { "tables" }));
                 self.tested = Some((*i, answer));
                 self.testing = None;
+            } else {
+                ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            }
+        }
+        if let Some((i, rx)) = &self.api_testing {
+            if let Ok(answer) = rx.try_recv() {
+                self.api_tested = Some((*i, answer));
+                self.api_testing = None;
             } else {
                 ctx.request_repaint_after(std::time::Duration::from_millis(100));
             }
@@ -179,7 +226,7 @@ impl SettingsWindow {
                         ui.set_width(room.x - 14.0);
                         match self.tab {
                             Tab::Connections => changed |= self.connections(ui, pal, settings, backend),
-                            Tab::Apis => changed |= self.apis(ui, pal, settings),
+                            Tab::Apis => changed |= self.apis(ui, pal, settings, backend),
                             Tab::Maps => changed |= self.maps(ui, pal, settings),
                             Tab::General => changed |= self.general(ui, pal, settings),
                         }
@@ -332,6 +379,41 @@ impl SettingsWindow {
             }
             ui.label(RichText::new("Ctrl and + or −, Ctrl+0 back to 100 %").small().color(pal.muted));
         });
+        ui.add_space(10.0);
+        ui.label(RichText::new("To another computer").font(theme::strong(13.0)).color(pal.ink));
+        ui.label(
+            RichText::new("The connections, the background maps and these settings in a file, for a colleague or another computer. Passwords, keys and secrets stay here.")
+                .small()
+                .color(pal.muted),
+        );
+        ui.horizontal(|ui| {
+            if ui.button("Export settings…").on_hover_text("Writes them to a file, without any password, key or secret").clicked() {
+                if let Some(file) = rfd::FileDialog::new().add_filter("Settings of Ographis", &["json"]).set_file_name("ographis-settings.json").save_file() {
+                    self.moved = Some(export_settings(settings, &file));
+                }
+            }
+            if ui.button("Import settings…").on_hover_text("Adds the connections and maps of a file; those with the same name are put in their place").clicked()
+            {
+                if let Some(file) = rfd::FileDialog::new().add_filter("Settings of Ographis", &["json"]).pick_file() {
+                    let got = import_settings(settings, &file);
+                    changed |= got.is_ok();
+                    // What came in is shown under its tab.
+                    self.selected = self.selected.or((!settings.connections.is_empty()).then_some(0));
+                    self.api = self.api.or((!settings.apis.is_empty()).then_some(0));
+                    self.map = self.map.or((!settings.maps.is_empty()).then_some(0));
+                    self.moved = Some(got);
+                }
+            }
+        });
+        match &self.moved {
+            Some(Ok(t)) => {
+                ui.label(RichText::new(t).color(pal.ok));
+            }
+            Some(Err(e)) => {
+                ui.label(RichText::new(e).color(pal.err));
+            }
+            None => {}
+        }
         changed
     }
 
@@ -458,7 +540,7 @@ impl SettingsWindow {
         changed
     }
 
-    fn apis(&mut self, ui: &mut egui::Ui, pal: &Palette, settings: &mut Settings) -> bool {
+    fn apis(&mut self, ui: &mut egui::Ui, pal: &Palette, settings: &mut Settings, backend: &Arc<og_gdal::GdalBackend>) -> bool {
         use og_engine::web::{ApiConnection, AUTH_KINDS};
         let mut changed = false;
         ui.label(RichText::new("API connections").font(theme::strong(14.0)).color(pal.ink));
@@ -576,6 +658,7 @@ impl SettingsWindow {
                         _ => row(ui, "Key", &mut c.secret, true, "", "api-secret"),
                     }
                     row(ui, "Only for addresses", &mut c.base_url, false, "such as https://api.trafikinfo.trafikverket.se/", "api-base");
+                    row(ui, "Test address", &mut c.test_url, false, "an address that answers when the key is right", "api-test");
                     kind_changed || key_read
                 });
                 changed |= kind_changed.inner;
@@ -583,8 +666,33 @@ impl SettingsWindow {
                 if c.name.trim().is_empty() {
                     ui.label(RichText::new("Give the connection a name, which models use.").small().color(pal.warn));
                 }
+                ui.add_space(6.0);
+                let c = c.clone();
+                ui.horizontal(|ui| {
+                    let tip = match c.auth.as_str() {
+                        "oauth2" | "google" => "Fetches a new token, and asks the test address, or else the address the connection is for",
+                        _ => "Asks the test address, or else the address the connection is for, with the key",
+                    };
+                    if ui.add_enabled(!self.busy(), egui::Button::new("Test the connection")).on_hover_text(tip).clicked() {
+                        self.test_api(i, &c, backend.clone());
+                    }
+                    if self.api_testing.as_ref().is_some_and(|t| t.0 == i) {
+                        ui.spinner();
+                    }
+                });
+                if let Some((k, answer)) = &self.api_tested {
+                    if *k == i {
+                        match answer {
+                            Ok(t) => ui.label(RichText::new(t).color(pal.ok)),
+                            Err(e) => ui.label(RichText::new(e).color(pal.err)),
+                        };
+                    }
+                }
             });
         });
+        if changed {
+            self.api_tested = None;
+        }
         changed
     }
 

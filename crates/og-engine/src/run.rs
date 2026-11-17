@@ -536,12 +536,49 @@ fn progress_step(verb: &str, done: u64, total: Option<u64>) -> Option<u64> {
         // A file read by its size: only one of several megabytes.
         "read the file" => 5_000_000,
         "rendered" => 1,
+        // Files from the web each take long, so each is worth a line.
+        "files" | "files kept" | "fetched files for" | "read files for" => 1,
         _ => 20,
     };
     match total {
         Some(t) if t >= large => Some(done * 10 / t.max(1)),
         Some(_) => None,
         None => Some(done / 500_000),
+    }
+}
+
+/// The time a step has left, worked out from how long the part done took, as words to add
+/// to a line of progress: " · about 2 min left". Nothing until there is enough to go by.
+pub fn time_left(took: std::time::Duration, done: u64, total: u64) -> String {
+    if done == 0 || done >= total || took < std::time::Duration::from_secs(3) {
+        return String::new();
+    }
+    let left = took.as_secs_f64() * (total - done) as f64 / done as f64;
+    let words = if left < 60.0 {
+        format!("{} s", ((left / 5.0).ceil() * 5.0).max(5.0) as u64)
+    } else if left < 3600.0 {
+        format!("{} min", (left / 60.0).round().max(1.0) as u64)
+    } else {
+        let m = (left / 60.0).round() as u64;
+        format!("{} h {} min", m / 60, m % 60)
+    };
+    format!(" · about {} left", words)
+}
+
+/// A line of progress: how far a step has come, of how much, and how long it has left.
+fn progress_line(label: &str, verb: &str, done: u64, total: Option<u64>, took: std::time::Duration) -> String {
+    let left = total.map_or(String::new(), |t| time_left(took, done, t));
+    match total {
+        // A file read by its size says how much of it is read.
+        Some(t) if verb == "read the file" => format!("{}: read {} % of the file{}", label, (done * 100 / t.max(1)).min(100), left),
+        Some(t) if verb == "rendered" => format!("{}: rendered {} % of the picture{}", label, (done * 100 / t.max(1)).min(100), left),
+        // A step that counts features: "sent requests for 40 of 200 features".
+        Some(t) if verb == "read" || verb.ends_with(" for") => {
+            format!("{}: {} {} of {} features ({} %){}", label, verb, fmt_count(done), fmt_count(t), (done * 100 / t.max(1)).min(100), left)
+        }
+        // A step that counts something else, which the verb names: "3 of 12 files".
+        Some(t) => format!("{}: {} of {} {} ({} %){}", label, fmt_count(done), fmt_count(t), verb, (done * 100 / t.max(1)).min(100), left),
+        None => format!("{}: {} {} features so far", label, verb, fmt_count(done)),
     }
 }
 
@@ -940,6 +977,7 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
         // How far a long step has come, written in the log as it goes.
         let steps: RefCell<Vec<LogEntry>> = RefCell::new(Vec::new());
         let last = std::cell::Cell::new((String::new(), u64::MAX));
+        let began = std::time::Instant::now();
         let progress = |verb: &str, done: u64, total: Option<u64>| {
             let Some(step) = progress_step(verb, done, total) else { return };
             let (last_verb, last_step) = last.take();
@@ -948,13 +986,7 @@ pub fn run_opts(ws: &Workspace, backend: Option<&dyn Backend>, base_dir: &Path, 
             if same || (step == 0 && total.is_some()) || (total.is_none() && done == 0) {
                 return;
             }
-            let msg = match total {
-                // A file read by its size says how much of it is read.
-                Some(t) if verb == "read the file" => format!("{}: read {} % of the file", n.label(), (done * 100 / t.max(1)).min(100)),
-                Some(t) if verb == "rendered" => format!("{}: rendered {} % of the picture", n.label(), (done * 100 / t.max(1)).min(100)),
-                Some(t) => format!("{}: {} {} of {} features ({} %)", n.label(), verb, fmt_count(done), fmt_count(t), (done * 100 / t.max(1)).min(100)),
-                None => format!("{}: {} {} features so far", n.label(), verb, fmt_count(done)),
-            };
+            let msg = progress_line(n.label(), verb, done, total, began.elapsed());
             let entry = LogEntry { level: Level::Info, node: Some(n.id.clone()), msg };
             (report.borrow_mut())(Progress::Log { entry: &entry });
             steps.borrow_mut().push(entry);
@@ -1386,5 +1418,25 @@ pub(crate) fn carry_models(inputs: &crate::nodes::Inputs, outs: &mut crate::node
                 out.mesh = Some(Arc::new(m.pick(&rows)));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn progress_says_how_much_is_left() {
+        let s = Duration::from_secs;
+        assert_eq!(time_left(s(1), 1, 10), "", "too soon to tell");
+        assert_eq!(time_left(s(10), 0, 10), "");
+        assert_eq!(time_left(s(10), 10, 10), "", "done");
+        assert_eq!(time_left(s(10), 5, 10), " · about 10 s left");
+        assert_eq!(time_left(s(30), 1, 10), " · about 5 min left");
+        assert_eq!(time_left(s(600), 1, 10), " · about 1 h 30 min left");
+        assert_eq!(progress_line("Fetch geodata", "files", 3, Some(12), s(9)), "Fetch geodata: 3 of 12 files (25 %) · about 30 s left");
+        assert_eq!(progress_line("HTTP request", "sent requests for", 40, Some(200), s(1)), "HTTP request: sent requests for 40 of 200 features (20 %)");
+        assert_eq!(progress_line("Input", "read", 500_000, None, s(1)), "Input: read 500 000 features so far");
     }
 }

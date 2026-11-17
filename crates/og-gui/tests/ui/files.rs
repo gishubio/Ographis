@@ -1100,4 +1100,17 @@ fn a_model_has_a_description_and_is_copied_as_a_picture() {
     h.run_steps(2);
     assert!(copied || h.state().message().is_some_and(|m| m.contains("copied as a picture")), "{:?}", h.state().message());
     assert!(h.state().message().is_some_and(|m| m.contains("copied as a picture")), "{:?}", h.state().message());
+    // As the window of Windows sends it: Copy with Ctrl and Shift held, and no key. A picture,
+    // and not the nodes.
+    h.state_mut().clipboard = None;
+    h.run_steps(60);
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT));
+    h.step();
+    h.event(egui::Event::Copy);
+    h.step();
+    let copied = h.output().platform_output.commands.iter().any(|c| matches!(c, egui::OutputCommand::CopyImage(_)));
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::default()));
+    h.run_steps(2);
+    assert!(copied, "a picture on the clipboard");
+    assert!(h.state().clipboard.is_none(), "not the nodes");
 }

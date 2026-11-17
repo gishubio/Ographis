@@ -36,6 +36,7 @@ mod run;
 pub mod shared;
 mod tools;
 mod top_bar;
+mod trial;
 mod wires;
 
 // Each module adds methods to App, in an impl block of its own. These two also have
@@ -222,6 +223,8 @@ pub struct App {
     pub settings: og_engine::settings::Settings,
     /// The settings window, when it is open.
     pub settings_window: Option<crate::settings::SettingsWindow>,
+    /// The answer of Try one request in HTTP request, in a window of its own.
+    pub try_answer: Option<trial::Trial>,
     /// The port that was moved last, and when: (node, output side, name, time).
     pub moved_port: Option<(NodeId, bool, String, f64)>,
     /// The ids of the readers and writers that are folded out in the navigator.
@@ -236,6 +239,15 @@ pub struct App {
     taken_in: u64,
     /// How the table in the inspector is sorted: column and whether it is descending.
     pub sort: Option<(usize, bool)>,
+    /// How far the table in the inspector is scrolled to the side, and where to.
+    pub table_scroll: data::TableScroll,
+    /// The table has the arrow keys: it was the last thing clicked, or the pointer is over
+    /// it. The canvas then leaves them alone, so that they do not move the nodes.
+    table_keys: bool,
+    /// Where the table was drawn last, if it was.
+    table_area: Option<Rect>,
+    /// The table was drawn in the frame before, so its scrolling is known.
+    table_was: bool,
     sorted: Option<Sorted>,
     /// The node and port the sorting belongs to. Another table starts unsorted.
     sort_of: (Option<String>, Option<String>),
@@ -465,6 +477,7 @@ impl App {
             db_dialog: None,
             settings: load_settings(),
             settings_window: None,
+            try_answer: None,
             moved_port: None,
             nav_open: HashSet::new(),
             undo: Vec::new(),
@@ -473,6 +486,10 @@ impl App {
             revision: 0,
             taken_in: 0,
             sort: None,
+            table_scroll: Default::default(),
+            table_keys: false,
+            table_area: None,
+            table_was: false,
             sorted: None,
             sort_of: (None, None),
             show_stats: false,

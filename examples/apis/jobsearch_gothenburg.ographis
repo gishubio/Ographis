@@ -1,0 +1,154 @@
+{
+  "format": "ographis/1",
+  "name": "Job ads in Gothenburg from Arbetsförmedlingen",
+  "variables": [
+    {
+      "name": "municipality",
+      "value": "PVZL_BQT_XtL"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "search",
+      "type": "HttpCaller",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "url": "'https://jobsearch.api.jobtechdev.se/search?municipality=$(municipality)'",
+        "headers": "Accept: application/json",
+        "paging": "offset",
+        "page_param": "offset",
+        "size_param": "limit",
+        "page_size": "100",
+        "items_path": "hits",
+        "max_pages": "21",
+        "per_second": "2"
+      },
+      "comment": "JobSearch of JobTech, Arbetsförmedlingen: the ads now open in a municipality, 100 to a page. The service gives at most 2 000 ads to one search. The municipality is its concept id in the JobTech taxonomy; PVZL_BQT_XtL is meant to be Göteborg, check it with Try one request"
+    },
+    {
+      "id": "hits",
+      "type": "JsonExploder",
+      "x": 280,
+      "y": 40,
+      "params": {
+        "attribute": "_response",
+        "path": "hits"
+      },
+      "comment": "A feature per ad"
+    },
+    {
+      "id": "xy",
+      "type": "JsonExtractor",
+      "x": 540,
+      "y": 40,
+      "params": {
+        "attribute": "workplace_address.coordinates",
+        "paths": [
+          [
+            "[0]",
+            "lon"
+          ],
+          [
+            "[1]",
+            "lat"
+          ]
+        ]
+      },
+      "comment": "The coordinates of the workplace are a list: longitude, latitude"
+    },
+    {
+      "id": "points",
+      "type": "PointCreator",
+      "x": 800,
+      "y": 40,
+      "params": {
+        "x": "lon",
+        "y": "lat",
+        "crs": "EPSG:4326"
+      },
+      "comment": "Ads with a workplace that has coordinates go on"
+    },
+    {
+      "id": "keep",
+      "type": "AttributeKeeper",
+      "x": 1060,
+      "y": 40,
+      "params": {
+        "keep": [
+          "id",
+          "headline",
+          "employer.name",
+          "occupation.label",
+          "workplace_address.municipality",
+          "publication_date",
+          "application_deadline",
+          "webpage_url"
+        ]
+      },
+      "comment": "What a map of ads needs"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "x": 1320,
+      "y": 40,
+      "params": {
+        "path": "out/job_ads.gpkg"
+      },
+      "comment": "Job ads"
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "search",
+        "Output"
+      ],
+      "to": [
+        "hits",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "hits",
+        "Exploded"
+      ],
+      "to": [
+        "xy",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "xy",
+        "Output"
+      ],
+      "to": [
+        "points",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "points",
+        "Points"
+      ],
+      "to": [
+        "keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "keep",
+        "Output"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}

@@ -6,7 +6,7 @@
     {
       "id": "terrain",
       "type": "Reader",
-      "name": "Terrain",
+      "comment": "Terrain",
       "x": 20,
       "y": 20,
       "params": {
@@ -17,18 +17,17 @@
     {
       "id": "clip",
       "type": "RasterClipper",
-      "name": "Around the town",
+      "comment": "Around the town. Only the terrain around the town",
       "x": 280,
       "y": 20,
       "params": {
         "crop": "yes"
-      },
-      "comment": "Only the terrain around the town"
+      }
     },
     {
       "id": "frame",
       "type": "Reader",
-      "name": "Districts",
+      "comment": "Districts",
       "x": 20,
       "y": 260,
       "params": {
@@ -38,7 +37,7 @@
     {
       "id": "box",
       "type": "BoundingBoxReplacer",
-      "name": "The extent",
+      "comment": "The extent",
       "x": 280,
       "y": 260,
       "params": {}
@@ -46,7 +45,7 @@
     {
       "id": "wider",
       "type": "Bufferer",
-      "name": "With room around",
+      "comment": "With room around",
       "x": 540,
       "y": 260,
       "params": {
@@ -56,7 +55,7 @@
     {
       "id": "square",
       "type": "BoundingBoxReplacer",
-      "name": "As a rectangle",
+      "comment": "As a rectangle",
       "x": 700,
       "y": 380,
       "params": {}
@@ -64,7 +63,7 @@
     {
       "id": "relief",
       "type": "TerrainShader",
-      "name": "Relief",
+      "comment": "Relief. Light from several directions, as on a good relief map, with soft shadows from the sun",
       "x": 540,
       "y": 20,
       "params": {
@@ -73,13 +72,12 @@
         "shadows": "soft",
         "exaggeration": "1.5",
         "width": "3000"
-      },
-      "comment": "Light from several directions, as on a good relief map, with soft shadows from the sun"
+      }
     },
     {
       "id": "roads",
       "type": "Reader",
-      "name": "Roads",
+      "comment": "Roads",
       "x": 20,
       "y": 500,
       "params": {
@@ -89,7 +87,7 @@
     {
       "id": "centres",
       "type": "Reader",
-      "name": "Health centres",
+      "comment": "Health centres",
       "x": 20,
       "y": 740,
       "params": {
@@ -99,7 +97,7 @@
     {
       "id": "map",
       "type": "MapRenderer",
-      "name": "Map for print",
+      "comment": "Map for print",
       "x": 860,
       "y": 260,
       "params": {
@@ -168,20 +166,19 @@
     {
       "id": "pdf",
       "type": "Writer",
-      "name": "As a PDF of shapes, A3",
+      "comment": "As a PDF of shapes, A3. Lines, areas and text stay sharp at any size, and can be edited in Inkscape or Illustrator. The relief is a picture in it",
       "x": 1120,
       "y": 140,
       "params": {
         "path": "out/print_map/town.pdf",
         "pdf_size": "a3",
         "pdf_title": "A made-up town"
-      },
-      "comment": "Lines, areas and text stay sharp at any size, and can be edited in Inkscape or Illustrator. The relief is a picture in it"
+      }
     },
     {
       "id": "png",
       "type": "Writer",
-      "name": "As a PNG",
+      "comment": "As a PNG",
       "x": 1120,
       "y": 380,
       "params": {

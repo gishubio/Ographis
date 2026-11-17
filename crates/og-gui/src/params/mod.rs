@@ -204,12 +204,20 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
                 false
             }
             ("HttpCaller", "next_path") => param("paging").as_deref() == Some("next"),
-            ("HttpCaller", "page_param" | "size_param" | "page_size" | "start" | "items_path") => matches!(param("paging").as_deref(), Some("offset" | "page")),
+            ("HttpCaller", "cursor_path") => param("paging").as_deref() == Some("cursor"),
+            ("HttpCaller", "page_param") => matches!(param("paging").as_deref(), Some("offset" | "page" | "cursor")),
+            ("HttpCaller", "size_param" | "page_size" | "start" | "items_path") => matches!(param("paging").as_deref(), Some("offset" | "page")),
             ("HttpCaller", "max_pages") => matches!(param("paging").as_deref(), Some("next" | "offset" | "page")),
             ("SceneRenderer", "date" | "time") => param("sun").as_deref() == Some("date"),
             ("SceneRenderer", "clock") => matches!(param("sun").as_deref(), Some("date" | "study")),
             ("Rotator", "x" | "y") => param("around").as_deref() == Some("point"),
             ("ZipWriter", "names") => param("outputs").as_deref() == Some("named"),
+            // Each product of Fetch geodata has the settings of its kind.
+            ("GeodataFetcher", "cell_size" | "year") => {
+                matches!(param("product").as_deref().unwrap_or("lm_heights"), "lm_heights" | "lm_photo" | "lm_nmk50" | "lm_nmk250")
+            }
+            ("GeodataFetcher", "layers") => param("product").is_some_and(|p| p == "lm_addresses" || p == "lm_divisions" || p.starts_with("lm_topo")),
+            ("GeodataFetcher", "las_classes" | "las_every" | "las_spacing" | "max_points") => param("product").as_deref() == Some("lm_laser_forest"),
             ("HttpCaller", "body" | "content_type") => param("method").is_some_and(|m| matches!(m.as_str(), "POST" | "PUT" | "PATCH")),
             ("RangeMapper", "ranges") => param("method").is_none_or(|m| m == "own"),
             ("RangeMapper", "classes" | "decimals") => param("method").is_some_and(|m| m != "own"),
@@ -242,6 +250,16 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         return match spec.key {
             "path" | "vt_zoom" | "vt_pieces" | "tiles_most" | "layer" | "layer_attr" | "web_as" | "connection" => true,
             "within" => true,
+            "min_x" | "min_y" | "max_x" | "max_y" | "within_crs" => node.params.get("within").and_then(|v| v.as_str()) == Some("rectangle"),
+            _ => false,
+        };
+    }
+    // A coverage service, read as a raster within a rectangle.
+    if web && og_engine::nodes::service_name(path, web_as).is_some_and(|n| n.starts_with("WCS:")) {
+        let as_grid = node.params.get("raster_as").and_then(|v| v.as_str()) == Some("grid");
+        return match spec.key {
+            "path" | "web_as" | "connection" | "layer" | "raster_as" | "within" | "crs" | "limit" => true,
+            "cell_size" => as_grid,
             "min_x" | "min_y" | "max_x" | "max_y" | "within_crs" => node.params.get("within").and_then(|v| v.as_str()) == Some("rectangle"),
             _ => false,
         };
@@ -613,13 +631,8 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
         }
         ui.add_space(2.0);
         let top = ui.cursor().min;
-        // A tick box carries its own label. The help is on its name for the pointer.
-        if !matches!(spec.kind, ParamKind::OptionalName(_)) {
-            let name = ui.label(RichText::new(label_of(spec, sheets)).small().color(cx.pal.muted));
-            if !spec.hint.is_empty() && !cx.hints_always {
-                name.on_hover_text(spec.hint);
-            }
-        }
+        // A tick box carries its own label.
+        let name = (!matches!(spec.kind, ParamKind::OptionalName(_))).then(|| ui.label(RichText::new(label_of(spec, sheets)).small().color(cx.pal.muted)));
         let mut value = get(node, spec);
         let before = value.clone();
         let mut hint = spec.hint.to_string();
@@ -732,7 +745,9 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                     ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY).hint_text(spec.default));
                 });
             }
-            ParamKind::Text if spec.key == "bbox" && matches!(node.kind.as_str(), "OsmDownloader" | "OvertureDownloader" | "PostgisReader") => {
+            ParamKind::Text
+                if spec.key == "bbox" && matches!(node.kind.as_str(), "OsmDownloader" | "OvertureDownloader" | "PostgisReader" | "GeodataFetcher") =>
+            {
                 ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
                 pick_area |= ui
                     .button("Choose on the map")
@@ -1157,8 +1172,13 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
         // The help of a setting is shown when the pointer rests on it, so that the form does not
         // move under the pointer. A message about what is there now, such as a connection that
         // is missing, is always shown.
+        // The help shows once: over the name and the field together, or, when a message is
+        // shown in its place, over the name.
         if !hint.is_empty() && (cx.hints_always || hint != spec.hint) {
             ui.label(RichText::new(hint).small().color(cx.pal.muted));
+            if let Some(name) = name.filter(|_| !spec.hint.is_empty() && !cx.hints_always) {
+                name.on_hover_text(spec.hint);
+            }
         } else if !hint.is_empty() {
             let field = egui::Rect::from_min_max(top, egui::pos2(ui.max_rect().right(), ui.cursor().min.y));
             ui.interact(field, egui::Id::new(("help", node.id.clone(), spec.key)), egui::Sense::hover()).on_hover_text(hint);

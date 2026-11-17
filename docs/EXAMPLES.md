@@ -88,6 +88,12 @@ streets, people in squares, districts, health centres, a walk with a GPS and win
   nearest school in 5, 10 and 15 minutes at 5 km/h. Another rectangle in the two downloads
   makes it for another town; NVDB from Trafikverket can be read in place of the roads, with
   its speed limits for driving.
+- **Skövde from Lantmäteriet**: `examples/apis/lantmateriet.ographis` fetches heights, a
+  photo from above, Topografi 10 and the addresses of the middle of Skövde with *Fetch
+  geodata*, one tool for all four, and makes a 3D model for Blender, a picture and a
+  GeoPackage. It needs an API connection called Lantmäteriet, of the kind *A user and a
+  password*, with the user and password of Geotorget, and the products ordered there. Another
+  rectangle in the variable `area` makes it for another place in Sweden.
 - **A volcano on Hawaii**: `examples/apis/volcano_hawaii.ographis` fetches Kīlauea with
   *Fetch a place*: heights of 30 m from the Copernicus DEM on Amazon's open data, and a
   picture of the summer from Sentinel-2 at Element 84, the least cloudy put together where
@@ -95,11 +101,42 @@ streets, people in squares, districts, health centres, a walk with a GPS and win
   .glb that Blender imports, and *Render 3D scene* draws it. *Lighten 3D model* makes it
   light enough to walk on the volcano in the browser, packed, in `out/volcano_walk`. The
   place and the size are variables: Matterhorn, Isla Isabela or anywhere on Earth.
+- **Hunneberg with roads and lakes**: `examples/apis/hunneberg_roads.ographis` fetches
+  Hunneberg and Halleberg the same way, and the roads, paths and lakes within the square
+  from OpenStreetMap with *OpenStreetMap download*. *Draw map* draws them over the
+  picture, the larger roads wider, into a map of some 3 m a pixel, which is draped over the
+  terrain for Blender and for *Render 3D scene*.
 - **HERE and TomTom**: their keys go in API connections named HERE and TomTom, of the kind
   *A key only where {{key}} is written*. *Geometry from text* reads HERE's flexible polylines,
   as lines for routes and as areas for isolines, and TomTom's lists of points, as lines for
   routes and as areas for reachable ranges. See `examples/apis/here_examples.ographis` and
   `examples/apis/tomtom_routing.ographis`.
+- **Swedish public APIs**, one model each, written to try the support for APIs. They were
+  run against a made-up copy of each service, since the services could not be reached where
+  they were made; the paths marked so in their comments are from the descriptions of the
+  services, so check them with *Try one request* first.
+  - `ngp_comprehensive_plans.ographis`: the comprehensive plans of Skövde and Borås from the
+    national geodata platform, one search for each municipality in `plan_areas.csv`, with
+    every file of each plan kept (API connection Lantmäteriet).
+  - `visit_sweden_lodging.ographis`: places to stay from the national API of Visit Sweden,
+    linked data in JSON-LD, where the place and its coordinates are found by their `@type`.
+  - `krisinformation_news.ographis`: the news of Krisinformation.se, a row per area.
+  - `jobsearch_gothenburg.ographis`: the job ads in Göteborg from JobSearch of
+    Arbetsförmedlingen, as points.
+  - `police_events.ographis`: the 500 latest events of the police in a county, the name put
+    in the address with `url_encode`. The service places every event in the middle of its
+    county.
+  - `trafa_new_cars.ographis`: new cars per county from Trafikanalys, where each row is a
+    list of cells found by their column, as `[Column=reglan].Value`.
+  - `transportstyrelsen_vehicles.ographis`: vehicles in traffic per year from the vehicle
+    register of Transportstyrelsen, which Trafikanalys publishes, and what the product holds.
+  - `boverket_purposes.ographis`: the Ändamålskatalog of Boverket; the address and the key
+    come from Boverket's API portal.
+  - `skolverket_school_units.ographis`: all of the about 12 000 school units of Skolverket's
+    register as points in a GeoPackage, from the details of each, four requests at a time,
+    with the coordinates of the visiting address found by `[type=BESOKSADRESS]`.
+  - `smhi_warnings.ographis`: the weather warnings of SMHI in force, as areas, read from the
+    GeoJSON that *Explode JSON list* keeps whole.
 - **Coordinate systems**: every one of the more than 6 000 EPSG systems PROJ knows can be
   searched for by name, code or area under *Search all…* in a coordinate system choice, and
   is shown by its name.

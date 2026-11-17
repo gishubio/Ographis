@@ -738,7 +738,9 @@ impl MapView {
                 // The selected feature on top, as a shape.
                 if selected.is_some() || !self.also.is_empty() {
                     let on: std::collections::HashSet<usize> = self.also.iter().copied().chain(*selected).collect();
-                    let mine: Vec<u32> = store.feats.iter().enumerate().filter(|(_, f)| on.contains(&(f.row as usize))).map(|(i, _)| i as u32).collect();
+                    let mut mine: Vec<u32> = store.feats.iter().enumerate().filter(|(_, f)| on.contains(&(f.row as usize))).map(|(i, _)| i as u32).collect();
+                    // Not those too large to draw as shapes: they show in the image.
+                    mine.retain(|i| store.corners(&[*i]) <= mapdata::CORNER_LIMIT);
                     self.draw_shapes(&painter, rect, &pal, &store, &mine, *selected, None);
                 }
             }

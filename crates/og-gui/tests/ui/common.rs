@@ -78,8 +78,10 @@ pub(crate) fn copy_folder(from: &Path, to: &Path) {
     }
 }
 
-pub(crate) fn harness_for(app: App, theme: egui::Theme) -> Harness<'static, App> {
+pub(crate) fn harness_for(mut app: App, theme: egui::Theme) -> Harness<'static, App> {
     own_settings();
+    // The windows of the tests do not open what an assistant asks for, unless a test says.
+    app.shared.alone = true;
     let _turn = graphics();
     Harness::builder().with_size(egui::vec2(1600.0, 960.0)).with_theme(theme).wgpu().build_ui_state(|ui, app: &mut App| app.ui(ui), app)
 }

@@ -509,8 +509,369 @@ fn a_model_changed_by_an_assistant_is_shown_and_the_open_one_is_told() {
     let other = dir.join("other.ographis");
     std::fs::write(&other, model(3)).unwrap();
     assert!(og_engine::session::ask_to_open(&other));
-    std::thread::sleep(std::time::Duration::from_millis(1100));
-    h.run_steps(4);
+    // The window looks for requests every second; under a full run of the tests it may take
+    // longer, and a window of another test in this process may take the request first, so it
+    // is asked again now and then.
+    for k in 0..50 {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        h.run_steps(2);
+        if k % 10 == 9 && h.state().path.as_deref() != Some(other.as_path()) {
+            og_engine::session::ask_to_open(&other);
+        }
+        if h.state().path.as_deref() == Some(other.as_path()) {
+            break;
+        }
+    }
     assert_eq!(h.state().path.as_deref(), Some(other.as_path()), "opened when asked");
     assert_eq!(h.state().snarl.nodes().count(), 3);
+}
+
+#[test]
+fn a_run_does_not_change_the_size_of_the_nodes() {
+    let dir = example_copy();
+    let mut app = App::new();
+    app.load(&dir.join("lines.ographis")).unwrap();
+    app.map.set_tile_source(NO_TILES);
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(6);
+    let ids: Vec<String> = h.state().workspace().nodes.iter().map(|n| n.id.clone()).collect();
+    let before: Vec<(String, egui::Rect)> = ids.iter().filter_map(|id| h.state().node_rect(id).map(|r| (id.clone(), r))).collect();
+    assert!(!before.is_empty());
+    shot(&mut h, "sizes_before_run");
+    let ctx = h.ctx.clone();
+    h.state_mut().run(&ctx);
+    wait_for_run(&mut h);
+    h.run_steps(4);
+    shot(&mut h, "sizes_after_run");
+    for (id, r) in &before {
+        let now = h.state().node_rect(id).unwrap();
+        assert!((now.width() - r.width()).abs() < 0.5 && (now.height() - r.height()).abs() < 0.5, "{}: {:?} became {:?}", id, r.size(), now.size());
+    }
+    // A table with room for all its attributes has no buttons to scroll it.
+    h.state_mut().focus_node(&ids[0]);
+    h.run_steps(4);
+    assert!(h.query_by_label("◀").is_none() && h.query_by_label("▶").is_none());
+}
+
+#[test]
+fn the_arrow_keys_scroll_the_table_once_it_is_clicked_and_buttons_do_too() {
+    use og_engine::{Feature, Field, FieldType, Table, Value};
+    // Many attributes, more than the table shows at once.
+    let fields: Vec<Field> = (0..40).map(|k| Field::new(format!("attribute_number_{:02}", k), FieldType::Text)).collect();
+    let features = (0..5)
+        .map(|i| Feature {
+            z: None,
+            attrs: (0..40).map(|k| Value::Text(format!("value {} {}", i, k))).collect(),
+            geom: Some(geo::Geometry::Point(geo::Point::new(300000. + i as f64, 6400000.))),
+        })
+        .collect();
+    let table = Table { mesh: None, points: None, series: None, fields, crs: Some(3006), features, raster: false, image: None, grid: None };
+    let mut h = app_with_result(table);
+    h.run_steps(4);
+    assert!(h.state().table_scroll.most() > 100.0, "{:?}", h.state().table_scroll);
+    let node = h.state().node_rect("in").unwrap();
+    // A click on a row gives the table the keys.
+    h.get_by_label("value 0 0").click();
+    h.run_steps(2);
+    assert_eq!(h.state().view.feature, Some(0));
+    h.key_press(egui::Key::ArrowRight);
+    h.run_steps(3);
+    let moved = h.state().table_scroll.offset;
+    assert!(moved > 50.0, "{:?}", h.state().table_scroll);
+    assert_eq!(h.state().node_rect("in").unwrap(), node, "the node stays");
+    shot(&mut h, "table_scrolled");
+    h.key_press(egui::Key::ArrowDown);
+    h.run_steps(3);
+    assert_eq!(h.state().view.feature, Some(1), "the next row");
+    // The buttons scroll too.
+    h.get_by_label("◀").click();
+    h.run_steps(3);
+    assert!(h.state().table_scroll.offset < moved, "{:?}", h.state().table_scroll);
+    // A click on the canvas gives the keys back to the nodes.
+    let empty = on_canvas(&h, 600.0, 500.0);
+    click_at(&mut h, empty);
+    h.run_steps(2);
+    h.state_mut().focus_node("in");
+    h.run_steps(2);
+    h.key_press(egui::Key::ArrowRight);
+    h.run_steps(3);
+    assert!(h.state().node_rect("in").unwrap().left() > node.left(), "the node moves again");
+}
+
+/// A long error is cut beside the buttons of the map, and does not push the panel under the
+/// canvas over the settings of the node.
+#[test]
+fn a_long_error_does_not_widen_the_panels() {
+    let dir = example_copy();
+    let long = format!("{}/missing.gpkg", "a_folder_with_a_very_long_name_that_goes_on_and_on".repeat(8));
+    let model = format!(r#"{{"format": "ographis/1", "nodes": [{{"id": "in", "type": "Reader", "x": 0, "y": 0, "params": {{"path": "{}"}}}}]}}"#, long);
+    std::fs::write(dir.join("long_error.ographis"), model).unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("long_error.ographis")).unwrap();
+    app.map.set_tile_source(NO_TILES);
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(3);
+    let ctx = h.ctx.clone();
+    h.state_mut().run(&ctx);
+    wait_for_run(&mut h);
+    h.state_mut().focus_node("in");
+    h.run_steps(2);
+    h.get_by_label("Data").click();
+    h.run_steps(4);
+    shot(&mut h, "96-long-error");
+    let button = h.get_all_by_label("Zoom to data").next().expect("the buttons of the map").rect();
+    let settings = h.get_by_label("Comment").rect();
+    assert!(button.right() <= settings.left(), "{:?} reaches into {:?}", button, settings);
+}
+
+/// A few features with millions of corners, such as the borders of a whole country, are
+/// drawn as an image and do not overfill the graphics card.
+#[test]
+fn features_with_very_many_corners_are_drawn_as_an_image() {
+    use og_engine::{Feature, Field, FieldType, Table, Value};
+    let ring = |cx: f64, n: usize| {
+        let mut pts: Vec<(f64, f64)> = (0..n)
+            .map(|i| {
+                let a = i as f64 / n as f64 * std::f64::consts::TAU;
+                let r = 1000.0 + 30.0 * (a * 400.0).sin();
+                (cx + r * a.cos(), 6_400_000.0 + r * a.sin())
+            })
+            .collect();
+        pts.push(pts[0]);
+        geo::Geometry::Polygon(geo::Polygon::new(geo::LineString::from(pts), vec![]))
+    };
+    let features = (0..3).map(|k| Feature { z: None, attrs: vec![Value::Int(k)], geom: Some(ring(300_000.0 + k as f64 * 2500.0, 600_000)) }).collect();
+    let table = Table { fields: vec![Field::new("kommun", FieldType::Int)], crs: Some(3006), features, ..Default::default() };
+    let mut h = app_with_result(table);
+    h.state_mut().focus_node("in");
+    for _ in 0..20 {
+        h.run_steps(2);
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    shot(&mut h, "96-many-corners");
+    assert_eq!(h.state().map.in_view, Some((3, true)), "drawn as an image");
+}
+
+/// The help of a setting shows once when the pointer rests on its name, not twice.
+#[test]
+fn the_help_of_a_setting_shows_once() {
+    let dir = example_copy();
+    std::fs::write(
+        dir.join("help.ographis"),
+        r#"{"format": "ographis/1", "nodes": [{"id": "g", "type": "GeodataFetcher", "x": 0, "y": 0, "params": {"bbox": "1, 2, 3, 4"}}]}"#,
+    )
+    .unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("help.ographis")).unwrap();
+    app.map.set_tile_source(NO_TILES);
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.state_mut().focus_node("g");
+    h.run_steps(3);
+    let name = h.get_by_label("Largest area, km²").rect();
+    let at = name.left_center() + egui::vec2(4.0, 0.0);
+    h.event(egui::Event::PointerMoved(at));
+    for _ in 0..12 {
+        h.step();
+        std::thread::sleep(std::time::Duration::from_millis(60));
+    }
+    let shown = h.query_all_by_label_contains("A larger area is not fetched").count();
+    assert_eq!(shown, 1, "the help shows once");
+}
+
+/// No value (NULL) is an empty cell, and an empty text is '' so that they are told apart.
+#[test]
+fn no_value_is_an_empty_cell_and_an_empty_text_is_quoted() {
+    use og_engine::{Feature, Field, FieldType, Table, Value};
+    let features = vec![
+        Feature { z: None, attrs: vec![Value::Text("first".into()), Value::Null], geom: None },
+        Feature { z: None, attrs: vec![Value::Text(String::new()), Value::Text("-".into())], geom: None },
+    ];
+    let table = Table { fields: vec![Field::new("name", FieldType::Text), Field::new("note", FieldType::Text)], features, ..Default::default() };
+    let mut h = app_with_result(table);
+    h.state_mut().focus_node("in");
+    h.run_steps(4);
+    assert!(h.query_by_label("first").is_some());
+    assert!(h.query_by_label("''").is_some(), "an empty text");
+    assert!(h.query_by_label("-").is_some(), "a dash is a dash");
+    assert!(h.query_by_label("–").is_none(), "no value is not drawn as a dash");
+    // How many rows are picked.
+    assert!(h.query_by_label_contains("row selected").is_none() && h.query_by_label_contains("rows selected").is_none());
+    h.get_by_label("first").click();
+    h.run_steps(3);
+    h.get_by_label("1 row selected");
+    h.state_mut().view.more = vec![1];
+    h.run_steps(3);
+    h.get_by_label("2 rows selected");
+}
+
+/// Try one request sends only the first request of HTTP request and shows the answer as a
+/// tree, whose values give their paths to the node.
+#[test]
+fn one_request_is_tried_and_its_paths_go_into_the_node() {
+    let body = br#"{"data": [{"id": 7, "name": "Alpha", "kind": "town"}], "meta": {"nextCursor": "c-2"}, "links": [{"rel": "self", "href": "a"}, {"rel": "next", "href": "b"}]}"#;
+    let base = file_server(vec![("/api", "application/json", body.to_vec())]);
+    let dir = example_copy();
+    std::fs::write(
+        dir.join("try.ographis"),
+        format!(
+            r#"{{"format": "ographis/1", "nodes": [{{"id": "web", "type": "HttpCaller", "x": 0, "y": 0, "params": {{"url": "'{}/api?q=' || 'x'"}}}}]}}"#,
+            base
+        ),
+    )
+    .unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("try.ographis")).unwrap();
+    app.map.set_tile_source(NO_TILES);
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.state_mut().focus_node("web");
+    h.run_steps(3);
+    h.get_by_label("Try one request").click();
+    for _ in 0..50 {
+        h.run_steps(2);
+        if h.state().try_answer.as_ref().is_some_and(|t| t.got.is_some()) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    h.run_steps(3);
+    assert!(h.state().try_answer.is_some(), "{:?}", h.state().message());
+    let got = h.state().try_answer.as_ref().unwrap().got.clone().unwrap().unwrap();
+    // A value is scrolled to before it is clicked, as the tree may be taller than the window.
+    let pick = |h: &mut Harness<'_, App>, label: &str| {
+        h.get_by_label_contains(label).scroll_to_me();
+        h.run_steps(3);
+        h.get_by_label_contains(label).click();
+        h.run_steps(3);
+    };
+    assert_eq!(got.status, 200);
+    assert!(got.url.ends_with("/api?q=x"), "the address is worked out: {}", got.url);
+    assert!(h.query_by_label("200").is_some());
+    // A value deep in the answer: the cursor.
+    pick(&mut h, "nextCursor");
+    h.get_by_label("Cursor at").click();
+    h.run_steps(3);
+    let param =
+        |h: &Harness<'_, App>, id: &str, key: &str| h.state().snarl.nodes().find(|n| n.id == id).and_then(|n| n.params.get(key).cloned()).unwrap_or_default();
+    assert_eq!(param(&h, "web", "cursor_path"), "meta.nextCursor");
+    assert_eq!(param(&h, "web", "paging"), "cursor");
+    // A link among links is told by its rel.
+    pick(&mut h, "[1]");
+    pick(&mut h, "href  \"b\"");
+    h.get_by_label("Next page at").click();
+    h.run_steps(3);
+    assert_eq!(param(&h, "web", "next_path"), "links[rel=next].href");
+    // A list can be where the items are; a value can be taken out after the node.
+    pick(&mut h, "data  […]");
+    h.get_by_label("Items at").click();
+    h.run_steps(3);
+    assert_eq!(param(&h, "web", "items_path"), "data");
+    pick(&mut h, "[0]  {…} 3 keys");
+    pick(&mut h, "name  \"Alpha\"");
+    shot(&mut h, "096-try-one-request");
+    h.get_by_label("Extract from JSON").click();
+    h.run_steps(3);
+    pick(&mut h, "id  7");
+    h.get_by_label("Extract from JSON").click();
+    h.run_steps(3);
+    let extract: Vec<_> = h.state().snarl.nodes().filter(|n| n.kind == "JsonExtractor").collect();
+    assert_eq!(extract.len(), 1, "the second value goes to the same Extract JSON values");
+    assert_eq!(extract[0].params.get("attribute").cloned().unwrap_or_default(), "_response");
+    assert_eq!(extract[0].params.get("paths").cloned().unwrap_or_default(), serde_json::json!([["data[0].name", ""], ["data[0].id", ""]]));
+    assert_eq!(h.state().snarl.wires().count(), 1, "connected after HTTP request");
+}
+
+/// Test the connection, among the API connections in the settings, asks the test address.
+#[test]
+fn an_api_connection_is_tested() {
+    let base = file_server(vec![("/ok", "application/json", b"{}".to_vec())]);
+    let mut h = empty_app();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Comma);
+    h.run_steps(3);
+    h.get_by_label("API connections").click();
+    h.run_steps(3);
+    h.get_by_label("New API connection").click();
+    h.run_steps(3);
+    let n = h.state().settings.apis.len() - 1;
+    let wait = |h: &mut Harness<'_, App>| {
+        for _ in 0..50 {
+            h.run_steps(2);
+            if !h.state().settings_window.as_ref().unwrap().busy() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        h.run_steps(2);
+        h.state().settings_window.as_ref().unwrap().api_tested.clone().unwrap().1
+    };
+    h.get_by_label("Test the connection").click();
+    assert!(wait(&mut h).unwrap_err().contains("Write a test address"));
+    {
+        let c = &mut h.state_mut().settings.apis[n];
+        c.secret = "abcdef".into();
+        c.test_url = format!("{}/ok", base);
+    }
+    h.run_steps(2);
+    h.get_by_label("Test the connection").click();
+    let said = wait(&mut h).unwrap();
+    assert!(said.ends_with("/ok answered 200."), "{}", said);
+    assert!(h.query_by_label_contains("answered 200").is_some());
+    shot(&mut h, "096-test-api-connection");
+    h.state_mut().settings.apis[n].test_url = format!("{}/gone", base);
+    h.run_steps(2);
+    h.get_by_label("Test the connection").click();
+    assert!(wait(&mut h).unwrap_err().contains("answered 404"));
+    h.get_by_label("Remove").click();
+    h.run_steps(2);
+}
+
+/// The error of a node can be copied, with the name of the node, to paste in a mail.
+#[test]
+fn an_error_is_copied_from_the_form() {
+    let dir = example_copy();
+    std::fs::write(
+        dir.join("broken.ographis"),
+        r#"{"format": "ographis/1", "nodes": [{"id": "in", "type": "Reader", "x": 0, "y": 0, "params": {"path": "not-there.csv"}}]}"#,
+    )
+    .unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("broken.ographis")).unwrap();
+    app.quiet = true;
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(4);
+    h.key_press(egui::Key::F5);
+    wait_for_run(&mut h);
+    h.state_mut().focus_node("in");
+    h.run_steps(4);
+    // The form is taller than the window: the button is scrolled to.
+    h.get_by_label("Copy").scroll_to_me();
+    h.run_steps(3);
+    h.get_by_label("Copy").click();
+    h.run_steps(2);
+    shot(&mut h, "096-copy-error");
+    assert_eq!(h.state().message(), Some("The error is copied."));
+}
+
+/// Settings exported for a colleague hold no secrets, and are taken in by name.
+#[test]
+fn settings_go_to_another_computer_without_secrets() {
+    use og_engine::settings::{Connection, Settings};
+    let file = scratch("settings-export").join("ographis-settings.json");
+    let mine = Settings {
+        connections: vec![Connection { name: "GIS".into(), host: "db".into(), user: "magnus".into(), password: "pw-123".into(), ..Default::default() }],
+        ..Default::default()
+    };
+    let said = og_gui::settings::export_settings(&mine, &file).unwrap();
+    assert!(said.starts_with("1 connection or map written"), "{}", said);
+    assert!(!std::fs::read_to_string(&file).unwrap().contains("pw-123"));
+    let mut theirs = Settings::default();
+    let said = og_gui::settings::import_settings(&mut theirs, &file).unwrap();
+    assert_eq!(said, "1 added, 0 put in place of those with the same name. Write the password or key of 1 under their tabs.");
+    assert_eq!(theirs.connections[0].host, "db");
+    std::fs::write(&file, "{not json").unwrap();
+    assert!(og_gui::settings::import_settings(&mut theirs, &file).unwrap_err().contains("is not a file of settings"));
+    // The section is in the General tab.
+    let mut h = empty_app();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Comma);
+    h.run_steps(3);
+    assert!(h.query_by_label("Export settings…").is_some() && h.query_by_label("Import settings…").is_some());
 }

@@ -1,0 +1,195 @@
+{
+  "format": "ographis/1",
+  "name": "Vehicles in traffic per year, from the vehicle register of Transportstyrelsen",
+  "variables": [
+    {
+      "name": "product",
+      "value": "t10011"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "structure",
+      "type": "HttpCaller",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "url": "'https://api.trafa.se/api/structure?query=$(product)'"
+      },
+      "comment": "The variables and measures of the product, to see what can be asked for. Transportstyrelsen has no open API of its own; the statistics of its vehicle register are given by Trafikanalys"
+    },
+    {
+      "id": "vars",
+      "type": "JsonExploder",
+      "x": 280,
+      "y": 40,
+      "params": {
+        "attribute": "_response",
+        "path": "StructureItems"
+      },
+      "comment": "A feature per variable or measure"
+    },
+    {
+      "id": "keep_vars",
+      "type": "AttributeKeeper",
+      "x": 540,
+      "y": 40,
+      "params": {
+        "keep": [
+          "Name",
+          "Label",
+          "Type",
+          "Description"
+        ]
+      },
+      "comment": "Type D is a variable, M a measure"
+    },
+    {
+      "id": "out_vars",
+      "type": "Writer",
+      "x": 800,
+      "y": 40,
+      "params": {
+        "path": "out/vehicles_structure.csv"
+      },
+      "comment": "What can be asked for"
+    },
+    {
+      "id": "data",
+      "type": "HttpCaller",
+      "x": 20,
+      "y": 240,
+      "params": {
+        "url": "'https://api.trafa.se/api/data?lang=sv&query=$(product)|itrfslut|ar'",
+        "cache": "disk"
+      },
+      "comment": "Vehicles in traffic at the end of each year: the example in the description of the API"
+    },
+    {
+      "id": "rows",
+      "type": "JsonExploder",
+      "x": 280,
+      "y": 240,
+      "params": {
+        "attribute": "_response",
+        "path": "Rows"
+      },
+      "comment": "A feature per year"
+    },
+    {
+      "id": "cells",
+      "type": "JsonExtractor",
+      "x": 540,
+      "y": 240,
+      "params": {
+        "attribute": "Cell",
+        "paths": [
+          [
+            "[Column=ar].Value",
+            "year"
+          ],
+          [
+            "[IsMeasure=true].Value",
+            "in_traffic"
+          ]
+        ]
+      },
+      "comment": "The year and the number"
+    },
+    {
+      "id": "keep",
+      "type": "AttributeKeeper",
+      "x": 800,
+      "y": 240,
+      "params": {
+        "keep": [
+          "year",
+          "in_traffic"
+        ]
+      },
+      "comment": "The table"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "x": 1060,
+      "y": 240,
+      "params": {
+        "path": "out/vehicles_in_traffic.csv"
+      },
+      "comment": "Vehicles in traffic per year"
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "structure",
+        "Output"
+      ],
+      "to": [
+        "vars",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "vars",
+        "Exploded"
+      ],
+      "to": [
+        "keep_vars",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "keep_vars",
+        "Output"
+      ],
+      "to": [
+        "out_vars",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "data",
+        "Output"
+      ],
+      "to": [
+        "rows",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "rows",
+        "Exploded"
+      ],
+      "to": [
+        "cells",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "cells",
+        "Output"
+      ],
+      "to": [
+        "keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "keep",
+        "Output"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}

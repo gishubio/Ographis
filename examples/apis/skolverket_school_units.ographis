@@ -1,0 +1,255 @@
+{
+  "format": "ographis/1",
+  "name": "School units of Skolverket's register as points",
+  "nodes": [
+    {
+      "id": "list",
+      "type": "HttpCaller",
+      "name": "HTTP request",
+      "x": -59.0,
+      "y": 156.0,
+      "params": {
+        "cache": "disk",
+        "headers": "Accept: application/json",
+        "url": "'https://api.skolverket.se/skolenhetsregistret/v2/school-units'"
+      },
+      "comment": "Skolverket's register of school units, version 2: all units. No key"
+    },
+    {
+      "id": "units",
+      "type": "JsonExploder",
+      "name": "Explode JSON list",
+      "x": 216.0,
+      "y": 156.0,
+      "params": {
+        "attribute": "_response",
+        "path": "data.attributes"
+      },
+      "comment": "A feature per school unit, about 12 000"
+    },
+    {
+      "id": "detail",
+      "type": "HttpCaller",
+      "name": "HTTP request",
+      "x": 476.0,
+      "y": 156.0,
+      "params": {
+        "cache": "disk",
+        "headers": "Accept: application/json",
+        "parallel": "4",
+        "url": "'https://api.skolverket.se/skolenhetsregistret/v2/school-units/' || schoolUnitCode"
+      },
+      "comment": "The details of each unit, four at a time. The answers are kept on disk, so the next run asks only for what is new"
+    },
+    {
+      "id": "xy",
+      "type": "JsonExtractor",
+      "name": "Extract JSON values",
+      "x": 736.0,
+      "y": 156.0,
+      "params": {
+        "attribute": "_response",
+        "paths": [
+          [
+            "data.attributes.addresses[type=BESOKSADRESS].geoCoordinates.coordinateSweRefE",
+            "e"
+          ],
+          [
+            "data.attributes.addresses[type=BESOKSADRESS].geoCoordinates.coordinateSweRefN",
+            "n"
+          ],
+          [
+            "data.attributes.addresses[type=BESOKSADRESS].streetAddress",
+            "street_address"
+          ],
+          [
+            "data.attributes.addresses[type=BESOKSADRESS].postalCode",
+            "postal_code"
+          ],
+          [
+            "data.attributes.addresses[type=BESOKSADRESS].locality",
+            "locality"
+          ]
+        ]
+      },
+      "comment": "The coordinates of the visiting address, in SWEREF 99 TM. The postal and delivery addresses have none"
+    },
+    {
+      "id": "flat",
+      "type": "JsonFlattener",
+      "name": "Flatten JSON",
+      "x": 996.0,
+      "y": 156.0,
+      "params": {
+        "attribute": "_response",
+        "prefix": "unit"
+      },
+      "comment": "Every other value of the details as an attribute: municipality, form of school, principal",
+      "comment_box": [
+        -21.0,
+        -91.0,
+        170.0,
+        74.0
+      ]
+    },
+    {
+      "id": "points",
+      "type": "PointCreator",
+      "name": "Create points from x and y",
+      "x": 1256.0,
+      "y": 156.0,
+      "params": {
+        "crs": "EPSG:3006",
+        "x": "e",
+        "y": "n"
+      },
+      "comment": "School units as points. Skolverket's positions are not always right: several units may share a point"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1546.0,
+      "y": 155.0,
+      "params": {
+        "path": "out/school_units.gpkg"
+      },
+      "comment": "School units\nGeoPackage",
+      "comment_box": [
+        26.0,
+        -57.0,
+        82.0,
+        42.0
+      ]
+    },
+    {
+      "id": "no_xy",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1546.0,
+      "y": 355.0,
+      "params": {
+        "path": "out/school_units_without_coordinates.csv"
+      },
+      "comment": "Units with no coordinates for their visiting address, so that none go missing without a word\nCSV"
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "detail",
+        "Output"
+      ],
+      "to": [
+        "xy",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "flat",
+        "Output"
+      ],
+      "to": [
+        "points",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "list",
+        "Output"
+      ],
+      "to": [
+        "units",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "points",
+        "Failed"
+      ],
+      "to": [
+        "no_xy",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "points",
+        "Points"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "units",
+        "Exploded"
+      ],
+      "to": [
+        "detail",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "xy",
+        "Output"
+      ],
+      "to": [
+        "flat",
+        "Input"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "Input",
+      "x": -89.0,
+      "y": 46.0,
+      "w": 234.0,
+      "h": 277.0,
+      "locked": true
+    },
+    {
+      "name": "Output",
+      "x": 1519.0,
+      "y": 61.0,
+      "w": 230.0,
+      "h": 401.0,
+      "color": "pink",
+      "locked": true
+    },
+    {
+      "name": "Manage JSON and attributes",
+      "x": 196.0,
+      "y": 11.0,
+      "w": 986.0,
+      "h": 316.0,
+      "color": "orange",
+      "locked": true
+    },
+    {
+      "name": "Geometry",
+      "x": 1236.0,
+      "y": 26.0,
+      "w": 239.0,
+      "h": 256.0,
+      "color": "purple",
+      "locked": true
+    }
+  ],
+  "notes": [
+    {
+      "text": "Task\nFind school units in Sweden, using the API from Skolverket",
+      "x": 580.0,
+      "y": -121.0,
+      "w": 370.0,
+      "h": 18.0
+    }
+  ]
+}

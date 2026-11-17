@@ -272,7 +272,7 @@ impl App {
         }
         match cmd.output() {
             Ok(o) => {
-                let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)).trim().to_string();
+                let text = format!("{}{}", og_engine::schedule::console_text(&o.stdout), og_engine::schedule::console_text(&o.stderr)).trim().to_string();
                 (o.status.success(), text)
             }
             Err(e) => (false, format!("schtasks could not be started: {}", e)),
@@ -389,10 +389,18 @@ impl App {
                     }
                     if ui.button("Remove it").on_hover_text("Removes the task of this name from the Task Scheduler").clicked() {
                         let (ok, text) = Self::schtasks(&schedule::delete_args(&form.name));
-                        form.answer = Some((ok, if ok { format!("{} is removed.", schedule::task_name(&form.name)) } else { text }));
+                        let task = schedule::task_name(&form.name);
+                        form.answer = Some(if ok {
+                            (true, format!("{} is removed.", task))
+                        } else if !Self::schtasks(&schedule::query_args(&form.name)).0 {
+                            (true, format!("There is no {} in the Task Scheduler to remove.", task))
+                        } else {
+                            (false, text)
+                        });
                     }
                     if ui.button("Is it there?").clicked() {
-                        form.answer = Some(Self::schtasks(&schedule::query_args(&form.name)));
+                        let (ok, text) = Self::schtasks(&schedule::query_args(&form.name));
+                        form.answer = Some(if ok { (true, text) } else { (false, format!("There is no {} in the Task Scheduler.", schedule::task_name(&form.name))) });
                     }
                 } else if let Some(line) = schedule::cron_line(&form.every, &form.time, &command) {
                     if ui.button("Copy a line for crontab").on_hover_text(&line).clicked() {

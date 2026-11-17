@@ -497,6 +497,24 @@ pub trait Backend: Sync {
         let _ = (geotransform, width, height, crs, nearest);
         Err(crate::model::GbError(format!("Reading {} needs the GDAL support.", source)))
     }
+    /// As `read_onto`, every band of the source, such as red, green and blue, with headers
+    /// sent along for a source on the web, such as a login.
+    #[allow(clippy::too_many_arguments)]
+    fn read_bands_onto(
+        &self,
+        source: &str,
+        headers: &[(String, String)],
+        geotransform: [f64; 6],
+        width: usize,
+        height: usize,
+        crs: u32,
+        nearest: bool,
+    ) -> Result<Vec<Vec<f32>>> {
+        if !headers.is_empty() {
+            return Err(crate::model::GbError(format!("Reading {} with a login needs the GDAL support.", source)));
+        }
+        Ok(vec![self.read_onto(source, geotransform, width, height, crs, nearest)?])
+    }
     /// Changes heights from one height system to another, at places given in `crs`: such as
     /// from heights above the ellipsoid, as GNSS gives them, to RH 2000. `from` and `to` are
     /// "ellipsoid" or the EPSG code of a vertical system, such as 5613 for RH 2000. `fetch`

@@ -15,10 +15,9 @@
     {
       "id": "place",
       "type": "PlaceFetcher",
-      "name": "Fetch the place",
+      "comment": "Fetch the place. Heights from the Copernicus DEM and a cloud-free Sentinel-2 picture of the summer, read over the web. Change the place to Matterhorn, Isla Isabela or anywhere",
       "x": 20,
       "y": 60,
-      "comment": "Heights from the Copernicus DEM and a cloud-free Sentinel-2 picture of the summer, read over the web. Change the place to Matterhorn, Isla Isabela or anywhere",
       "params": {
         "place": "$(place)",
         "size": "$(size)",
@@ -29,7 +28,7 @@
     {
       "id": "model",
       "type": "TerrainModel",
-      "name": "Terrain with the picture",
+      "comment": "Terrain with the picture",
       "x": 300,
       "y": 20,
       "params": {
@@ -42,10 +41,9 @@
     {
       "id": "glb",
       "type": "Writer",
-      "name": "For Blender",
+      "comment": "For Blender. File, Import, glTF 2.0 in Blender",
       "x": 580,
       "y": 20,
-      "comment": "File, Import, glTF 2.0 in Blender",
       "params": {
         "path": "out/volcano.glb"
       }
@@ -53,7 +51,7 @@
     {
       "id": "render",
       "type": "SceneRenderer",
-      "name": "A picture of it",
+      "comment": "A picture of it",
       "x": 300,
       "y": 180,
       "params": {
@@ -69,7 +67,7 @@
     {
       "id": "png",
       "type": "Writer",
-      "name": "Rendering",
+      "comment": "Rendering",
       "x": 580,
       "y": 180,
       "params": {
@@ -79,7 +77,7 @@
     {
       "id": "light",
       "type": "ModelLightener",
-      "name": "Lighter for the web",
+      "comment": "Lighter for the web",
       "x": 580,
       "y": 320,
       "params": {
@@ -90,7 +88,7 @@
     {
       "id": "walk",
       "type": "Writer",
-      "name": "Walk on the volcano",
+      "comment": "Walk on the volcano",
       "x": 840,
       "y": 320,
       "params": {

@@ -301,10 +301,10 @@ fn the_log_tells_how_far_a_large_read_has_come() {
     assert_eq!(steps[0], "Points: read 12 000 of 120 000 features (10 %)");
     assert_eq!(steps[9], "Points: read 120 000 of 120 000 features (100 %)");
     assert!(log.iter().any(|l| l.starts_with("Points: 120 000 out")), "counts have a space between the thousands: {:?}", log);
-    // The count on the port and in the data tab too.
+    // The count on the port, written short there, and in full in the data tab.
     h.state_mut().focus_node("in");
     h.run_steps(3);
-    assert!(h.query_all_by_label("120 000").count() >= 1);
+    assert!(h.query_all_by_label("120 k").count() >= 1);
     assert!(h.query_by_label("Output 120 000").is_some());
     h.get_by_label("Log").click();
     h.run_steps(3);

@@ -5,33 +5,57 @@
     {
       "id": "heights",
       "type": "Reader",
-      "name": "Heights",
+      "comment": "Heights. A made-up terrain model of the islands",
       "x": 20,
       "y": 20,
-      "comment": "A made-up terrain model of the islands",
-      "params": {"path": "islands_heights.tif", "raster_as": "grid"}
+      "params": {
+        "path": "islands_heights.tif",
+        "raster_as": "grid"
+      }
     },
     {
       "id": "cover",
       "type": "Reader",
-      "name": "Land cover",
+      "comment": "Land cover. Kinds of land named as in Lantmäteriet's land cover: a mask for each",
       "x": 20,
       "y": 160,
-      "comment": "Kinds of land named as in Lantmäteriet's land cover: a mask for each",
-      "params": {"path": "islands.geojson"}
+      "params": {
+        "path": "islands.geojson"
+      }
     },
     {
       "id": "game",
       "type": "GameEngineExporter",
-      "name": "For Unreal",
+      "comment": "For Unreal. Heightmap, masks and IMPORT.txt in out/game. Change the engine to Unity or Godot",
       "x": 300,
       "y": 60,
-      "comment": "Heightmap, masks and IMPORT.txt in out/game. Change the engine to Unity or Godot",
-      "params": {"engine": "unreal", "folder": "out/game", "mask_by": "kind"}
+      "params": {
+        "engine": "unreal",
+        "folder": "out/game",
+        "mask_by": "kind"
+      }
     }
   ],
   "edges": [
-    {"from": ["heights", "Output"], "to": ["game", "Heights"]},
-    {"from": ["cover", "Output"], "to": ["game", "Areas"]}
+    {
+      "from": [
+        "heights",
+        "Output"
+      ],
+      "to": [
+        "game",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "cover",
+        "Output"
+      ],
+      "to": [
+        "game",
+        "Areas"
+      ]
+    }
   ]
 }

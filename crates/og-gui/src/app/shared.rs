@@ -17,8 +17,10 @@ pub struct Shared {
     /// The user has been told that the file was changed outside while there are changes here.
     pub warned: bool,
     /// The tests run many windows in one program, which would take each other's requests:
-    /// a quiet window shares only when a test asks it to.
+    /// a quiet window, or one alone, shares only when a test asks it to.
     pub when_quiet: bool,
+    /// The window takes no part in sharing, as the windows of the tests.
+    pub alone: bool,
 }
 
 pub fn changed_at(path: &Path) -> Option<SystemTime> {
@@ -28,7 +30,7 @@ pub fn changed_at(path: &Path) -> Option<SystemTime> {
 impl App {
     /// Called every frame; does its work about once a second.
     pub(super) fn share(&mut self) {
-        if self.quiet && !self.shared.when_quiet {
+        if (self.quiet || self.shared.alone) && !self.shared.when_quiet {
             return;
         }
         let now = Instant::now();

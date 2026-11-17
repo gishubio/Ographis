@@ -1,0 +1,83 @@
+{
+  "format": "ographis/1",
+  "name": "Comprehensive plans of two municipalities from the national geodata platform",
+  "nodes": [
+    {
+      "id": "areas",
+      "type": "Reader",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "path": "plan_areas.csv",
+        "wkt": "wkt",
+        "crs": "EPSG:3006"
+      },
+      "comment": "A small square in the centre of each municipality is enough, as a comprehensive plan covers the whole municipality. Add a row for another"
+    },
+    {
+      "id": "plans",
+      "type": "GeodataFetcher",
+      "x": 280,
+      "y": 40,
+      "params": {
+        "product": "ngp_comprehensive_plans",
+        "areas": "each",
+        "connection": "Lantmäteriet",
+        "keep_in": "plans"
+      },
+      "comment": "One search for each municipality, its plans with its name and code. Every file of each plan is kept in the folder plans, also the PDF documents. The login is the API connection Lantmäteriet: a Geotorget user, or a key of the API portal"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "x": 540,
+      "y": 40,
+      "params": {
+        "path": "out/comprehensive_plans.gpkg"
+      },
+      "comment": "The plans, with their areas"
+    },
+    {
+      "id": "files",
+      "type": "Writer",
+      "x": 540,
+      "y": 240,
+      "params": {
+        "path": "out/comprehensive_plan_files.csv"
+      },
+      "comment": "Where each file came from and where it is kept"
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "areas",
+        "Output"
+      ],
+      "to": [
+        "plans",
+        "Extent"
+      ]
+    },
+    {
+      "from": [
+        "plans",
+        "Output"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "plans",
+        "Files"
+      ],
+      "to": [
+        "files",
+        "Input"
+      ]
+    }
+  ]
+}

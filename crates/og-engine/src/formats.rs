@@ -117,6 +117,13 @@ pub const FORMATS: &[Format] = &[
     Format { name: "OGC API Features, WFS", files: "web services", read: GDAL, write: "", note: "Page by page, only what lies in a rectangle if asked" },
     Format { name: "ArcGIS feature services", files: "web services", read: "GDAL (ESRIJSON)", write: "", note: "Layer by layer" },
     Format {
+        name: "WCS, coverage services",
+        files: "web services",
+        read: GDAL,
+        write: "",
+        note: "A coverage as a raster, only the part within a rectangle and at the cell size asked for; the coverages are the layers",
+    },
+    Format {
         name: "CAD drawings",
         files: ".dxf, .dwg",
         read: "GDAL and Ographis; DWG through acadrust",

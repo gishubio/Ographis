@@ -5,44 +5,40 @@
     {
       "id": "areas",
       "type": "Reader",
-      "name": "Subregions",
+      "comment": "Subregions. Input: the subregions of Skaraborg",
       "x": 20,
       "y": 20,
       "params": {
         "path": "subregions.gpkg"
-      },
-      "comment": "Input: the subregions of Skaraborg"
+      }
     },
     {
       "id": "routes",
       "type": "Reader",
-      "name": "Routes",
+      "comment": "Routes. Input: the routes",
       "x": 20,
       "y": 140,
       "params": {
         "path": "routes.shp"
-      },
-      "comment": "Input: the routes"
+      }
     },
     {
       "id": "towns",
       "type": "Reader",
-      "name": "Towns",
+      "comment": "Towns. Input: the towns, in degrees",
       "x": 20,
       "y": 260,
       "params": {
         "path": "towns.csv",
         "crs": "EPSG:4326"
-      },
-      "comment": "Input: the towns, in degrees"
+      }
     },
     {
       "id": "web",
       "type": "WebMapWriter",
-      "name": "Web map",
+      "comment": "Web map output: open out/web_map/index.html in a browser. Click a town to see its attributes, and turn layers on and off in the legend.",
       "x": 300,
       "y": 20,
-      "comment": "Web map output: open out/web_map/index.html in a browser. Click a town to see its attributes, and turn layers on and off in the legend.",
       "params": {
         "path": "out/web_map",
         "format": "webmap",
@@ -81,10 +77,9 @@
     {
       "id": "gl",
       "type": "WebMapWriter",
-      "name": "Web map with MapLibre",
+      "comment": "Web map with MapLibre. Web map output: the same with MapLibre GL, drawn by the graphics card, in out/web_map_gl",
       "x": 300,
       "y": 200,
-      "comment": "Web map output: the same with MapLibre GL, drawn by the graphics card, in out/web_map_gl",
       "params": {
         "path": "out/web_map_gl",
         "format": "webmap",

@@ -16,6 +16,9 @@ use std::path::Path;
 pub const MAX_CELLS: usize = 5_000_000;
 
 fn open(path: &Path) -> Result<Dataset> {
+    if crate::wcs::is_wcs(path) {
+        return crate::wcs::open(path);
+    }
     let p = crate::gdal_path(path);
     Dataset::open_ex(&p, DatasetOptions { open_flags: GdalOpenFlags::GDAL_OF_RASTER | GdalOpenFlags::GDAL_OF_READONLY, ..Default::default() })
         .map_err(|e| GbError(format!("Cannot open {} as a raster: {}", path.display(), e)))
@@ -112,6 +115,19 @@ pub fn read(path: &Path, opts: &ReadOpts, notes: &mut Notes) -> Result<Table> {
         let var = crate::cube::choose(path, opts.layer.as_deref(), notes)?;
         return read(&var, &ReadOpts { layer: None, ..opts.clone() }, notes);
     }
+    // A coverage of a WCS: the one asked for, and only within a rectangle, since the
+    // whole of it may be far more than is wanted, from a server that is shared.
+    if crate::wcs::is_wcs(path) && (!crate::wcs::resolved(path) || opts.layer.is_some()) {
+        let one = crate::wcs::coverage(path, opts.layer.as_deref(), notes)?;
+        debug_assert!(crate::wcs::resolved(&one));
+        return read(&one, &ReadOpts { layer: None, ..opts.clone() }, notes);
+    }
+    if crate::wcs::is_wcs(path) && opts.within.is_none() && opts.raster != RasterMode::Extent {
+        return Err(GbError(
+            "A coverage of a WCS is read within a rectangle: set Only within to a rectangle, or read the coverage as its outline first to see where it lies."
+                .into(),
+        ));
+    }
     let ds = open(path)?;
     let gt = georeferencing(&ds, path)?;
     let (w, h) = ds.raster_size();
@@ -185,14 +201,22 @@ pub fn read(path: &Path, opts: &ReadOpts, notes: &mut Notes) -> Result<Table> {
         });
     }
 
-    let cells = w * h;
+    // Only the cells within the rectangle, when one is set.
+    let (c0, r0, pw, ph) = match window((w, h), &gt, opts.within, crs, path)? {
+        Some(part) => {
+            notes.info(format!("read within the rectangle: {} × {} of {} × {} cells", part.2, part.3, w, h));
+            part
+        }
+        None => (0, 0, w, h),
+    };
+    let cells = pw * ph;
     if cells > MAX_CELLS && opts.limit.is_none_or(|l| l > MAX_CELLS) {
         return Err(GbError(format!(
-            "{} has {} cells ({} × {}), and each would become a feature. Set the largest number of features in the input, or read the raster as its outline.",
+            "{} has {} cells ({} × {}), and each would become a feature. Set the largest number of features in the input, read within a smaller rectangle, or read the raster as a grid or as its outline.",
             path.display(),
             cells,
-            w,
-            h
+            pw,
+            ph
         )));
     }
     let names = band_names(&ds);
@@ -210,18 +234,36 @@ pub fn read(path: &Path, opts: &ReadOpts, notes: &mut Notes) -> Result<Table> {
     }
     let mut features = Vec::new();
     let mut skipped = 0usize;
-    'rows: for row in 0..h {
+    // A coverage of a WCS is asked for in one piece: row by row, GDAL would fetch whole
+    // blocks of the coverage for each row.
+    let whole: Option<Vec<Vec<f64>>> = if crate::wcs::is_wcs(path) {
+        let mut all = Vec::with_capacity(handles.len());
+        for band in &handles {
+            let buf =
+                band.read_as::<f64>((c0 as isize, r0 as isize), (pw, ph), (pw, ph), None).map_err(|e| GbError(format!("Cannot read the coverage: {}", e)))?;
+            all.push(buf.into_shape_and_vec().1);
+        }
+        Some(all)
+    } else {
+        None
+    };
+    'rows: for row in r0..r0 + ph {
         // One row at a time, so that a limit stops the reading early.
         let mut values = Vec::with_capacity(handles.len());
-        for band in &handles {
-            let buf = band.read_as::<f64>((0, row as isize), (w, 1), (w, 1), None).map_err(|e| GbError(format!("Cannot read row {}: {}", row + 1, e)))?;
+        for (b, band) in handles.iter().enumerate() {
+            if let Some(all) = &whole {
+                let from = (row - r0) * pw;
+                values.push(all[b][from..from + pw].to_vec());
+                continue;
+            }
+            let buf =
+                band.read_as::<f64>((c0 as isize, row as isize), (pw, 1), (pw, 1), None).map_err(|e| GbError(format!("Cannot read row {}: {}", row + 1, e)))?;
             values.push(buf.into_shape_and_vec().1);
         }
-        // The column is a place in every band at once, so it is counted rather than iterated.
-        #[allow(clippy::needless_range_loop)]
-        for col in 0..w {
+        for col in c0..c0 + pw {
+            let at = col - c0;
             let empty = |b: usize| {
-                let v = values[b][col];
+                let v = values[b][at];
                 v.is_nan() || nodata[b].is_some_and(|n| v == n || (n.is_nan() && v.is_nan()))
             };
             // A cell without a value in any band is not part of the data.
@@ -236,8 +278,8 @@ pub fn read(path: &Path, opts: &ReadOpts, notes: &mut Notes) -> Result<Table> {
             for b in 0..handles.len() {
                 attrs.push(match (empty(b), kinds[b]) {
                     (true, _) => Value::Null,
-                    (false, true) => Value::Int(values[b][col] as i64),
-                    (false, false) => Value::Real(values[b][col]),
+                    (false, true) => Value::Int(values[b][at] as i64),
+                    (false, false) => Value::Real(values[b][at]),
                 });
             }
             let geom = match opts.raster {
@@ -606,6 +648,71 @@ pub fn read_onto(source: &str, gt: [f64; 6], w: usize, h: usize, crs: u32, neare
     }
     let values = dst.rasterband(1).and_then(|b| b.read_as::<f32>((0, 0), (w, h), (w, h), None)).map_err(|e| GbError(format!("Cannot read the grid: {}", e)))?;
     Ok(values.into_shape_and_vec().1)
+}
+
+/// As read_onto, every band of the source, each as values with NaN where there is none.
+pub fn read_bands_onto(source: &str, gt: [f64; 6], w: usize, h: usize, crs: u32, nearest: bool) -> Result<Vec<Vec<f32>>> {
+    let name = if source.starts_with("http://") || source.starts_with("https://") { format!("/vsicurl/{}", source) } else { source.to_string() };
+    let src = Dataset::open_ex(&name, DatasetOptions { open_flags: GdalOpenFlags::GDAL_OF_RASTER | GdalOpenFlags::GDAL_OF_READONLY, ..Default::default() })
+        .map_err(|e| {
+            GbError(format!("Cannot open {}: {}", source.split('?').next().unwrap_or(source), crate::last_gdal_error().unwrap_or_else(|| e.to_string())))
+        })?;
+    let n = src.raster_count().max(1);
+    // A picture of one band with a table of colours, as scanned maps often are: the numbers
+    // of the colours are moved as they are, and turned into red, green and blue after.
+    let palette: Option<Vec<[f32; 3]>> = if n == 1 {
+        src.rasterband(1).ok().and_then(|b| {
+            b.color_table().map(|t| (0..t.entry_count()).map(|i| t.entry_as_rgb(i).map_or([0.0; 3], |c| [c.r as f32, c.g as f32, c.b as f32])).collect())
+        })
+    } else {
+        None
+    };
+    let nearest = nearest || palette.is_some();
+    let empty: Vec<Vec<f32>> = (0..n).map(|_| vec![f32::NAN; w * h]).collect();
+    let dst = mem_dataset::<f32>(w, h, &empty, gt, crs)?;
+    for b in 1..=n {
+        dst.rasterband(b)
+            .and_then(|mut band| band.set_no_data_value(Some(f64::NAN)))
+            .map_err(|e| GbError(format!("Cannot mark the cells without a value: {}", e)))?;
+    }
+    let alg = if nearest { gdal_sys::GDALResampleAlg::GRA_NearestNeighbour } else { gdal_sys::GDALResampleAlg::GRA_Bilinear };
+    // SAFETY: both datasets are open for the call, and the null arguments mean their own
+    // coordinate systems and no options.
+    let rv = unsafe {
+        gdal_sys::GDALReprojectImage(
+            src.c_dataset(),
+            std::ptr::null(),
+            dst.c_dataset(),
+            std::ptr::null(),
+            alg,
+            0.0,
+            0.125,
+            None,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if rv != gdal_sys::CPLErr::CE_None {
+        return Err(GbError(format!(
+            "Cannot read {} onto the grid: {}",
+            source.split('?').next().unwrap_or(source),
+            crate::last_gdal_error().unwrap_or_default()
+        )));
+    }
+    let bands: Vec<Vec<f32>> = (1..=n)
+        .map(|b| {
+            dst.rasterband(b)
+                .and_then(|band| band.read_as::<f32>((0, 0), (w, h), (w, h), None))
+                .map(|v| v.into_shape_and_vec().1)
+                .map_err(|e| GbError(format!("Cannot read the grid: {}", e)))
+        })
+        .collect::<Result<_>>()?;
+    match palette {
+        Some(colours) => Ok((0..3)
+            .map(|c| bands[0].iter().map(|i| if i.is_nan() { f32::NAN } else { colours.get(*i as usize).map_or(f32::NAN, |rgb| rgb[c]) }).collect())
+            .collect()),
+        None => Ok(bands),
+    }
 }
 
 /// A picture in another coordinate system. What lies outside the picture is see-through.

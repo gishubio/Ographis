@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.96.3. Written by og schema.",
+  "description": "A model of Ographis 0.96.4. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -231,6 +231,7 @@
             "GameEngineExporter",
             "SplatMaker",
             "PlaceFetcher",
+            "GeodataFetcher",
             "HotSpots",
             "SpatialAutocorrelation",
             "PointClusters",
@@ -351,7 +352,7 @@
                   },
                   "web_as": {
                     "title": "The address is",
-                    "description": "one of the values in choices, as a string. A service is read through its own pages, and only what reaches into a rectangle when one is set: OGC API Features (/collections), WFS, or an ArcGIS FeatureServer. A GeoTIFF (.tif) and a COPC point cloud (.copc.laz) are read where they are: only the rectangle, and a GeoTIFF from its overviews when read coarser",
+                    "description": "one of the values in choices, as a string. A service is read through its own pages, and only what reaches into a rectangle when one is set: OGC API Features (/collections), WFS, or an ArcGIS FeatureServer. A WCS gives its coverages as rasters, read within the rectangle. A GeoTIFF (.tif) and a COPC point cloud (.copc.laz) are read where they are: only the rectangle, and a GeoTIFF from its overviews when read coarser",
                     "anyOf": [
                       {
                         "enum": [
@@ -360,6 +361,7 @@
                           "ogcapi",
                           "wfs",
                           "arcgis",
+                          "wcs",
                           "3dtiles",
                           "vectortiles",
                           "cog",
@@ -5785,7 +5787,8 @@
                           "none",
                           "next",
                           "offset",
-                          "page"
+                          "page",
+                          "cursor"
                         ]
                       },
                       {
@@ -5799,9 +5802,13 @@
                     "title": "Next page at",
                     "description": "a string. The path to the address of the next page, such as next_page, links[rel=next].href or @odata.nextLink. Empty uses the Link header"
                   },
+                  "cursor_path": {
+                    "title": "Cursor at",
+                    "description": "a string. The path to the value in the answer that asks for the next page, such as nextCursorId or meta.next_cursor. The pages stop when it is missing or empty"
+                  },
                   "page_param": {
                     "title": "Parameter of the page",
-                    "description": "a string. Such as offset, skip, start or page"
+                    "description": "a string. Such as offset, skip, start or page; for a cursor the parameter it is sent as, such as cursorId (cursor if empty)"
                   },
                   "size_param": {
                     "title": "Parameter of the page size",
@@ -5975,6 +5982,24 @@
                   "index_attr": {
                     "title": "Number the elements",
                     "description": "the name of an attribute to add, or empty for none. The place of each element in its list, from 0, in an attribute"
+                  },
+                  "objects": {
+                    "title": "Objects in an element",
+                    "description": "one of the values in choices, as a string. Kept whole as JSON when they are to be read as a whole: a GeoJSON area for Geometry from text, or an object to explode or extract from later",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "flatten",
+                          "geojson",
+                          "json"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "flatten"
                   },
                   "keep": {
                     "title": "Keep the JSON attribute",
@@ -10458,6 +10483,145 @@
                     "title": "Pictures from",
                     "description": "a string. A STAC API with sentinel-2-l2a, its bands red, green, blue and scl",
                     "default": "https://earth-search.aws.element84.com/v1"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "GeodataFetcher"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "title": "From",
+                    "description": "one of the values in choices, as a string. Who the geodata comes from",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "lantmateriet"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "lantmateriet"
+                  },
+                  "product": {
+                    "title": "Product",
+                    "description": "one of the values in choices, as a string. What to fetch",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "lm_addresses",
+                          "ngp_detailed_plans",
+                          "lm_divisions",
+                          "lm_laser_forest",
+                          "lm_heights",
+                          "lm_nmk50",
+                          "lm_nmk250",
+                          "lm_photo",
+                          "lm_topo10",
+                          "lm_topo50",
+                          "lm_topo250",
+                          "lm_topo1m",
+                          "ngp_comprehensive_plans"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "lm_heights"
+                  },
+                  "bbox": {
+                    "title": "Area",
+                    "description": "a string. A rectangle: west, south, east, north, such as 319000, 6399000, 321000, 6401000. A stream on Extent is used instead, if one is connected"
+                  },
+                  "bbox_crs": {
+                    "title": "Area in",
+                    "description": "a coordinate system, such as \"EPSG:3006\". The coordinate system of the rectangle",
+                    "default": "EPSG:3006"
+                  },
+                  "areas": {
+                    "title": "Several on Extent",
+                    "description": "one of the values in choices, as a string. Each on its own: a municipality at a time, say, each with its own rectangle and largest area, and what is fetched gets its attributes",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "together",
+                          "each"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "together"
+                  },
+                  "max_km2": {
+                    "title": "Largest area, km²",
+                    "description": "a string. A larger area is not fetched, as the files are many and large",
+                    "default": "25"
+                  },
+                  "cell_size": {
+                    "title": "Cell size",
+                    "description": "a string. Heights and photos: the side of a cell in metres. Empty: 1 m for heights, 0.5 m for photos"
+                  },
+                  "year": {
+                    "title": "Year",
+                    "description": "a string. Heights and photos: only from this year, or from and to, such as 2021/2024. Empty: the latest of each place"
+                  },
+                  "layers": {
+                    "title": "Layers",
+                    "description": "a string. Features: the layers to read, separated by commas, such as vagnat, byggnad. Empty: all"
+                  },
+                  "las_classes": {
+                    "title": "Classes",
+                    "description": "a string. Point clouds: only these classes, such as 2 for the ground. Empty: all"
+                  },
+                  "las_every": {
+                    "title": "Every n-th point",
+                    "description": "a string. Point clouds: thins them, 10 reads one point in ten. 1 reads all",
+                    "default": "1"
+                  },
+                  "las_spacing": {
+                    "title": "Spacing between points",
+                    "description": "a string. Point clouds: only the levels of the files down to about this many metres between points, such as 2 for an overview of a large area. Empty reads all"
+                  },
+                  "max_points": {
+                    "title": "Most points",
+                    "description": "a string. Point clouds: more are not read, so that the memory of the computer is not filled. How many there will be is told before anything is fetched; thin them, or raise this if the computer has the memory",
+                    "default": "50000000"
+                  },
+                  "keep_in": {
+                    "title": "Keep the files in",
+                    "description": "a string. A folder where every file of the area is kept whole, all that the provider offers with it, such as pictures and PDF, under their own names, by collection: to read again later or in other programs. Relative to the folder of the model, such as data/lantmateriet. A file that is there already is not fetched again. Empty: only what is needed is read, and files that must be fetched whole are kept for a while in the temporary folder of the computer"
+                  },
+                  "connection": {
+                    "title": "API connection",
+                    "description": "the name of an API connection in the settings of the user. The login for the files. For Lantmäteriet: a user and a password, those of Geotorget; or OAuth2 with a key and secret of its API portal. The products must be ordered on Geotorget"
+                  },
+                  "collection": {
+                    "title": "Collection",
+                    "description": "a string. The collection of the catalogue, when another than the one found by itself. The log lists them"
+                  },
+                  "catalogue": {
+                    "title": "Catalogue",
+                    "description": "a string. Another address of the STAC API of the product. Empty: the provider's"
                   }
                 }
               }

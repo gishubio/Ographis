@@ -92,7 +92,7 @@ fn page(o: &WalkOpts, data: &str) -> String {
 <body>
 <div id="panel">
   <h1>{esc}</h1>
-  <p>Click to look around. <b>W A S D</b> or the arrows to walk, <b>Shift</b> to run, the <b>wheel</b> or <b>+</b> and <b>−</b> for the speed, <b>F</b> to fly, <b>Space</b> and <b>C</b> up and down when flying, <b>E</b> or a click on what is in the middle for its attributes, <b>Esc</b> to stop.</p>
+  <p>Click to look around. <b>W A S D</b> or the arrows to walk, <b>Shift</b> to run, the <b>wheel</b> or <b>+</b> and <b>−</b> for the speed, <b>F</b> to fly where you look, <b>Space</b> and <b>C</b> up and down when flying, <b>E</b> or a click on what is in the middle for its attributes, <b>Esc</b> to stop.</p>
   <p>Mode: <span id="mode">walking</span>, <span id="speed"></span></p>
   <label>Date <input id="date" type="date"></label>
   <label>Time <input id="time" type="range" min="0" max="24" step="0.25"> <span id="clock"></span></label>
@@ -193,7 +193,9 @@ const down = new THREE.Raycaster(), ahead = new THREE.Raycaster(), pick = new TH
 // The height of the ground under a place: the highest surface below the knees.
 function ground(p) {{
   down.set(new THREE.Vector3(p.x, p.y - EYE + 0.5, p.z), new THREE.Vector3(0, -1, 0));
-  down.far = 1000;
+  // As far down as the model reaches, so that the ground is found from high above a
+  // mountain too.
+  down.far = box ? Math.max(1000, box.max.y - box.min.y + 10) : 1000;
   const hit = down.intersectObjects(solids, false)[0];
   return hit ? hit.point.y : null;
 }}
@@ -270,8 +272,10 @@ function step() {{
   const dt = Math.min(clockTime.getDelta(), 0.25);
   const run = keys.ShiftLeft || keys.ShiftRight ? 4 : 1;
   const speed = (flying ? flySpeed() : SPEED) * factor;
-  const forward = new THREE.Vector3(-Math.sin(camera.rotation.y), 0, -Math.cos(camera.rotation.y));
-  const right = new THREE.Vector3(-forward.z, 0, forward.x);
+  // Walking goes along the ground; flying goes where one looks, up and down too.
+  const level = new THREE.Vector3(-Math.sin(camera.rotation.y), 0, -Math.cos(camera.rotation.y));
+  const forward = flying ? camera.getWorldDirection(new THREE.Vector3()) : level;
+  const right = new THREE.Vector3(-level.z, 0, level.x);
   const move = new THREE.Vector3();
   if (keys.KeyW || keys.ArrowUp) move.add(forward);
   if (keys.KeyS || keys.ArrowDown) move.sub(forward);
@@ -279,11 +283,14 @@ function step() {{
   if (keys.KeyA || keys.ArrowLeft) move.sub(right);
   if (move.lengthSq() > 0) {{
     move.normalize().multiplyScalar(speed * run * dt);
-    // Each way by itself, so that one slides along a wall.
-    for (const axis of [new THREE.Vector3(move.x, 0, 0), new THREE.Vector3(0, 0, move.z)]) {{
-      const len = axis.length();
-      if (len === 0) continue;
-      if (flying || !blocked(camera.position, axis.clone().normalize(), len)) camera.position.add(axis);
+    if (flying) camera.position.add(move);
+    else {{
+      // Each way by itself, so that one slides along a wall.
+      for (const axis of [new THREE.Vector3(move.x, 0, 0), new THREE.Vector3(0, 0, move.z)]) {{
+        const len = axis.length();
+        if (len === 0) continue;
+        if (!blocked(camera.position, axis.clone().normalize(), len)) camera.position.add(axis);
+      }}
     }}
   }}
   if (flying) {{

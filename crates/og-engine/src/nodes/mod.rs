@@ -694,7 +694,7 @@ pub use chart::alphabetical;
 pub use database::{connection as postgis_connection, named_connection, sql_literal, SqlTemplate};
 pub use geom_inspect::geometry_problem;
 pub use input::{
-    is_gtfs_folder, is_plain_json, is_service, is_tileset, is_url, osm_tags, reader_sources, service_name, source_ext, wildcard_match, Sources,
+    is_gtfs_folder, is_plain_json, is_service, is_tileset, is_url, is_wcs, osm_tags, reader_sources, service_name, source_ext, wildcard_match, Sources,
     DEFAULT_PATTERN, READ_FORMATS, SERVICE_PREFIXES, WEB_SERVICES,
 };
 pub use json::{geojson, json_paths_of, name_of_path};
@@ -731,6 +731,7 @@ pub use pointcloud089::class_port;
 mod audit;
 mod custom096;
 mod engines096;
+mod geodata;
 mod ifc096;
 mod lengths096;
 mod locate096;
@@ -763,6 +764,7 @@ pub mod vector_tiles;
 pub(crate) use solid::add_block;
 mod terrain;
 mod web;
+pub use web::{constant_text, try_request, Tried};
 mod workflow;
 
 // Some modules have helpers that others use, such as same_crs in geom_overlay. Every
@@ -822,6 +824,7 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         engines096::TYPES,
         splats096::TYPES,
         place096::TYPES,
+        geodata::TYPES,
         stats096::TYPES,
         movement096::TYPES,
         locate096::TYPES,

@@ -1,0 +1,181 @@
+{
+  "format": "ographis/1",
+  "name": "Weather warnings of SMHI as areas",
+  "nodes": [
+    {
+      "id": "warnings",
+      "type": "HttpCaller",
+      "name": "HTTP request",
+      "x": -102.0,
+      "y": -189.0,
+      "params": {
+        "url": "'https://opendata-download-warnings.smhi.se/ibww/api/version/1/warning.json'"
+      },
+      "comment": "SMHI: the impact based warnings in force now. No key. An empty list when there are none"
+    },
+    {
+      "id": "each",
+      "type": "JsonExploder",
+      "name": "Explode JSON list",
+      "x": 195.0,
+      "y": -193.0,
+      "params": {
+        "attribute": "_response",
+        "path": ""
+      },
+      "comment": "A feature per warning"
+    },
+    {
+      "id": "areas",
+      "type": "JsonExploder",
+      "name": "Explode JSON list",
+      "x": 455.0,
+      "y": -193.0,
+      "params": {
+        "attribute": "warningAreas",
+        "objects": "geojson",
+        "path": "",
+        "prefix": "w"
+      },
+      "comment": "A feature per area of a warning, its area kept whole as GeoJSON"
+    },
+    {
+      "id": "geom",
+      "type": "GeometryFromText",
+      "name": "Geometry from text",
+      "x": 715.0,
+      "y": -193.0,
+      "params": {
+        "attribute": "w.area",
+        "crs": "EPSG:4326",
+        "kind": "geojson"
+      },
+      "comment": "The area is GeoJSON, kept whole"
+    },
+    {
+      "id": "keep",
+      "type": "AttributeKeeper",
+      "name": "Keep attributes",
+      "x": 975.0,
+      "y": -193.0,
+      "params": {
+        "keep": [
+          "id",
+          "event.sv",
+          "w.warningLevel.sv",
+          "w.eventDescription.sv",
+          "w.areaName.sv",
+          "w.approximateStart",
+          "w.approximateEnd"
+        ]
+      },
+      "comment": "What a map of warnings needs"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1235.0,
+      "y": -193.0,
+      "params": {
+        "path": "out/smhi_warnings.gpkg"
+      },
+      "comment": "Warnings\nGeoPackage",
+      "comment_box": [
+        27.0,
+        -63.0,
+        88.0,
+        45.0
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "areas",
+        "Exploded"
+      ],
+      "to": [
+        "geom",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "each",
+        "Exploded"
+      ],
+      "to": [
+        "areas",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "geom",
+        "Output"
+      ],
+      "to": [
+        "keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "keep",
+        "Output"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "warnings",
+        "Output"
+      ],
+      "to": [
+        "each",
+        "Input"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "Output",
+      "x": 1215.0,
+      "y": -297.0,
+      "w": 168.0,
+      "h": 198.0,
+      "color": "pink",
+      "locked": true
+    },
+    {
+      "name": "Fetch data from SMHI",
+      "x": -129.0,
+      "y": -321.0,
+      "w": 235.0,
+      "h": 289.0,
+      "locked": true
+    },
+    {
+      "name": "Manage JSON and attributes",
+      "x": 167.0,
+      "y": -307.0,
+      "w": 1002.0,
+      "h": 292.0,
+      "color": "orange",
+      "locked": true
+    }
+  ],
+  "notes": [
+    {
+      "text": "Task\nFetch messages and weather warnings from SMHI",
+      "x": 434.0,
+      "y": -415.0,
+      "w": 313.0,
+      "h": 16.0
+    }
+  ]
+}

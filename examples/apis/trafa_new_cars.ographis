@@ -1,0 +1,129 @@
+{
+  "format": "ographis/1",
+  "name": "New cars per county from Trafikanalys",
+  "variables": [
+    {
+      "name": "year",
+      "value": "2024"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "trafa",
+      "type": "HttpCaller",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "url": "'https://api.trafa.se/api/data?lang=sv&query=t10026|ar:$(year)|reglan|nyregunder'",
+        "cache": "disk"
+      },
+      "comment": "Trafikanalys: a product with its variables and a measure, separated by |. t10026 is new registrations of cars, reglan the county and nyregunder the number. No key. Products and variables are listed by api/structure"
+    },
+    {
+      "id": "rows",
+      "type": "JsonExploder",
+      "x": 280,
+      "y": 40,
+      "params": {
+        "attribute": "_response",
+        "path": "Rows"
+      },
+      "comment": "A feature per row"
+    },
+    {
+      "id": "cells",
+      "type": "JsonExtractor",
+      "x": 540,
+      "y": 40,
+      "params": {
+        "attribute": "Cell",
+        "paths": [
+          [
+            "[Column=ar].Value",
+            "year"
+          ],
+          [
+            "[Column=reglan].Name",
+            "county_code"
+          ],
+          [
+            "[Column=reglan].Value",
+            "county"
+          ],
+          [
+            "[IsMeasure=true].Value",
+            "new_cars"
+          ]
+        ]
+      },
+      "comment": "Each row is a list of cells, found by their column"
+    },
+    {
+      "id": "keep",
+      "type": "AttributeKeeper",
+      "x": 800,
+      "y": 40,
+      "params": {
+        "keep": [
+          "year",
+          "county_code",
+          "county",
+          "new_cars"
+        ]
+      },
+      "comment": "The table"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "x": 1060,
+      "y": 40,
+      "params": {
+        "path": "out/new_cars.csv"
+      },
+      "comment": "New cars per county"
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "trafa",
+        "Output"
+      ],
+      "to": [
+        "rows",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "rows",
+        "Exploded"
+      ],
+      "to": [
+        "cells",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "cells",
+        "Output"
+      ],
+      "to": [
+        "keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "keep",
+        "Output"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}

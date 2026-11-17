@@ -1,0 +1,163 @@
+{
+  "format": "ographis/1",
+  "name": "News from Krisinformation.se and the areas they concern",
+  "nodes": [
+    {
+      "id": "news",
+      "type": "HttpCaller",
+      "name": "HTTP request",
+      "x": -11.0,
+      "y": 38.0,
+      "params": {
+        "url": "'https://api.krisinformation.se/v3/news?days=$(days)'"
+      },
+      "comment": "Krisinformation.se, API v3: the news of the last days. No key"
+    },
+    {
+      "id": "each",
+      "type": "JsonExploder",
+      "name": "Explode JSON list",
+      "x": 301.0,
+      "y": 40.0,
+      "params": {
+        "attribute": "_response",
+        "path": ""
+      },
+      "comment": "A feature per news item"
+    },
+    {
+      "id": "areas",
+      "type": "JsonExploder",
+      "name": "Explode JSON list",
+      "x": 540.0,
+      "y": 40.0,
+      "params": {
+        "attribute": "area",
+        "path": "",
+        "prefix": "area"
+      },
+      "comment": "A feature per area the news concerns: a county, a municipality or all of Sweden"
+    },
+    {
+      "id": "keep",
+      "type": "AttributeKeeper",
+      "name": "Keep attributes",
+      "x": 764.0,
+      "y": 36.0,
+      "params": {
+        "keep": [
+          "identifier",
+          "published",
+          "headline",
+          "preamble",
+          "web",
+          "area.type",
+          "area.description"
+        ]
+      },
+      "comment": "What a table of news needs"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1060.0,
+      "y": 40.0,
+      "params": {
+        "path": "out/krisinformation.csv"
+      },
+      "comment": "News per area\nCSV",
+      "comment_box": [
+        20.0,
+        -58.0,
+        98.0,
+        45.0
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "areas",
+        "Exploded"
+      ],
+      "to": [
+        "keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "each",
+        "Exploded"
+      ],
+      "to": [
+        "areas",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "keep",
+        "Output"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "news",
+        "Output"
+      ],
+      "to": [
+        "each",
+        "Input"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "Fetch data from krisinformation.se",
+      "x": -43.0,
+      "y": -59.0,
+      "w": 249.0,
+      "h": 254.0,
+      "locked": true
+    },
+    {
+      "name": "Manage JSON and attributes",
+      "x": 273.0,
+      "y": -72.0,
+      "w": 702.0,
+      "h": 251.0,
+      "color": "orange",
+      "locked": true
+    },
+    {
+      "name": "Output",
+      "x": 1033.0,
+      "y": -60.0,
+      "w": 178.0,
+      "h": 201.0,
+      "color": "pink",
+      "locked": true
+    }
+  ],
+  "notes": [
+    {
+      "text": "Task\nGet crisis information from krisinformation.se",
+      "x": 468.0,
+      "y": -183.0,
+      "w": 284.0,
+      "h": 16.0
+    }
+  ],
+  "variables": [
+    {
+      "name": "days",
+      "value": "30"
+    }
+  ]
+}

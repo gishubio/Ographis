@@ -57,10 +57,10 @@ pub(crate) fn service(path: &Path) -> Option<Service> {
 }
 
 /// Headers for GDAL's own requests, set for this thread while it reads.
-struct HeadersFor;
+pub(crate) struct HeadersFor;
 
 impl HeadersFor {
-    fn set(headers: &[(String, String)]) -> Option<HeadersFor> {
+    pub(crate) fn set(headers: &[(String, String)]) -> Option<HeadersFor> {
         if headers.is_empty() {
             return None;
         }

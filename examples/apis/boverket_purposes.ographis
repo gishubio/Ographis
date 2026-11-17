@@ -1,0 +1,66 @@
+{
+  "format": "ographis/1",
+  "name": "The catalogue of purposes of buildings from Boverket",
+  "variables": [
+    {
+      "name": "address",
+      "value": "https://api.boverket.se/"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "catalogue",
+      "type": "HttpCaller",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "url": "'$(address)'",
+        "connection": "Boverket"
+      },
+      "comment": "Boverket's Ändamålskatalog: the purposes of buildings. Write the address of the whole catalogue from Boverket's API portal, api-portal.boverket.se, in the variable address. The subscription key is the API connection Boverket: a key in the header Ocp-Apim-Subscription-Key"
+    },
+    {
+      "id": "flat",
+      "type": "JsonFlattener",
+      "x": 280,
+      "y": 40,
+      "params": {
+        "attribute": "_response",
+        "lists": "text"
+      },
+      "comment": "Every value of the answer as an attribute, to see what it holds. Then Explode JSON list on the list of purposes"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "x": 540,
+      "y": 40,
+      "params": {
+        "path": "out/purposes.csv"
+      },
+      "comment": "The catalogue"
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "catalogue",
+        "Output"
+      ],
+      "to": [
+        "flat",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "flat",
+        "Output"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}

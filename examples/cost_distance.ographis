@@ -6,41 +6,38 @@
     {
       "id": "terrain",
       "type": "Reader",
-      "name": "Terrain",
+      "comment": "Terrain. The made-up terrain, a height every 20 m",
       "x": 20,
       "y": 20,
       "params": {
         "path": "terrain.tif",
         "raster_as": "grid"
-      },
-      "comment": "The made-up terrain, a height every 20 m"
+      }
     },
     {
       "id": "slope",
       "type": "TerrainAnalyzer",
-      "name": "Slope",
+      "comment": "Slope. The slope of each cell in degrees",
       "x": 280,
       "y": 20,
       "params": {
         "measure": "slope"
-      },
-      "comment": "The slope of each cell in degrees"
+      }
     },
     {
       "id": "cost",
       "type": "RasterCalculator",
-      "name": "Minutes a metre on foot",
+      "comment": "Minutes a metre on foot. Tobler's hiking function: about 5 km/h on flat ground, slower up and down steep slopes. As minutes for each metre",
       "x": 540,
       "y": 20,
       "params": {
         "expression": "60 / (6000 * exp(-3.5 * abs(tan(radians(A)) + 0.05)))"
-      },
-      "comment": "Tobler's hiking function: about 5 km/h on flat ground, slower up and down steep slopes. As minutes for each metre"
+      }
     },
     {
       "id": "centres",
       "type": "Reader",
-      "name": "Health centres",
+      "comment": "Health centres",
       "x": 20,
       "y": 260,
       "params": {
@@ -50,18 +47,17 @@
     {
       "id": "reach",
       "type": "CostDistance",
-      "name": "Minutes on foot from them",
+      "comment": "Minutes on foot from them. The quickest way across the terrain from the nearest health centre, without roads, up to an hour and a half",
       "x": 800,
       "y": 140,
       "params": {
         "reach": "90"
-      },
-      "comment": "The quickest way across the terrain from the nearest health centre, without roads, up to an hour and a half"
+      }
     },
     {
       "id": "lines",
       "type": "ContourGenerator",
-      "name": "Every 15 minutes",
+      "comment": "Every 15 minutes",
       "x": 1060,
       "y": 20,
       "params": {
@@ -72,7 +68,7 @@
     {
       "id": "bands",
       "type": "ContourGenerator",
-      "name": "Bands of 15 minutes",
+      "comment": "Bands of 15 minutes",
       "x": 1060,
       "y": 260,
       "params": {
@@ -84,7 +80,7 @@
     {
       "id": "raster_out",
       "type": "Writer",
-      "name": "Minutes as a GeoTIFF",
+      "comment": "Minutes as a GeoTIFF",
       "x": 1060,
       "y": 500,
       "params": {
@@ -94,7 +90,7 @@
     {
       "id": "map",
       "type": "MapRenderer",
-      "name": "Map",
+      "comment": "Map",
       "x": 1320,
       "y": 140,
       "params": {
@@ -136,7 +132,7 @@
     {
       "id": "map_out",
       "type": "Writer",
-      "name": "Map as PNG",
+      "comment": "Map as PNG",
       "x": 1580,
       "y": 140,
       "params": {

@@ -156,6 +156,7 @@ enum Func {
     Max,
     Upper,
     Lower,
+    UrlEncode,
     Length,
     Trim,
     Substr,
@@ -220,6 +221,13 @@ const FUNCS: &[(&str, Func, usize, usize, &str)] = &[
     ("max", Func::Max, 1, 99, "max(a, b, …) gives the largest number"),
     ("upper", Func::Upper, 1, 1, "upper(text) gives upper case"),
     ("lower", Func::Lower, 1, 1, "lower(text) gives lower case"),
+    (
+        "url_encode",
+        Func::UrlEncode,
+        1,
+        1,
+        "url_encode(text) makes text safe to put in a web address, such as a value after ?q=: url_encode('Rock & Roll') gives Rock%20%26%20Roll",
+    ),
     ("initcap", Func::Initcap, 1, 1, "initcap(text) makes every word begin with a capital: Lilla Edet"),
     ("length", Func::Length, 1, 1, "length(text) gives the number of characters"),
     ("trim", Func::Trim, 1, 1, "trim(text) removes whitespace at both ends"),
@@ -1039,6 +1047,7 @@ fn call(f: Func, args: &[Expr], row: &Row) -> Result<Value> {
         }
         Func::Upper => Value::Text(text(0).to_uppercase()),
         Func::Lower => Value::Text(text(0).to_lowercase()),
+        Func::UrlEncode => Value::Text(url_encode(&text(0))),
         Func::Length => Value::Int(text(0).chars().count() as i64),
         Func::Trim => Value::Text(text(0).trim().to_string()),
         Func::Substr => {
@@ -1423,6 +1432,10 @@ mod tests {
         assert_eq!(run("regexp_replace('a-b', '-', '$$')", &[], vec![]).unwrap(), t("a$$b"));
         assert_eq!(run("regexp_match(a, 'Göte')", &f, row()).unwrap(), Value::Int(22));
         assert_eq!(run("regexp_match(a, 'Malmö')", &f, row()).unwrap(), Value::Int(0));
+        // Text made safe for a web address.
+        assert_eq!(run("url_encode('Rock & Roll #1')", &[], vec![]).unwrap(), t("Rock%20%26%20Roll%20%231"));
+        assert_eq!(run("url_encode('Göteborg;Borås')", &[], vec![]).unwrap(), t("G%C3%B6teborg%3BBor%C3%A5s"));
+        assert_eq!(run("url_encode('a-b_c.d~e')", &[], vec![]).unwrap(), t("a-b_c.d~e"));
         assert_eq!(run("strpos(a, 'Göteborg')", &f, row()).unwrap(), Value::Int(22));
         assert_eq!(run("starts_with(a, 'Stor')", &f, row()).unwrap(), Value::Bool(true));
         assert_eq!(run("nullif('-', '-')", &[], vec![]).unwrap(), Value::Null);
@@ -1512,4 +1525,18 @@ mod time_tests {
         assert_eq!(run("date_diff('2026-10-21T09:30', '2026-10-21T08:00', 'minutes')"), Value::Real(90.0));
         assert_eq!(run("date_diff('2026-10-31', '2026-10-21')"), Value::Real(10.0));
     }
+}
+
+/// Text made safe for a web address: every byte but letters, digits and - _ . ~ as %XX, with
+/// UTF-8 for å, ä and ö.
+pub fn url_encode(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for b in text.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{:02X}", b));
+        }
+    }
+    out
 }

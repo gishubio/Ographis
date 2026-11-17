@@ -2,6 +2,29 @@
 
 use super::*;
 
+/// The side to side scrolling of the table: where it is, how much shows, how wide it is, and
+/// where it is to go.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TableScroll {
+    pub offset: f32,
+    pub view: f32,
+    pub content: f32,
+    pub go: Option<f32>,
+}
+
+impl TableScroll {
+    /// The farthest it scrolls.
+    pub fn most(&self) -> f32 {
+        (self.content - self.view).max(0.0)
+    }
+
+    /// Scrolls most of what shows to the side: left for a negative way, right for a positive.
+    pub fn page(&mut self, way: f32) {
+        let from = self.go.unwrap_or(self.offset);
+        self.go = Some((from + way * (self.view * 0.8).max(60.0)).clamp(0.0, self.most()));
+    }
+}
+
 impl App {
     pub(super) fn inspector(&mut self, ui: &mut Ui, pal: &Palette) {
         let (errors, warnings) = self.result.as_ref().map_or((0, 0), |r| (r.errors, r.warnings));
@@ -242,7 +265,22 @@ impl App {
                             _ => "This node has not run yet.".to_string(),
                         };
                         let color = if matches!(status, Some((Status::Error, _))) { pal.err } else { pal.muted };
-                        ui.label(RichText::new(msg).color(color));
+                        // A long message is cut to the room beside the buttons of the map, and
+                        // shown whole when pointed at and in the log, so that it does not push the
+                        // panel wider than the window.
+                        let controls = ui.ctx().data(|d| d.get_temp::<f32>(egui::Id::new("map-controls-width"))).unwrap_or(600.0);
+                        let room = (ui.available_width() - controls - 16.0).max(120.0);
+                        ui.scope(|ui| {
+                            ui.set_max_width(room);
+                            let shown = ui.add(egui::Label::new(RichText::new(&msg).color(color)).truncate().sense(egui::Sense::click())).on_hover_text(&msg);
+                            // The message to paste elsewhere, with the node it is about.
+                            shown.context_menu(|ui| {
+                                if ui.button("Copy the message").clicked() {
+                                    ui.ctx().copy_text(format!("{}: {}", name, msg));
+                                    ui.close();
+                                }
+                            });
+                        });
                     }
                     _ => {
                         let msg = if self.result.is_some() {
@@ -262,7 +300,12 @@ impl App {
                     self.map.background = (want != "none" && want != "osm").then(|| want.clone());
                     self.map.applied_default = Some(want);
                 }
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| self.map.controls(ui));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    self.map.controls(ui);
+                    // How wide the buttons of the map are, for the room of a message beside them.
+                    let wide = ui.min_rect().width();
+                    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("map-controls-width"), wide));
+                });
             });
         });
         ui.separator();
@@ -388,6 +431,29 @@ impl App {
                     if let Some(e) = filtered.as_ref().and_then(|f| f.error.clone()).or_else(|| self.filter_error.clone().filter(|_| !filter_text.trim().is_empty())) {
                         ui.label(RichText::new(e).small().color(pal.err));
                     }
+                    // How many rows are picked, with Ctrl and Shift too.
+                    if let Some(first) = selected {
+                        let n = 1 + more.iter().filter(|r| **r != first).count();
+                        let text = if n == 1 { "1 row selected".to_string() } else { format!("{} rows selected", og_engine::model::fmt_count(n as u64)) };
+                        ui.label(RichText::new(text).small().color(pal.muted));
+                    }
+                    // Buttons to scroll the attributes to the side, easier to hit than the
+                    // scroll bar when there are many.
+                    // Only when there is more to the side than shows.
+                    if !self.show_stats && self.table_was && self.table_scroll.most() > 0.5 {
+                        let s = self.table_scroll;
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.add_space(8.0);
+                            let tip = "Scroll the table to the right. The arrow keys too, when the table was clicked last";
+                            if ui.add_enabled(s.offset < s.most() - 0.5, egui::Button::new("▶")).on_hover_text(tip).clicked() {
+                                self.table_scroll.page(1.0);
+                            }
+                            let tip = "Scroll the table to the left. The arrow keys too, when the table was clicked last";
+                            if ui.add_enabled(s.offset > 0.5, egui::Button::new("◀")).on_hover_text(tip).clicked() {
+                                self.table_scroll.page(-1.0);
+                            }
+                        });
+                    }
                 });
                 ui.add_space(2.0);
             }
@@ -438,7 +504,33 @@ impl App {
                             scroll_to = selected;
                         }
                     }
-                    if let Some(column) = table_ui(ui, t, &mut selected, &mut more, scroll_to, self.sort, order.as_deref().map(|o| o.as_slice()), pal) {
+                    // The arrow keys, when the table has them: left and right scroll it to the
+                    // side, up and down pick the row before or after.
+                    let has_keys = self.table_keys || ui.rect_contains_pointer(ui.available_rect_before_wrap());
+                    if has_keys && !ui.ctx().egui_wants_keyboard_input() && rows > 0 {
+                        let key = |k: egui::Key| ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, k));
+                        if key(egui::Key::ArrowRight) {
+                            self.table_scroll.page(1.0);
+                        }
+                        if key(egui::Key::ArrowLeft) {
+                            self.table_scroll.page(-1.0);
+                        }
+                        let (down, up) = (key(egui::Key::ArrowDown), key(egui::Key::ArrowUp));
+                        if down || up {
+                            let place = |i: usize| order.as_ref().map_or(Some(i), |o| o.iter().position(|x| *x == i));
+                            let row_at = |p: usize| order.as_ref().map_or(p, |o| o[p]);
+                            let next = match selected.and_then(place) {
+                                Some(p) if down => (p + 1).min(rows - 1),
+                                Some(p) => p.saturating_sub(1),
+                                None => 0,
+                            };
+                            selected = Some(row_at(next));
+                            more.clear();
+                            scroll_to = selected;
+                        }
+                    }
+                    let area = ui.available_rect_before_wrap();
+                    if let Some(column) = table_ui(ui, t, &mut selected, &mut more, scroll_to, self.sort, order.as_deref().map(|o| o.as_slice()), &mut self.table_scroll, pal) {
                         // A click on a column sorts by it: first upwards, then downwards,
                         // and a third click gives the order of the stream back.
                         self.sort = match self.sort {
@@ -446,6 +538,12 @@ impl App {
                             Some((c, true)) if c == column => None,
                             _ => Some((column, false)),
                         };
+                    }
+                    // A click in the table gives it the arrow keys; a click elsewhere takes
+                    // them back.
+                    self.table_area = Some(area);
+                    if let Some(at) = ui.input(|i| i.pointer.press_origin().filter(|_| i.pointer.any_pressed())) {
+                        self.table_keys = area.contains(at);
                     }
                 }
                 Some(_) => {
@@ -583,13 +681,14 @@ pub(super) fn geometry_kinds(t: &Table) -> String {
     }
     kinds.join(", ")
 }
-/// The text of a value in a cell of the table: on one line, and only the beginning of a long
-/// one, such as the answer of a web service, which can be megabytes. Laid out whole, such a
+/// The text of a value in a cell of the table: nothing for no value (NULL), '' for an empty
+/// text, so that the two are told apart; on one line, and only the beginning of a long one, such as the answer of a web service, which can be megabytes. Laid out whole, such a
 /// text would be more than the graphics card takes. The whole is copied from the menu.
 pub(super) fn cell_text(v: &Value) -> String {
     const MOST: usize = 300;
     match v {
-        Value::Null => "–".to_string(),
+        Value::Null => String::new(),
+        Value::Text(t) if t.is_empty() => "''".to_string(),
         Value::Text(t) => {
             let mut s: String = t.chars().take(MOST).map(|c| if c == '\n' || c == '\r' { ' ' } else { c }).collect();
             if t.chars().nth(MOST).is_some() {
@@ -658,13 +757,18 @@ pub(super) fn table_ui(
     scroll_to: Option<usize>,
     sort: Option<(usize, bool)>,
     order: Option<&[usize]>,
+    scroll: &mut TableScroll,
     pal: &Palette,
 ) -> Option<usize> {
     let has_geom = t.crs.is_some() || carried(t).is_some();
     let what = carried(t);
     let font = theme::mono(12.0);
     let mut heading = None;
-    ScrollArea::horizontal().auto_shrink([false, false]).show(ui, |ui| {
+    let mut area = ScrollArea::horizontal().id_salt("data-table").auto_shrink([false, false]);
+    if let Some(x) = scroll.go.take() {
+        area = area.horizontal_scroll_offset(x);
+    }
+    let shown = area.show(ui, |ui| {
         let mut builder = TableBuilder::new(ui)
             .striped(true)
             .resizable(true)
@@ -725,7 +829,7 @@ pub(super) fn table_ui(
                     }
                     for (c, v) in f.attrs.iter().enumerate() {
                         row.col(|ui| {
-                            let color = if v.is_null() { pal.muted } else { pal.ink };
+                            let color = if v.is_null() || matches!(v, Value::Text(t) if t.is_empty()) { pal.muted } else { pal.ink };
                             let r = ui.add(egui::Label::new(RichText::new(cell_text(v)).font(font.clone()).color(color)).sense(Sense::click()));
                             // A click on the value picks the row, as a click beside it does.
                             if r.clicked() {
@@ -787,6 +891,9 @@ pub(super) fn table_ui(
             pick_row(selected, more, i, keys, order);
         }
     });
+    scroll.offset = shown.state.offset.x;
+    scroll.view = shown.inner_rect.width();
+    scroll.content = shown.content_size.x;
     heading
 }
 /// The streams of a View put together for the map and the 3D view.

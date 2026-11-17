@@ -9,6 +9,7 @@ pub mod raster;
 mod s57;
 mod services;
 pub mod sheets;
+mod wcs;
 mod xml_formats;
 
 use gdal::errors::CplErrType;
@@ -803,6 +804,13 @@ impl Backend for GdalBackend {
         if services::service(path).is_some() {
             return services::read(path, opts, notes, progress);
         }
+        if wcs::is_wcs(path) {
+            let _h = services::HeadersFor::set(&opts.headers);
+            clear_messages();
+            let t = raster::read(path, opts, notes);
+            drain_messages(notes);
+            return t;
+        }
         clear_messages();
         let member = zip_member(path, opts.zip_member.as_deref(), notes)?;
         let path = member.as_deref().unwrap_or(path);
@@ -1195,6 +1203,23 @@ impl Backend for GdalBackend {
         r
     }
 
+    fn read_bands_onto(
+        &self,
+        source: &str,
+        headers: &[(String, String)],
+        geotransform: [f64; 6],
+        width: usize,
+        height: usize,
+        crs: u32,
+        nearest: bool,
+    ) -> Result<Vec<Vec<f32>>> {
+        let _h = services::HeadersFor::set(headers);
+        clear_messages();
+        let r = raster::read_bands_onto(source, geotransform, width, height, crs, nearest);
+        clear_messages();
+        r
+    }
+
     fn warp_image(&self, image: &og_engine::model::RasterImage, from: u32, to: u32) -> Result<og_engine::model::RasterImage> {
         raster::warp_image(image, from, to)
     }
@@ -1332,6 +1357,12 @@ impl Backend for GdalBackend {
     fn layers(&self, path: &Path) -> Result<Vec<LayerInfo>> {
         if services::service(path).is_some() {
             return services::layers(path, &[]);
+        }
+        if wcs::is_wcs(path) {
+            clear_messages();
+            let l = if wcs::coverage_named(path) { raster::layers(path) } else { wcs::layers(path) };
+            clear_messages();
+            return l;
         }
         clear_messages();
         if is_raster(&ext_of(path)) {

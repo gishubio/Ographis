@@ -159,8 +159,54 @@ pub(super) const EXPLODE_PARAMS: &[ParamSpec] = &[
         default: "",
         hint: "The place of each element in its list, from 0, in an attribute",
     },
+    ParamSpec {
+        key: "objects",
+        label: "Objects in an element",
+        kind: ParamKind::Choice(OBJECTS),
+        default: "flatten",
+        hint: "Kept whole as JSON when they are to be read as a whole: a GeoJSON area for Geometry from text, or an object to explode or extract from later",
+    },
     ParamSpec { key: "keep", label: "Keep the JSON attribute", kind: ParamKind::Choice(YES_NO), default: "false", hint: "" },
 ];
+
+/// What becomes of an object in an element of a list.
+const OBJECTS: &[(&str, &str)] = &[
+    ("flatten", "An attribute per value: adress.ort"),
+    ("geojson", "An attribute per value, but GeoJSON kept whole"),
+    ("json", "Kept whole, as JSON in one attribute: adress"),
+];
+
+/// Whether an object is GeoJSON: a geometry, a feature or a collection of them.
+fn is_geojson(v: &Json) -> bool {
+    match v.get("type").and_then(|t| t.as_str()) {
+        Some("Feature" | "FeatureCollection" | "GeometryCollection") => true,
+        Some("Point" | "MultiPoint" | "LineString" | "MultiLineString" | "Polygon" | "MultiPolygon") => v.get("coordinates").is_some(),
+        _ => false,
+    }
+}
+
+/// An attribute per value, all the way down, but GeoJSON kept whole as JSON text.
+fn flatten_but_geojson(v: &Json, prefix: &str, out: &mut Vec<(String, Value)>) {
+    match v {
+        Json::Object(o) if !o.is_empty() && !(is_geojson(v) && !prefix.is_empty()) => {
+            for (k, x) in o {
+                let k = json::clean_key(k);
+                flatten_but_geojson(x, &if prefix.is_empty() { k } else { format!("{}.{}", prefix, k) }, out);
+            }
+        }
+        other => out.push((if prefix.is_empty() { "value".to_string() } else { prefix.to_string() }, json::to_value(other))),
+    }
+}
+
+/// The values of an object one level down, with what is in them kept as JSON text.
+fn top_level(v: &Json, prefix: &str, out: &mut Vec<(String, Value)>) {
+    if let Json::Object(o) = v {
+        for (k, x) in o {
+            let k = json::clean_key(k);
+            out.push((if prefix.is_empty() { k } else { format!("{}.{}", prefix, k) }, json::to_value(x)));
+        }
+    }
+}
 
 pub(super) fn run_explode(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let table = input(inp, "Input");
@@ -178,6 +224,7 @@ pub(super) fn run_explode(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
     let prefix = prefix.trim_end_matches('.').to_string();
     let index_attr = p.get("index_attr").filter(|s| !s.is_empty());
     let drop = if p.flag("keep") { None } else { Some(at) };
+    let objects = p.get("objects").unwrap_or_else(|| "flatten".into());
     let mut rows = Vec::new();
     let mut other = table.like();
     for f in &table.features {
@@ -196,6 +243,8 @@ pub(super) fn run_explode(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
                 cols.push((name.clone(), Value::Int(i as i64)));
             }
             match item {
+                Json::Object(_) if objects == "json" => top_level(item, &prefix, &mut cols),
+                Json::Object(_) if objects == "geojson" => flatten_but_geojson(item, &prefix, &mut cols),
                 Json::Object(_) => json::flatten(item, &prefix, Lists::Text, &mut cols),
                 plain => cols.push((if prefix.is_empty() { list_name.clone() } else { prefix.clone() }, json::to_value(plain))),
             }

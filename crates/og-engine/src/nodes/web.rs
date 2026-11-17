@@ -73,7 +73,20 @@ pub(super) const HTTP_PARAMS: &[ParamSpec] = &[
         default: "",
         hint: "The path to the address of the next page, such as next_page, links[rel=next].href or @odata.nextLink. Empty uses the Link header",
     },
-    ParamSpec { key: "page_param", label: "Parameter of the page", kind: ParamKind::Text, default: "", hint: "Such as offset, skip, start or page" },
+    ParamSpec {
+        key: "cursor_path",
+        label: "Cursor at",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "The path to the value in the answer that asks for the next page, such as nextCursorId or meta.next_cursor. The pages stop when it is missing or empty",
+    },
+    ParamSpec {
+        key: "page_param",
+        label: "Parameter of the page",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Such as offset, skip, start or page; for a cursor the parameter it is sent as, such as cursorId (cursor if empty)",
+    },
     ParamSpec {
         key: "size_param",
         label: "Parameter of the page size",
@@ -148,8 +161,13 @@ pub(super) const HTTP_PARAMS: &[ParamSpec] = &[
     },
 ];
 
-pub(crate) const PAGINGS: &[(&str, &str)] =
-    &[("none", "One answer"), ("next", "A link to the next page"), ("offset", "An offset: 0, 100, 200…"), ("page", "A page number: 1, 2, 3…")];
+pub(crate) const PAGINGS: &[(&str, &str)] = &[
+    ("none", "One answer"),
+    ("next", "A link to the next page"),
+    ("offset", "An offset: 0, 100, 200…"),
+    ("page", "A page number: 1, 2, 3…"),
+    ("cursor", "A cursor from the answer, such as nextCursorId"),
+];
 
 pub(super) const HTTP_METHODS: &[(&str, &str)] = &[("GET", "GET"), ("POST", "POST"), ("PUT", "PUT"), ("PATCH", "PATCH"), ("DELETE", "DELETE")];
 
@@ -157,6 +175,70 @@ pub(super) const HTTP_METHODS: &[(&str, &str)] = &[("GET", "GET"), ("POST", "POS
 pub(super) enum Address {
     Fixed(String),
     Built(expr::Compiled),
+}
+
+/// The headers written in the node: Name: value, separated by ;
+fn headers_of(p: &P) -> Vec<(String, String)> {
+    p.get("headers")
+        .unwrap_or_default()
+        .split(';')
+        .filter_map(|h| h.split_once(':'))
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .filter(|(k, _)| !k.is_empty())
+        .collect()
+}
+
+/// What one request sent from the form of HTTP request gave.
+#[derive(Debug, Clone)]
+pub struct Tried {
+    pub method: String,
+    /// The address as it was sent, with the secrets of the connection hidden.
+    pub url: String,
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: String,
+    pub took: std::time::Duration,
+}
+
+/// Sends the first request of an HTTP request, as a run would send it, with its connection
+/// and headers, but only that one: no pages, no cache and no tries again. The address and the
+/// body are worked out already, from the first feature or as they are written.
+pub fn try_request(b: &dyn Backend, params: &Params, url: &str, body: Option<&str>) -> Result<Tried> {
+    let p = P::new(params, HTTP_PARAMS);
+    let url = url.trim();
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return err(format!("The address is not a web address: {}", if url.is_empty() { "it is empty" } else { url }));
+    }
+    let method = p.get("method").unwrap_or_else(|| "GET".into()).to_uppercase();
+    let sends = matches!(method.as_str(), "POST" | "PUT" | "PATCH");
+    let mut headers = headers_of(&p);
+    if sends && !headers.iter().any(|h| h.0.eq_ignore_ascii_case("content-type")) {
+        headers.push(("Content-Type".into(), p.get("content_type").unwrap_or_else(|| "application/json".into())));
+    }
+    let auth = match p.get("connection").filter(|c| !c.trim().is_empty()) {
+        Some(name) => Some(crate::web::connection(&name)?),
+        None => None,
+    };
+    let timeout = p.get("timeout").and_then(|t| t.trim().parse::<u64>().ok()).unwrap_or(30).max(1);
+    let stopped = || false;
+    let mut client = Client::new(b, auth, &stopped);
+    client.retries = 0;
+    client.timeout_s = timeout;
+    let body = body.filter(|t| sends && !t.trim().is_empty());
+    let began = std::time::Instant::now();
+    let a = client.send(&method, url, &headers, body)?;
+    let took = began.elapsed();
+    // The address as it went, with a key in it hidden.
+    let sent = client.prepared(url).map_or_else(|_| url.to_string(), |(u, _)| u);
+    Ok(Tried { method, url: client.hide(&sent), status: a.status, headers: a.headers, body: a.body, took })
+}
+
+/// What an expression gives with no feature at all, such as an address in quotes: None when it
+/// needs attributes or does not compile.
+pub fn constant_text(text: &str) -> Option<String> {
+    let e = expr::compile(text, &[]).ok()?;
+    let f = Feature { z: None, attrs: Vec::new(), geom: None };
+    e.eval(&Row { feature: &f, index: 0, geographic: None }).ok().filter(|v| !v.is_null()).map(|v| v.to_text())
 }
 
 pub(super) fn run_http(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
@@ -184,14 +266,7 @@ pub(super) fn run_http(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
         Err(_) if text.trim().starts_with("http://") || text.trim().starts_with("https://") => Address::Fixed(text.trim().to_string()),
         Err(e) => return Err(GbError(format!("The address: {} Write a fixed address in single quotes, as 'https://…'.", e.0))),
     };
-    let headers: Vec<(String, String)> = p
-        .get("headers")
-        .unwrap_or_default()
-        .split(';')
-        .filter_map(|h| h.split_once(':'))
-        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
-        .filter(|(k, _)| !k.is_empty())
-        .collect();
+    let headers = headers_of(p);
     let whole = |k: &str, d: u64, what: &str| -> Result<u64> {
         match p.get(k).filter(|t| !t.trim().is_empty()) {
             None => Ok(d),
@@ -254,9 +329,15 @@ pub(super) fn run_http(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
     type Got = std::result::Result<Vec<crate::io::HttpAnswer>, String>;
     let mut answers: HashMap<String, Got> = HashMap::new();
     let mut from_cache = 0usize;
+    // An answer kept with its pages holds the pages as they were followed then: other
+    // settings for the pages ask anew.
+    let cache_key = |r: &(String, Option<String>)| match &paging {
+        crate::web::Paging::None => key_of(r),
+        other => format!("{}\npages {:?} at most {}", key_of(r), other, most),
+    };
     if let Some(dir) = &cache_dir {
         for key in &order {
-            if let Some(pages) = cache_read(dir, &key_of(&unique[key]), &headers) {
+            if let Some(pages) = cache_read(dir, &cache_key(&unique[key]), &headers) {
                 answers.insert(key.clone(), Ok(pages));
                 from_cache += 1;
             }
@@ -364,7 +445,7 @@ pub(super) fn run_http(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
         for key in &todo {
             if let Some(Ok(pages)) = answers.get(*key) {
                 if pages.iter().all(|a| a.status < 400) {
-                    cache_write(dir, &key_of(&unique[*key]), &headers, pages);
+                    cache_write(dir, &cache_key(&unique[*key]), &headers, pages);
                 }
             }
         }
@@ -390,7 +471,8 @@ pub(super) fn run_http(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
     progress("sent requests for", total, Some(total));
     let page_count: usize = answers.values().map(|a| a.as_ref().map_or(1, |p| p.len())).sum();
     if paged {
-        ctx.notes.info(format!("{} pages from {} requests", fmt_count(page_count as u64), fmt_count(answers.len() as u64)));
+        let asked = if answers.len() == 1 { "1 request".to_string() } else { format!("{} requests", fmt_count(answers.len() as u64)) };
+        ctx.notes.info(format!("{} pages from {}", fmt_count(page_count as u64), asked));
     } else if answers.len() < table.len() {
         ctx.notes.info(format!("{} requests to {} addresses", fmt_count(table.len() as u64), fmt_count(answers.len() as u64)));
     }
@@ -525,14 +607,7 @@ fn run_http_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         Err(_) if text.trim().starts_with("http://") || text.trim().starts_with("https://") => Address::Fixed(text.trim().to_string()),
         Err(e) => return Err(GbError(format!("The address: {} Write a fixed address in single quotes, as 'https://…'.", e.0))),
     };
-    let headers: Vec<(String, String)> = p
-        .get("headers")
-        .unwrap_or_default()
-        .split(';')
-        .filter_map(|h| h.split_once(':'))
-        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
-        .filter(|(k, _)| !k.is_empty())
-        .collect();
+    let headers = headers_of(p);
     let folder = ctx.resolve(&p.get("folder").filter(|f| !f.trim().is_empty()).unwrap_or_else(|| "answers".into()));
     std::fs::create_dir_all(&folder).map_err(|e| GbError(format!("Cannot create the folder {}: {}", folder.display(), e)))?;
     let keep = p.get("cache").as_deref() == Some("disk");

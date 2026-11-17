@@ -32,11 +32,11 @@ The program draws it on a canvas, and `og run model.ographis` runs it from the c
   "name": "Large towns",
   "variables": [{"name": "min", "value": "10000"}],
   "nodes": [
-    {"id": "towns", "type": "Reader", "name": "Towns", "x": 20, "y": 20,
+    {"id": "towns", "type": "Reader", "comment": "Towns", "x": 20, "y": 20,
      "params": {"path": "towns.csv", "x": "lon", "y": "lat", "crs": "EPSG:4326"}},
-    {"id": "big", "type": "Tester", "name": "Large towns", "x": 280, "y": 20,
+    {"id": "big", "type": "Tester", "comment": "Large towns", "x": 280, "y": 20,
      "params": {"test": "population >= $(min)"}},
-    {"id": "out", "type": "Writer", "name": "Result", "x": 540, "y": 20,
+    {"id": "out", "type": "Writer", "comment": "Result", "x": 540, "y": 20,
      "params": {"path": "out/large_towns.gpkg"}}
   ],
   "edges": [
@@ -66,7 +66,8 @@ The program draws it on a canvas, and `og run model.ographis` runs it from the c
 - **An input port may take several connections**; their streams are put together.
 - **x and y** place the nodes on the canvas. Put them about 260 apart from left to right,
   in the order the data flows.
-- Give every node a short `name` that says what it does in this model.
+- Keep the names of the tools on the nodes, so that it shows which tools a model uses: do
+  not give a node a `name`. Say what it does in this model in its `comment`.
 
 ### Examples to start from
 
@@ -86,7 +87,9 @@ The program draws it on a canvas, and `og run model.ographis` runs it from the c
 | A real place for a game engine | `examples/game_engine.ographis` |
 | 3D models for Blender: terrain with a picture, buildings grouped and named | `examples/blender.ographis` |
 | Buildings with roofs and windows from OpenStreetMap attributes, a walk-through in the browser | `examples/buildings.ographis`, `examples/walk.ographis` |
+| Heights, photos, laser data, addresses and map features from Lantmäteriet | `examples/apis/lantmateriet.ographis` |
 | Heights and a satellite picture of any place, a lighter model for the web | `examples/apis/volcano_hawaii.ographis` |
+| Roads and lakes of OpenStreetMap drawn over a satellite picture and draped over the terrain | `examples/apis/hunneberg_roads.ographis` |
 | A folder of files read as one | `examples/stops.ographis` |
 | Analysis: service areas, hot spots, tracks, locations | `examples/proximity.ographis`, `examples/analysis.ographis`, `examples/apis/osm_service_areas.ographis` |
 | Cost distance over a raster | `examples/cost_distance.ographis` |

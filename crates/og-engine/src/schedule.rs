@@ -83,6 +83,21 @@ pub fn query_args(name: &str) -> Vec<String> {
     vec!["/Query".into(), "/TN".into(), task_name(name), "/FO".into(), "LIST".into()]
 }
 
+/// The upper half of code page 850, in which the console programs of Windows answer in
+/// Western Europe.
+const CP850: &str =
+    "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜø£Ø×ƒáíóúñÑªº¿®¬½¼¡«»░▒▓│┤ÁÂÀ©╣║╗╝¢¥┐└┴┬├─┼ãÃ╚╔╩╦╠═╬¤ðÐÊËÈıÍÎÏ┘┌█▄¦Ì▀ÓßÔÒõÕµþÞÚÛÙýÝ¯´\u{AD}±‗¾¶§÷¸°¨·¹³²■\u{A0}";
+
+/// What a console program such as schtasks said, as text: UTF-8 when it is, else the code
+/// page of the console, so that å, ä and ö come out right.
+pub fn console_text(bytes: &[u8]) -> String {
+    if let Ok(t) = std::str::from_utf8(bytes) {
+        return t.to_string();
+    }
+    let upper: Vec<char> = CP850.chars().collect();
+    bytes.iter().map(|&b| if b < 0x80 { b as char } else { upper.get(b as usize - 0x80).copied().unwrap_or('?') }).collect()
+}
+
 /// The same as a line of crontab, for Linux and macOS.
 pub fn cron_line(every: &Every, time: &str, command: &str) -> Option<String> {
     let at = clock(time)?;
@@ -115,6 +130,9 @@ mod tests {
         assert!(h.windows(2).any(|w| w == ["/MO", "3"]));
         assert_eq!(cron_line(&Every::Week("SUN".into()), "07:00", "og run m.ographis").unwrap(), "0 7 * * 0 og run m.ographis");
         let text = script(Path::new(r"C:\GIS\models\roads.ographis"), "og run roads.ographis");
+        assert_eq!(CP850.chars().count(), 128);
+        assert_eq!(console_text(b"Det g\x86r inte att hitta s\x94kv\x84gen."), "Det går inte att hitta sökvägen.");
+        assert_eq!(console_text("Klart: å".as_bytes()), "Klart: å");
         assert!(text.contains("cd /d \"C:\\GIS\\models\"") && text.contains("\r\nog run roads.ographis\r\n"));
     }
 }

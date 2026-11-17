@@ -271,6 +271,12 @@ Not yet checked on Windows:
   `build.cmd -Package` makes, as PowerShell could not be run here; the window opening and
   reading again what the assistant saves, tried here in the tests of the window;
   `tools/mcp-eval` against real assistants, which needs Claude Code signed in.
+- Version 0.96.4: *Fetch geodata* against Lantmäteriet's catalogues and files, tried here
+  only against a server on this computer that answers as a STAC catalogue does, as
+  Lantmäteriet could not be reached from here: the names of its collections, its login
+  (OAuth2 or Basic), and whether Topografi 10 is in stac-vektor are to be seen; *WCS* in
+  Input against a real server, here only a server on this computer that answers as
+  GeoServer does in WCS 1.0.0; Model → Schedule with å, ä and ö in what Windows says.
 - Version 0.96.3: DWG opened in AutoCAD, BricsCAD or DWG TrueView, which here only
   acadrust read back (DXF was checked with ezdxf); *Fetch a place* against Nominatim, the
   Copernicus DEM and Earth Search on the web, tried here only against a server on this

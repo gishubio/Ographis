@@ -94,3 +94,32 @@ fn a_large_list_is_exploded_without_a_copy_of_the_answer_per_element() {
     assert_eq!(t.field_names(), ["_status", "id", "name", "lat", "lon", "desc"]);
     assert!(started.elapsed() < std::time::Duration::from_secs(20));
 }
+
+/// Objects in the elements can be kept whole, as JSON: a GeoJSON area, which Geometry from
+/// text reads as it is, is not made into an attribute for each of its parts.
+#[test]
+fn objects_in_an_element_can_be_kept_whole() {
+    let answer =
+        r#"[{"id": 9, "level": {"sv": "Gul"}, "area": {"type": "Feature", "geometry": {"type": "Point", "coordinates": [12.5, 57.7]}}, "tags": [1, 2]}]"#;
+    let table = || Table {
+        fields: vec![Field::new("_response", FieldType::Text)],
+        features: vec![Feature { attrs: vec![Value::Text(answer.into())], geom: None, z: None }],
+        ..Default::default()
+    };
+    let (out, _) = run_for_test("JsonExploder", &[("attribute", "_response"), ("prefix", "w")], vec![("Input", table())]).unwrap();
+    assert!(port(&out, "Exploded").field_names().contains(&"w.area.geometry.type".to_string()), "flattened all the way down, as before");
+    let (out, _) = run_for_test("JsonExploder", &[("attribute", "_response"), ("prefix", "w"), ("objects", "json")], vec![("Input", table())]).unwrap();
+    let t = port(&out, "Exploded");
+    assert_eq!(t.field_names(), ["w.id", "w.level", "w.area", "w.tags"]);
+    let f = &t.features[0];
+    assert_eq!(f.attrs[0], Value::Int(9));
+    let area: serde_json::Value = serde_json::from_str(&f.attrs[2].to_text()).unwrap();
+    assert_eq!(area["geometry"]["coordinates"][1], 57.7);
+    // Or everything as attributes but the GeoJSON.
+    let (out, _) = run_for_test("JsonExploder", &[("attribute", "_response"), ("prefix", "w"), ("objects", "geojson")], vec![("Input", table())]).unwrap();
+    assert_eq!(port(&out, "Exploded").field_names(), ["w.id", "w.level.sv", "w.area", "w.tags"]);
+    // Geometry from text reads the area as it is.
+    let (out, _) = run_for_test("GeometryFromText", &[("attribute", "w.area")], vec![("Input", t.clone())]).unwrap();
+    let g = port(&out, "Output");
+    assert_eq!((g.len(), g.crs), (1, Some(4326)));
+}

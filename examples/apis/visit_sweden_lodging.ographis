@@ -1,0 +1,199 @@
+{
+  "format": "ographis/1",
+  "name": "Places to stay from the national API of Visit Sweden",
+  "nodes": [
+    {
+      "id": "vs",
+      "type": "HttpCaller",
+      "name": "HTTP request",
+      "x": -1.0,
+      "y": 40.0,
+      "params": {
+        "cache": "disk",
+        "items_path": "resource.children",
+        "page_param": "offset",
+        "page_size": "100",
+        "paging": "offset",
+        "per_second": "2",
+        "size_param": "limit",
+        "url": "'https://data.visitsweden.com/store/search?type=solr&rdfFormat=application/ld+json&query=public:true+AND+rdfType:http%5C%3A%2F%2Fschema.org%2F$(type)'"
+      },
+      "comment": "Visit Sweden: everything of a type of schema.org, as linked data in JSON-LD, 100 to a page. No key"
+    },
+    {
+      "id": "entries",
+      "type": "JsonExploder",
+      "name": "Explode JSON list",
+      "x": 280.0,
+      "y": 40.0,
+      "params": {
+        "attribute": "_response",
+        "path": "resource.children"
+      },
+      "comment": "A feature per entry",
+      "comment_box": [
+        0.0,
+        -44.0,
+        119.0,
+        26.0
+      ]
+    },
+    {
+      "id": "values",
+      "type": "JsonExtractor",
+      "name": "Extract JSON values",
+      "x": 499.0,
+      "y": 41.0,
+      "params": {
+        "attribute": "metadata.@graph",
+        "paths": [
+          [
+            "[@type=schema:$(type)].schema:name.@value",
+            "name"
+          ],
+          [
+            "[@type=schema:$(type)].schema:url.@id",
+            "url"
+          ],
+          [
+            "[@type=schema:$(type)].dcterms:spatial.@id",
+            "region"
+          ],
+          [
+            "[@type=schema:GeoCoordinates].schema:latitude",
+            "lat"
+          ],
+          [
+            "[@type=schema:GeoCoordinates].schema:longitude",
+            "lon"
+          ]
+        ]
+      },
+      "comment": "The graph of each entry holds the place and its coordinates as two nodes, found by their @type"
+    },
+    {
+      "id": "points",
+      "type": "PointCreator",
+      "name": "Create points from x and y",
+      "x": 755.0,
+      "y": 39.0,
+      "params": {
+        "crs": "EPSG:4326",
+        "x": "lon",
+        "y": "lat"
+      },
+      "comment": "Places with coordinates"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1060.0,
+      "y": 40.0,
+      "params": {
+        "path": "out/visit_sweden.gpkg"
+      },
+      "comment": "Places to stay\nGeoPackage",
+      "comment_box": [
+        19.0,
+        -59.0,
+        90.0,
+        42.0
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "entries",
+        "Exploded"
+      ],
+      "to": [
+        "values",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "points",
+        "Points"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "values",
+        "Output"
+      ],
+      "to": [
+        "points",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "vs",
+        "Output"
+      ],
+      "to": [
+        "entries",
+        "Input"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "Input",
+      "x": -31.0,
+      "y": -89.0,
+      "w": 242.0,
+      "h": 337.0,
+      "locked": true
+    },
+    {
+      "name": "Manage JSON and attributes",
+      "x": 254.0,
+      "y": -94.0,
+      "w": 435.0,
+      "h": 288.0,
+      "color": "orange",
+      "locked": true
+    },
+    {
+      "name": "Geometry",
+      "x": 735.0,
+      "y": -45.0,
+      "w": 239.0,
+      "h": 218.0,
+      "color": "purple",
+      "locked": true
+    },
+    {
+      "name": "Output",
+      "x": 1040.0,
+      "y": -57.0,
+      "w": 168.0,
+      "h": 191.0,
+      "color": "pink",
+      "locked": true
+    }
+  ],
+  "notes": [
+    {
+      "text": "Task\nFind places to stay in Sweden, using the API from Visit Sweden",
+      "x": 323.0,
+      "y": -211.0,
+      "w": 369.0,
+      "h": 18.0
+    }
+  ],
+  "variables": [
+    {
+      "name": "type",
+      "value": "LodgingBusiness"
+    }
+  ]
+}
