@@ -11,7 +11,7 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: GDAL
         run: sudo apt-get update && sudo apt-get install -y libgdal-dev clang pkg-config
       # The version the code is checked with. A newer Rust brings new lints of clippy,
