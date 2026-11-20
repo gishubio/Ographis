@@ -18,5 +18,5 @@ og-gdal = { path = "../og-gdal" }
 serde_json.workspace = true
 geo.workspace = true
 wkt = "0.14"
-base64 = "0.22"
+base64 = "0.23"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }

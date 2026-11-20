@@ -3765,7 +3765,7 @@ dependencies = [
 name = "og-cli"
 version = "0.96.5"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "geo",
  "og-engine",
@@ -3784,7 +3784,7 @@ dependencies = [
  "arrow-cast",
  "arrow-ipc",
  "arrow-schema",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "chrono",
  "duckdb",
