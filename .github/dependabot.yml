@@ -10,10 +10,24 @@ updates:
       day: monday
     open-pull-requests-limit: 5
     groups:
+      # resvg draws the icons of maps into the pictures of tiny-skia, so the two must use the
+      # same tiny-skia and are updated together.
+      drawing:
+        patterns: [resvg, usvg, tiny-skia]
+      # geo works on the trees of rstar that Ographis builds, so they follow each other.
+      geometry:
+        patterns: [geo, geo-types, rstar, spade]
       # Compatible updates in one pull request. New major versions, which may need changes
       # to the code, come one by one.
       compatible:
         update-types: [minor, patch]
+    ignore:
+      # egui, eframe and the libraries around them are moved to a new version together, by
+      # hand, with the patched egui-snarl in vendor/. Their fixes within a version still come.
+      - dependency-name: "egui*"
+        update-types: [version-update:semver-minor, version-update:semver-major]
+      - dependency-name: eframe
+        update-types: [version-update:semver-minor, version-update:semver-major]
   - package-ecosystem: github-actions
     directory: /
     schedule:
