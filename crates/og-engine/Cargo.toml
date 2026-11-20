@@ -15,7 +15,7 @@ serde.workspace = true
 serde_json.workspace = true
 encoding_rs = "0.8"
 wkt = "0.14"
-rstar = "0.12"
+rstar = "0.14"
 bytes = "1"
 # DWG drawings. Released often, so held at one version until the next is tried.
 acadrust = "=0.6.8"
