@@ -23,7 +23,7 @@ kamadak-exif = "0.6"
 # Only for the local date and time that the DateTimeStamper writes.
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # Draws maps into pictures, with smooth edges.
-tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd"] }
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
 # Spreads the shading and rendering of terrain over the cores.
 rayon = "1.12"
 e57 = "0.11"
