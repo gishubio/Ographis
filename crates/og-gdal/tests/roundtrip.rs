@@ -1340,6 +1340,69 @@ fn web_requests_put_the_answer_in_an_attribute() {
 }
 
 #[test]
+fn a_map_is_written_and_read_as_webp_with_its_coordinates() {
+    let dir = tmp("webp");
+    let b = GdalBackend::new();
+    std::fs::write(dir.join("areas.csv"), "name;wkt\nA;POLYGON ((400000 6400000, 401000 6400000, 401000 6401000, 400000 6401000, 400000 6400000))\n").unwrap();
+    let ws = Workspace::from_json(
+        r##"{
+      "nodes": [
+        {"id": "areas", "type": "Reader", "params": {"path": "areas.csv", "crs": "EPSG:3006"}},
+        {"id": "map", "type": "MapRenderer", "params": {"width": "300", "margin": "10", "background": "none",
+          "layers": [{"from": "areas:Output", "fill": "#a6cee3", "stroke": "#1f78b4", "width": 2, "size": 6}]}},
+        {"id": "small", "type": "Writer", "params": {"path": "out/map.webp", "img_quality": "60"}},
+        {"id": "exact", "type": "Writer", "params": {"path": "out/exact", "format": "webp", "img_quality": "100"}},
+        {"id": "png", "type": "Writer", "params": {"path": "out/map.png"}}
+      ],
+      "edges": [
+        {"from": ["areas", "Output"], "to": ["map", "Layers"]},
+        {"from": ["map", "Map"], "to": ["small", "Input"]},
+        {"from": ["map", "Map"], "to": ["exact", "Input"]},
+        {"from": ["map", "Map"], "to": ["png", "Input"]}
+      ]
+    }"##,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    assert_eq!(r.errors, 0);
+    let out = dir.join("out");
+    assert_eq!(r.nodes["small"].files[..2], [out.join("map.webp"), out.join("map.wpw")]);
+    assert_eq!(r.nodes["exact"].files[0], out.join("exact.webp"));
+    // Red, green, blue and see-through, where the area is, in SWEREF 99 TM.
+    for file in ["map.webp", "exact.webp"] {
+        let ds = gdal::Dataset::open(out.join(file)).unwrap();
+        assert_eq!(ds.driver().short_name(), "WEBP");
+        assert_eq!((ds.raster_size(), ds.raster_count()), ((300, 300), 4), "{}", file);
+        let gt = ds.geo_transform().unwrap();
+        assert!((gt[0] - 399_900.0).abs() < 1e-6 && (gt[3] - 6_401_100.0).abs() < 1e-6 && (gt[1] - 4.0).abs() < 1e-9, "{} {:?}", file, gt);
+        assert_eq!(ds.spatial_ref().unwrap().auth_code().ok(), Some(3006), "{}", file);
+    }
+    // At 100 every pixel is kept, as in the PNG, in a smaller file.
+    let pixels = |file: &str| image::open(out.join(file)).unwrap().to_rgba8().into_raw();
+    assert_eq!(pixels("exact.webp"), pixels("map.png"));
+    assert_eq!(pixels("map.webp")[3], 0, "the background stays see-through");
+    let size = |file: &str| std::fs::metadata(out.join(file)).unwrap().len();
+    assert!(size("exact.webp") < size("map.png"), "{} {}", size("exact.webp"), size("map.png"));
+
+    // A WebP with only a world file, as other programs write it, is read in its place.
+    std::fs::remove_file(out.join("map.webp.aux.xml")).ok();
+    let ws = Workspace::from_json(
+        r#"{"nodes": [{"id": "outline", "type": "Reader", "params": {"path": "out/map.webp", "raster_as": "extent", "crs": "EPSG:3006"}}], "edges": []}"#,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    for l in &r.log {
+        println!("{:?} {}", l.level, l.msg);
+    }
+    let t = r.output("outline", "Output").unwrap();
+    let rect = geo::BoundingRect::bounding_rect(t.features[0].geom.as_ref().unwrap()).unwrap();
+    assert_eq!((rect.min().x, rect.min().y, rect.max().x, rect.max().y), (399_900.0, 6_399_900.0, 401_100.0, 6_401_100.0));
+}
+
+#[test]
 fn a_map_is_written_as_png_jpg_and_geotiff_with_its_coordinates() {
     let dir = tmp("images");
     let b = GdalBackend::new();
@@ -1992,7 +2055,7 @@ fn a_zip_file_packs_what_the_outputs_wrote() {
     assert_eq!(r.order.last().map(String::as_str), Some("some"));
     let names = |f: &str| {
         let mut z = zip::ZipArchive::new(std::fs::File::open(dir.join(f)).unwrap()).unwrap();
-        let mut n: Vec<String> = (0..z.len()).map(|i| z.by_index(i).unwrap().name().to_string()).collect();
+        let mut n: Vec<String> = (0..z.len()).map(|i| z.by_index(i).unwrap().name().unwrap().to_string()).collect();
         n.sort();
         n
     };

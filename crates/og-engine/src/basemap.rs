@@ -248,12 +248,14 @@ pub fn tiles(map: &BackgroundMap, f: &Frame, crs: u32, backend: &dyn Backend, fa
     Ok((resample(f, &grid, &src, fade), tiles.len(), failed))
 }
 
-/// The world file beside a picture, as .pgw, .pngw, .jgw, .jpgw or .wld: its geotransform.
-fn world_file(path: &Path) -> Option<[f64; 6]> {
+/// The world file beside a picture, as .pgw, .pngw, .jgw, .jpgw, .wpw or .wld: its geotransform,
+/// the corner of the upper left pixel.
+pub fn world_file(path: &Path) -> Option<[f64; 6]> {
     let ext = path.extension()?.to_string_lossy().to_lowercase();
     let candidates: Vec<String> = match ext.as_str() {
         "png" => vec!["pgw".into(), "pngw".into(), "wld".into()],
         "jpg" | "jpeg" => vec!["jgw".into(), "jpgw".into(), "jpegw".into(), "wld".into()],
+        "webp" => vec!["wpw".into(), "webpw".into(), "wld".into()],
         _ => vec!["wld".into()],
     };
     for c in candidates {

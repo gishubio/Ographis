@@ -871,6 +871,7 @@ impl App {
 
 /// What the window with tips says. One line for each thing that is not found by looking.
 pub(super) const TIPS: &[&str] = &[
+    "Ctrl+K opens one search box for everything: the commands of the menus, the nodes of the model, the tools to add and the examples. Type a few letters and press Enter.",
     "Fold out a list on the left and click an input, tool or output to add it to the canvas. You can also drop a data file or a folder on the window to get an input for it.",
     "Drag from an output port to an input port to connect. Drop the connection on empty canvas to choose a new node.",
     "Drag a tool onto a connection to put it in between. Click a connection and press Delete to remove it.",
@@ -917,7 +918,7 @@ pub(super) const COMPONENTS: &[(&str, &str, &str)] = &[
     ("spade", "Delaunay triangles and Thiessen polygons", "MIT OR Apache-2.0"),
     ("wkt", "Geometry as text (GeoRust)", "MIT OR Apache-2.0"),
     ("tiny-skia", "Draws maps and charts", "BSD-3-Clause"),
-    ("ab_glyph", "Text in maps and charts, in the Inter font (OFL-1.1)", "Apache-2.0"),
+    ("ab_glyph", "Text in maps and charts, in the Inter font (OFL-1.1), and the ports in pictures of models, in Hack (MIT)", "Apache-2.0"),
     ("rayon", "Work spread over all cores", "MIT OR Apache-2.0"),
     ("ureq", "Web requests", "MIT OR Apache-2.0"),
     ("umya-spreadsheet", "Excel workbooks", "MIT"),
@@ -925,12 +926,14 @@ pub(super) const COMPONENTS: &[(&str, &str, &str)] = &[
     ("zip", "Zip files", "MIT"),
     ("acadrust", "DWG drawings", "MPL-2.0"),
     ("parquet", "GeoParquet (Apache Arrow)", "Apache-2.0"),
+    ("arrow-ipc", "GeoArrow (Apache Arrow)", "Apache-2.0"),
+    ("duckdb", "DuckDB databases, with DuckDB built in", "MIT"),
     ("las", "Point clouds, LAS and LAZ", "MIT"),
     ("e57", "Laser scans in E57", "MIT"),
     ("serde_json", "JSON and the model files", "MIT OR Apache-2.0"),
     ("chrono", "Dates and times", "MIT OR Apache-2.0"),
     ("encoding_rs", "Text in older encodings, such as Windows-1252", "(Apache-2.0 OR MIT) AND BSD-3-Clause"),
-    ("image", "PNG and JPEG pictures", "MIT OR Apache-2.0"),
+    ("image", "PNG, JPEG and WebP pictures", "MIT OR Apache-2.0"),
     ("rfd", "The windows for opening and saving files", "MIT"),
     ("arboard", "The clipboard", "MIT OR Apache-2.0"),
 ];

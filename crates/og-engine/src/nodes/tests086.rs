@@ -229,7 +229,7 @@ fn pictures_are_written_as_slides_for_powerpoint_and_impress() {
         assert!(notes.warnings.iter().any(|w| w.contains("1 of the streams")), "{:?}", notes.warnings);
         let f = std::fs::File::open(dir.join(format!("deck.{}", ext))).unwrap();
         let mut z = zip::ZipArchive::new(f).unwrap();
-        let names: Vec<String> = (0..z.len()).map(|i| z.by_index(i).unwrap().name().to_string()).collect();
+        let names: Vec<String> = (0..z.len()).map(|i| z.by_index(i).unwrap().name().unwrap().to_string()).collect();
         if ext == "pptx" {
             assert!(names.contains(&"ppt/slides/slide3.xml".to_string()) && !names.contains(&"ppt/slides/slide4.xml".to_string()), "{:?}", names);
             assert!(names.contains(&"ppt/media/image2.png".to_string()));
@@ -261,13 +261,14 @@ fn a_model_is_drawn_as_a_picture_and_a_pdf() {
     let dark = img.rgba.as_chunks::<4>().0.iter().take(img.width * 80).filter(|p| p[0] < 100).count();
     assert!(dark > 50, "{}", dark);
     let dir = std::env::temp_dir().join(format!("og-modelpic-{}", std::process::id()));
-    for ext in ["png", "pdf", "jpg"] {
+    for ext in ["png", "pdf", "jpg", "webp"] {
         let path = dir.join(format!("stops.{}", ext));
         crate::modelpic::export(&ws, &path).unwrap();
         let bytes = std::fs::read(&path).unwrap();
         match ext {
             "pdf" => assert!(bytes.starts_with(b"%PDF-1.4") && bytes.ends_with(b"%%EOF\n")),
             "png" => assert!(bytes.starts_with(b"\x89PNG")),
+            "webp" => assert!(bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP"),
             _ => assert!(bytes.starts_with(&[0xff, 0xd8])),
         }
     }

@@ -1,0 +1,20 @@
+# Dependabot proposes updates as pull requests: at once when a library has a security
+# hole with a fixed version, and once a week the others that are compatible, gathered in
+# one pull request. The Check and Security workflows then run on each.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Compatible updates in one pull request. New major versions, which may need changes
+      # to the code, come one by one.
+      compatible:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

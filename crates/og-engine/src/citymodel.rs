@@ -506,7 +506,6 @@ pub fn read_citygml(path: &Path, lod: &Lod, crs_given: Option<u32>, notes: &mut 
         let d = dim.clamp(2, 3);
         nums.chunks_exact(d).map(|c| [c[0], c[1], if d == 3 { c[2] } else { 0.0 }]).collect()
     };
-    let decoder = reader.decoder();
     loop {
         let ev = reader
             .read_event_into(&mut buf)
@@ -514,12 +513,12 @@ pub fn read_citygml(path: &Path, lod: &Lod, crs_given: Option<u32>, notes: &mut 
         match ev {
             Event::Start(ref e) | Event::Empty(ref e) => {
                 let empty = matches!(ev, Event::Empty(_));
-                let name = String::from_utf8_lossy(e.local_name().as_ref()).into_owned();
+                let name = std::borrow::Cow::<str>::Borrowed(e.local_name().as_ref()).into_owned();
                 let attr = |key: &str| -> Option<String> {
                     e.attributes()
                         .flatten()
-                        .find(|a| a.key.local_name().as_ref() == key.as_bytes())
-                        .and_then(|a| a.decode_and_unescape_value(decoder).ok().map(|v| v.into_owned()))
+                        .find(|a| a.key.local_name().as_ref() == key)
+                        .and_then(|a| a.normalized_value(quick_xml::XmlVersion::Implicit1_0).ok().map(|v| v.into_owned()))
                 };
                 if name == "CityModel" {
                     seen_gml = true;
@@ -564,11 +563,11 @@ pub fn read_citygml(path: &Path, lod: &Lod, crs_given: Option<u32>, notes: &mut 
                 text.clear();
             }
             Event::Text(t) => {
-                let s = t.decode().map(|c| c.into_owned()).unwrap_or_default();
+                let s = t.as_ref().to_string();
                 text.push_str(&quick_xml::escape::unescape(&s).map(|c| c.into_owned()).unwrap_or(s));
             }
             Event::GeneralRef(r) => {
-                let name = String::from_utf8_lossy(r.as_ref()).into_owned();
+                let name = std::borrow::Cow::<str>::Borrowed(r.as_ref()).into_owned();
                 text.push_str(match name.as_str() {
                     "amp" => "&",
                     "lt" => "<",
@@ -579,7 +578,7 @@ pub fn read_citygml(path: &Path, lod: &Lod, crs_given: Option<u32>, notes: &mut 
                 });
             }
             Event::End(e) => {
-                let name = String::from_utf8_lossy(e.local_name().as_ref()).into_owned();
+                let name = std::borrow::Cow::<str>::Borrowed(e.local_name().as_ref()).into_owned();
                 path_names.pop();
                 let depth = path_names.len();
                 match name.as_str() {

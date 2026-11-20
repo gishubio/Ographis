@@ -62,7 +62,8 @@ fn band_names(ds: &Dataset) -> Vec<String> {
 fn georeferencing(ds: &Dataset, path: &Path) -> Result<[f64; 6]> {
     match ds.geo_transform() {
         Ok(gt) if gt != [0.0, 1.0, 0.0, 0.0, 0.0, 1.0] => Ok(gt),
-        _ => Err(GbError(format!("{} has no coordinates: the raster is not georeferenced.", path.display()))),
+        // GDAL reads no world file for some formats, such as WebP: Ographis does.
+        _ => og_engine::basemap::world_file(path).ok_or_else(|| GbError(format!("{} has no coordinates: the raster is not georeferenced.", path.display()))),
     }
 }
 

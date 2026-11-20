@@ -26,9 +26,8 @@ fn number_of(s: &str) -> Option<Json> {
     t.parse::<f64>().ok().filter(|f| f.is_finite()).and_then(|f| serde_json::Number::from_f64(f).map(Json::Number))
 }
 
-fn local(name: &[u8]) -> String {
-    let s = String::from_utf8_lossy(name);
-    s.rsplit(':').next().unwrap_or(&s).to_string()
+fn local(name: &str) -> String {
+    name.rsplit(':').next().unwrap_or(name).to_string()
 }
 
 /// An element being read: its attributes and children so far, and its text.
@@ -95,15 +94,14 @@ pub fn to_json(text: &str) -> Result<Json> {
     reader.config_mut().trim_text(false);
     let mut stack: Vec<Open> = Vec::new();
     let mut root: Option<(String, Json)> = None;
-    let decoder = reader.decoder();
     let attrs_of = |e: &quick_xml::events::BytesStart| -> Map<String, Json> {
         let mut m = Map::new();
         for a in e.attributes().flatten() {
             let key = local(a.key.as_ref());
-            if a.key.as_ref().starts_with(b"xmlns") || key == "schemaLocation" {
+            if a.key.as_ref().starts_with("xmlns") || key == "schemaLocation" {
                 continue;
             }
-            let v = a.decode_and_unescape_value(decoder).map(|c| c.into_owned()).unwrap_or_default();
+            let v = a.normalized_value(quick_xml::XmlVersion::Implicit1_0).map(|c| c.into_owned()).unwrap_or_default();
             m.insert(key, number_of(&v).unwrap_or(Json::String(v)));
         }
         m
@@ -121,18 +119,18 @@ pub fn to_json(text: &str) -> Result<Json> {
             }
             Ok(Event::Text(t)) => {
                 if let Some(top) = stack.last_mut() {
-                    let raw = String::from_utf8_lossy(t.as_ref()).into_owned();
+                    let raw = std::borrow::Cow::<str>::Borrowed(t.as_ref()).into_owned();
                     top.text.push_str(&quick_xml::escape::unescape(&raw).map(|c| c.into_owned()).unwrap_or(raw));
                 }
             }
             Ok(Event::CData(t)) => {
                 if let Some(top) = stack.last_mut() {
-                    top.text.push_str(&String::from_utf8_lossy(t.as_ref()));
+                    top.text.push_str(&std::borrow::Cow::<str>::Borrowed(t.as_ref()));
                 }
             }
             Ok(Event::GeneralRef(r)) => {
                 if let Some(top) = stack.last_mut() {
-                    let name = String::from_utf8_lossy(r.as_ref()).into_owned();
+                    let name = std::borrow::Cow::<str>::Borrowed(r.as_ref()).into_owned();
                     let c = quick_xml::escape::unescape(&format!("&{};", name)).map(|c| c.into_owned()).unwrap_or_default();
                     top.text.push_str(&c);
                 }

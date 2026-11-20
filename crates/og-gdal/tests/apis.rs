@@ -2107,7 +2107,8 @@ fn plans_are_items_and_their_files_are_kept_and_a_map_of_colours_is_a_picture() 
         serde_json::json!({"type": "Feature", "id": id, "bbox": [x, 6400000.0, x + 100.0, 6400100.0],
             "geometry": {"type": "Polygon", "coordinates": [[[x, 6400000.0], [x + 100.0, 6400000.0], [x + 100.0, 6400100.0], [x, 6400100.0], [x, 6400000.0]]]},
             "properties": {"namn": name, "status": "laga kraft", "antal": 2, "beslut": {"datum": "2024-01-01"}},
-            "assets": {"plankarta": {"href": format!("{}/dl/asset/{}", base, asset)}}})
+            "assets": {"plankarta": {"href": format!("{}/dl/asset/{}", base, asset), "title": format!("Plankarta {}", name), "type": "application/pdf", "roles": ["plankarta", "data"]},
+                       "beskrivning": {"href": format!("{}/dl/asset/b", base), "title": "Planbeskrivning", "type": "application/pdf"}}})
     };
     {
         let mut r = routes.lock().unwrap();
@@ -2128,6 +2129,7 @@ fn plans_are_items_and_their_files_are_kept_and_a_map_of_colours_is_a_picture() 
         for a in ["a1", "a2", "a3"] {
             r.insert(format!("/dl/asset/{}", a), ("application/pdf|plankarta.pdf".into(), format!("%PDF-1.4 {}", a).into_bytes()));
         }
+        r.insert("/dl/asset/b".into(), ("application/pdf|planbeskrivning.pdf".into(), b"%PDF-1.4 b".to_vec()));
         // A map of four colours, two by two cells of 10 m.
         r.insert(
             "/stac-karta/v1/collections".into(),
@@ -2215,7 +2217,18 @@ fn plans_are_items_and_their_files_are_kept_and_a_map_of_colours_is_a_picture() 
     let kept = dir.join("kept/Detaljplan");
     let mut names: Vec<String> = std::fs::read_dir(&kept).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
     names.sort();
-    assert_eq!(names, [".ographis-files.json", "p2_plankarta.pdf", "p3_plankarta.pdf", "plankarta.pdf"]);
+    assert_eq!(names, [".ographis-files.json", "p2_plankarta.pdf", "p3_plankarta.pdf", "planbeskrivning.pdf", "plankarta.pdf"]);
+    // The documents: one row each, however many plans refer to it, with what it is and where it lies.
+    let docs = r.output("plans", "Files").unwrap();
+    let col_of = |name: &str| col(docs, name).iter().map(|v| v.to_text()).collect::<Vec<_>>();
+    let titles = col_of("title");
+    assert_eq!(docs.len(), 4, "three maps and one description: {:?}", titles);
+    let b = titles.iter().position(|t| t == "Planbeskrivning").unwrap();
+    assert_eq!(col_of("items")[b], "3", "the description of all three plans is one row");
+    let m = titles.iter().position(|t| t == "Plankarta Hamnen").unwrap();
+    assert_eq!((col_of("type")[m].as_str(), col_of("roles")[m].as_str(), col_of("asset")[m].as_str()), ("application/pdf", "plankarta, data", "plankarta"));
+    assert!(col_of("file")[m].ends_with("p2_plankarta.pdf"), "{:?}", col_of("file"));
+    assert!(col_of("href")[b].ends_with("/dl/asset/b"));
     assert_eq!(std::fs::read_to_string(kept.join("p2_plankarta.pdf")).unwrap(), "%PDF-1.4 a2");
     // Not fetched again.
     let asked = log.lock().unwrap().clone();
@@ -2223,6 +2236,11 @@ fn plans_are_items_and_their_files_are_kept_and_a_map_of_colours_is_a_picture() 
     assert!(
         asked.iter().any(|l| l.starts_with("POST /ngp/v1/search") && l.contains("\"page\":2") && l.contains("bbox")),
         "the next page merges with the search"
+    );
+    assert!(
+        asked.iter().filter(|l| l.contains("/ngp/v1/search")).all(|l| l.contains(",6400000,") || l.contains(",6400000.0,")),
+        "the platform takes its rectangle in SWEREF 99 TM: {:?}",
+        asked.iter().filter(|l| l.contains("/ngp/v1/search")).collect::<Vec<_>>()
     );
     // The map: its colours, not the numbers of them, and its PDF kept.
     let map = r.output("map", "Output").unwrap_or_else(|| panic!("{:?}", r.nodes["map"].error)).image.clone().expect("a picture");
@@ -2328,7 +2346,7 @@ fn the_swedish_api_examples_work_on_copies_of_the_services() {
     // http-cache with one setting for the pages is not taken for another.
     let scb = format!(
         r#"{{"nodes": [{{"id": "afr", "type": "HttpCaller", "params": {{"url": "'{url}/v1/arbetsstallen?kommun=1480'", "connection": "SCB företagsregister", "paging": "cursor",
-               "cursor_path": "pagination.nextCursorId", "page_param": "cursorId", "items_path": "arbetsstallen", "cache": "disk"}}}},
+               "cursor_path": "pagination.nextCursorId", "page_param": "cursorId", "size_param": "limit", "page_size": "5000", "cache": "disk"}}}},
              {{"id": "items", "type": "JsonExploder", "params": {{"attribute": "_response", "path": "arbetsstallen"}}}}],
            "edges": [{{"from": ["afr", "Output"], "to": ["items", "Input"]}}]}}"#
     );
@@ -2337,7 +2355,10 @@ fn the_swedish_api_examples_work_on_copies_of_the_services() {
     assert_eq!(rows(&wrong), 2, "the cursor is not found: one page");
     assert_eq!(rows(&scb), 3, "the pages are followed, not the one page kept");
     assert_eq!(rows(&scb), 3, "and then taken from http-cache");
-    assert!(log.lock().unwrap().iter().any(|q| q.query("cursorId").as_deref() == Some("50") && q.query("kommun").as_deref() == Some("1480")));
+    // The size of a page is asked for with every page, the first too.
+    let asked: Vec<_> = log.lock().unwrap().iter().filter(|q| q.route() == "/v1/arbetsstallen").map(|q| (q.query("limit"), q.query("cursorId"))).collect();
+    assert!(asked.contains(&(Some("5000".into()), None)), "{:?}", asked);
+    assert!(asked.contains(&(Some("5000".into()), Some("50".into()))), "{:?}", asked);
     use_settings(None);
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -98,10 +98,13 @@ pub enum Paging {
         items: Option<Vec<Step>>,
     },
     /// A value in the answer, such as nextCursorId, sent as a parameter of the next request:
-    /// ?cursor=… Pages stop when the answer has no value there.
+    /// ?cursor=… Pages stop when the answer has no value there. With a size parameter, every
+    /// request asks for pages of that size.
     Cursor {
         path: Vec<Step>,
         param: String,
+        size_param: String,
+        size: u64,
     },
     /// A page number: ?page=1, 2, 3…, with the size of a page if the service takes one.
     Page {
@@ -168,11 +171,12 @@ impl RequestLog {
     }
 
     /// A line for one request. Tabs and line breaks in the body are written as \t and \n,
-    /// so that each request stays one line.
+    /// so that each request stays one line. Keys and passwords in the address or the body,
+    /// such as ?api_key=…, are taken out: the log lies beside the model, where others may see it.
     pub fn write(&self, l: &Logged) {
         use std::io::Write;
         let Logged { method, url, status, bytes, took, note, body } = *l;
-        let one = |s: &str| s.replace('\\', "\\\\").replace('\t', "\\t").replace('\r', "").replace('\n', "\\n");
+        let one = |s: &str| crate::bugreport::scrub(s).replace('\\', "\\\\").replace('\t', "\\t").replace('\r', "").replace('\n', "\\n");
         let line = format!(
             "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
@@ -433,6 +437,7 @@ impl<'a> Client<'a> {
                     set_query(&u, size_param, &size.to_string())
                 }
             }
+            Paging::Cursor { size_param, size, .. } if !size_param.is_empty() => set_query(url, size_param, &size.to_string()),
             _ => url.to_string(),
         };
         let mut seen = std::collections::HashSet::new();
@@ -470,7 +475,7 @@ impl<'a> Client<'a> {
                     Some(k) if k > 0 && (k as u64) >= *size => Some(set_query(&address, offset_param, &(start + size * n as u64).to_string())),
                     _ => None,
                 },
-                Paging::Cursor { path, param } => {
+                Paging::Cursor { path, param, .. } => {
                     let value = parsed.as_ref().and_then(|v| json::get(v, path)).and_then(|x| match x {
                         serde_json::Value::String(s) => Some(s.trim().to_string()),
                         serde_json::Value::Number(n) => Some(n.to_string()),
@@ -682,6 +687,8 @@ pub fn paging_of(get: &dyn Fn(&str) -> Option<String>) -> Result<Paging> {
         Some("cursor") => Paging::Cursor {
             path: path("cursor_path")?.ok_or_else(|| GbError("Write where the cursor is in the answer, such as nextCursorId, under Cursor at.".into()))?,
             param: text("page_param", "cursor"),
+            size_param: get("size_param").map(|s| s.trim().to_string()).unwrap_or_default(),
+            size: num("page_size", 100)?.max(1),
         },
         Some("page") => Paging::Page {
             page_param: text("page_param", "page"),
@@ -697,6 +704,24 @@ pub fn paging_of(get: &dyn Fn(&str) -> Option<String>) -> Result<Paging> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keys_are_taken_out_of_the_log_of_requests() {
+        let path = std::env::temp_dir().join(format!("og-requests-{}.log", std::process::id()));
+        let log = RequestLog::open(&path).unwrap();
+        log.write(&Logged {
+            method: "GET",
+            url: "https://api.example.se/v1/data?q=a&api_key=abc123secret&page=2",
+            status: "200",
+            body: Some("token=xyz789secret"),
+            ..Default::default()
+        });
+        drop(log);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("abc123secret") && !text.contains("xyz789secret"), "{}", text);
+        assert!(text.contains("api_key=(taken out)&page=2"), "{}", text);
+        let _ = std::fs::remove_file(&path);
+    }
 
     #[test]
     fn addresses_are_built_and_followed() {

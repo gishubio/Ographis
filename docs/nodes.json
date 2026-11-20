@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.96.4",
+  "version": "0.96.5",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a comment that says what it does in this model (keep the name of the tool, without a name of its own), x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -640,6 +640,14 @@
             }
           ],
           "default": "false"
+        },
+        {
+          "key": "duckdb_sql",
+          "label": "Query",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "In place of a table: SQL that DuckDB runs, also on other files, such as SELECT * FROM read_parquet('buildings/*.parquet') WHERE height > 20. A geometry column comes with it"
         },
         {
           "key": "zip_file",
@@ -1400,7 +1408,7 @@
       "title": "Output",
       "group": "output",
       "category": "",
-      "description": "Writes the stream to GeoPackage, Shapefile, GeoJSON, Excel, LibreOffice Calc, CSV or txt. A file that already exists is overwritten, but in a GeoPackage or a workbook only the layer or sheet that is written. A Shapefile holds one geometry type, so mixed streams are split into several files. A workbook can be given a font, a bold and locked top row and colours. A map from Draw map is written as PNG, JPG, GeoTIFF or a PDF page.",
+      "description": "Writes the stream to GeoPackage, Shapefile, GeoJSON, Excel, LibreOffice Calc, CSV or txt. A file that already exists is overwritten, but in a GeoPackage or a workbook only the layer or sheet that is written. A Shapefile holds one geometry type, so mixed streams are split into several files. A workbook can be given a font, a bold and locked top row and colours. A map from Draw map is written as PNG, JPG, WebP, GeoTIFF or a PDF page.",
       "inputs": [
         "Input"
       ],
@@ -1435,32 +1443,56 @@
               "label": "Excel (.xlsx)"
             },
             {
-              "value": "fgb",
-              "label": "FlatGeobuf (.fgb)"
+              "value": "ods",
+              "label": "LibreOffice Calc (.ods)"
             },
             {
-              "value": "geojson",
-              "label": "GeoJSON (.geojson)"
+              "value": "gsheet",
+              "label": "Google Sheets"
             },
             {
-              "value": "parquet",
-              "label": "GeoParquet (.parquet)"
+              "value": "txt",
+              "label": "Text (.txt)"
+            },
+            {
+              "value": "json",
+              "label": "JSON: a list of objects (.json)"
+            },
+            {
+              "value": "xml",
+              "label": "XML (.xml)"
             },
             {
               "value": "gpkg",
               "label": "GeoPackage (.gpkg)"
             },
             {
+              "value": "shp",
+              "label": "Shapefile (.shp)"
+            },
+            {
+              "value": "geojson",
+              "label": "GeoJSON (.geojson)"
+            },
+            {
+              "value": "fgb",
+              "label": "FlatGeobuf (.fgb)"
+            },
+            {
+              "value": "parquet",
+              "label": "GeoParquet (.parquet)"
+            },
+            {
+              "value": "arrow",
+              "label": "GeoArrow (.arrow)"
+            },
+            {
+              "value": "duckdb",
+              "label": "DuckDB database (.duckdb)"
+            },
+            {
               "value": "gml",
               "label": "GML 3.2 (.gml)"
-            },
-            {
-              "value": "gpx",
-              "label": "GPX for GPS units (.gpx)"
-            },
-            {
-              "value": "gsheet",
-              "label": "Google Sheets (the address of the sheet)"
             },
             {
               "value": "kml",
@@ -1471,8 +1503,24 @@
               "label": "KMZ for Google Earth (.kmz)"
             },
             {
-              "value": "geopdf",
-              "label": "GeoSpatial PDF with layers (.pdf)"
+              "value": "gpx",
+              "label": "GPX for GPS units (.gpx)"
+            },
+            {
+              "value": "postgis",
+              "label": "PostGIS table"
+            },
+            {
+              "value": "png",
+              "label": "PNG image (.png)"
+            },
+            {
+              "value": "jpg",
+              "label": "JPEG image (.jpg)"
+            },
+            {
+              "value": "webp",
+              "label": "WebP image (.webp)"
             },
             {
               "value": "tif",
@@ -1483,40 +1531,48 @@
               "label": "Cloud Optimized GeoTIFF (.tif)"
             },
             {
-              "value": "citygml",
-              "label": "CityGML 2.0 buildings (.gml)"
+              "value": "pdf",
+              "label": "PDF (.pdf)"
+            },
+            {
+              "value": "geopdf",
+              "label": "GeoSpatial PDF with layers (.pdf)"
+            },
+            {
+              "value": "svg",
+              "label": "SVG drawing of a map (.svg)"
+            },
+            {
+              "value": "webmap",
+              "label": "Web map with Leaflet or MapLibre (a folder)"
+            },
+            {
+              "value": "pmtiles",
+              "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
+              "value": "qgis",
+              "label": "QGIS project with its layers (.qgz)"
+            },
+            {
+              "value": "pptx",
+              "label": "PowerPoint slides (.pptx)"
+            },
+            {
+              "value": "odp",
+              "label": "LibreOffice Impress slides (.odp)"
             },
             {
               "value": "glb",
               "label": "glTF 3D model (.glb)"
             },
             {
-              "value": "stl",
-              "label": "STL for 3D printing (.stl)"
+              "value": "obj",
+              "label": "OBJ 3D model (.obj)"
             },
             {
-              "value": "3mf",
-              "label": "3MF for 3D printing (.3mf)"
-            },
-            {
-              "value": "step",
-              "label": "STEP for CAD (.step)"
-            },
-            {
-              "value": "dxf",
-              "label": "AutoCAD DXF drawing (.dxf)"
-            },
-            {
-              "value": "dwg",
-              "label": "AutoCAD DWG drawing (.dwg)"
-            },
-            {
-              "value": "usda",
-              "label": "OpenUSD (.usda)"
-            },
-            {
-              "value": "usdz",
-              "label": "OpenUSD package with textures (.usdz)"
+              "value": "citygml",
+              "label": "CityGML 2.0 buildings (.gml)"
             },
             {
               "value": "3dtiles",
@@ -1527,12 +1583,12 @@
               "label": "3D walk-through in the browser (a folder)"
             },
             {
-              "value": "jpg",
-              "label": "JPEG image (.jpg)"
+              "value": "usda",
+              "label": "OpenUSD (.usda)"
             },
             {
-              "value": "json",
-              "label": "JSON: a list of objects (.json)"
+              "value": "usdz",
+              "label": "OpenUSD package with textures (.usdz)"
             },
             {
               "value": "landxml",
@@ -1555,60 +1611,24 @@
               "label": "Gaussian splats, compressed SPZ (.spz)"
             },
             {
-              "value": "ods",
-              "label": "LibreOffice Calc (.ods)"
+              "value": "dxf",
+              "label": "AutoCAD DXF drawing (.dxf)"
             },
             {
-              "value": "obj",
-              "label": "OBJ 3D model (.obj)"
+              "value": "dwg",
+              "label": "AutoCAD DWG drawing (.dwg)"
             },
             {
-              "value": "pdf",
-              "label": "PDF (.pdf)"
+              "value": "step",
+              "label": "STEP for CAD (.step)"
             },
             {
-              "value": "png",
-              "label": "PNG image (.png)"
+              "value": "stl",
+              "label": "STL for 3D printing (.stl)"
             },
             {
-              "value": "pmtiles",
-              "label": "PMTiles vector tiles (.pmtiles)"
-            },
-            {
-              "value": "svg",
-              "label": "SVG drawing of a map (.svg)"
-            },
-            {
-              "value": "postgis",
-              "label": "PostGIS table"
-            },
-            {
-              "value": "qgis",
-              "label": "QGIS project with its layers (.qgz)"
-            },
-            {
-              "value": "webmap",
-              "label": "Web map with Leaflet or MapLibre (a folder)"
-            },
-            {
-              "value": "pptx",
-              "label": "PowerPoint slides (.pptx)"
-            },
-            {
-              "value": "odp",
-              "label": "LibreOffice Impress slides (.odp)"
-            },
-            {
-              "value": "shp",
-              "label": "Shapefile (.shp)"
-            },
-            {
-              "value": "txt",
-              "label": "Text (.txt)"
-            },
-            {
-              "value": "xml",
-              "label": "XML (.xml)"
+              "value": "3mf",
+              "label": "3MF for 3D printing (.3mf)"
             }
           ],
           "default": "",
@@ -2389,11 +2409,11 @@
         },
         {
           "key": "img_quality",
-          "label": "JPEG quality",
+          "label": "Picture quality",
           "kind": "text",
           "shape": "a string",
           "default": "92",
-          "hint": "1 to 100: more is sharper and larger. For JPEG, and GeoTIFF packed as JPEG"
+          "hint": "1 to 100: more is sharper and larger. For JPEG, WebP and GeoTIFF packed as JPEG. WebP at 100 keeps every pixel"
         },
         {
           "key": "tif_compress",
@@ -2650,32 +2670,56 @@
               "label": "Excel (.xlsx)"
             },
             {
-              "value": "fgb",
-              "label": "FlatGeobuf (.fgb)"
+              "value": "ods",
+              "label": "LibreOffice Calc (.ods)"
             },
             {
-              "value": "geojson",
-              "label": "GeoJSON (.geojson)"
+              "value": "gsheet",
+              "label": "Google Sheets"
             },
             {
-              "value": "parquet",
-              "label": "GeoParquet (.parquet)"
+              "value": "txt",
+              "label": "Text (.txt)"
+            },
+            {
+              "value": "json",
+              "label": "JSON: a list of objects (.json)"
+            },
+            {
+              "value": "xml",
+              "label": "XML (.xml)"
             },
             {
               "value": "gpkg",
               "label": "GeoPackage (.gpkg)"
             },
             {
+              "value": "shp",
+              "label": "Shapefile (.shp)"
+            },
+            {
+              "value": "geojson",
+              "label": "GeoJSON (.geojson)"
+            },
+            {
+              "value": "fgb",
+              "label": "FlatGeobuf (.fgb)"
+            },
+            {
+              "value": "parquet",
+              "label": "GeoParquet (.parquet)"
+            },
+            {
+              "value": "arrow",
+              "label": "GeoArrow (.arrow)"
+            },
+            {
+              "value": "duckdb",
+              "label": "DuckDB database (.duckdb)"
+            },
+            {
               "value": "gml",
               "label": "GML 3.2 (.gml)"
-            },
-            {
-              "value": "gpx",
-              "label": "GPX for GPS units (.gpx)"
-            },
-            {
-              "value": "gsheet",
-              "label": "Google Sheets (the address of the sheet)"
             },
             {
               "value": "kml",
@@ -2686,8 +2730,24 @@
               "label": "KMZ for Google Earth (.kmz)"
             },
             {
-              "value": "geopdf",
-              "label": "GeoSpatial PDF with layers (.pdf)"
+              "value": "gpx",
+              "label": "GPX for GPS units (.gpx)"
+            },
+            {
+              "value": "postgis",
+              "label": "PostGIS table"
+            },
+            {
+              "value": "png",
+              "label": "PNG image (.png)"
+            },
+            {
+              "value": "jpg",
+              "label": "JPEG image (.jpg)"
+            },
+            {
+              "value": "webp",
+              "label": "WebP image (.webp)"
             },
             {
               "value": "tif",
@@ -2698,40 +2758,48 @@
               "label": "Cloud Optimized GeoTIFF (.tif)"
             },
             {
-              "value": "citygml",
-              "label": "CityGML 2.0 buildings (.gml)"
+              "value": "pdf",
+              "label": "PDF (.pdf)"
+            },
+            {
+              "value": "geopdf",
+              "label": "GeoSpatial PDF with layers (.pdf)"
+            },
+            {
+              "value": "svg",
+              "label": "SVG drawing of a map (.svg)"
+            },
+            {
+              "value": "webmap",
+              "label": "Web map with Leaflet or MapLibre (a folder)"
+            },
+            {
+              "value": "pmtiles",
+              "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
+              "value": "qgis",
+              "label": "QGIS project with its layers (.qgz)"
+            },
+            {
+              "value": "pptx",
+              "label": "PowerPoint slides (.pptx)"
+            },
+            {
+              "value": "odp",
+              "label": "LibreOffice Impress slides (.odp)"
             },
             {
               "value": "glb",
               "label": "glTF 3D model (.glb)"
             },
             {
-              "value": "stl",
-              "label": "STL for 3D printing (.stl)"
+              "value": "obj",
+              "label": "OBJ 3D model (.obj)"
             },
             {
-              "value": "3mf",
-              "label": "3MF for 3D printing (.3mf)"
-            },
-            {
-              "value": "step",
-              "label": "STEP for CAD (.step)"
-            },
-            {
-              "value": "dxf",
-              "label": "AutoCAD DXF drawing (.dxf)"
-            },
-            {
-              "value": "dwg",
-              "label": "AutoCAD DWG drawing (.dwg)"
-            },
-            {
-              "value": "usda",
-              "label": "OpenUSD (.usda)"
-            },
-            {
-              "value": "usdz",
-              "label": "OpenUSD package with textures (.usdz)"
+              "value": "citygml",
+              "label": "CityGML 2.0 buildings (.gml)"
             },
             {
               "value": "3dtiles",
@@ -2742,12 +2810,12 @@
               "label": "3D walk-through in the browser (a folder)"
             },
             {
-              "value": "jpg",
-              "label": "JPEG image (.jpg)"
+              "value": "usda",
+              "label": "OpenUSD (.usda)"
             },
             {
-              "value": "json",
-              "label": "JSON: a list of objects (.json)"
+              "value": "usdz",
+              "label": "OpenUSD package with textures (.usdz)"
             },
             {
               "value": "landxml",
@@ -2770,60 +2838,24 @@
               "label": "Gaussian splats, compressed SPZ (.spz)"
             },
             {
-              "value": "ods",
-              "label": "LibreOffice Calc (.ods)"
+              "value": "dxf",
+              "label": "AutoCAD DXF drawing (.dxf)"
             },
             {
-              "value": "obj",
-              "label": "OBJ 3D model (.obj)"
+              "value": "dwg",
+              "label": "AutoCAD DWG drawing (.dwg)"
             },
             {
-              "value": "pdf",
-              "label": "PDF (.pdf)"
+              "value": "step",
+              "label": "STEP for CAD (.step)"
             },
             {
-              "value": "png",
-              "label": "PNG image (.png)"
+              "value": "stl",
+              "label": "STL for 3D printing (.stl)"
             },
             {
-              "value": "pmtiles",
-              "label": "PMTiles vector tiles (.pmtiles)"
-            },
-            {
-              "value": "svg",
-              "label": "SVG drawing of a map (.svg)"
-            },
-            {
-              "value": "postgis",
-              "label": "PostGIS table"
-            },
-            {
-              "value": "qgis",
-              "label": "QGIS project with its layers (.qgz)"
-            },
-            {
-              "value": "webmap",
-              "label": "Web map with Leaflet or MapLibre (a folder)"
-            },
-            {
-              "value": "pptx",
-              "label": "PowerPoint slides (.pptx)"
-            },
-            {
-              "value": "odp",
-              "label": "LibreOffice Impress slides (.odp)"
-            },
-            {
-              "value": "shp",
-              "label": "Shapefile (.shp)"
-            },
-            {
-              "value": "txt",
-              "label": "Text (.txt)"
-            },
-            {
-              "value": "xml",
-              "label": "XML (.xml)"
+              "value": "3mf",
+              "label": "3MF for 3D printing (.3mf)"
             }
           ],
           "default": "pptx"
@@ -2929,32 +2961,56 @@
               "label": "Excel (.xlsx)"
             },
             {
-              "value": "fgb",
-              "label": "FlatGeobuf (.fgb)"
+              "value": "ods",
+              "label": "LibreOffice Calc (.ods)"
             },
             {
-              "value": "geojson",
-              "label": "GeoJSON (.geojson)"
+              "value": "gsheet",
+              "label": "Google Sheets"
             },
             {
-              "value": "parquet",
-              "label": "GeoParquet (.parquet)"
+              "value": "txt",
+              "label": "Text (.txt)"
+            },
+            {
+              "value": "json",
+              "label": "JSON: a list of objects (.json)"
+            },
+            {
+              "value": "xml",
+              "label": "XML (.xml)"
             },
             {
               "value": "gpkg",
               "label": "GeoPackage (.gpkg)"
             },
             {
+              "value": "shp",
+              "label": "Shapefile (.shp)"
+            },
+            {
+              "value": "geojson",
+              "label": "GeoJSON (.geojson)"
+            },
+            {
+              "value": "fgb",
+              "label": "FlatGeobuf (.fgb)"
+            },
+            {
+              "value": "parquet",
+              "label": "GeoParquet (.parquet)"
+            },
+            {
+              "value": "arrow",
+              "label": "GeoArrow (.arrow)"
+            },
+            {
+              "value": "duckdb",
+              "label": "DuckDB database (.duckdb)"
+            },
+            {
               "value": "gml",
               "label": "GML 3.2 (.gml)"
-            },
-            {
-              "value": "gpx",
-              "label": "GPX for GPS units (.gpx)"
-            },
-            {
-              "value": "gsheet",
-              "label": "Google Sheets (the address of the sheet)"
             },
             {
               "value": "kml",
@@ -2965,8 +3021,24 @@
               "label": "KMZ for Google Earth (.kmz)"
             },
             {
-              "value": "geopdf",
-              "label": "GeoSpatial PDF with layers (.pdf)"
+              "value": "gpx",
+              "label": "GPX for GPS units (.gpx)"
+            },
+            {
+              "value": "postgis",
+              "label": "PostGIS table"
+            },
+            {
+              "value": "png",
+              "label": "PNG image (.png)"
+            },
+            {
+              "value": "jpg",
+              "label": "JPEG image (.jpg)"
+            },
+            {
+              "value": "webp",
+              "label": "WebP image (.webp)"
             },
             {
               "value": "tif",
@@ -2977,40 +3049,48 @@
               "label": "Cloud Optimized GeoTIFF (.tif)"
             },
             {
-              "value": "citygml",
-              "label": "CityGML 2.0 buildings (.gml)"
+              "value": "pdf",
+              "label": "PDF (.pdf)"
+            },
+            {
+              "value": "geopdf",
+              "label": "GeoSpatial PDF with layers (.pdf)"
+            },
+            {
+              "value": "svg",
+              "label": "SVG drawing of a map (.svg)"
+            },
+            {
+              "value": "webmap",
+              "label": "Web map with Leaflet or MapLibre (a folder)"
+            },
+            {
+              "value": "pmtiles",
+              "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
+              "value": "qgis",
+              "label": "QGIS project with its layers (.qgz)"
+            },
+            {
+              "value": "pptx",
+              "label": "PowerPoint slides (.pptx)"
+            },
+            {
+              "value": "odp",
+              "label": "LibreOffice Impress slides (.odp)"
             },
             {
               "value": "glb",
               "label": "glTF 3D model (.glb)"
             },
             {
-              "value": "stl",
-              "label": "STL for 3D printing (.stl)"
+              "value": "obj",
+              "label": "OBJ 3D model (.obj)"
             },
             {
-              "value": "3mf",
-              "label": "3MF for 3D printing (.3mf)"
-            },
-            {
-              "value": "step",
-              "label": "STEP for CAD (.step)"
-            },
-            {
-              "value": "dxf",
-              "label": "AutoCAD DXF drawing (.dxf)"
-            },
-            {
-              "value": "dwg",
-              "label": "AutoCAD DWG drawing (.dwg)"
-            },
-            {
-              "value": "usda",
-              "label": "OpenUSD (.usda)"
-            },
-            {
-              "value": "usdz",
-              "label": "OpenUSD package with textures (.usdz)"
+              "value": "citygml",
+              "label": "CityGML 2.0 buildings (.gml)"
             },
             {
               "value": "3dtiles",
@@ -3021,12 +3101,12 @@
               "label": "3D walk-through in the browser (a folder)"
             },
             {
-              "value": "jpg",
-              "label": "JPEG image (.jpg)"
+              "value": "usda",
+              "label": "OpenUSD (.usda)"
             },
             {
-              "value": "json",
-              "label": "JSON: a list of objects (.json)"
+              "value": "usdz",
+              "label": "OpenUSD package with textures (.usdz)"
             },
             {
               "value": "landxml",
@@ -3049,60 +3129,24 @@
               "label": "Gaussian splats, compressed SPZ (.spz)"
             },
             {
-              "value": "ods",
-              "label": "LibreOffice Calc (.ods)"
+              "value": "dxf",
+              "label": "AutoCAD DXF drawing (.dxf)"
             },
             {
-              "value": "obj",
-              "label": "OBJ 3D model (.obj)"
+              "value": "dwg",
+              "label": "AutoCAD DWG drawing (.dwg)"
             },
             {
-              "value": "pdf",
-              "label": "PDF (.pdf)"
+              "value": "step",
+              "label": "STEP for CAD (.step)"
             },
             {
-              "value": "png",
-              "label": "PNG image (.png)"
+              "value": "stl",
+              "label": "STL for 3D printing (.stl)"
             },
             {
-              "value": "pmtiles",
-              "label": "PMTiles vector tiles (.pmtiles)"
-            },
-            {
-              "value": "svg",
-              "label": "SVG drawing of a map (.svg)"
-            },
-            {
-              "value": "postgis",
-              "label": "PostGIS table"
-            },
-            {
-              "value": "qgis",
-              "label": "QGIS project with its layers (.qgz)"
-            },
-            {
-              "value": "webmap",
-              "label": "Web map with Leaflet or MapLibre (a folder)"
-            },
-            {
-              "value": "pptx",
-              "label": "PowerPoint slides (.pptx)"
-            },
-            {
-              "value": "odp",
-              "label": "LibreOffice Impress slides (.odp)"
-            },
-            {
-              "value": "shp",
-              "label": "Shapefile (.shp)"
-            },
-            {
-              "value": "txt",
-              "label": "Text (.txt)"
-            },
-            {
-              "value": "xml",
-              "label": "XML (.xml)"
+              "value": "3mf",
+              "label": "3MF for 3D printing (.3mf)"
             }
           ],
           "default": "geopdf"
@@ -3446,32 +3490,56 @@
               "label": "Excel (.xlsx)"
             },
             {
-              "value": "fgb",
-              "label": "FlatGeobuf (.fgb)"
+              "value": "ods",
+              "label": "LibreOffice Calc (.ods)"
             },
             {
-              "value": "geojson",
-              "label": "GeoJSON (.geojson)"
+              "value": "gsheet",
+              "label": "Google Sheets"
             },
             {
-              "value": "parquet",
-              "label": "GeoParquet (.parquet)"
+              "value": "txt",
+              "label": "Text (.txt)"
+            },
+            {
+              "value": "json",
+              "label": "JSON: a list of objects (.json)"
+            },
+            {
+              "value": "xml",
+              "label": "XML (.xml)"
             },
             {
               "value": "gpkg",
               "label": "GeoPackage (.gpkg)"
             },
             {
+              "value": "shp",
+              "label": "Shapefile (.shp)"
+            },
+            {
+              "value": "geojson",
+              "label": "GeoJSON (.geojson)"
+            },
+            {
+              "value": "fgb",
+              "label": "FlatGeobuf (.fgb)"
+            },
+            {
+              "value": "parquet",
+              "label": "GeoParquet (.parquet)"
+            },
+            {
+              "value": "arrow",
+              "label": "GeoArrow (.arrow)"
+            },
+            {
+              "value": "duckdb",
+              "label": "DuckDB database (.duckdb)"
+            },
+            {
               "value": "gml",
               "label": "GML 3.2 (.gml)"
-            },
-            {
-              "value": "gpx",
-              "label": "GPX for GPS units (.gpx)"
-            },
-            {
-              "value": "gsheet",
-              "label": "Google Sheets (the address of the sheet)"
             },
             {
               "value": "kml",
@@ -3482,8 +3550,24 @@
               "label": "KMZ for Google Earth (.kmz)"
             },
             {
-              "value": "geopdf",
-              "label": "GeoSpatial PDF with layers (.pdf)"
+              "value": "gpx",
+              "label": "GPX for GPS units (.gpx)"
+            },
+            {
+              "value": "postgis",
+              "label": "PostGIS table"
+            },
+            {
+              "value": "png",
+              "label": "PNG image (.png)"
+            },
+            {
+              "value": "jpg",
+              "label": "JPEG image (.jpg)"
+            },
+            {
+              "value": "webp",
+              "label": "WebP image (.webp)"
             },
             {
               "value": "tif",
@@ -3494,40 +3578,48 @@
               "label": "Cloud Optimized GeoTIFF (.tif)"
             },
             {
-              "value": "citygml",
-              "label": "CityGML 2.0 buildings (.gml)"
+              "value": "pdf",
+              "label": "PDF (.pdf)"
+            },
+            {
+              "value": "geopdf",
+              "label": "GeoSpatial PDF with layers (.pdf)"
+            },
+            {
+              "value": "svg",
+              "label": "SVG drawing of a map (.svg)"
+            },
+            {
+              "value": "webmap",
+              "label": "Web map with Leaflet or MapLibre (a folder)"
+            },
+            {
+              "value": "pmtiles",
+              "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
+              "value": "qgis",
+              "label": "QGIS project with its layers (.qgz)"
+            },
+            {
+              "value": "pptx",
+              "label": "PowerPoint slides (.pptx)"
+            },
+            {
+              "value": "odp",
+              "label": "LibreOffice Impress slides (.odp)"
             },
             {
               "value": "glb",
               "label": "glTF 3D model (.glb)"
             },
             {
-              "value": "stl",
-              "label": "STL for 3D printing (.stl)"
+              "value": "obj",
+              "label": "OBJ 3D model (.obj)"
             },
             {
-              "value": "3mf",
-              "label": "3MF for 3D printing (.3mf)"
-            },
-            {
-              "value": "step",
-              "label": "STEP for CAD (.step)"
-            },
-            {
-              "value": "dxf",
-              "label": "AutoCAD DXF drawing (.dxf)"
-            },
-            {
-              "value": "dwg",
-              "label": "AutoCAD DWG drawing (.dwg)"
-            },
-            {
-              "value": "usda",
-              "label": "OpenUSD (.usda)"
-            },
-            {
-              "value": "usdz",
-              "label": "OpenUSD package with textures (.usdz)"
+              "value": "citygml",
+              "label": "CityGML 2.0 buildings (.gml)"
             },
             {
               "value": "3dtiles",
@@ -3538,12 +3630,12 @@
               "label": "3D walk-through in the browser (a folder)"
             },
             {
-              "value": "jpg",
-              "label": "JPEG image (.jpg)"
+              "value": "usda",
+              "label": "OpenUSD (.usda)"
             },
             {
-              "value": "json",
-              "label": "JSON: a list of objects (.json)"
+              "value": "usdz",
+              "label": "OpenUSD package with textures (.usdz)"
             },
             {
               "value": "landxml",
@@ -3566,60 +3658,24 @@
               "label": "Gaussian splats, compressed SPZ (.spz)"
             },
             {
-              "value": "ods",
-              "label": "LibreOffice Calc (.ods)"
+              "value": "dxf",
+              "label": "AutoCAD DXF drawing (.dxf)"
             },
             {
-              "value": "obj",
-              "label": "OBJ 3D model (.obj)"
+              "value": "dwg",
+              "label": "AutoCAD DWG drawing (.dwg)"
             },
             {
-              "value": "pdf",
-              "label": "PDF (.pdf)"
+              "value": "step",
+              "label": "STEP for CAD (.step)"
             },
             {
-              "value": "png",
-              "label": "PNG image (.png)"
+              "value": "stl",
+              "label": "STL for 3D printing (.stl)"
             },
             {
-              "value": "pmtiles",
-              "label": "PMTiles vector tiles (.pmtiles)"
-            },
-            {
-              "value": "svg",
-              "label": "SVG drawing of a map (.svg)"
-            },
-            {
-              "value": "postgis",
-              "label": "PostGIS table"
-            },
-            {
-              "value": "qgis",
-              "label": "QGIS project with its layers (.qgz)"
-            },
-            {
-              "value": "webmap",
-              "label": "Web map with Leaflet or MapLibre (a folder)"
-            },
-            {
-              "value": "pptx",
-              "label": "PowerPoint slides (.pptx)"
-            },
-            {
-              "value": "odp",
-              "label": "LibreOffice Impress slides (.odp)"
-            },
-            {
-              "value": "shp",
-              "label": "Shapefile (.shp)"
-            },
-            {
-              "value": "txt",
-              "label": "Text (.txt)"
-            },
-            {
-              "value": "xml",
-              "label": "XML (.xml)"
+              "value": "3mf",
+              "label": "3MF for 3D printing (.3mf)"
             }
           ],
           "default": "qgis"
@@ -3725,32 +3781,56 @@
               "label": "Excel (.xlsx)"
             },
             {
-              "value": "fgb",
-              "label": "FlatGeobuf (.fgb)"
+              "value": "ods",
+              "label": "LibreOffice Calc (.ods)"
             },
             {
-              "value": "geojson",
-              "label": "GeoJSON (.geojson)"
+              "value": "gsheet",
+              "label": "Google Sheets"
             },
             {
-              "value": "parquet",
-              "label": "GeoParquet (.parquet)"
+              "value": "txt",
+              "label": "Text (.txt)"
+            },
+            {
+              "value": "json",
+              "label": "JSON: a list of objects (.json)"
+            },
+            {
+              "value": "xml",
+              "label": "XML (.xml)"
             },
             {
               "value": "gpkg",
               "label": "GeoPackage (.gpkg)"
             },
             {
+              "value": "shp",
+              "label": "Shapefile (.shp)"
+            },
+            {
+              "value": "geojson",
+              "label": "GeoJSON (.geojson)"
+            },
+            {
+              "value": "fgb",
+              "label": "FlatGeobuf (.fgb)"
+            },
+            {
+              "value": "parquet",
+              "label": "GeoParquet (.parquet)"
+            },
+            {
+              "value": "arrow",
+              "label": "GeoArrow (.arrow)"
+            },
+            {
+              "value": "duckdb",
+              "label": "DuckDB database (.duckdb)"
+            },
+            {
               "value": "gml",
               "label": "GML 3.2 (.gml)"
-            },
-            {
-              "value": "gpx",
-              "label": "GPX for GPS units (.gpx)"
-            },
-            {
-              "value": "gsheet",
-              "label": "Google Sheets (the address of the sheet)"
             },
             {
               "value": "kml",
@@ -3761,8 +3841,24 @@
               "label": "KMZ for Google Earth (.kmz)"
             },
             {
-              "value": "geopdf",
-              "label": "GeoSpatial PDF with layers (.pdf)"
+              "value": "gpx",
+              "label": "GPX for GPS units (.gpx)"
+            },
+            {
+              "value": "postgis",
+              "label": "PostGIS table"
+            },
+            {
+              "value": "png",
+              "label": "PNG image (.png)"
+            },
+            {
+              "value": "jpg",
+              "label": "JPEG image (.jpg)"
+            },
+            {
+              "value": "webp",
+              "label": "WebP image (.webp)"
             },
             {
               "value": "tif",
@@ -3773,40 +3869,48 @@
               "label": "Cloud Optimized GeoTIFF (.tif)"
             },
             {
-              "value": "citygml",
-              "label": "CityGML 2.0 buildings (.gml)"
+              "value": "pdf",
+              "label": "PDF (.pdf)"
+            },
+            {
+              "value": "geopdf",
+              "label": "GeoSpatial PDF with layers (.pdf)"
+            },
+            {
+              "value": "svg",
+              "label": "SVG drawing of a map (.svg)"
+            },
+            {
+              "value": "webmap",
+              "label": "Web map with Leaflet or MapLibre (a folder)"
+            },
+            {
+              "value": "pmtiles",
+              "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
+              "value": "qgis",
+              "label": "QGIS project with its layers (.qgz)"
+            },
+            {
+              "value": "pptx",
+              "label": "PowerPoint slides (.pptx)"
+            },
+            {
+              "value": "odp",
+              "label": "LibreOffice Impress slides (.odp)"
             },
             {
               "value": "glb",
               "label": "glTF 3D model (.glb)"
             },
             {
-              "value": "stl",
-              "label": "STL for 3D printing (.stl)"
+              "value": "obj",
+              "label": "OBJ 3D model (.obj)"
             },
             {
-              "value": "3mf",
-              "label": "3MF for 3D printing (.3mf)"
-            },
-            {
-              "value": "step",
-              "label": "STEP for CAD (.step)"
-            },
-            {
-              "value": "dxf",
-              "label": "AutoCAD DXF drawing (.dxf)"
-            },
-            {
-              "value": "dwg",
-              "label": "AutoCAD DWG drawing (.dwg)"
-            },
-            {
-              "value": "usda",
-              "label": "OpenUSD (.usda)"
-            },
-            {
-              "value": "usdz",
-              "label": "OpenUSD package with textures (.usdz)"
+              "value": "citygml",
+              "label": "CityGML 2.0 buildings (.gml)"
             },
             {
               "value": "3dtiles",
@@ -3817,12 +3921,12 @@
               "label": "3D walk-through in the browser (a folder)"
             },
             {
-              "value": "jpg",
-              "label": "JPEG image (.jpg)"
+              "value": "usda",
+              "label": "OpenUSD (.usda)"
             },
             {
-              "value": "json",
-              "label": "JSON: a list of objects (.json)"
+              "value": "usdz",
+              "label": "OpenUSD package with textures (.usdz)"
             },
             {
               "value": "landxml",
@@ -3845,60 +3949,24 @@
               "label": "Gaussian splats, compressed SPZ (.spz)"
             },
             {
-              "value": "ods",
-              "label": "LibreOffice Calc (.ods)"
+              "value": "dxf",
+              "label": "AutoCAD DXF drawing (.dxf)"
             },
             {
-              "value": "obj",
-              "label": "OBJ 3D model (.obj)"
+              "value": "dwg",
+              "label": "AutoCAD DWG drawing (.dwg)"
             },
             {
-              "value": "pdf",
-              "label": "PDF (.pdf)"
+              "value": "step",
+              "label": "STEP for CAD (.step)"
             },
             {
-              "value": "png",
-              "label": "PNG image (.png)"
+              "value": "stl",
+              "label": "STL for 3D printing (.stl)"
             },
             {
-              "value": "pmtiles",
-              "label": "PMTiles vector tiles (.pmtiles)"
-            },
-            {
-              "value": "svg",
-              "label": "SVG drawing of a map (.svg)"
-            },
-            {
-              "value": "postgis",
-              "label": "PostGIS table"
-            },
-            {
-              "value": "qgis",
-              "label": "QGIS project with its layers (.qgz)"
-            },
-            {
-              "value": "webmap",
-              "label": "Web map with Leaflet or MapLibre (a folder)"
-            },
-            {
-              "value": "pptx",
-              "label": "PowerPoint slides (.pptx)"
-            },
-            {
-              "value": "odp",
-              "label": "LibreOffice Impress slides (.odp)"
-            },
-            {
-              "value": "shp",
-              "label": "Shapefile (.shp)"
-            },
-            {
-              "value": "txt",
-              "label": "Text (.txt)"
-            },
-            {
-              "value": "xml",
-              "label": "XML (.xml)"
+              "value": "3mf",
+              "label": "3MF for 3D printing (.3mf)"
             }
           ],
           "default": "webmap"
@@ -4285,32 +4353,56 @@
               "label": "Excel (.xlsx)"
             },
             {
-              "value": "fgb",
-              "label": "FlatGeobuf (.fgb)"
+              "value": "ods",
+              "label": "LibreOffice Calc (.ods)"
             },
             {
-              "value": "geojson",
-              "label": "GeoJSON (.geojson)"
+              "value": "gsheet",
+              "label": "Google Sheets"
             },
             {
-              "value": "parquet",
-              "label": "GeoParquet (.parquet)"
+              "value": "txt",
+              "label": "Text (.txt)"
+            },
+            {
+              "value": "json",
+              "label": "JSON: a list of objects (.json)"
+            },
+            {
+              "value": "xml",
+              "label": "XML (.xml)"
             },
             {
               "value": "gpkg",
               "label": "GeoPackage (.gpkg)"
             },
             {
+              "value": "shp",
+              "label": "Shapefile (.shp)"
+            },
+            {
+              "value": "geojson",
+              "label": "GeoJSON (.geojson)"
+            },
+            {
+              "value": "fgb",
+              "label": "FlatGeobuf (.fgb)"
+            },
+            {
+              "value": "parquet",
+              "label": "GeoParquet (.parquet)"
+            },
+            {
+              "value": "arrow",
+              "label": "GeoArrow (.arrow)"
+            },
+            {
+              "value": "duckdb",
+              "label": "DuckDB database (.duckdb)"
+            },
+            {
               "value": "gml",
               "label": "GML 3.2 (.gml)"
-            },
-            {
-              "value": "gpx",
-              "label": "GPX for GPS units (.gpx)"
-            },
-            {
-              "value": "gsheet",
-              "label": "Google Sheets (the address of the sheet)"
             },
             {
               "value": "kml",
@@ -4321,8 +4413,24 @@
               "label": "KMZ for Google Earth (.kmz)"
             },
             {
-              "value": "geopdf",
-              "label": "GeoSpatial PDF with layers (.pdf)"
+              "value": "gpx",
+              "label": "GPX for GPS units (.gpx)"
+            },
+            {
+              "value": "postgis",
+              "label": "PostGIS table"
+            },
+            {
+              "value": "png",
+              "label": "PNG image (.png)"
+            },
+            {
+              "value": "jpg",
+              "label": "JPEG image (.jpg)"
+            },
+            {
+              "value": "webp",
+              "label": "WebP image (.webp)"
             },
             {
               "value": "tif",
@@ -4333,40 +4441,48 @@
               "label": "Cloud Optimized GeoTIFF (.tif)"
             },
             {
-              "value": "citygml",
-              "label": "CityGML 2.0 buildings (.gml)"
+              "value": "pdf",
+              "label": "PDF (.pdf)"
+            },
+            {
+              "value": "geopdf",
+              "label": "GeoSpatial PDF with layers (.pdf)"
+            },
+            {
+              "value": "svg",
+              "label": "SVG drawing of a map (.svg)"
+            },
+            {
+              "value": "webmap",
+              "label": "Web map with Leaflet or MapLibre (a folder)"
+            },
+            {
+              "value": "pmtiles",
+              "label": "PMTiles vector tiles (.pmtiles)"
+            },
+            {
+              "value": "qgis",
+              "label": "QGIS project with its layers (.qgz)"
+            },
+            {
+              "value": "pptx",
+              "label": "PowerPoint slides (.pptx)"
+            },
+            {
+              "value": "odp",
+              "label": "LibreOffice Impress slides (.odp)"
             },
             {
               "value": "glb",
               "label": "glTF 3D model (.glb)"
             },
             {
-              "value": "stl",
-              "label": "STL for 3D printing (.stl)"
+              "value": "obj",
+              "label": "OBJ 3D model (.obj)"
             },
             {
-              "value": "3mf",
-              "label": "3MF for 3D printing (.3mf)"
-            },
-            {
-              "value": "step",
-              "label": "STEP for CAD (.step)"
-            },
-            {
-              "value": "dxf",
-              "label": "AutoCAD DXF drawing (.dxf)"
-            },
-            {
-              "value": "dwg",
-              "label": "AutoCAD DWG drawing (.dwg)"
-            },
-            {
-              "value": "usda",
-              "label": "OpenUSD (.usda)"
-            },
-            {
-              "value": "usdz",
-              "label": "OpenUSD package with textures (.usdz)"
+              "value": "citygml",
+              "label": "CityGML 2.0 buildings (.gml)"
             },
             {
               "value": "3dtiles",
@@ -4377,12 +4493,12 @@
               "label": "3D walk-through in the browser (a folder)"
             },
             {
-              "value": "jpg",
-              "label": "JPEG image (.jpg)"
+              "value": "usda",
+              "label": "OpenUSD (.usda)"
             },
             {
-              "value": "json",
-              "label": "JSON: a list of objects (.json)"
+              "value": "usdz",
+              "label": "OpenUSD package with textures (.usdz)"
             },
             {
               "value": "landxml",
@@ -4405,60 +4521,24 @@
               "label": "Gaussian splats, compressed SPZ (.spz)"
             },
             {
-              "value": "ods",
-              "label": "LibreOffice Calc (.ods)"
+              "value": "dxf",
+              "label": "AutoCAD DXF drawing (.dxf)"
             },
             {
-              "value": "obj",
-              "label": "OBJ 3D model (.obj)"
+              "value": "dwg",
+              "label": "AutoCAD DWG drawing (.dwg)"
             },
             {
-              "value": "pdf",
-              "label": "PDF (.pdf)"
+              "value": "step",
+              "label": "STEP for CAD (.step)"
             },
             {
-              "value": "png",
-              "label": "PNG image (.png)"
+              "value": "stl",
+              "label": "STL for 3D printing (.stl)"
             },
             {
-              "value": "pmtiles",
-              "label": "PMTiles vector tiles (.pmtiles)"
-            },
-            {
-              "value": "svg",
-              "label": "SVG drawing of a map (.svg)"
-            },
-            {
-              "value": "postgis",
-              "label": "PostGIS table"
-            },
-            {
-              "value": "qgis",
-              "label": "QGIS project with its layers (.qgz)"
-            },
-            {
-              "value": "webmap",
-              "label": "Web map with Leaflet or MapLibre (a folder)"
-            },
-            {
-              "value": "pptx",
-              "label": "PowerPoint slides (.pptx)"
-            },
-            {
-              "value": "odp",
-              "label": "LibreOffice Impress slides (.odp)"
-            },
-            {
-              "value": "shp",
-              "label": "Shapefile (.shp)"
-            },
-            {
-              "value": "txt",
-              "label": "Text (.txt)"
-            },
-            {
-              "value": "xml",
-              "label": "XML (.xml)"
+              "value": "3mf",
+              "label": "3MF for 3D printing (.3mf)"
             }
           ],
           "default": "postgis"
@@ -9170,7 +9250,7 @@
           "kind": "path",
           "shape": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model",
           "default": "",
-          "hint": "PNG or JPG. With a world file beside it (.pgw, .jgw) it lies in its place; otherwise it covers the whole map"
+          "hint": "PNG, JPG or WebP. With a world file beside it (.pgw, .jgw, .wpw) it lies in its place; otherwise it covers the whole map"
         },
         {
           "key": "background_crs",
@@ -15487,6 +15567,78 @@
           "shape": "a string",
           "default": "0.01",
           "hint": "In metres. Lines are joined where their ends are this close, not where they only cross, as at a bridge"
+        }
+      ]
+    },
+    {
+      "type": "ChangeDetector",
+      "title": "Find changes",
+      "group": "tool",
+      "category": "Attributes",
+      "description": "Compares two versions of the same data, such as last month's register and this month's, by a key: the features that are new come out on Added, those that are gone on Removed, those whose attributes or geometry differ on Changed, with an attribute that names what changed, and the rest on Unchanged. Without a key the features are compared whole. To keep another copy up to date, write only what changed.",
+      "inputs": [
+        "Original",
+        "Revised"
+      ],
+      "outputs": [
+        "Added",
+        "Changed",
+        "Removed",
+        "Unchanged"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "key",
+          "label": "Key",
+          "kind": "attributes",
+          "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
+          "port": "Original",
+          "default": "",
+          "hint": "One or more attributes that name a feature in both versions, such as an id. Empty compares the features whole: they are then only added, removed or unchanged"
+        },
+        {
+          "key": "compare",
+          "label": "Attributes to compare",
+          "kind": "attributes",
+          "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
+          "port": "Original",
+          "default": "",
+          "hint": "Empty compares every attribute that both versions have"
+        },
+        {
+          "key": "geometry",
+          "label": "Compare the geometry",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "true"
+        },
+        {
+          "key": "tolerance",
+          "label": "Tolerance for numbers",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Numbers that differ by no more than this are the same, such as 0.001. Empty: only the same number"
+        },
+        {
+          "key": "changed_name",
+          "label": "Attribute with what changed",
+          "kind": "text",
+          "shape": "a string",
+          "default": "_changed",
+          "hint": "On Changed: the names of the attributes that differ, and geometry when it does, with commas between"
         }
       ]
     },

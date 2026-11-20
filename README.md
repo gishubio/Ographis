@@ -123,6 +123,7 @@ run as they did, and its settings are taken over the first time Ographis starts.
 | `CHANGELOG.md` | What changed in each version. |
 | `AGENTS.md`, `docs/nodes.json`, `docs/model.schema.json` | For AI assistants that write models: how, the reference of every node type, and a JSON Schema of the model format. |
 | `ARCHITECTURE.md`, `CONTRIBUTING.md` | How the code hangs together, and how to build, test and add a tool. |
+| `SECURITY.md` | How to tell about a security hole, and how the libraries Ographis is built from are checked. |
 | `.github/` | Templates for issues and pull requests, and a check that builds and tests on Linux. |
 | `LICENSE-MIT`, `LICENSE-APACHE` | Ographis's licence: MIT or Apache 2.0, as you choose. |
 | `THIRD-PARTY-LICENSES.md`, `tools/third_party.py` | The libraries and the font Ographis is built with, and their licences. The script writes the file again when the dependencies change. |

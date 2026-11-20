@@ -1,0 +1,360 @@
+{
+  "format": "ographis/1",
+  "name": "A hospital building from IFC",
+  "nodes": [
+    {
+      "id": "hospital",
+      "type": "Reader",
+      "name": "Input",
+      "x": 43.0,
+      "y": -95.0,
+      "params": {
+        "path": "hospital/hospital.ifc"
+      },
+      "comment": "A made-up hospital in IFC4: five floors, walls, windows, doors, columns, rooms, a stair, lifts and beds, placed in SWEREF 99 TM"
+    },
+    {
+      "id": "valuefilter_1",
+      "type": "ValueFilter",
+      "name": "Filter by value",
+      "x": 307.0,
+      "y": 373.0,
+      "params": {
+        "attribute": "IfcClass",
+        "values": [
+          "IfcSlab",
+          "IfcWall",
+          "IfcWindow",
+          "IfcDoor",
+          "IfcStairFlight",
+          "IfcTransportElement",
+          "IfcColumn",
+          "IfcFurniture",
+          "IfcBuildingElementProxy"
+        ]
+      },
+      "comment": "One stream for each kind of element",
+      "comment_box": [
+        0.0,
+        -44.0,
+        230.0,
+        26.0
+      ]
+    },
+    {
+      "id": "sorter_1",
+      "type": "Sorter",
+      "name": "Sort",
+      "x": 308.0,
+      "y": 141.0,
+      "params": {
+        "sort_keys": [
+          [
+            "IfcClass",
+            "ascending"
+          ],
+          [
+            "storey",
+            "ascending"
+          ]
+        ]
+      },
+      "comment": "Sort for excel file",
+      "comment_box": [
+        3.0,
+        -42.0,
+        106.0,
+        26.0
+      ]
+    },
+    {
+      "id": "scene",
+      "type": "SceneRenderer",
+      "name": "Render 3D scene",
+      "x": 315.0,
+      "y": -169.0,
+      "params": {
+        "background": "sky",
+        "date": "2026-06-15",
+        "elevation": "25",
+        "height": "1000",
+        "quality": "16",
+        "sun": "date",
+        "time": "14:00",
+        "view_azimuth": "200",
+        "width": "1600",
+        "zoom": "100"
+      },
+      "comment": "The building in 3D",
+      "comment_box": [
+        19.0,
+        -42.0,
+        116.0,
+        26.0
+      ]
+    },
+    {
+      "id": "outlinefromabove_1",
+      "type": "OutlineFromAbove",
+      "name": "Outline from above",
+      "x": 620.0,
+      "y": 376.0,
+      "params": {
+        "cut": "1"
+      },
+      "comment": "3D -> 2D\nAs seen from 1m above the floor",
+      "comment_box": [
+        -17.0,
+        -65.0,
+        192.0,
+        45.0
+      ]
+    },
+    {
+      "id": "valuefilter_2",
+      "type": "ValueFilter",
+      "name": "Filter by value 2",
+      "x": 866.0,
+      "y": 378.0,
+      "params": {
+        "attribute": "storey",
+        "values": [
+          "Ground floor",
+          "Level 1",
+          "Level 2",
+          "Level 3",
+          "Level 4"
+        ]
+      },
+      "comment": "Just to see number of walls for each floor",
+      "comment_box": [
+        0.0,
+        -60.0,
+        140.0,
+        42.0
+      ]
+    },
+    {
+      "id": "list",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1113.0,
+      "y": 162.0,
+      "params": {
+        "geometry": "none",
+        "path": "out/hospital_elements.xlsx"
+      },
+      "comment": "Every element with its storey, properties and quantities\nXLSX",
+      "comment_box": [
+        -13.0,
+        -71.0,
+        184.0,
+        57.0
+      ]
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1118.0,
+      "y": -119.0,
+      "params": {
+        "path": "out/hospital.png"
+      },
+      "comment": "Rendered image\nPNG",
+      "comment_box": [
+        -9.0,
+        -60.0,
+        109.0,
+        45.0
+      ]
+    },
+    {
+      "id": "writer_1",
+      "type": "PostgisWriter",
+      "name": "PostGIS output",
+      "x": 1129.0,
+      "y": 378.0,
+      "params": {
+        "connection": "PostGIS localhost",
+        "format": "postgis",
+        "key": "attribute",
+        "key_attribute": "GlobalId",
+        "schema": "public",
+        "table": "hospital_level_1"
+      },
+      "comment": "2D floor plan of level 1 from the walls\nPostGIS: turned on, with a connection of your own",
+      "comment_box": [
+        7.0,
+        -55.0,
+        149.0,
+        42.0
+      ],
+      "disabled": true
+    },
+    {
+      "id": "walls_gpkg",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1129.0,
+      "y": 560.0,
+      "params": {
+        "path": "out/hospital_level_1_walls.gpkg"
+      },
+      "comment": "2D floor plan of level 1 from the walls\nGeoPackage",
+      "comment_box": [
+        7.0,
+        -55.0,
+        149.0,
+        42.0
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "hospital",
+        "Output"
+      ],
+      "to": [
+        "scene",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "hospital",
+        "Output"
+      ],
+      "to": [
+        "sorter_1",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "hospital",
+        "Output"
+      ],
+      "to": [
+        "valuefilter_1",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "outlinefromabove_1",
+        "Outlines"
+      ],
+      "to": [
+        "valuefilter_2",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "scene",
+        "Image"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "sorter_1",
+        "Sorted"
+      ],
+      "to": [
+        "list",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "valuefilter_1",
+        "IfcWall"
+      ],
+      "to": [
+        "outlinefromabove_1",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "valuefilter_2",
+        "Level 1"
+      ],
+      "to": [
+        "writer_1",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "valuefilter_2",
+        "Level 1"
+      ],
+      "to": [
+        "walls_gpkg",
+        "Input"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "Input",
+      "x": 13.0,
+      "y": -247.0,
+      "w": 216.0,
+      "h": 273.0,
+      "locked": true
+    },
+    {
+      "name": "Output",
+      "x": 1079.0,
+      "y": -219.0,
+      "w": 265.0,
+      "h": 900.0,
+      "color": "blue",
+      "locked": true
+    },
+    {
+      "name": "Prepare 2D walls for PostGIS",
+      "x": 287.0,
+      "y": 274.0,
+      "w": 738.0,
+      "h": 377.0,
+      "color": "teal",
+      "locked": true
+    },
+    {
+      "name": "3D render",
+      "x": 289.0,
+      "y": -250.0,
+      "w": 206.0,
+      "h": 291.0,
+      "color": "green",
+      "locked": true
+    },
+    {
+      "name": "Prepare for excel",
+      "x": 288.0,
+      "y": 65.0,
+      "w": 153.0,
+      "h": 184.0,
+      "color": "yellow",
+      "locked": true
+    }
+  ],
+  "notes": [
+    {
+      "text": "Task\nRead IFC file, process and write result to PNG, xlsx and PostGIS",
+      "x": 587.0,
+      "y": -379.0,
+      "w": 423.0,
+      "h": 16.0
+    }
+  ]
+}

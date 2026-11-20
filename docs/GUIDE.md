@@ -13,6 +13,8 @@ five models.
 | --- | --- |
 | Add a node | Fold out a list on the left by its arrow and click in it. The lists are folded in from the start, and the search box searches all of them, also by the names the tools had before. The × at the end of a search box empties it. Or right-click the canvas: *Add input*, *Add output*, or *Add tool* with a search box of its own |
 | Add a tool by typing | Double-click empty canvas, or press `/` with the pointer over it. Write a few letters of the name, such as `buff`, choose with the arrow keys and press Enter. With nothing written, the tools used last come first |
+| Do anything by typing | Press Ctrl+K (or Ctrl+Shift+P), or View → *Commands…*: one search box for every command of the menus, the nodes of the model, the tools to add, the latest models and the examples. Write a few letters, such as `sched`, `buff` or `hospital`, choose with the arrow keys and press Enter. Each command shows its menu and its keys |
+| Describe a model for others | File → *Document the model as a web page…*, or `og doc model.ographis`: one page with a picture of the model, what it reads and writes, its variables and connections, and each step in the order the data goes through it, with its comment and settings. Passwords and keys are left out. It opens in the browser, and can be kept beside the model, sent, or put on an intranet |
 | Add an input for a file | Drop the file on the window from Explorer. Several files give several inputs |
 | Read some of the layers in a file | Drop a GeoPackage or a workbook with several layers. A window asks which ones to read, and whether each gets an input of its own or all go into one stream. The ticks are also in the form of the input |
 | Read a folder of files as one stream | Drop the folder on the window, or click *Folder…* in an input. The node shows how many files it stands for |
@@ -71,7 +73,7 @@ five models.
 | Pause a run | The Pause button, Model → Pause, or F6. The run waits before the next node, and within reading, web requests and drawing a map. The same button, now *Resume*, or F6 again, lets it go on |
 | Use the menus from the keyboard | Alt and the first letter, such as Alt+F for File, or F10. The arrows up and down move in the menu, left and right go to the menu beside it, Enter chooses and Esc closes. With a menu open, pointing at another opens that one |
 | Run part of a model | Right-click a node. *Run to here* runs the node and what it needs, and nothing after it. *Run from here* runs the node and everything after it, with what comes before taken from the cache. It needs Model → *Reuse what has not changed*, which is saved with the model. With the cache on, a node whose result is kept has a small cylinder in its title: filled while the result is up to date, an outline when the node or something before it has changed since |
-| Draw a map | Connect the streams to *Layers* of *Draw map*. Each is a layer, listed in its form with fill, line, width and point size. The arrows change the order, or drag a layer by its handle ⠿; the top row is drawn on top. A click on a colour opens the colour picker, with its code to type as in QGIS, such as `#80d3ff` (or `#80d3ff80` with how opaque it is). The secondary button on a colour, or on its name, copies it, and on another pastes it; the code is also put on the clipboard. Escape closes the picker. Connect an output to write the map as PNG, JPG or GeoTIFF, or click the node to see it on the map under the canvas |
+| Draw a map | Connect the streams to *Layers* of *Draw map*. Each is a layer, listed in its form with fill, line, width and point size. The arrows change the order, or drag a layer by its handle ⠿; the top row is drawn on top. A click on a colour opens the colour picker, with its code to type as in QGIS, such as `#80d3ff` (or `#80d3ff80` with how opaque it is). The secondary button on a colour, or on its name, copies it, and on another pastes it; the code is also put on the clipboard. Escape closes the picker. Connect an output to write the map as PNG, JPG, WebP or GeoTIFF, or click the node to see it on the map under the canvas |
 | Show values on a map | Fold out *Values* under a layer of Draw map. *Size by* makes points larger with a number, by area. *Colour by* colours points, lines or areas by classes of a number (equal intervals, as many in each, or natural breaks) on a colour ramp, or by a text, a colour each. Areas coloured by a number are a choropleth map. *Order* draws the largest underneath, or the smallest. *Gather points within* draws points closer than a number of pixels as one, with their number in it. *Legend* puts a key in a corner of the map |
 | Make points from coordinates in a table | *Create points from x and y*: choose the two attributes and the coordinate system |
 | See data | Click a node or an output port. Table and map appear at the bottom |
@@ -103,7 +105,7 @@ five models.
 | Save | The Save button, the File menu, or Ctrl+S |
 | See the version | Help → About Ographis, which also says when the program was built |
 | See how the program is worked | With nothing selected, the panel on the right says what the program is for and which formats it reads and writes. Help → Tips and shortcuts has the rest |
-| Read a GeoTIFF, PNG or JPG | Drop it on the window. Choose in the input whether the cells become points, squares or one outline, or are read as an image to be shown or written as a picture |
+| Read a GeoTIFF, PNG, JPG or WebP | Drop it on the window. Choose in the input whether the cells become points, squares or one outline, or are read as an image to be shown or written as a picture |
 | Give a workbook a look | Choose Excel or LibreOffice Calc in the output. Font, bold and locked top row, and colours are set in its form |
 | Send features to different outputs by value | *Filter by value*: choose the attribute, write the values or click *Use the values in the data*. Each value gets an output |
 | Use the same value in many settings | Model → *Variables…*. Write `$(name)` in any setting, and the value is put in its place when the model runs |
@@ -199,15 +201,16 @@ og nodes [--json]                      node types, parameters and expression fun
 og check <model | folder>              checks a model without running it: types, ports, settings, expressions
 og schema                              a JSON Schema of the model format
 og connections                         the database connections of the settings, without passwords
-og picture <model> <file.png|.jpg|.pdf>
+og picture <model> <file.png|.jpg|.webp|.pdf>
                                        the model drawn as on the canvas, for documentation
+og doc <model> [file.html]             the model described as one web page
 og formats [--html file]               the formats read and written, and whether GDAL or Ographis handles them
 og doctor                              tests GDAL and PROJ in the installation
 og report [model] [file.zip]           a zip with the versions, the system, the model without its
                                        passwords and keys, and the latest log, to attach to an issue
 ```
 
-File → *Save the model as a picture…* draws the open model to PNG, JPEG or PDF in the
+File → *Save the model as a picture…* draws the open model to PNG, JPEG, WebP or PDF in the
 same way: its nodes with how they are set up, the connections, group boxes, comments and
 notes. `docs/FORMATS.html`, and `FORMATS.html` in the packed folder, list the formats.
 

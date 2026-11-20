@@ -56,10 +56,12 @@ pub const WRITER_FORMATS: &[(&str, &str)] = &[
     ("fgb", "FlatGeobuf (.fgb)"),
     ("geojson", "GeoJSON (.geojson)"),
     ("parquet", "GeoParquet (.parquet)"),
+    ("arrow", "GeoArrow (.arrow)"),
+    ("duckdb", "DuckDB database (.duckdb)"),
     ("gpkg", "GeoPackage (.gpkg)"),
     ("gml", "GML 3.2 (.gml)"),
     ("gpx", "GPX for GPS units (.gpx)"),
-    ("gsheet", "Google Sheets (the address of the sheet)"),
+    ("gsheet", "Google Sheets"),
     ("kml", "KML for Google Earth (.kml)"),
     ("kmz", "KMZ for Google Earth (.kmz)"),
     ("tif", "GeoTIFF image (.tif)"),
@@ -86,6 +88,7 @@ pub const WRITER_FORMATS: &[(&str, &str)] = &[
     ("obj", "OBJ 3D model (.obj)"),
     ("pdf", "PDF (.pdf)"),
     ("png", "PNG image (.png)"),
+    ("webp", "WebP image (.webp)"),
     ("pmtiles", "PMTiles vector tiles (.pmtiles)"),
     ("shp", "Shapefile (.shp)"),
     ("svg", "SVG drawing of a map (.svg)"),
@@ -100,50 +103,64 @@ pub const OUTPUT_FORMATS: &[(&str, &str)] = &[
     ("", "From the file name"),
     ("csv", "CSV (.csv)"),
     ("xlsx", "Excel (.xlsx)"),
-    ("fgb", "FlatGeobuf (.fgb)"),
-    ("geojson", "GeoJSON (.geojson)"),
-    ("parquet", "GeoParquet (.parquet)"),
+    ("ods", "LibreOffice Calc (.ods)"),
+    ("gsheet", "Google Sheets"),
+    ("txt", "Text (.txt)"),
+    ("json", "JSON: a list of objects (.json)"),
+    ("xml", "XML (.xml)"),
     ("gpkg", "GeoPackage (.gpkg)"),
+    ("shp", "Shapefile (.shp)"),
+    ("geojson", "GeoJSON (.geojson)"),
+    ("fgb", "FlatGeobuf (.fgb)"),
+    ("parquet", "GeoParquet (.parquet)"),
+    ("arrow", "GeoArrow (.arrow)"),
+    ("duckdb", "DuckDB database (.duckdb)"),
     ("gml", "GML 3.2 (.gml)"),
-    ("gpx", "GPX for GPS units (.gpx)"),
-    ("gsheet", "Google Sheets (the address of the sheet)"),
     ("kml", "KML for Google Earth (.kml)"),
     ("kmz", "KMZ for Google Earth (.kmz)"),
-    ("geopdf", "GeoSpatial PDF with layers (.pdf)"),
+    ("gpx", "GPX for GPS units (.gpx)"),
+    ("postgis", "PostGIS table"),
+    ("png", "PNG image (.png)"),
+    ("jpg", "JPEG image (.jpg)"),
+    ("webp", "WebP image (.webp)"),
     ("tif", "GeoTIFF image (.tif)"),
     ("cog", "Cloud Optimized GeoTIFF (.tif)"),
-    ("citygml", "CityGML 2.0 buildings (.gml)"),
+    ("pdf", "PDF (.pdf)"),
+    ("geopdf", "GeoSpatial PDF with layers (.pdf)"),
+    ("svg", "SVG drawing of a map (.svg)"),
+    ("webmap", "Web map with Leaflet or MapLibre (a folder)"),
+    ("pmtiles", "PMTiles vector tiles (.pmtiles)"),
+    ("qgis", "QGIS project with its layers (.qgz)"),
+    ("pptx", "PowerPoint slides (.pptx)"),
+    ("odp", "LibreOffice Impress slides (.odp)"),
     ("glb", "glTF 3D model (.glb)"),
-    ("stl", "STL for 3D printing (.stl)"),
-    ("3mf", "3MF for 3D printing (.3mf)"),
-    ("step", "STEP for CAD (.step)"),
-    ("dxf", "AutoCAD DXF drawing (.dxf)"),
-    ("dwg", "AutoCAD DWG drawing (.dwg)"),
-    ("usda", "OpenUSD (.usda)"),
-    ("usdz", "OpenUSD package with textures (.usdz)"),
+    ("obj", "OBJ 3D model (.obj)"),
+    ("citygml", "CityGML 2.0 buildings (.gml)"),
     ("3dtiles", "3D Tiles 1.1 (a folder with tileset.json)"),
     ("walk", "3D walk-through in the browser (a folder)"),
-    ("jpg", "JPEG image (.jpg)"),
-    ("json", "JSON: a list of objects (.json)"),
+    ("usda", "OpenUSD (.usda)"),
+    ("usdz", "OpenUSD package with textures (.usdz)"),
     ("landxml", "LandXML surface and points (.xml)"),
     ("las", "LAS point cloud (.las)"),
     ("laz", "LAZ point cloud (.laz)"),
     ("ply", "Gaussian splats or points, PLY (.ply)"),
     ("spz", "Gaussian splats, compressed SPZ (.spz)"),
-    ("ods", "LibreOffice Calc (.ods)"),
-    ("obj", "OBJ 3D model (.obj)"),
-    ("pdf", "PDF (.pdf)"),
-    ("png", "PNG image (.png)"),
-    ("pmtiles", "PMTiles vector tiles (.pmtiles)"),
-    ("svg", "SVG drawing of a map (.svg)"),
-    ("postgis", "PostGIS table"),
-    ("qgis", "QGIS project with its layers (.qgz)"),
-    ("webmap", "Web map with Leaflet or MapLibre (a folder)"),
-    ("pptx", "PowerPoint slides (.pptx)"),
-    ("odp", "LibreOffice Impress slides (.odp)"),
-    ("shp", "Shapefile (.shp)"),
-    ("txt", "Text (.txt)"),
-    ("xml", "XML (.xml)"),
+    ("dxf", "AutoCAD DXF drawing (.dxf)"),
+    ("dwg", "AutoCAD DWG drawing (.dwg)"),
+    ("step", "STEP for CAD (.step)"),
+    ("stl", "STL for 3D printing (.stl)"),
+    ("3mf", "3MF for 3D printing (.3mf)"),
+];
+
+/// The headings of OUTPUT_FORMATS in the list of the form: (the first format under it, heading).
+pub const OUTPUT_GROUPS: &[(&str, &str)] = &[
+    ("csv", "Tables"),
+    ("gpkg", "GIS data"),
+    ("png", "Maps and pictures"),
+    ("webmap", "Web maps and projects"),
+    ("glb", "3D"),
+    ("las", "Point clouds"),
+    ("dxf", "CAD and 3D printing"),
 ];
 
 /// The tool that writes a format of OUTPUT_FORMATS.
@@ -199,7 +216,7 @@ fn image_opts(p: &P, table: &Table) -> Result<crate::io::ImageOpts> {
     if dpi.is_some_and(|d| d <= 0.0 || d > 10_000.0) {
         return err("Pixels to the inch is a number from 1 to 10 000, such as 300.");
     }
-    let quality = number_param(p, "img_quality", "JPEG quality")?.unwrap_or(92.0).clamp(1.0, 100.0) as u8;
+    let quality = number_param(p, "img_quality", "Picture quality")?.unwrap_or(92.0).clamp(1.0, 100.0) as u8;
     let compress = p.get("tif_compress").filter(|c| matches!(c.as_str(), "deflate" | "lzw" | "jpeg" | "none")).unwrap_or_else(|| "deflate".into());
     Ok(crate::io::ImageOpts { dpi, quality, compress })
 }
@@ -562,10 +579,10 @@ pub(super) const WRITER_PARAMS: &[ParamSpec] = &[
     },
     ParamSpec {
         key: "img_quality",
-        label: "JPEG quality",
+        label: "Picture quality",
         kind: ParamKind::Text,
         default: "92",
-        hint: "1 to 100: more is sharper and larger. For JPEG, and GeoTIFF packed as JPEG",
+        hint: "1 to 100: more is sharper and larger. For JPEG, WebP and GeoTIFF packed as JPEG. WebP at 100 keeps every pixel",
     },
     ParamSpec {
         key: "tif_compress",
@@ -1010,9 +1027,26 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     }
     if ext.is_empty() {
         return err(format!(
-            "The file name {} has no extension. Choose a format, or use .gpkg, .shp, .geojson, .xlsx, .ods, .csv, .txt, .png, .jpg, .tif, .pdf, .obj, .glb or .laz.",
+            "The file name {} has no extension. Choose a format, or use .gpkg, .shp, .geojson, .xlsx, .ods, .csv, .txt, .png, .jpg, .webp, .tif, .pdf, .obj, .glb or .laz.",
             path.display()
         ));
+    }
+    if matches!(ext.as_str(), "arrow" | "feather") {
+        // GeoArrow, written by Ographis itself: an Arrow IPC file with the geometry as WKB.
+        let n = crate::arrow_io::write_arrow(input(inp, "Input"), &path)?;
+        ctx.notes.info(format!("{} rows written as GeoArrow", fmt_count(n)));
+        ctx.files.push(path);
+        return Ok(Vec::new());
+    }
+    if matches!(ext.as_str(), "duckdb" | "ddb") {
+        // A table in a DuckDB database, made if it is not there.
+        let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "features".into());
+        let layer = p.get("layer").filter(|l| !l.trim().is_empty()).unwrap_or(stem);
+        let append = p.get("mode").as_deref() == Some("append");
+        let n = crate::duckdb_io::write(input(inp, "Input"), &path, &layer, append)?;
+        ctx.notes.info(format!("{} rows {} the table {} of DuckDB", fmt_count(n), if append { "added to" } else { "written to" }, layer));
+        ctx.files.push(path);
+        return Ok(Vec::new());
     }
     if ext == "parquet" {
         // GeoParquet, written by Ographis itself.
@@ -1454,7 +1488,7 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Writer,
         category: "",
-        desc: "Writes the stream to GeoPackage, Shapefile, GeoJSON, Excel, LibreOffice Calc, CSV or txt. A file that already exists is overwritten, but in a GeoPackage or a workbook only the layer or sheet that is written. A Shapefile holds one geometry type, so mixed streams are split into several files. A workbook can be given a font, a bold and locked top row and colours. A map from Draw map is written as PNG, JPG, GeoTIFF or a PDF page.",
+        desc: "Writes the stream to GeoPackage, Shapefile, GeoJSON, Excel, LibreOffice Calc, CSV or txt. A file that already exists is overwritten, but in a GeoPackage or a workbook only the layer or sheet that is written. A Shapefile holds one geometry type, so mixed streams are split into several files. A workbook can be given a font, a bold and locked top row and colours. A map from Draw map is written as PNG, JPG, WebP, GeoTIFF or a PDF page.",
         inputs: &["Input"],
         outputs: &[],
         ports: None,

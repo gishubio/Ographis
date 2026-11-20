@@ -147,6 +147,20 @@ pub const FORMATS: &[Format] = &[
         note: "Uncompressed, Snappy, Zstandard, LZ4, gzip and Brotli. Written as GeoParquet 1.1 with Zstandard and a box for each row, which readers skip parts of the file by",
     },
     Format {
+        name: "GeoArrow",
+        files: ".arrow, .feather, .arrows",
+        read: "Ographis (Apache Arrow)",
+        write: "Ographis (Apache Arrow)",
+        note: "Arrow IPC files and streams, also compressed, with the geometry as WKB or in the native layouts of GeoArrow. Written with Zstandard, the geometry as WKB and the coordinate system in the metadata",
+    },
+    Format {
+        name: "DuckDB",
+        files: ".duckdb, .ddb",
+        read: "Ographis (DuckDB)",
+        write: "Ographis (DuckDB)",
+        note: "With DuckDB built in: tables as layers, or a query in their place, also on Parquet, CSV and JSON files. The geometry as GEOMETRY, with the coordinate system as the comment of its column",
+    },
+    Format {
         name: "JSON",
         files: ".json, web addresses",
         read: OWN,
@@ -187,6 +201,13 @@ pub const FORMATS: &[Format] = &[
         read: GDAL,
         write: GDAL,
         note: "Maps, charts and 3D scenes, with a world file when they have coordinates",
+    },
+    Format {
+        name: "WebP pictures",
+        files: ".webp",
+        read: GDAL,
+        write: GDAL,
+        note: "Smaller than PNG and JPEG, with see-through parts kept; at a quality, or every pixel kept at 100. A world file (.wpw) when they have coordinates, which Ographis also reads",
     },
     Format {
         name: "SVG drawings",
@@ -287,7 +308,7 @@ pub const FORMATS: &[Format] = &[
     Format { name: "PowerPoint", files: ".pptx", read: "", write: OWN, note: "A slide for each picture, from Slides" },
     Format { name: "LibreOffice Impress", files: ".odp", read: "", write: OWN, note: "As PowerPoint" },
     Format { name: "Zip files", files: ".zip", read: OWN, write: OWN, note: "Read: the files in them. Written: what the outputs of a model wrote" },
-    Format { name: "Pictures of models", files: ".png, .jpg, .pdf", read: "", write: OWN, note: "The canvas of a model, from the File menu or og picture" },
+    Format { name: "Pictures of models", files: ".png, .jpg, .webp, .pdf", read: "", write: OWN, note: "The canvas of a model, from the File menu or og picture" },
 ];
 
 fn esc(s: &str) -> String {

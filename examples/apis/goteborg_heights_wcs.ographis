@@ -1,0 +1,235 @@
+{
+  "format": "ographis/1",
+  "name": "Heights of central Gothenburg from the WCS of the City of Gothenburg",
+  "nodes": [
+    {
+      "id": "wcs",
+      "type": "Reader",
+      "name": "Input",
+      "x": -284.0,
+      "y": 202.0,
+      "params": {
+        "cell_size": "$(cell_size)",
+        "max_x": "$(max_x)",
+        "max_y": "$(max_y)",
+        "min_x": "$(min_x)",
+        "min_y": "$(min_y)",
+        "path": "https://opengeodata.goteborg.se/services/hojdmodell/wcs/v2",
+        "raster_as": "grid",
+        "within": "rectangle",
+        "within_crs": "EPSG:3006"
+      },
+      "comment": "The height model of the City of Gothenburg as a WCS: heights in RH 2000 in SWEREF 99 12 00, 0.5 m cells, CC0. Only the rectangle is read, at the cell size asked for: the whole city at 0.5 m would be about a billion cells. The first coverage is read; choose another under Layers"
+    },
+    {
+      "id": "shade",
+      "type": "TerrainShader",
+      "name": "Shade terrain",
+      "x": 12.0,
+      "y": 337.0,
+      "params": {
+        "colours": "greys",
+        "exaggeration": "2"
+      },
+      "comment": "The heights shaded, to see them"
+    },
+    {
+      "id": "maprenderer_1",
+      "type": "MapRenderer",
+      "name": "Draw map",
+      "x": 30.0,
+      "y": 122.0,
+      "params": {
+        "layers": [
+          {
+            "from": "wcs:Output",
+            "fill": "#a6cee3",
+            "stroke": "#1f78b4",
+            "width": 1.0,
+            "size": 6.0,
+            "raster": "shade",
+            "raster_ramp": "heat"
+          }
+        ]
+      },
+      "comment": "Create map",
+      "comment_box": [
+        3.0,
+        -39.0,
+        77.0,
+        26.0
+      ]
+    },
+    {
+      "id": "heights",
+      "type": "Writer",
+      "name": "Output",
+      "x": 293.0,
+      "y": -33.0,
+      "params": {
+        "path": "out/heights_gothenburg.tif"
+      },
+      "comment": "Elevation\nGeoTIFF",
+      "comment_box": [
+        43.0,
+        -60.0,
+        64.0,
+        43.0
+      ]
+    },
+    {
+      "id": "writer_1",
+      "type": "Writer",
+      "name": "Output",
+      "x": 296.0,
+      "y": 124.0,
+      "params": {
+        "format": "jpg",
+        "path": "out/WCS_map.jpg"
+      },
+      "comment": "Map\nJPG",
+      "comment_box": [
+        22.0,
+        -55.0,
+        42.0,
+        42.0
+      ]
+    },
+    {
+      "id": "relief",
+      "type": "Writer",
+      "name": "Output",
+      "x": 298.0,
+      "y": 339.0,
+      "params": {
+        "path": "out/relief_gothenburg.tif"
+      },
+      "comment": "Shaded relief\nGeoTIFF",
+      "comment_box": [
+        29.0,
+        -56.0,
+        91.0,
+        41.0
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "maprenderer_1",
+        "Map"
+      ],
+      "to": [
+        "writer_1",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "shade",
+        "Image"
+      ],
+      "to": [
+        "relief",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "wcs",
+        "Output"
+      ],
+      "to": [
+        "heights",
+        "Input"
+      ],
+      "points": [
+        [
+          19.0,
+          43.0
+        ]
+      ]
+    },
+    {
+      "from": [
+        "wcs",
+        "Output"
+      ],
+      "to": [
+        "maprenderer_1",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "wcs",
+        "Output"
+      ],
+      "to": [
+        "shade",
+        "Heights"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "Input",
+      "x": -312.0,
+      "y": 38.0,
+      "w": 229.0,
+      "h": 301.0,
+      "locked": true
+    },
+    {
+      "name": "Prepare for export",
+      "x": -20.0,
+      "y": -58.0,
+      "w": 211.0,
+      "h": 541.0,
+      "color": "pink",
+      "locked": true
+    },
+    {
+      "name": "Output",
+      "x": 267.0,
+      "y": -127.0,
+      "w": 195.0,
+      "h": 610.0,
+      "color": "brown",
+      "locked": true
+    }
+  ],
+  "notes": [
+    {
+      "text": "Task\nDownload elevation data from WCS and save as GeoTIFF\n\nData from https://goteborg.se/wps/portal/start/kommun-och-politik/sa-arbetar-goteborgs-stad-med/digitalisering/oppna-data/sok-oppna-data/oppna-data---datamangd#esc_entry=41339&esc_context=6",
+      "x": -304.0,
+      "y": -323.0,
+      "w": 762.0,
+      "h": 93.0
+    }
+  ],
+  "variables": [
+    {
+      "name": "min_x",
+      "value": "317400"
+    },
+    {
+      "name": "min_y",
+      "value": "6397800"
+    },
+    {
+      "name": "max_x",
+      "value": "321400"
+    },
+    {
+      "name": "max_y",
+      "value": "6400800"
+    },
+    {
+      "name": "cell_size",
+      "value": "0.5",
+      "ask": true
+    }
+  ],
+  "cache": true
+}

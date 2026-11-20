@@ -329,7 +329,8 @@ impl App {
                         og_engine::run::Level::Warn => "WARN ",
                         og_engine::run::Level::Error => "ERROR",
                     };
-                    let _ = writeln!(f, "{} {} {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"), tag, entry.msg);
+                    // Keys and passwords in addresses are taken out of the log beside the model.
+                    let _ = writeln!(f, "{} {} {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"), tag, og_engine::bugreport::scrub(&entry.msg));
                 }
                 // How far a long step has come is shown in the status line too.
                 let step = entry.node.is_some() && self.running_node == entry.node && (entry.msg.contains(" of ") || entry.msg.ends_with("so far"));

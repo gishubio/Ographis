@@ -59,14 +59,13 @@ pub fn read(path: &std::path::Path) -> Result<Read> {
     // An arc as it is read: start, centre, end, and whether it turns clockwise.
     let mut arc: ArcRead = (None, None, None, false);
     let mut line: (Option<[f64; 3]>, Option<[f64; 3]>) = (None, None);
-    let decoder = r.decoder();
     let attrs_of = |e: &quick_xml::events::BytesStart| -> std::collections::HashMap<String, String> {
         e.attributes()
             .flatten()
             .map(|a| {
                 (
-                    String::from_utf8_lossy(a.key.local_name().as_ref()).into_owned(),
-                    a.decode_and_unescape_value(decoder).map(|v| v.into_owned()).unwrap_or_default(),
+                    std::borrow::Cow::<str>::Borrowed(a.key.local_name().as_ref()).into_owned(),
+                    a.normalized_value(quick_xml::XmlVersion::Implicit1_0).map(|v| v.into_owned()).unwrap_or_default(),
                 )
             })
             .collect()
@@ -74,8 +73,8 @@ pub fn read(path: &std::path::Path) -> Result<Read> {
     loop {
         let ev = r.read_event().map_err(|e| GbError(format!("The LandXML could not be read at byte {}: {}", r.buffer_position(), e)))?;
         let opened = match &ev {
-            Event::Start(e) => Some((String::from_utf8_lossy(e.local_name().as_ref()).into_owned(), attrs_of(e), false)),
-            Event::Empty(e) => Some((String::from_utf8_lossy(e.local_name().as_ref()).into_owned(), attrs_of(e), true)),
+            Event::Start(e) => Some((std::borrow::Cow::<str>::Borrowed(e.local_name().as_ref()).into_owned(), attrs_of(e), false)),
+            Event::Empty(e) => Some((std::borrow::Cow::<str>::Borrowed(e.local_name().as_ref()).into_owned(), attrs_of(e), true)),
             _ => None,
         };
         match ev {
@@ -109,10 +108,10 @@ pub fn read(path: &std::path::Path) -> Result<Read> {
                 }
             }
             Event::Text(t) => {
-                text_buf.push_str(&String::from_utf8_lossy(t.as_ref()));
+                text_buf.push_str(&std::borrow::Cow::<str>::Borrowed(t.as_ref()));
             }
             Event::End(e) => {
-                let name = String::from_utf8_lossy(e.local_name().as_ref()).into_owned();
+                let name = std::borrow::Cow::<str>::Borrowed(e.local_name().as_ref()).into_owned();
                 stack.pop();
                 let parent = stack.last().map(|s| s.as_str()).unwrap_or("");
                 match (name.as_str(), parent) {

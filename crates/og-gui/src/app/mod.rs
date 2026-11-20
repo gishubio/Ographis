@@ -21,6 +21,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 mod canvas;
+mod commands;
 mod data;
 mod dialogs;
 mod edit;
@@ -295,6 +296,8 @@ pub struct App {
     pub series_views: std::cell::RefCell<std::collections::HashMap<(usize, usize), Arc<og_engine::Table>>>,
     /// The list of Ctrl+F and Ctrl+L, while it is open.
     pub picker: Option<keyboard::Picker>,
+    /// The command palette of Ctrl+K, while it is open.
+    pub commands: Option<commands::Commands>,
     /// Enter on the canvas: the form gets the keyboard, over two frames.
     focus_form: u8,
     /// Frames in which a focus that egui gave on Tab is let go of.
@@ -506,6 +509,7 @@ impl App {
             history_open: false,
             schedule: None,
             picker: None,
+            commands: None,
             area_for: None,
             cloud_views: Default::default(),
             class_counts: Default::default(),
@@ -765,6 +769,25 @@ impl App {
         }
     }
 
+    /// Describes the model as a web page that the user chooses, and opens it: to hand over,
+    /// review or keep beside the model.
+    pub(crate) fn save_documentation(&mut self, ctx: &egui::Context) {
+        let name = self.path.as_ref().and_then(|p| p.file_stem()).map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "model".into());
+        let Some(p) =
+            rfd::FileDialog::new().set_directory(self.base_dir()).set_file_name(format!("{}.html", name)).add_filter("Web page", &["html"]).save_file()
+        else {
+            return;
+        };
+        let p = if p.extension().is_none() { p.with_extension("html") } else { p };
+        match og_engine::modeldoc::write(&self.workspace(), self.path.as_deref(), &p) {
+            Ok(()) => {
+                self.say(format!("The model is described in {}", p.display()));
+                ctx.open_url(egui::OpenUrl::new_tab(format!("file:///{}", p.display().to_string().replace('\\', "/").trim_start_matches('/'))));
+            }
+            Err(e) => self.say(e.0),
+        }
+    }
+
     /// Draws the model to a picture or a PDF that the user chooses.
     fn save_picture(&mut self) {
         let name = self.path.as_ref().and_then(|p| p.file_stem()).map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "model".into());
@@ -774,6 +797,7 @@ impl App {
             .add_filter("PNG picture", &["png"])
             .add_filter("PDF", &["pdf"])
             .add_filter("JPEG picture", &["jpg"])
+            .add_filter("WebP picture", &["webp"])
             .save_file()
         else {
             return;

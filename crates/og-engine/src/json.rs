@@ -107,6 +107,18 @@ pub fn parse_path(path: &str) -> Result<Vec<Step>> {
     Ok(out)
 }
 
+/// Whether a value is the one written in a path, as [rel=next]: the same text, number or
+/// truth, or a list that holds it, as roles: ["producer", "owner"] for [roles=producer].
+fn is(x: &Json, v: &str) -> bool {
+    match x {
+        Json::String(s) => s == v,
+        Json::Number(n) => v.parse::<f64>().ok() == n.as_f64(),
+        Json::Bool(b) => v.parse::<bool>().ok() == Some(*b),
+        Json::Array(items) => items.iter().any(|i| !i.is_array() && is(i, v)),
+        _ => false,
+    }
+}
+
 /// The value at a path, if there is one. Keys are matched without a byte order mark.
 pub fn get<'a>(v: &'a Json, path: &[Step]) -> Option<&'a Json> {
     let mut at = v;
@@ -116,13 +128,7 @@ pub fn get<'a>(v: &'a Json, path: &[Step]) -> Option<&'a Json> {
             (Step::Index(i), Json::Array(a)) => a.get(*i)?,
             // A number as a key of an object, such as "2026".
             (Step::Index(i), Json::Object(o)) => o.get(&i.to_string())?,
-            (Step::Match(k, v), Json::Array(a)) => a.iter().find(|e| match e.get(k) {
-                Some(Json::String(s)) => s == v,
-                Some(Json::Number(n)) => v.parse::<f64>().ok() == n.as_f64(),
-                Some(Json::Bool(b)) => v.parse::<bool>().ok() == Some(*b),
-                Some(_) => false,
-                None => false,
-            })?,
+            (Step::Match(k, v), Json::Array(a)) => a.iter().find(|e| e.get(k).is_some_and(|x| is(x, v)))?,
             _ => return None,
         };
     }
@@ -357,6 +363,24 @@ pub fn table_of(v: &Json, records: Option<&str>, lists: Lists, nested_as_text: b
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_match_finds_a_value_in_a_list() {
+        let v: Json = serde_json::from_str(
+            r#"{"providers": [{"name": "Lantmäteriet", "roles": ["host"]}, {"name": "Kungsbacka kommun", "roles": ["producer", "licensor"], "kod": "1384"}],
+                "links": [{"rel": "self", "n": 1}, {"rel": "next", "n": 2, "ok": true}]}"#,
+        )
+        .unwrap();
+        let at = |p: &str| get(&v, &parse_path(p).unwrap()).cloned();
+        assert_eq!(at("providers[roles=producer].kod"), Some(Json::String("1384".into())));
+        assert_eq!(at("providers[roles=licensor].name"), Some(Json::String("Kungsbacka kommun".into())));
+        assert_eq!(at("providers[roles=host].name"), Some(Json::String("Lantmäteriet".into())));
+        assert_eq!(at("providers[roles=owner].name"), None);
+        assert_eq!(at("links[rel=next].n"), Some(serde_json::json!(2)), "a value of its own, as before");
+        assert_eq!(at("links[n=2].rel"), Some(Json::String("next".into())));
+        assert_eq!(at("links[ok=true].n"), Some(serde_json::json!(2)));
+    }
+
     use super::*;
 
     #[test]

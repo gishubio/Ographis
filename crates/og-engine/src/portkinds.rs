@@ -22,10 +22,12 @@ impl Data {
     }
 }
 
-const RASTER_FILES: &[&str] = &["tif", "tiff", "asc", "vrt", "img", "jp2", "nc", "png", "jpg", "jpeg"];
+const RASTER_FILES: &[&str] = &["tif", "tiff", "asc", "vrt", "img", "jp2", "nc", "png", "jpg", "jpeg", "webp"];
 const CLOUD_FILES: &[&str] = &["las", "laz", "e57", "copc"];
-const FEATURE_FILES: &[&str] =
-    &["gpkg", "shp", "geojson", "json", "csv", "kml", "gml", "fgb", "parquet", "xlsx", "ods", "dxf", "dwg", "tab", "mif", "sqlite", "gpx", "osm", "pbf"];
+const FEATURE_FILES: &[&str] = &[
+    "gpkg", "shp", "geojson", "json", "csv", "kml", "gml", "fgb", "parquet", "arrow", "feather", "duckdb", "ddb", "xlsx", "ods", "dxf", "dwg", "tab", "mif",
+    "sqlite", "gpx", "osm", "pbf",
+];
 
 fn category(kind: &str) -> &'static str {
     node_type(kind).map_or("", |t| t.category)

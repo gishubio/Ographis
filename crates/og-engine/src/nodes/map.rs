@@ -87,7 +87,7 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
         label: "Picture",
         kind: ParamKind::FileOpen,
         default: "",
-        hint: "PNG or JPG. With a world file beside it (.pgw, .jgw) it lies in its place; otherwise it covers the whole map",
+        hint: "PNG, JPG or WebP. With a world file beside it (.pgw, .jgw, .wpw) it lies in its place; otherwise it covers the whole map",
     },
     ParamSpec {
         key: "background_crs",

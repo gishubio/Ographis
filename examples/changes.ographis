@@ -1,0 +1,25 @@
+{
+  "format": "ographis/1",
+  "name": "What has changed in a register",
+  "nodes": [
+    {"id": "before", "type": "Reader", "comment": "Last year's list", "x": 20, "y": 20,
+     "params": {"path": "changes/hospitals_2025.csv", "x": "x", "y": "y", "crs": "EPSG:3006"}},
+    {"id": "after", "type": "Reader", "comment": "This year's list", "x": 20, "y": 200,
+     "params": {"path": "changes/hospitals_2026.csv", "x": "x", "y": "y", "crs": "EPSG:3006"}},
+    {"id": "changes", "type": "ChangeDetector", "comment": "Compared by id, attributes and place", "x": 300, "y": 100,
+     "params": {"key": ["id"]}},
+    {"id": "added", "type": "Writer", "comment": "New hospitals", "x": 600, "y": 0,
+     "params": {"path": "out/changes.gpkg", "layer": "added"}},
+    {"id": "changed", "type": "Writer", "comment": "Changed, with what changed in _changed", "x": 600, "y": 120,
+     "params": {"path": "out/changes.gpkg", "layer": "changed"}},
+    {"id": "removed", "type": "Writer", "comment": "Hospitals no longer on the list", "x": 600, "y": 240,
+     "params": {"path": "out/changes.gpkg", "layer": "removed"}}
+  ],
+  "edges": [
+    {"from": ["before", "Output"], "to": ["changes", "Original"]},
+    {"from": ["after", "Output"], "to": ["changes", "Revised"]},
+    {"from": ["changes", "Added"], "to": ["added", "Input"]},
+    {"from": ["changes", "Changed"], "to": ["changed", "Input"]},
+    {"from": ["changes", "Removed"], "to": ["removed", "Input"]}
+  ]
+}

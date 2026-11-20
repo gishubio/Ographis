@@ -1,0 +1,77 @@
+# What cargo-deny checks of the libraries Ographis is built from, at every push and once a
+# week: known security holes (the RustSec database), licences that allow Ographis to be
+# shared as MIT or Apache 2.0, and that everything comes from crates.io.
+#
+#   cargo install cargo-deny
+#   cargo deny check
+#
+# See SECURITY.md.
+
+[graph]
+# Ographis is built for Windows and tested on Linux.
+targets = ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]
+all-features = false
+
+[advisories]
+# Every advisory fails the check, unsound code and yanked versions too, unless it is listed
+# below with the reason why it does not reach Ographis. Each reason is looked at again when
+# the library is updated, and the line removed as soon as a fixed version can be used.
+yanked = "deny"
+# A library that its author no longer keeps up, such as chrono, is no hole in itself: cargo
+# audit shows them as warnings, to be replaced in time.
+unmaintained = "none"
+ignore = [
+    # zip 6 and 8, only through the libraries that write spreadsheets: spreadsheet-ods (zip 6)
+    # and umya-spreadsheet (zip 8; zip 9 is only in its beta). They open nothing but the
+    # workbook that Ographis is about to add a sheet to, in memory: nothing is extracted to
+    # disk, so the holes in extraction, links and permissions are not reached, and no
+    # encrypted or legacy-packed entries are read. Ographis itself uses zip 9.
+    { id = "RUSTSEC-2026-0367", reason = "zip extraction to disk: never done by the spreadsheet writers" },
+    { id = "RUSTSEC-2026-0368", reason = "zip extraction to disk: never done by the spreadsheet writers" },
+    { id = "RUSTSEC-2026-0369", reason = "zip extraction to disk: never done by the spreadsheet writers" },
+    { id = "RUSTSEC-2026-0429", reason = "zip extraction to disk: never done by the spreadsheet writers" },
+    { id = "RUSTSEC-2026-0546", reason = "zip extraction to disk: never done by the spreadsheet writers" },
+    { id = "RUSTSEC-2026-0548", reason = "zip stream extraction: never done by the spreadsheet writers" },
+    { id = "RUSTSEC-2026-0545", reason = "AES-encrypted zip entries: not in workbooks Ographis writes" },
+    { id = "RUSTSEC-2026-0547", reason = "legacy zip packing: not in workbooks Ographis writes" },
+    # quick-xml 0.38, only through spreadsheet-ods, which reads the content of the workbook
+    # it is adding a sheet to: one that Ographis wrote, or the user chose as the output. A
+    # crafted file there can at worst make the run slow. Ographis itself uses quick-xml 0.42.
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml 0.38 only in spreadsheet-ods, reading the user's own output workbook" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml 0.38 only in spreadsheet-ods, reading the user's own output workbook" },
+]
+
+[licenses]
+# Licences that allow Ographis to be shared under MIT or Apache 2.0, as it is.
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "CC0-1.0",
+    "Unlicense",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+    # acadrust, which reads and writes DWG: its own files stay under the MPL, and are not changed.
+    "MPL-2.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Several versions of one library are allowed: they only make the program larger.
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

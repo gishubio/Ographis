@@ -127,7 +127,7 @@ pub fn from_wkb(bytes: &[u8]) -> Result<(Geometry<f64>, Option<Vec<f64>>)> {
 // ---------- Parquet ----------
 
 /// The EPSG code of a coordinate system written as PROJJSON, or as a text such as EPSG:3006.
-fn epsg_of(crs: &serde_json::Value) -> Option<u32> {
+pub(crate) fn epsg_of(crs: &serde_json::Value) -> Option<u32> {
     match crs {
         serde_json::Value::Object(o) => {
             if let Some(id) = o.get("id") {

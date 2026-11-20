@@ -934,6 +934,13 @@ fn blocks_and_a_tin_at_dusk_and_keys_and_print_settings() {
     assert!(h.query_by_label("Pixels to the inch").is_none(), "only for a page as large as the picture");
     assert!(h.query_by_label("Primary key").is_none());
     shot(&mut h, "325-pdf-print-settings");
+    // A WebP picture has a quality, and no page.
+    set(&mut h, "png", "path", "out/blocks_on_tin.webp");
+    h.state_mut().focus_node("png");
+    settle(&mut h);
+    open_more(&mut h);
+    assert!(h.query_by_label("Picture quality").is_some(), "WebP is written at a quality");
+    assert!(h.query_by_label("Page size").is_none() && h.query_by_label("Pixels to the inch").is_none());
 }
 
 #[test]

@@ -78,6 +78,9 @@ The script `build.ps1`, which `build.cmd` starts, does this:
 2. Finds GDAL, reads its version and locates `proj.db`.
 3. Builds the two programs with `cargo build --release`. The first time, all dependencies
    are downloaded and compiled, which took about four minutes on the first Windows build.
+   Since 0.96.5 DuckDB is built in, compiled from its C++ source by the same C++ tools,
+   which adds some ten to twenty minutes to the first build, and is not done again until
+   DuckDB is updated.
 4. Writes the launchers `Ographis.cmd` and `og.cmd` in the project folder.
 5. Runs the build test: `og doctor` and the example model `examples\buildtest.ographis`.
 
@@ -230,6 +233,7 @@ of the import tables has also been checked against pefile on Windows DLLs.
 | Unresolved symbols at link time (`LNK2019`) that begin with `GDAL`, `OGR` or `OSR` | The library lacks a function that the bindings expect | Get in touch with the error output. The fallbacks are below |
 | The program does not start, `gdal….dll was not found` | Started without the launcher | Start with `Ographis.cmd` |
 | `doctor`: PROJ cannot find proj.db, or complains about `DATABASE.LAYOUT.VERSION` | Another `proj.db` is being used, often from PostGIS | Start with `og.cmd`, which points to the right folder |
+| `fatal error C1085: Cannot write compiler generated file … No space left on device` while `libduckdb-sys` is built | The disk is full. The first build compiles DuckDB from C++ and needs about 10 GB | Make room, for example by removing `target\debug`, which only development uses, and run `build.cmd` again. Since 0.96.5 the build says how much room there is before it starts |
 | `Cannot open … .xlsx as vector data`, or `This GDAL build cannot write .xlsx` | GDAL was built without the Excel driver. `doctor` shows a dash at Excel | Use the GDAL from OSGeo4W, which has it |
 | `Cannot save … .xlsx. Is the file open in Excel?` | Excel locks a workbook that is open | Close the workbook in Excel and run again |
 | `Cannot fetch https://…` | The address cannot be reached, often because of a proxy | Open the address in a web browser on the same computer. If it works there, check the Windows proxy setting, or set `HTTPS_PROXY` |

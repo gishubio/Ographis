@@ -1,19 +1,37 @@
 //! A model as a picture: its nodes with their names, how they are set up and their ports,
-//! the connections between them, group boxes, comments and notes, as on the canvas. Written
-//! as PNG or JPEG, or as a PDF page, for documentation and to show others how a flow works.
+//! the connections between them, group boxes, comments and notes, laid out and coloured as
+//! on the canvas. Written as PNG, JPEG or WebP, or as a PDF page, for documentation and to
+//! show others how a flow works.
 
-use crate::chart::Text;
+use crate::chart::{Face, Text};
 use crate::model::{GbError, RasterImage, Result};
 use crate::nodes::{node_type, Group, P};
-use crate::run::Workspace;
+use crate::run::{Node, Workspace};
 use std::collections::HashMap;
-use tiny_skia::{Color, FillRule, LineCap, Paint, PathBuilder, Pixmap, Rect, Stroke, StrokeDash, Transform};
+use tiny_skia::{Color, FillRule, LineCap, Paint, PathBuilder, Pixmap, Stroke, StrokeDash, Transform};
 
-const NODE_W: f32 = 196.0;
-const HEAD: f32 = 30.0;
-const ROW: f32 = 20.0;
+// The measures of the canvas, in its units.
+/// The header of a node: its name between margins of 5 above and below.
+const HEAD: f32 = 27.0;
+/// A port, one to a row.
+const ROW: f32 = 19.0;
+/// The settings of a node under its inputs: wrapped at this width.
+const BODY_W: f32 = 168.0;
+const BODY_LINE: f32 = 14.0;
+/// The size of the letters: the name, the ports and the settings.
+const NAME: f32 = 14.0;
+const PORT: f32 = 11.5;
+const BODY: f32 = 11.0;
+const COMMENT: f32 = 12.0;
+const COMMENT_LINE: f32 = 15.0;
+/// The strip at the top of a group box that holds its name.
+const GROUP_TITLE: f32 = 26.0;
+const NOTE_W: f32 = 210.0;
 
-const BG: [u8; 3] = [0xf4, 0xf7, 0xf6];
+// The colours of the light theme of the canvas.
+const BG: [u8; 3] = [0xe7, 0xec, 0xea];
+const GRID: [u8; 3] = [0xd3, 0xdc, 0xd8];
+const PANEL: [u8; 3] = [0xf4, 0xf7, 0xf6];
 const SURFACE: [u8; 3] = [0xff, 0xff, 0xff];
 const INK: [u8; 3] = [0x14, 0x20, 0x1d];
 const MUTED: [u8; 3] = [0x55, 0x64, 0x5f];
@@ -22,8 +40,18 @@ const WIRE: [u8; 3] = [0x3a, 0x45, 0x42];
 const NOTE: [u8; 3] = [0xff, 0xf7, 0xcf];
 const NOTE_LINE: [u8; 3] = [0xd6, 0xbf, 0x63];
 
-/// Where a node is: x, y, height, and its input and output ports.
-type Placed = (f32, f32, f32, Vec<String>, Vec<String>);
+/// A node laid out: where it is, its size, its ports and where each lies down the node, and
+/// the lines of its settings.
+struct Laid {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    ins: Vec<(String, f32)>,
+    outs: Vec<(String, f32)>,
+    body: Vec<String>,
+    body_y: f32,
+}
 
 /// The colour of a kind of node, and its light tint, as on the canvas.
 fn tint(group: Group) -> ([u8; 3], [u8; 3]) {
@@ -34,12 +62,24 @@ fn tint(group: Group) -> ([u8; 3], [u8; 3]) {
     }
 }
 
+/// The edge and the fill of a group box by its colour, as on the canvas: the colours of the
+/// nodes, others mixed into the canvas, a colour of its own as #rrggbb, or grey.
 fn group_colour(name: &str) -> ([u8; 3], [u8; 3]) {
+    let mixed = |e: [u8; 3]| (e, [0, 1, 2].map(|i| ((e[i] as u16 * 30 + BG[i] as u16 * 70) / 100) as u8));
     match name {
         "yellow" => tint(Group::Reader),
+        "blue" => tint(Group::Transformer),
         "green" => tint(Group::Writer),
         "pink" | "magenta" => ([0xa3, 0x17, 0x5c], [0xf7, 0xdc, 0xea]),
-        _ => tint(Group::Transformer),
+        "orange" => mixed([0xd9, 0x7a, 0x1e]),
+        "red" => mixed([0xc8, 0x3a, 0x32]),
+        "purple" => mixed([0x7d, 0x4f, 0xb5]),
+        "teal" => mixed([0x1f, 0x93, 0x8c]),
+        "brown" => mixed([0x8a, 0x62, 0x3c]),
+        other => match other.strip_prefix('#').filter(|h| h.len() == 6).and_then(|h| u32::from_str_radix(h, 16).ok()) {
+            Some(v) => mixed([(v >> 16) as u8, (v >> 8) as u8, v as u8]),
+            None => (MUTED, LINE),
+        },
     }
 }
 
@@ -50,30 +90,36 @@ fn paint(c: [u8; 3], a: u8) -> Paint<'static> {
     p
 }
 
-fn rounded(x: f32, y: f32, w: f32, h: f32, r: f32) -> Option<tiny_skia::Path> {
+/// A rectangle with its corners rounded: each by its own radius, from the upper left on.
+fn rounded4(x: f32, y: f32, w: f32, h: f32, r: [f32; 4]) -> Option<tiny_skia::Path> {
+    let m = (w / 2.0).min(h / 2.0);
+    let [a, b, c, d] = r.map(|v| v.min(m));
     let mut pb = PathBuilder::new();
-    let r = r.min(w / 2.0).min(h / 2.0);
-    pb.move_to(x + r, y);
-    pb.line_to(x + w - r, y);
-    pb.quad_to(x + w, y, x + w, y + r);
-    pb.line_to(x + w, y + h - r);
-    pb.quad_to(x + w, y + h, x + w - r, y + h);
-    pb.line_to(x + r, y + h);
-    pb.quad_to(x, y + h, x, y + h - r);
-    pb.line_to(x, y + r);
-    pb.quad_to(x, y, x + r, y);
+    pb.move_to(x + a, y);
+    pb.line_to(x + w - b, y);
+    pb.quad_to(x + w, y, x + w, y + b);
+    pb.line_to(x + w, y + h - c);
+    pb.quad_to(x + w, y + h, x + w - c, y + h);
+    pb.line_to(x + d, y + h);
+    pb.quad_to(x, y + h, x, y + h - d);
+    pb.line_to(x, y + a);
+    pb.quad_to(x, y, x + a, y);
     pb.close();
     pb.finish()
 }
 
+fn rounded(x: f32, y: f32, w: f32, h: f32, r: f32) -> Option<tiny_skia::Path> {
+    rounded4(x, y, w, h, [r; 4])
+}
+
 /// Text cut into lines that fit a width.
-fn wrap(text: &Text, s: &str, size: f32, width: f32) -> Vec<String> {
+fn wrap(text: &Text, s: &str, size: f32, face: Face, width: f32) -> Vec<String> {
     let mut lines = Vec::new();
     for para in s.lines() {
         let mut line = String::new();
         for word in para.split_whitespace() {
             let try_line = if line.is_empty() { word.to_string() } else { format!("{} {}", line, word) };
-            if text.width(&try_line, size, false) > width && !line.is_empty() {
+            if text.width_in(&try_line, size, face) > width && !line.is_empty() {
                 lines.push(std::mem::take(&mut line));
                 line = word.to_string();
             } else {
@@ -109,18 +155,91 @@ fn ports(ws: &Workspace, id: &str, kind: &str, params: &crate::nodes::Params) ->
     (ins, outs)
 }
 
+/// What the node says under its inputs: how it is set up, and the tool when the node has a
+/// name of its own.
+fn body_text(n: &Node) -> String {
+    let Some(t) = node_type(&n.kind) else { return String::new() };
+    let summary = (t.summary)(&P::new(&n.params, t.params));
+    let renamed = !n.name.is_empty() && crate::run::default_name_today(&n.kind, &n.name).is_none();
+    match (renamed, summary.trim().is_empty()) {
+        (true, false) => format!("{} · {}", t.title, summary),
+        (true, true) => t.title.to_string(),
+        (false, _) => summary,
+    }
+}
+
+/// A node laid out as on the canvas: the header with its name, the inputs, its settings and
+/// the outputs, one under the other, as wide as what it holds.
+fn lay_out(text: &Text, ws: &Workspace, n: &Node) -> Laid {
+    let (ins, outs) = ports(ws, &n.id, &n.kind, &n.params);
+    let body_full = body_text(n);
+    let body = if body_full.is_empty() { Vec::new() } else { wrap(text, &body_full, BODY, Face::Mono, BODY_W) };
+    let port_w = |s: &String| text.width_in(s, PORT, Face::Mono);
+    // Room is kept beside each output for the number of features of a run.
+    let count = text.width_in("99 999", PORT, Face::Mono) + 8.0;
+    let w = [
+        8.0 + 16.0 + text.width(n.label(), NAME, true).ceil() + 2.0 + if n.disabled { 6.0 + text.width_in("disabled", 10.5, Face::Mono) } else { 0.0 } + 8.0,
+        ins.iter().map(|p| 12.0 + port_w(p) + 12.0).fold(0.0, f32::max),
+        body.iter().map(|l| text.width_in(l, BODY, Face::Mono)).fold(0.0, f32::max) + 16.0,
+        outs.iter().map(|p| 12.0 + port_w(p) + 5.0 + count + 12.0).fold(0.0, f32::max),
+        80.0,
+    ]
+    .into_iter()
+    .fold(0.0, f32::max)
+    .ceil();
+    let mut y = HEAD + 4.0;
+    let ins: Vec<(String, f32)> = ins
+        .into_iter()
+        .map(|p| {
+            let at = y + ROW / 2.0;
+            y += ROW;
+            (p, at)
+        })
+        .collect();
+    let body_y = y + 2.0;
+    if !body.is_empty() {
+        y += body.len() as f32 * BODY_LINE + 6.0;
+    }
+    let outs: Vec<(String, f32)> = outs
+        .into_iter()
+        .map(|p| {
+            let at = y + ROW / 2.0;
+            y += ROW;
+            (p, at)
+        })
+        .collect();
+    Laid { x: n.x as f32, y: n.y as f32, w, h: y + 6.0, ins, outs, body, body_y }
+}
+
+/// Where the comment of a node is: where it was put, or above the node, as wide as the node
+/// and high enough for its text, up to six lines.
+fn comment_box(text: &Text, n: &Node, b: &Laid) -> [f32; 4] {
+    match n.comment_box {
+        Some(c) => [b.x + c[0] as f32, b.y + c[1] as f32, c[2] as f32, c[3] as f32],
+        None => {
+            let w = b.w.max(170.0);
+            let lines = wrap(text, n.comment.trim(), COMMENT, Face::Regular, w - 16.0).len().min(6);
+            let h = (lines as f32 * COMMENT_LINE + 10.0).ceil();
+            [b.x, b.y - h - 18.0, w, h]
+        }
+    }
+}
+
 /// The model drawn, `scale` pixels to a unit of the canvas.
 pub fn draw(ws: &Workspace, scale: f32) -> Result<RasterImage> {
     let text = Text::new()?;
-    let notes_w = 240.0f32;
-    // Where each node is, and how tall.
-    let mut boxes: HashMap<&str, Placed> = HashMap::new();
-    for n in &ws.nodes {
-        let (ins, outs) = ports(ws, &n.id, &n.kind, &n.params);
-        let rows = ins.len().max(outs.len()).max(1) as f32;
-        let h = HEAD + 22.0 + rows * ROW + 8.0;
-        boxes.insert(n.id.as_str(), (n.x as f32, n.y as f32, h, ins, outs));
-    }
+    let laid: HashMap<&str, Laid> = ws.nodes.iter().map(|n| (n.id.as_str(), lay_out(&text, ws, n))).collect();
+    let notes: Vec<(f32, f32, f32, f32, Vec<String>)> = ws
+        .notes
+        .iter()
+        .map(|note| {
+            let w = note.w.map_or(NOTE_W, |w| w as f32).max(90.0);
+            let lines = wrap(&text, note.text.trim_end(), 13.0, Face::Regular, w);
+            let h = (lines.len() as f32 * 17.0).max(note.h.unwrap_or(0.0) as f32);
+            // A strip to take hold of it by, the text, and margins.
+            (note.x as f32, note.y as f32, w + 16.0, 20.0 + h + 6.0, lines)
+        })
+        .collect();
     // The extent of it all.
     let (mut x0, mut y0, mut x1, mut y1) = (f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
     let mut grow = |x: f32, y: f32, w: f32, h: f32| {
@@ -130,18 +249,18 @@ pub fn draw(ws: &Workspace, scale: f32) -> Result<RasterImage> {
         y1 = y1.max(y + h);
     };
     for n in &ws.nodes {
-        let b = &boxes[n.id.as_str()];
-        // Room for a comment above.
-        let above = if n.comment.trim().is_empty() { 0.0 } else { 60.0 };
-        grow(b.0, b.1 - above, NODE_W, b.2 + above);
+        let b = &laid[n.id.as_str()];
+        grow(b.x, b.y, b.w, b.h);
+        if !n.comment.trim().is_empty() {
+            let c = comment_box(&text, n, b);
+            grow(c[0], c[1], c[2], c[3]);
+        }
     }
     for g in &ws.groups {
-        grow(g.x as f32, g.y as f32 - 26.0, g.w as f32, g.h as f32 + 26.0);
+        grow(g.x as f32, g.y as f32, g.w as f32, g.h as f32);
     }
-    for note in &ws.notes {
-        let w = note.w.map_or(notes_w, |w| w as f32);
-        let lines = wrap(&text, &note.text, 13.0, w - 20.0).len() as f32;
-        grow(note.x as f32, note.y as f32, w, lines * 18.0 + 20.0);
+    for n in &notes {
+        grow(n.0, n.1, n.2, n.3);
     }
     if !x0.is_finite() {
         return Err(GbError("The model has nothing to draw.".into()));
@@ -152,7 +271,11 @@ pub fn draw(ws: &Workspace, scale: f32) -> Result<RasterImage> {
     let described: Vec<String> = if ws.description.trim().is_empty() {
         Vec::new()
     } else {
-        ws.description.trim().lines().flat_map(|l| if l.trim().is_empty() { vec![String::new()] } else { wrap(&text, l, 14.0, (x1 - x0).max(600.0)) }).collect()
+        ws.description
+            .trim()
+            .lines()
+            .flat_map(|l| if l.trim().is_empty() { vec![String::new()] } else { wrap(&text, l, 14.0, Face::Regular, (x1 - x0).max(600.0)) })
+            .collect()
     };
     let headed = if title.is_some() { 60.0 } else { 0.0 };
     let top = headed + if described.is_empty() { 0.0 } else { described.len() as f32 * 20.0 + 16.0 };
@@ -163,9 +286,10 @@ pub fn draw(ws: &Workspace, scale: f32) -> Result<RasterImage> {
     }
     let mut pm = Pixmap::new(pw.max(1), ph.max(1)).ok_or_else(|| GbError("The picture of the model is too large.".into()))?;
     pm.fill(Color::from_rgba8(BG[0], BG[1], BG[2], 255));
-    let t = Transform::from_scale(scale, scale).pre_translate(margin - x0, margin - y0 + top);
+    let (ox, oy) = (margin - x0, margin - y0 + top);
+    let t = Transform::from_scale(scale, scale).pre_translate(ox, oy);
     // Where a point of the canvas is in the picture, for text, which is drawn in pixels.
-    let at = |x: f32, y: f32| ((x + margin - x0) * scale, (y + margin - y0 + top) * scale);
+    let at = |x: f32, y: f32| ((x + ox) * scale, (y + oy) * scale);
     let fill = |pm: &mut Pixmap, path: &Option<tiny_skia::Path>, c: [u8; 3], a: u8| {
         if let Some(p) = path {
             pm.fill_path(p, &paint(c, a), FillRule::Winding, t, None);
@@ -180,32 +304,90 @@ pub fn draw(ws: &Workspace, scale: f32) -> Result<RasterImage> {
             pm.stroke_path(p, &paint(c, 255), &s, t, None);
         }
     };
-    let say = |pm: &mut Pixmap, s: &str, x: f32, y: f32, size: f32, bold: bool, c: [u8; 3], align: f32| {
+    let say = |pm: &mut Pixmap, s: &str, x: f32, y: f32, size: f32, face: Face, c: [u8; 3], align: f32| {
         let (px, py) = at(x, y);
-        text.draw(pm, s, px, py, size * scale, bold, c, align);
+        text.draw_in(pm, s, px, py, size * scale, face, c, align);
+    };
+    // The grid of the canvas, every 24 units, as it lies on the canvas.
+    {
+        let mut pb = PathBuilder::new();
+        let (gx0, gy0) = (((-ox) / 24.0).floor() * 24.0, ((-oy) / 24.0).floor() * 24.0);
+        let (gx1, gy1) = (w - ox, h - oy);
+        let mut x = gx0;
+        while x <= gx1 {
+            pb.move_to(x, gy0);
+            pb.line_to(x, gy1);
+            x += 24.0;
+        }
+        let mut y = gy0;
+        while y <= gy1 {
+            pb.move_to(gx0, y);
+            pb.line_to(gx1, y);
+            y += 24.0;
+        }
+        if let Some(p) = pb.finish() {
+            pm.stroke_path(&p, &paint(GRID, 255), &Stroke { width: 1.0 / scale.max(0.5), ..Default::default() }, t, None);
+        }
+    }
+    // A triangle that points down, as the arrow that folds a node or a note.
+    let fold = |pm: &mut Pixmap, x: f32, y: f32, c: [u8; 3]| {
+        let mut pb = PathBuilder::new();
+        pb.move_to(x, y);
+        pb.line_to(x + 9.0, y);
+        pb.line_to(x + 4.5, y + 8.0);
+        pb.close();
+        if let Some(p) = pb.finish() {
+            pm.fill_path(&p, &paint(c, 255), FillRule::Winding, t, None);
+        }
     };
     if let Some(tt) = &title {
-        say(&mut pm, tt, x0, y0 - top + 36.0, 24.0, true, INK, 0.0);
+        say(&mut pm, tt, x0, y0 - top + 36.0, 24.0, Face::Bold, INK, 0.0);
     }
     for (i, l) in described.iter().enumerate() {
-        say(&mut pm, l, x0, y0 - top + headed + 14.0 + i as f32 * 20.0, 14.0, false, MUTED, 0.0);
+        say(&mut pm, l, x0, y0 - top + headed + 14.0 + i as f32 * 20.0, 14.0, Face::Regular, MUTED, 0.0);
     }
-    // Group boxes, beneath everything.
+    // Group boxes, beneath everything, with their names in a strip at the top.
     for g in &ws.groups {
-        let (c, soft) = group_colour(&g.color);
-        let r = rounded(g.x as f32, g.y as f32, g.w as f32, g.h as f32, 10.0);
+        let (edge, soft) = group_colour(&g.color);
+        let (gx, gy, gw, gh) = (g.x as f32, g.y as f32, g.w as f32, g.h as f32);
+        let r = rounded(gx, gy, gw, gh, 6.0);
         fill(&mut pm, &r, soft, 150);
-        line(&mut pm, &r, c, 1.2, false);
-        say(&mut pm, &g.name, g.x as f32 + 8.0, g.y as f32 - 8.0, 15.0, true, c, 0.0);
+        fill(&mut pm, &rounded4(gx + 1.0, gy + 1.0, gw - 2.0, GROUP_TITLE.min(gh) - 1.0, [5.0, 5.0, 0.0, 0.0]), soft, 150);
+        line(&mut pm, &r, edge, 1.0, false);
+        let name = if g.name.trim().is_empty() { "Group" } else { g.name.as_str() };
+        let name = text.fit(name, 13.5, true, gw - 20.0);
+        say(&mut pm, &name, gx + 10.0, gy + GROUP_TITLE / 2.0 + 5.0, 13.5, Face::Bold, INK, 0.0);
     }
-    // The connections, from the right of the output port to the left of the input port.
-    let port_y = |b: &Placed, k: usize| b.1 + HEAD + 22.0 + (k as f32 + 0.5) * ROW;
+    // The comments, each in a box with a thin line to its node.
+    for n in ws.nodes.iter().filter(|n| !n.comment.trim().is_empty()) {
+        let b = &laid[n.id.as_str()];
+        let [cx, cy, cw, ch] = comment_box(&text, n, b);
+        let (mx, my) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
+        let from = (mx.clamp(cx, cx + cw), my.clamp(cy, cy + ch));
+        let to = (from.0.clamp(b.x, b.x + b.w), from.1.clamp(b.y, b.y + b.h));
+        let apart = cx > b.x + b.w || cx + cw < b.x || cy > b.y + b.h || cy + ch < b.y;
+        if apart {
+            let mut pb = PathBuilder::new();
+            pb.move_to(from.0, from.1);
+            pb.line_to(to.0, to.1);
+            line(&mut pm, &pb.finish(), NOTE_LINE, 1.0, false);
+            fill(&mut pm, &PathBuilder::from_circle(to.0, to.1, 2.5), NOTE_LINE, 255);
+        }
+        let r = rounded(cx, cy, cw, ch, 5.0);
+        fill(&mut pm, &r, NOTE, 255);
+        line(&mut pm, &r, NOTE_LINE, 1.0, false);
+        let fits = (((ch - 10.0) / COMMENT_LINE).floor() as usize).max(1);
+        for (k, l) in wrap(&text, n.comment.trim(), COMMENT, Face::Regular, cw - 16.0).iter().take(fits).enumerate() {
+            say(&mut pm, l, cx + 8.0, cy + 5.0 + 12.0 + k as f32 * COMMENT_LINE, COMMENT, Face::Regular, INK, 0.0);
+        }
+    }
+    // The connections, from the output port on the right edge to the input port on the left.
     for e in &ws.edges {
-        let (Some(a), Some(b)) = (boxes.get(e.from.0.as_str()), boxes.get(e.to.0.as_str())) else { continue };
-        let ka = a.4.iter().position(|p| *p == e.from.1).unwrap_or(0);
-        let kb = b.3.iter().position(|p| *p == e.to.1).unwrap_or(0);
-        let (sx, sy) = (a.0 + NODE_W, port_y(a, ka));
-        let (ex, ey) = (b.0, port_y(b, kb));
+        let (Some(a), Some(b)) = (laid.get(e.from.0.as_str()), laid.get(e.to.0.as_str())) else { continue };
+        let ya = a.outs.iter().find(|p| p.0 == e.from.1).or(a.outs.first()).map_or(a.h / 2.0, |p| p.1);
+        let yb = b.ins.iter().find(|p| p.0 == e.to.1).or(b.ins.first()).map_or(b.h / 2.0, |p| p.1);
+        let (sx, sy) = (a.x + a.w, a.y + ya);
+        let (ex, ey) = (b.x, b.y + yb);
         let mut pb = PathBuilder::new();
         pb.move_to(sx, sy);
         let mut prev = (sx, sy);
@@ -217,66 +399,49 @@ pub fn draw(ws: &Workspace, scale: f32) -> Result<RasterImage> {
         }
         let d = ((ex - prev.0).abs() / 2.0).max(60.0);
         pb.cubic_to(prev.0 + d, prev.1, ex - d, ey, ex, ey);
-        line(&mut pm, &pb.finish(), WIRE, 1.8, e.disabled);
+        line(&mut pm, &pb.finish(), WIRE, 2.25, e.disabled);
     }
-    // The nodes.
+    // The nodes: the header in the colour of their kind, then the inputs, the settings and
+    // the outputs, with the ports on the edges.
     for n in &ws.nodes {
-        let b = &boxes[n.id.as_str()];
-        let ty = node_type(&n.kind);
-        let (c, soft) = tint(ty.map_or(Group::Transformer, |t| t.group));
-        let alpha = if n.disabled { 110 } else { 255 };
-        let body = rounded(b.0, b.1, NODE_W, b.2, 8.0);
-        fill(&mut pm, &body, SURFACE, alpha);
-        let head = rounded(b.0, b.1, NODE_W, HEAD, 8.0);
-        fill(&mut pm, &head, soft, alpha);
-        fill(&mut pm, &Rect::from_xywh(b.0, b.1 + HEAD - 8.0, NODE_W, 8.0).map(PathBuilder::from_rect), soft, alpha);
-        line(&mut pm, &body, c, 1.4, n.disabled);
-        let name = text.fit(n.label(), 14.0, true, NODE_W - 20.0);
-        say(&mut pm, &name, b.0 + 10.0, b.1 + 20.0, 14.0, true, INK, 0.0);
-        if let Some(ty) = ty {
-            let p = P::new(&n.params, ty.params);
-            let line_text = (ty.summary)(&p);
-            let line_text = if line_text.trim().is_empty() { ty.title.to_string() } else { line_text };
-            let s = text.fit(&line_text, 11.0, false, NODE_W - 20.0);
-            say(&mut pm, &s, b.0 + 10.0, b.1 + HEAD + 15.0, 11.0, false, MUTED, 0.0);
+        let b = &laid[n.id.as_str()];
+        let soft = if n.disabled { LINE } else { node_type(&n.kind).map_or([0xfb, 0xe3, 0xe1], |t| tint(t.group).1) };
+        let body = rounded(b.x, b.y, b.w, b.h, 5.0);
+        fill(&mut pm, &body, if n.disabled { PANEL } else { SURFACE }, 255);
+        fill(&mut pm, &rounded4(b.x, b.y, b.w, HEAD, [4.0, 4.0, 0.0, 0.0]), soft, 255);
+        line(&mut pm, &body, LINE, 1.0, n.disabled);
+        let ink = if n.disabled { MUTED } else { INK };
+        fold(&mut pm, b.x + 8.0, b.y + 10.0, ink);
+        let room = if n.disabled { text.width_in("disabled", 10.5, Face::Mono) + 6.0 } else { 0.0 };
+        let name = text.fit(n.label(), NAME, true, b.w - 32.0 - room);
+        say(&mut pm, &name, b.x + 24.0, b.y + 19.0, NAME, Face::Bold, ink, 0.0);
+        if n.disabled {
+            say(&mut pm, "disabled", b.x + b.w - 8.0, b.y + 18.0, 10.5, Face::Mono, MUTED, 1.0);
         }
-        for (k, port) in b.3.iter().enumerate() {
-            let y = port_y(b, k);
-            fill(&mut pm, &PathBuilder::from_circle(b.0, y, 4.5), SURFACE, 255);
-            line(&mut pm, &PathBuilder::from_circle(b.0, y, 4.5), WIRE, 1.3, false);
-            say(&mut pm, port, b.0 + 10.0, y + 4.5, 12.0, false, INK, 0.0);
+        for (k, l) in b.body.iter().enumerate() {
+            say(&mut pm, l, b.x + 8.0, b.y + b.body_y + 10.0 + k as f32 * BODY_LINE, BODY, Face::Mono, MUTED, 0.0);
         }
-        for (k, port) in b.4.iter().enumerate() {
-            let y = port_y(b, k);
-            fill(&mut pm, &PathBuilder::from_circle(b.0 + NODE_W, y, 4.5), SURFACE, 255);
-            line(&mut pm, &PathBuilder::from_circle(b.0 + NODE_W, y, 4.5), WIRE, 1.3, false);
-            say(&mut pm, port, b.0 + NODE_W - 10.0, y + 4.5, 12.0, false, INK, 1.0);
+        let pin = |pm: &mut Pixmap, x: f32, y: f32| {
+            fill(pm, &PathBuilder::from_circle(x, y, 4.5), SURFACE, 255);
+            line(pm, &PathBuilder::from_circle(x, y, 4.5), WIRE, 1.5, false);
+        };
+        for (port, py) in &b.ins {
+            pin(&mut pm, b.x, b.y + py);
+            say(&mut pm, port, b.x + 12.0, b.y + py + 4.0, PORT, Face::Mono, MUTED, 0.0);
         }
-        // The comment, in a box above the node or where it was put.
-        if !n.comment.trim().is_empty() {
-            let (cx, cy, cw) = match n.comment_box {
-                Some(cb) => (b.0 + cb[0] as f32, b.1 + cb[1] as f32, cb[2] as f32),
-                None => (b.0, b.1 - 54.0, NODE_W),
-            };
-            let lines = wrap(&text, &n.comment, 12.0, cw - 16.0);
-            let lines: Vec<String> = lines.into_iter().take(3).collect();
-            let ch = lines.len() as f32 * 16.0 + 10.0;
-            let r = rounded(cx, cy, cw, ch, 6.0);
-            fill(&mut pm, &r, SURFACE, 230);
-            line(&mut pm, &r, LINE, 1.0, false);
-            for (k, l) in lines.iter().enumerate() {
-                say(&mut pm, l, cx + 8.0, cy + 18.0 + k as f32 * 16.0, 12.0, false, MUTED, 0.0);
-            }
+        for (port, py) in &b.outs {
+            pin(&mut pm, b.x + b.w, b.y + py);
+            say(&mut pm, port, b.x + b.w - 12.0, b.y + py + 4.0, PORT, Face::Mono, MUTED, 1.0);
         }
     }
-    for note in &ws.notes {
-        let w = note.w.map_or(notes_w, |w| w as f32);
-        let lines = wrap(&text, &note.text, 13.0, w - 20.0);
-        let r = rounded(note.x as f32, note.y as f32, w, lines.len() as f32 * 18.0 + 20.0, 6.0);
+    // The notes: a sheet of paper with a strip to take hold of it by.
+    for (nx, ny, nw, nh, lines) in &notes {
+        let r = rounded(*nx, *ny, *nw, *nh, 5.0);
         fill(&mut pm, &r, NOTE, 255);
-        line(&mut pm, &r, NOTE_LINE, 1.2, false);
+        line(&mut pm, &r, NOTE_LINE, 1.0, false);
+        fold(&mut pm, nx + 8.0, ny + 6.0, INK);
         for (k, l) in lines.iter().enumerate() {
-            say(&mut pm, l, note.x as f32 + 10.0, note.y as f32 + 24.0 + k as f32 * 18.0, 13.0, false, INK, 0.0);
+            say(&mut pm, l, nx + 8.0, ny + 20.0 + 13.0 + k as f32 * 17.0, 13.0, Face::Regular, INK, 0.0);
         }
     }
     // Opaque all through: the pixmap holds colours times opacity, and here all is opaque.
@@ -336,7 +501,7 @@ pub fn write_pdf(img: &RasterImage, dpi: f64, path: &std::path::Path) -> Result<
     std::fs::write(path, out).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))
 }
 
-/// Draws a model to a file: .png, .jpg or .pdf, by its extension.
+/// Draws a model to a file: .png, .jpg, .webp or .pdf, by its extension.
 pub fn export(ws: &Workspace, path: &std::path::Path) -> Result<()> {
     let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
@@ -350,8 +515,11 @@ pub fn export(ws: &Workspace, path: &std::path::Path) -> Result<()> {
             image::save_buffer(path, &rgb, img.width as u32, img.height as u32, image::ColorType::Rgb8)
                 .map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))
         }
+        // WebP keeps every pixel, and the see-through parts, in a smaller file than PNG.
+        "webp" => image::save_buffer(path, &img.rgba, img.width as u32, img.height as u32, image::ColorType::Rgba8)
+            .map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e))),
         "png" => image::save_buffer(path, &img.rgba, img.width as u32, img.height as u32, image::ColorType::Rgba8)
             .map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e))),
-        _ => Err(GbError(format!("A picture of the model is written as .png, .jpg or .pdf, not .{}.", ext))),
+        _ => Err(GbError(format!("A picture of the model is written as .png, .jpg, .webp or .pdf, not .{}.", ext))),
     }
 }

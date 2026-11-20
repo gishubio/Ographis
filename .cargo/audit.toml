@@ -1,0 +1,16 @@
+# What `cargo audit` lets pass, with the same reasons as deny.toml, which says more.
+[advisories]
+ignore = [
+    # zip 6 and 8, only in the libraries that write spreadsheets, which extract nothing to disk.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+    "RUSTSEC-2026-0429",
+    "RUSTSEC-2026-0546",
+    "RUSTSEC-2026-0548",
+    "RUSTSEC-2026-0545",
+    "RUSTSEC-2026-0547",
+    # quick-xml 0.38, only in spreadsheet-ods, reading the user's own output workbook.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]

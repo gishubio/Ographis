@@ -543,6 +543,8 @@ fn progress_step(verb: &str, done: u64, total: Option<u64>) -> Option<u64> {
     match total {
         Some(t) if t >= large => Some(done * 10 / t.max(1)),
         Some(_) => None,
+        // Each page of a web service takes long: every one is worth a line.
+        None if verb == "pages" => Some(done),
         None => Some(done / 500_000),
     }
 }
@@ -578,6 +580,7 @@ fn progress_line(label: &str, verb: &str, done: u64, total: Option<u64>, took: s
         }
         // A step that counts something else, which the verb names: "3 of 12 files".
         Some(t) => format!("{}: {} of {} {} ({} %){}", label, fmt_count(done), fmt_count(t), verb, (done * 100 / t.max(1)).min(100), left),
+        None if verb == "pages" => format!("{}: {} so far", label, if done == 1 { "1 page".to_string() } else { format!("{} pages", fmt_count(done)) }),
         None => format!("{}: {} {} features so far", label, verb, fmt_count(done)),
     }
 }
@@ -1438,5 +1441,8 @@ mod tests {
         assert_eq!(progress_line("Fetch geodata", "files", 3, Some(12), s(9)), "Fetch geodata: 3 of 12 files (25 %) · about 30 s left");
         assert_eq!(progress_line("HTTP request", "sent requests for", 40, Some(200), s(1)), "HTTP request: sent requests for 40 of 200 features (20 %)");
         assert_eq!(progress_line("Input", "read", 500_000, None, s(1)), "Input: read 500 000 features so far");
+        assert_eq!(progress_line("HTTP request", "pages", 3, None, s(1)), "HTTP request: 3 pages so far");
+        assert_eq!(progress_step("pages", 3, None), Some(3), "every page is a line");
+        assert_eq!(progress_line("HTTP request", "pages", 1, None, s(1)), "HTTP request: 1 page so far");
     }
 }

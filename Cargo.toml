@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/og-engine", "crates/og-gdal", "crates/og-cli", "crates/og-gui"]
 
 [workspace.package]
-version = "0.96.4"
+version = "0.96.5"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/gishubio/Ographis"
@@ -14,10 +14,21 @@ geo = "0.33"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
+# The libraries Ographis builds on are built without debug information: the programs and
+# the tests then take a fraction of the room on disk, and DuckDB, compiled from C++, a tenth
+# of it while building. Ographis itself keeps its own.
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 opt-level = 3
 # File and line in the crash log, at little cost in size.
 debug = "line-tables-only"
+
+# DuckDB, compiled from C++, without debug information: with it, its parts take several
+# times the room on disk while building, which fills a small disk.
+[profile.release.package.libduckdb-sys]
+debug = false
 
 # egui-snarl with a small patch: dragging on empty canvas draws a selection box, and the
 # canvas is panned with the middle button or Space. See vendor/egui-snarl/OGRAPHIS.md.

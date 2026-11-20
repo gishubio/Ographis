@@ -1,5 +1,6 @@
 target/
 examples/out/
+examples/**/out/
 # Written by build.ps1
 /Ographis.cmd
 /og.cmd

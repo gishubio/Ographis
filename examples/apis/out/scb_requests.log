@@ -1,3 +1,0 @@
-time	method	address	status	bytes	milliseconds	note	body
-2026-11-17 22:42:00.104	GET	https://apiafr.scb.se/v1/arbetsstallen?kommun=1480	200	22998	739		
-2026-11-17 22:45:21.627	GET	https://apiafr.scb.se/v1/arbetsstallen?kommun=1480				from http-cache	

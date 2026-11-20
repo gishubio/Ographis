@@ -15,6 +15,7 @@ streets, people in squares, districts, health centres, a walk with a GPS and win
 | --- | --- |
 | `buildtest.ographis` | The smallest useful model: read, reproject, write |
 | `skaraborg.ographis` | Clip, test, join, calculate, measure, and write to three formats |
+| `changes.ographis` | Two versions of a list of hospitals compared by *Find changes*: what is new, what has changed and how, and what is gone, each as a layer of a GeoPackage |
 | `overlay.ographis` | Join by location, count points in polygons, statistics per group, sort, buffer, dissolve and label points |
 | `stops.ographis` | A folder of files read as one stream, the file name as an attribute, the text tools, a date stamp, Excel out, and groups, a comment and a note on the canvas |
 | `lines.ographis` | Split attribute into one feature per line, Filter by value with an output per line, and styled sheets in Excel and LibreOffice |
@@ -34,6 +35,7 @@ streets, people in squares, districts, health centres, a walk with a GPS and win
 | `share.ographis` | Ways to share what a model made: the made-up places in Skövde drawn on OpenStreetMap (made paler, with a legend; without the internet the map is drawn without it), a report as a web page with the map and a table of the places, a QGIS project with the places coloured by kind, sized by visitors and labelled, and the made-up blocks raised with Extrude and written as 3D Tiles for Cesium and as CityGML in LoD2 |
 | `labels.ographis` | Labels: the towns sized and placed first by population, the routes named along their lines, the subregions in capitals in their middle, and a legend. Made-up places in Skövde (`places.geojson`) with Maki icons from their kind, written in English as in OpenStreetMap or in Swedish, labelled, with a legend of the icons, as PNG and as an A3 PDF |
 | `ifc.ographis` | A made-up house in IFC4 (`house/villa.ifc`, made by `tools/make_ifc_example.py`) with walls, openings, windows, a door, a floor slab and a gable roof, property sets and quantities, placed on the made-up terrain by its map conversion: its windows found with Test, its elements in a workbook, a picture in the afternoon sun and the model as glTF |
+| `hospital.ographis` | A made-up hospital in IFC4 (`hospital/hospital.ifc`, made by `tools/make_hospital_ifc.py`): a ground floor with emergency, entrance and imaging, and four floors of wards on a grid of columns, with brick exterior walls, partitions, doors to the corridor, windows in openings, 162 rooms as spaces with their departments, a stair, two lifts, beds, floor slabs and a flat roof with a parapet and a plant room, property sets, quantities, materials and colours, placed in Göteborg by its map conversion: its elements sorted in a workbook, a picture in the sun, and a floor plan of level 1 drawn from the walls as seen from a metre above the floor, written to a GeoPackage, and to PostGIS when that node is turned on |
 | `blender.ographis` | The made-up terrain as a 3D model with its shaded relief draped over it and a block under it, and the blocks raised on it, as glTF for Blender: named by their id, grouped and given materials by their floors, with a sun on a midsummer evening and a camera, both files around the same origin so that they fit together |
 | `diorama.ographis` | Made-up islands off the coast (`islands.geojson`) with land cover named as in Lantmäteriet's and a made-up terrain model (`islands_heights.tif`) for the terraces, made into a diorama and rendered as a toy picture with parallel projection on a see-through background, as PNG, and as glTF for Blender |
 | `game_engine.ographis` | The same islands made ready for Unreal Engine: a heightmap of 16 bits in a size Unreal takes, a mask for each kind of land, and IMPORT.txt with the scale and place to set, in `out/game`. Change the engine to Unity or Godot |
@@ -115,11 +117,21 @@ streets, people in squares, districts, health centres, a walk with a GPS and win
   run against a made-up copy of each service, since the services could not be reached where
   they were made; the paths marked so in their comments are from the descriptions of the
   services, so check them with *Try one request* first.
-  - `ngp_comprehensive_plans.ographis`: the comprehensive plans of Skövde and Borås from the
-    national geodata platform, one search for each municipality in `plan_areas.csv`, with
-    every file of each plan kept (API connection Lantmäteriet).
+  - `ngp_comprehensive_plans.ographis`: the comprehensive plans of Göteborg and Kungsbacka
+    from the national geodata platform, one search for each municipality in
+    `plan_areas.csv`, with every file of each plan kept (API connection Lantmäteriet).
+  - `ngp_detailed_plans.ographis`: the detailed plans of Göteborg and Kungsbacka, one
+    search for each rectangle in `detailed_plan_areas.csv`, a feature for each provision,
+    those of the neighbours left out by the code of the municipality that made them, and the
+    documents of the plans kept when the variable keep_files_in names a folder.
+  - `scb_workplaces.ographis`: the workplaces of a municipality from the business register
+    of SCB: every variable of every workplace in Sweden, 5 000 to a page by a cursor, and those of the municipality kept, as points where their addresses
+    lie (API connection *SCB företagsregister*, a key in the header X-API-Key).
   - `visit_sweden_lodging.ographis`: places to stay from the national API of Visit Sweden,
     linked data in JSON-LD, where the place and its coordinates are found by their `@type`.
+  - `goteborg_heights_wcs.ographis`: the heights of central Göteborg from the WCS of the
+    City of Gothenburg, read only within a rectangle at 2 m cells, written as a GeoTIFF and
+    shaded.
   - `krisinformation_news.ographis`: the news of Krisinformation.se, a row per area.
   - `jobsearch_gothenburg.ographis`: the job ads in Göteborg from JobSearch of
     Arbetsförmedlingen, as points.

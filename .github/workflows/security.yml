@@ -1,0 +1,33 @@
+# Checks the libraries Ographis is built from against the RustSec database of security
+# holes, and their licences and sources, with cargo-deny and deny.toml. At every push and
+# pull request that changes them, and every Monday, so that a hole found in a library that
+# has not changed is still told about. See SECURITY.md.
+name: Security
+
+on:
+  push:
+    branches: [main]
+    paths: ["**/Cargo.toml", "Cargo.lock", "deny.toml", ".github/workflows/security.yml"]
+  pull_request:
+    paths: ["**/Cargo.toml", "Cargo.lock", "deny.toml", ".github/workflows/security.yml"]
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-deny:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # Holes apart from the rest, so that a new one does not hide behind a licence and
+        # the other way round.
+        checks: [advisories, "bans licenses sources"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check ${{ matrix.checks }}

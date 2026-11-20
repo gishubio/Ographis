@@ -206,8 +206,9 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("HttpCaller", "next_path") => param("paging").as_deref() == Some("next"),
             ("HttpCaller", "cursor_path") => param("paging").as_deref() == Some("cursor"),
             ("HttpCaller", "page_param") => matches!(param("paging").as_deref(), Some("offset" | "page" | "cursor")),
-            ("HttpCaller", "size_param" | "page_size" | "start" | "items_path") => matches!(param("paging").as_deref(), Some("offset" | "page")),
-            ("HttpCaller", "max_pages") => matches!(param("paging").as_deref(), Some("next" | "offset" | "page")),
+            ("HttpCaller", "size_param" | "page_size") => matches!(param("paging").as_deref(), Some("offset" | "page" | "cursor")),
+            ("HttpCaller", "start" | "items_path") => matches!(param("paging").as_deref(), Some("offset" | "page")),
+            ("HttpCaller", "max_pages") => matches!(param("paging").as_deref(), Some("next" | "offset" | "page" | "cursor")),
             ("SceneRenderer", "date" | "time") => param("sun").as_deref() == Some("date"),
             ("SceneRenderer", "clock") => matches!(param("sun").as_deref(), Some("date" | "study")),
             ("Rotator", "x" | "y") => param("around").as_deref() == Some("point"),
@@ -272,7 +273,7 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
     // A Google sheet has sheets, as a workbook does.
     let google = og_engine::gsheets::is_sheet(path) || node.params.get("format").and_then(|v| v.as_str()) == Some("gsheet");
     let sheets = is_spreadsheet(&ext) || google;
-    let layered = has_layers || sheets || matches!(ext.as_str(), "gpkg" | "gdb" | "sqlite" | "db");
+    let layered = has_layers || sheets || matches!(ext.as_str(), "gpkg" | "gdb" | "sqlite" | "db" | "duckdb" | "ddb");
     let filled = |key: &str| node.params.get(key).and_then(|v| v.as_str()).is_some_and(|v| !v.trim().is_empty());
     // A picture has neither attributes nor anything to add to.
     let image = writer && og_engine::nodes::is_image_format(&ext);
@@ -281,6 +282,7 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
     let tiles_file = matches!(ext.as_str(), "mbtiles" | "pmtiles") || (reader && og_engine::nodes::vector_tiles::is_tile_folder(&full));
     match spec.key {
         "vt_zoom" | "vt_pieces" => reader && tiles_file,
+        "duckdb_sql" => reader && matches!(ext.as_str(), "duckdb" | "ddb"),
         "zip_file" => reader && (path.to_lowercase().ends_with(".zip") || og_engine::nodes::source_ext(path) == "zip"),
         "mode" | "fields" => {
             !image && !matches!(ext.as_str(), "obj" | "glb" | "gml") && !matches!(node.params.get("format").and_then(|v| v.as_str()), Some("3dtiles" | "walk"))
@@ -304,7 +306,7 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         "img_dpi" => writer && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "tif" | "tiff"),
         "img_quality" => {
             writer
-                && (matches!(ext.as_str(), "jpg" | "jpeg")
+                && (matches!(ext.as_str(), "jpg" | "jpeg" | "webp")
                     || (matches!(ext.as_str(), "tif" | "tiff") && node.params.get("tif_compress").and_then(|v| v.as_str()) == Some("jpeg")))
         }
         "tif_compress" => writer && matches!(ext.as_str(), "tif" | "tiff"),
@@ -371,9 +373,13 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
 }
 
 /// The label of a field. What applies to a format is said by the field being shown at all,
-/// and a workbook has sheets where other files have layers.
-fn label_of(spec: &ParamSpec, sheets: bool) -> String {
+/// a workbook has sheets where other files have layers, and a Google sheet an address where
+/// others have a file.
+fn label_of(spec: &ParamSpec, sheets: bool, google: bool) -> String {
     let label = [" (CSV, Excel)", " (CSV)", " (Excel)"].iter().find_map(|suffix| spec.label.strip_suffix(suffix)).unwrap_or(spec.label);
+    if google && spec.key == "path" {
+        return "Address of the sheet".into();
+    }
     match (sheets, spec.key) {
         (true, "layer") => label.replace("Layers", "Sheets").replace("Layer", "Sheet"),
         (true, "layer_attr") => label.replace("Layer", "Sheet").replace("layer", "sheet"),
@@ -585,9 +591,12 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
         .filter(|s| relevant(node, s, folder, !layers.is_empty(), cx.base_dir))
         .filter(|s| !(node.kind == "Reader" && s.key == "path_attribute") || paths_in())
         .collect();
-    let sheets = is_spreadsheet(&format_of(node, folder))
-        || node.params.get("path").and_then(|v| v.as_str()).is_some_and(og_engine::gsheets::is_sheet)
-        || node.params.get("format").and_then(|v| v.as_str()) == Some("gsheet");
+    // A Google sheet is written to by its address, not a file.
+    let google = node.kind == "Writer"
+        && (node.params.get("path").and_then(|v| v.as_str()).is_some_and(og_engine::gsheets::is_sheet)
+            || node.params.get("format").and_then(|v| v.as_str()) == Some("gsheet"));
+    let sheets =
+        is_spreadsheet(&format_of(node, folder)) || google || node.params.get("path").and_then(|v| v.as_str()).is_some_and(og_engine::gsheets::is_sheet);
     let what = if node.kind == "PostgisReader" {
         "tables"
     } else if sheets {
@@ -632,7 +641,8 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
         ui.add_space(2.0);
         let top = ui.cursor().min;
         // A tick box carries its own label.
-        let name = (!matches!(spec.kind, ParamKind::OptionalName(_))).then(|| ui.label(RichText::new(label_of(spec, sheets)).small().color(cx.pal.muted)));
+        let name =
+            (!matches!(spec.kind, ParamKind::OptionalName(_))).then(|| ui.label(RichText::new(label_of(spec, sheets, google)).small().color(cx.pal.muted)));
         let mut value = get(node, spec);
         let before = value.clone();
         let mut hint = spec.hint.to_string();
@@ -675,7 +685,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
             }
             ParamKind::OptionalName(suggested) => {
                 let mut on = !value.trim().is_empty();
-                if ui.checkbox(&mut on, label_of(spec, sheets)).changed() {
+                if ui.checkbox(&mut on, label_of(spec, sheets, google)).changed() {
                     value = if on {
                         if sheets {
                             suggested.replace("layer", "sheet")
@@ -848,6 +858,9 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                                     "json",
                                     "fgb",
                                     "parquet",
+                                    "arrow",
+                                    "feather",
+                                    "duckdb",
                                     "sqlite",
                                     "db",
                                     "dxf",
@@ -865,6 +878,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                                     "txt",
                                     "png",
                                     "jpg",
+                                    "webp",
                                     "tif",
                                     "asc",
                                     "hgt",
@@ -910,8 +924,14 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
             }
             ParamKind::Choice(list) => {
                 let shown = list.iter().find(|c| c.0 == value).map_or(value.as_str(), |c| c.1).to_string();
+                // The formats of an output come in groups, each under a heading.
+                let groups = if list == og_engine::nodes::OUTPUT_FORMATS { og_engine::nodes::OUTPUT_GROUPS } else { &[] };
                 egui::ComboBox::from_id_salt(("choice", spec.key)).selected_text(shown).width(ui.available_width()).height(460.0).show_ui(ui, |ui| {
                     for (v, l) in list {
+                        if let Some((_, heading)) = groups.iter().find(|g| g.0 == *v) {
+                            ui.add_space(4.0);
+                            ui.label(RichText::new(*heading).small().strong().color(cx.pal.muted));
+                        }
                         ui.selectable_value(&mut value, v.to_string(), *l);
                     }
                 });
@@ -1087,6 +1107,10 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                     });
                 });
             }
+            // A Google sheet: its address is pasted, there is no file to browse for.
+            ParamKind::FileOpen | ParamKind::FileSave if google && spec.key == "path" => {
+                ui.add(TextEdit::singleline(&mut value).hint_text("https://docs.google.com/spreadsheets/d/…").desired_width(f32::INFINITY));
+            }
             ParamKind::FileOpen | ParamKind::FileSave => {
                 let save = matches!(spec.kind, ParamKind::FileSave);
                 // The button is laid out first, from the right, and the text field gets the
@@ -1102,7 +1126,7 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
                         } else {
                             dialog.add_filter(
                                 "Spatial data and tables",
-                                &["gpkg", "shp", "geojson", "json", "xlsx", "ods", "csv", "txt", "png", "jpg", "tif", "pdf"],
+                                &["gpkg", "shp", "geojson", "json", "xlsx", "ods", "csv", "txt", "png", "jpg", "webp", "tif", "pdf"],
                             )
                         }
                         .add_filter("All files", &["*"]);

@@ -79,6 +79,13 @@ pub(super) const READER_PARAMS: &[ParamSpec] = &[
     },
     ParamSpec { key: "recursive", label: "Include subfolders", kind: ParamKind::Choice(YES_NO), default: "false", hint: "" },
     ParamSpec {
+        key: "duckdb_sql",
+        label: "Query",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "In place of a table: SQL that DuckDB runs, also on other files, such as SELECT * FROM read_parquet('buildings/*.parquet') WHERE height > 20. A geometry column comes with it",
+    },
+    ParamSpec {
         key: "zip_file",
         label: "File in the zip",
         kind: ParamKind::Text,
@@ -729,6 +736,31 @@ pub(super) fn run_reader(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
         } else if crate::photos::is_photo(file) {
             // A photo from a camera or a phone: a point where it was taken, from its Exif.
             read.push((crate::photos::read_photos(&[file]).map_err(named)?, None));
+        } else if matches!(ext.as_str(), "arrow" | "feather" | "arrows" | "ipc") {
+            // GeoArrow, read here: Arrow IPC files and streams.
+            let (progress, gate) = (ctx.progress, ctx.gate);
+            let going = |done, total| {
+                progress("read", done, total);
+                gate.going()
+            };
+            read.push((crate::arrow_io::read_arrow(file, crs, left, &mut notes, &going).map_err(named)?, None));
+        } else if matches!(ext.as_str(), "duckdb" | "ddb") {
+            // A DuckDB database, with DuckDB built in: its tables, or a query.
+            let sql = p.get("duckdb_sql").filter(|s| !s.trim().is_empty());
+            let tables: Vec<Option<String>> = match (&sql, wanted.as_slice()) {
+                (Some(_), _) | (None, []) => vec![None],
+                (None, [all]) if all == "*" => crate::duckdb_io::tables(file).map_err(named)?.into_iter().map(|l| Some(l.name)).collect(),
+                (None, names) => names.iter().cloned().map(Some).collect(),
+            };
+            for table in tables {
+                let taken: usize = read.iter().map(|r: &(Table, Option<String>)| r.0.len()).sum();
+                let room = left.map(|l| l.saturating_sub(taken));
+                if room == Some(0) {
+                    break;
+                }
+                let t = crate::duckdb_io::read(file, table.as_deref(), sql.as_deref(), crs, room, &mut notes).map_err(named)?;
+                read.push((t, table));
+            }
         } else if matches!(ext.as_str(), "parquet" | "geoparquet") {
             // GeoParquet is read here, not by GDAL, which is often built without it.
             let (progress, gate) = (ctx.progress, ctx.gate);

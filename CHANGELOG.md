@@ -3,6 +3,110 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.96.5
+
+### Added
+
+- **Find changes** (`ChangeDetector`): compares two versions of the same data by a key, such
+  as last month's register and this month's: *Added*, *Changed* (with an attribute that
+  names what changed, such as `beds, geometry`), *Removed* and *Unchanged*. The attributes
+  compared are chosen or all that both have, numbers may differ by a tolerance, and the
+  geometry can be left out; without a key the features are compared whole. To keep a copy
+  elsewhere up to date, only what changed needs to be written. See `examples/changes.ographis`.
+- **The command palette.** Ctrl+K (or Ctrl+Shift+P) opens one search box for every command
+  of the menus, the nodes of the model, the tools to add, the latest models and the
+  examples: a few letters, the arrow keys and Enter. Each command shows its menu and keys.
+- **A model described as a web page.** File → *Document the model as a web page…*, and
+  `og doc`, write one page with a picture of the model, what it reads and writes, its
+  variables and connections, and each step in the order the data goes through it, with its
+  comment and settings, for handing over, reviews and intranets. Passwords and keys are
+  left out.
+- **DuckDB databases**, with DuckDB built in. *Input* reads their tables as layers, or a
+  *Query* in their place, which can also read Parquet, CSV and JSON files with DuckDB's own
+  functions; *Output* writes a table, written over or added to. The geometry is GEOMETRY,
+  which DuckDB keeps without any extension, with the coordinate system as the comment of
+  its column.
+- **GeoArrow.** Arrow IPC files and streams (.arrow, .feather, .arrows), as data science
+  tools pass tables between them, are read with the geometry as WKB or in the native
+  layouts of GeoArrow, also compressed, and written with Zstandard, the geometry as WKB and
+  the coordinate system in the metadata.
+- **WebP pictures.** *Output* writes maps, charts and 3D scenes as WebP (.webp): smaller
+  than PNG and JPEG, with the see-through parts kept. *Picture quality* (until now *JPEG
+  quality*) sets how much is given up for size, and at 100 every pixel is kept. A picture
+  with coordinates gets a world file (.wpw) and its coordinate system beside it. *Input*
+  reads WebP as a raster, also when only a world file says where it lies, *Draw map* takes
+  one as its background picture, a picture fetched by *HTTP request* is named .webp, and a
+  model can be saved as a WebP picture.
+- **Detailed plans of Göteborg and Kungsbacka**: `examples/apis/ngp_detailed_plans.ographis`
+  fetches every detailed plan of the national geodata platform within a rectangle around
+  each municipality, and keeps their files in a folder when asked. The comprehensive plans
+  example now fetches Göteborg and Kungsbacka too.
+- **A hospital in IFC** to try and show the reading of IFC with: `examples/hospital/hospital.ifc`,
+  made by `tools/make_hospital_ifc.py`, five floors with about 800 elements and 162 rooms,
+  and `examples/hospital.ographis`, which lists them and draws the building in 3D.
+- **Heights of Göteborg from a WCS**: `examples/apis/goteborg_heights_wcs.ographis` reads
+  the height model of the City of Gothenburg within a rectangle at a cell size chosen, and
+  shades it.
+- **Workplaces from the business register of SCB**: `examples/apis/scb_workplaces.ographis`
+  fetches every variable of the workplaces in Sweden, 5 000 to a page by a cursor, and keeps
+  those of a municipality as points where their addresses lie, with the key in an API
+  connection.
+
+### Changed
+
+- **The formats of an output in groups.** The list of formats in *Output* is in groups
+  under headings: tables, GIS data, maps and pictures, web maps and projects, 3D, point
+  clouds, and CAD and 3D printing, the common ones first in each.
+- **The address of a Google sheet.** With *Google Sheets* as the format, the field is
+  named *Address of the sheet*, shows what such an address looks like and has no button to
+  browse for a file. The format is named *Google Sheets* only.
+- **Pages say how far they have come.** A request that follows many pages says in the
+  status line how many it has fetched, *HTTP request: 12 pages so far*, instead of only
+  that it is running.
+
+- **The documents of plans, one row each.** For plans and other items, *Files* of *Fetch
+  geodata* has a row for each document, however many items refer to it: its title, its
+  type, its roles, its address, how many items refer to it and, when the files are kept,
+  where it lies. A PDF or a map of a plan is found by its title, not among the addresses
+  of every provision.
+
+- **A path finds a value in a list.** `providers[roles=producer].kod` finds the provider
+  whose roles, a list such as `["producer", "licensor"]`, hold producer, as
+  `links[rel=next]` finds the link whose rel is next.
+
+### Security
+
+- **Keys are taken out of the logs.** The log of each run and the log of requests to web
+  services, which lie beside the model, wrote an address as it was, so that a key given in
+  it, such as `?api_key=…`, could be read there. They are now written with
+  `api_key=(taken out)`, as the reports of problems already were.
+- **Libraries with known holes are updated.** rustls, rustls-webpki and the root
+  certificates (the checking of certificates in HTTPS), zip to 9 and quick-xml to 0.42 (files
+  crafted to take much memory or time), ctutils, rustix and tokio. `cargo audit` finds no
+  known hole in what Ographis uses; what is left is in parts of two libraries for
+  spreadsheets that Ographis does not reach, listed with the reasons in `deny.toml`.
+- **Checked every week.** A *Security* workflow on GitHub checks the libraries against the
+  RustSec database with cargo-deny at every change and every Monday, together with their
+  licences and sources, and Dependabot proposes updates as pull requests. `SECURITY.md`
+  says how to tell about a hole and what is checked.
+
+### Fixed
+
+- **A picture of a model looks as the canvas does.** *Save the model as a picture*, *Copy
+  the model as a picture*, `og picture` and the page of `og doc` draw the nodes as the
+  canvas lays them out: the inputs, then how the node is set up, then the outputs, each node
+  as wide as what it holds, the ports in letters of one width, comments in yellow boxes with
+  a line to their node, group boxes with their names in a strip and in all their colours,
+  such as teal and grey, and the grid of the canvas.
+- **Plans from the national geodata platform are found.** Its search takes the rectangle
+  in SWEREF 99 TM, not in degrees as other catalogues do, so *Detaljplan* and
+  *Översiktsplan* found nothing. A search for items such as plans now goes on past 2 000,
+  as a city has thousands, and a search that finds nothing names the product.
+- **Pages by a cursor ask for their size.** *Parameter of the page size* and *Page size*
+  are sent with every request, the first too, when the pages follow a cursor; they were
+  left out, so a service gave its own, often small, pages. *At most pages* is shown for a
+  cursor too.
+
 ## 0.96.4
 
 ### Added

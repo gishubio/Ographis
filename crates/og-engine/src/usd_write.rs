@@ -602,7 +602,7 @@ mod tests {
         let bytes = std::fs::read(&z).unwrap();
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
         let first = archive.by_index(0).unwrap();
-        assert_eq!((first.name(), first.compression()), ("town.usda", zip::CompressionMethod::Stored));
+        assert_eq!((first.name().unwrap().as_ref(), first.compression()), ("town.usda", zip::CompressionMethod::Stored));
         assert_eq!(first.data_start().unwrap() % 64, 0);
         let _ = std::fs::remove_dir_all(&dir);
     }

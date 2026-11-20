@@ -57,9 +57,13 @@ Usage:
   og connections
       Lists the database and API connections of the settings, which models name,
       and where the settings are kept. Passwords are not shown.
-  og picture <model.ographis> <file.png | file.jpg | file.pdf>
+  og picture <model.ographis> <file.png | file.jpg | file.webp | file.pdf>
       Draws the model as on the canvas: its nodes, connections, groups, comments
       and notes, for documentation.
+  og doc <model.ographis> [file.html]
+      Describes the model as one web page: a picture of it, what it reads and
+      writes, its variables and connections, and each step with its comment and
+      settings, without passwords. Beside the model, as model.html, by default.
   og formats [--html file]
       Lists the formats Ographis reads and writes, and whether GDAL or Ographis
       itself handles them. --html writes them as a web page.
@@ -90,6 +94,7 @@ fn main() -> ExitCode {
         "doctor" => cmd_doctor(),
         "report" => cmd_report(&args[1..]),
         "picture" => cmd_picture(&args[1..]),
+        "doc" => cmd_doc(&args[1..]),
         "formats" => cmd_formats(&args[1..]),
         "connections" => cmd_connections(),
         "version" | "--version" | "-V" => {
@@ -122,6 +127,30 @@ fn cmd_picture(args: &[String]) -> ExitCode {
     match og_engine::modelpic::export(&ws, Path::new(out)) {
         Ok(()) => {
             println!("{} drawn to {}", model, out);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{}", e.0);
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn cmd_doc(args: &[String]) -> ExitCode {
+    let Some(model) = args.first() else {
+        return usage("og doc needs a model.");
+    };
+    let out = args.get(1).map(PathBuf::from).unwrap_or_else(|| Path::new(model).with_extension("html"));
+    let ws = match Workspace::load(Path::new(model)) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("{}", e.0);
+            return ExitCode::from(1);
+        }
+    };
+    match og_engine::modeldoc::write(&ws, Some(Path::new(model)), &out) {
+        Ok(()) => {
+            println!("{} described in {}", model, out.display());
             ExitCode::SUCCESS
         }
         Err(e) => {
@@ -234,12 +263,14 @@ impl RunArgs {
         if let Some(f) = self.log.as_mut() {
             use std::io::Write;
             let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-            let _ = writeln!(f, "{} {} {}", now, tag, msg);
+            // Keys and passwords in addresses are taken out of the files of logs.
+            let _ = writeln!(f, "{} {} {}", now, tag, og_engine::bugreport::scrub(msg));
         }
         if let Some(f) = self.run_log.as_mut() {
             use std::io::Write;
             let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-            let _ = writeln!(f, "{} {} {}", now, tag, msg);
+            // Keys and passwords in addresses are taken out of the files of logs.
+            let _ = writeln!(f, "{} {} {}", now, tag, og_engine::bugreport::scrub(msg));
         }
     }
 }

@@ -492,8 +492,11 @@ pub fn read_stl(path: &Path, opts: &ObjOpts, notes: &mut Notes) -> Result<Table>
     b.finish(opts, unit, notes)
 }
 
-fn attr_of(e: &quick_xml::events::BytesStart, name: &[u8]) -> Option<String> {
-    e.attributes().flatten().find(|a| a.key.local_name().as_ref() == name).and_then(|a| String::from_utf8(a.value.to_vec()).ok())
+fn attr_of(e: &quick_xml::events::BytesStart, name: &str) -> Option<String> {
+    e.attributes()
+        .flatten()
+        .find(|a| a.key.local_name().as_ref() == name)
+        .and_then(|a| a.normalized_value(quick_xml::XmlVersion::Implicit1_0).ok().map(|v| v.into_owned()))
 }
 
 /// A colour #RRGGBB or #RRGGBBAA.
@@ -542,7 +545,7 @@ pub fn read_3mf(path: &Path, opts: &ObjOpts, notes: &mut Notes) -> Result<Table>
     let file = std::fs::File::open(path).map_err(|e| named(e.to_string()))?;
     let mut z = zip::ZipArchive::new(file).map_err(|e| named(e.to_string()))?;
     let name = (0..z.len())
-        .filter_map(|i| z.by_index(i).ok().map(|f| f.name().to_string()))
+        .filter_map(|i| z.by_index(i).ok().and_then(|f| f.name().ok().map(|n| n.to_string())))
         .find(|n| n.to_lowercase().ends_with(".model") && n.to_lowercase().starts_with("3d/"))
         .ok_or_else(|| named("it has no 3D model".into()))?;
     let mut text = String::new();
@@ -565,10 +568,10 @@ pub fn read_3mf(path: &Path, opts: &ObjOpts, notes: &mut Notes) -> Result<Table>
         use quick_xml::events::Event;
         match reader.read_event().map_err(|e| named(e.to_string()))? {
             Event::Start(e) | Event::Empty(e) => {
-                let a = |k: &[u8]| attr_of(&e, k);
+                let a = |k: &str| attr_of(&e, k);
                 match e.local_name().as_ref() {
-                    b"model" => {
-                        unit = Some(match a(b"unit").as_deref() {
+                    "model" => {
+                        unit = Some(match a("unit").as_deref() {
                             Some("micron") => 1e-6,
                             Some("centimeter") => 0.01,
                             Some("inch") => 0.0254,
@@ -577,28 +580,28 @@ pub fn read_3mf(path: &Path, opts: &ObjOpts, notes: &mut Notes) -> Result<Table>
                             _ => 0.001,
                         })
                     }
-                    b"basematerials" | b"colorgroup" => {
-                        let id = a(b"id").unwrap_or_default();
+                    "basematerials" | "colorgroup" => {
+                        let id = a("id").unwrap_or_default();
                         groups.insert(id.clone(), Vec::new());
                         group = Some(id);
                     }
-                    b"base" => {
+                    "base" => {
                         if let Some(g) = group.as_ref().and_then(|g| groups.get_mut(g)) {
-                            g.push((a(b"displaycolor").and_then(|c| hex_colour(&c)).unwrap_or([0.75; 3]), a(b"name")));
+                            g.push((a("displaycolor").and_then(|c| hex_colour(&c)).unwrap_or([0.75; 3]), a("name")));
                         }
                     }
-                    b"color" => {
+                    "color" => {
                         if let Some(g) = group.as_ref().and_then(|g| groups.get_mut(g)) {
-                            g.push((a(b"color").and_then(|c| hex_colour(&c)).unwrap_or([0.75; 3]), None));
+                            g.push((a("color").and_then(|c| hex_colour(&c)).unwrap_or([0.75; 3]), None));
                         }
                     }
-                    b"object" => {
-                        let id = a(b"id").unwrap_or_default();
-                        let prop = a(b"pid").map(|p| (p, a(b"pindex").and_then(|i| i.parse().ok()).unwrap_or(0)));
+                    "object" => {
+                        let id = a("id").unwrap_or_default();
+                        let prop = a("pid").map(|p| (p, a("pindex").and_then(|i| i.parse().ok()).unwrap_or(0)));
                         objects.insert(
                             id.clone(),
                             Obj {
-                                name: a(b"name").unwrap_or_else(|| format!("object {}", id)),
+                                name: a("name").unwrap_or_else(|| format!("object {}", id)),
                                 verts: Vec::new(),
                                 tris: Vec::new(),
                                 prop,
@@ -607,33 +610,33 @@ pub fn read_3mf(path: &Path, opts: &ObjOpts, notes: &mut Notes) -> Result<Table>
                         );
                         current = Some(id);
                     }
-                    b"vertex" => {
+                    "vertex" => {
                         if let Some(o) = current.as_ref().and_then(|c| objects.get_mut(c)) {
-                            let f = |k: &[u8]| a(k).and_then(|v| v.parse().ok()).unwrap_or(0.0);
-                            o.verts.push([f(b"x"), f(b"y"), f(b"z")]);
+                            let f = |k: &str| a(k).and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                            o.verts.push([f("x"), f("y"), f("z")]);
                         }
                     }
-                    b"triangle" => {
+                    "triangle" => {
                         if let Some(o) = current.as_ref().and_then(|c| objects.get_mut(c)) {
-                            let i = |k: &[u8]| a(k).and_then(|v| v.parse().ok()).unwrap_or(0usize);
-                            let prop = a(b"pid")
+                            let i = |k: &str| a(k).and_then(|v| v.parse().ok()).unwrap_or(0usize);
+                            let prop = a("pid")
                                 .or_else(|| o.prop.as_ref().map(|p| p.0.clone()))
-                                .map(|p| (p, a(b"p1").and_then(|v| v.parse().ok()).or(o.prop.as_ref().map(|p| p.1)).unwrap_or(0)));
-                            o.tris.push(([i(b"v1"), i(b"v2"), i(b"v3")], prop));
+                                .map(|p| (p, a("p1").and_then(|v| v.parse().ok()).or(o.prop.as_ref().map(|p| p.1)).unwrap_or(0)));
+                            o.tris.push(([i("v1"), i("v2"), i("v3")], prop));
                         }
                     }
-                    b"component" => {
+                    "component" => {
                         if let Some(o) = current.as_ref().and_then(|c| objects.get_mut(c)) {
-                            o.components.push((a(b"objectid").unwrap_or_default(), matrix(a(b"transform"))));
+                            o.components.push((a("objectid").unwrap_or_default(), matrix(a("transform"))));
                         }
                     }
-                    b"item" => build.push((a(b"objectid").unwrap_or_default(), matrix(a(b"transform")))),
+                    "item" => build.push((a("objectid").unwrap_or_default(), matrix(a("transform")))),
                     _ => {}
                 }
             }
             Event::End(e) => match e.local_name().as_ref() {
-                b"object" => current = None,
-                b"basematerials" | b"colorgroup" => group = None,
+                "object" => current = None,
+                "basematerials" | "colorgroup" => group = None,
                 _ => {}
             },
             Event::Eof => break,

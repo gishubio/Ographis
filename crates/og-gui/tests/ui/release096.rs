@@ -875,3 +875,33 @@ fn settings_go_to_another_computer_without_secrets() {
     h.run_steps(3);
     assert!(h.query_by_label("Export settings…").is_some() && h.query_by_label("Import settings…").is_some());
 }
+
+/// Ctrl+K opens a palette that reaches the commands, the nodes, the tools and the examples.
+#[test]
+fn the_command_palette_finds_and_does_what_is_typed() {
+    let mut h = empty_app();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
+    h.run_steps(3);
+    assert!(h.state().commands.is_some(), "Ctrl+K opens the palette");
+    // Before anything is typed, the commands, with their keys.
+    assert!(h.query_by_label_contains("Run everything again").is_some() && h.query_by_label_contains("Ctrl+F5").is_some());
+    shot(&mut h, "097-command-palette");
+    // A tool is found by a part of its name, and added with Enter.
+    h.state_mut().commands.as_mut().unwrap().text = "find chang".into();
+    h.run_steps(3);
+    assert!(h.query_by_label_contains("Add Find changes").is_some());
+    shot(&mut h, "098-command-palette-tool");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert!(h.state().commands.is_none(), "Enter does it and closes the palette");
+    assert!(h.state().snarl.nodes().any(|n| n.kind == "ChangeDetector"));
+    // The node is then found by its name, and Escape closes the palette.
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
+    h.run_steps(3);
+    h.state_mut().commands.as_mut().unwrap().text = "changes".into();
+    h.run_steps(3);
+    assert!(h.query_by_label_contains("Node").is_some(), "the node is among what is found");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert!(h.state().commands.is_none());
+}

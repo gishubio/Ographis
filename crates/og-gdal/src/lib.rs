@@ -188,6 +188,7 @@ impl GdalBackend {
             ("GTiff", "GeoTIFF"),
             ("PNG", "PNG"),
             ("JPEG", "JPEG"),
+            ("WEBP", "WebP"),
             ("PDF", "PDF"),
             ("XLSX", "Excel (reading)"),
             ("ODS", "LibreOffice Calc (reading)"),
@@ -1030,7 +1031,7 @@ impl Backend for GdalBackend {
             // Values on a grid with no picture, such as from Raster calculator: a GeoTIFF of
             // decimal numbers.
             "tif" | "tiff" if table.image.is_none() && table.grid.is_some() => write_grid(table.grid.as_deref().expect("checked"), path, opts.cog, notes)?,
-            "png" | "jpg" | "jpeg" | "tif" | "tiff" | "pdf" => {
+            "png" | "jpg" | "jpeg" | "webp" | "tif" | "tiff" | "pdf" => {
                 let Some(image) = table.image.as_ref() else {
                     return Err(GbError(format!("There is no image in the stream to write as .{}.", ext)));
                 };
@@ -1355,6 +1356,10 @@ impl Backend for GdalBackend {
     }
 
     fn layers(&self, path: &Path) -> Result<Vec<LayerInfo>> {
+        // DuckDB databases are read by Ographis itself, with DuckDB built in.
+        if matches!(ext_of(path).as_str(), "duckdb" | "ddb") {
+            return og_engine::duckdb_io::tables(path);
+        }
         if services::service(path).is_some() {
             return services::layers(path, &[]);
         }
@@ -1426,7 +1431,7 @@ pub fn download_name(url: &str, disposition: Option<&str>, content_type: Option<
     }
     let known = [
         "gpkg", "shp", "zip", "csv", "txt", "tsv", "xlsx", "xls", "ods", "geojson", "json", "gml", "kml", "tab", "sqlite", "db", "dxf", "dwg", "gdb", "fgb",
-        "parquet",
+        "parquet", "arrow", "feather", "duckdb",
     ];
     if !known.contains(&ext_of(Path::new(&name)).as_str()) {
         let kind = content_type.unwrap_or("").split(';').next().unwrap_or("").trim().to_lowercase();
@@ -1773,9 +1778,6 @@ fn write_features_to(
     Ok(())
 }
 
-/// Writes a picture with its coordinates: GeoTIFF holds them itself, PNG and JPEG get a world
-/// file next to them (.pgw, .jgw) and the coordinate system in an .aux.xml file. JPEG has no
-/// transparency, so see-through parts are laid on white.
 /// Text for a PDF content stream: brackets and backslashes escaped, and letters beyond
 /// ASCII, such as å, ä and ö, as octal codes in the Windows encoding of the standard fonts.
 pub(crate) fn pdf_text(text: &str) -> String {
@@ -1797,6 +1799,9 @@ pub(crate) fn pdf_text(text: &str) -> String {
     out
 }
 
+/// Writes a picture with its coordinates: GeoTIFF holds them itself, PNG, JPEG and WebP get a
+/// world file next to them (.pgw, .jgw, .wpw) and the coordinate system in an .aux.xml file.
+/// JPEG has no transparency, so see-through parts are laid on white; WebP keeps them.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn write_image(
     image: &og_engine::model::RasterImage,
@@ -1840,6 +1845,7 @@ pub(crate) fn write_image(
     // JPEG and PDF have the picture laid on white.
     let jpeg = matches!(ext, "jpg" | "jpeg") || pdf;
     let tiff = matches!(ext, "tif" | "tiff");
+    let webp = ext == "webp";
     let bands = if jpeg { 3 } else { 4 };
     let mem = DriverManager::get_driver_by_name("MEM").map_err(|e| gerr("GDAL has no in-memory driver", e))?;
     let mut ds = mem.create_with_band_type::<u8, _>("", w, h, bands).map_err(|e| gerr("Cannot make the picture", e))?;
@@ -1946,14 +1952,25 @@ pub(crate) fn write_image(
         ("GTiff", vec![tif_pack.as_str(), "PHOTOMETRIC=RGB", "ALPHA=YES", "TILED=YES"])
     } else if jpeg {
         ("JPEG", vec![quality.as_str()])
+    } else if webp && img.quality >= 100 {
+        // At 100 every pixel is kept, as in a PNG, but in a smaller file.
+        ("WEBP", vec!["LOSSLESS=YES"])
+    } else if webp {
+        ("WEBP", vec![quality.as_str()])
     } else {
         ("PNG", vec!["ZLEVEL=6"])
     };
     let target = DriverManager::get_driver_by_name(driver).map_err(|e| gerr(format!("GDAL has no {} support", driver), e))?;
     // A file that is there is written over, with what belongs to it.
-    // PNG and JPEG get a world file of their own, named as GIS programs look for it, so
-    // that map.png and map.jpg in one folder do not share one.
-    let world = path.with_extension(if jpeg { "jgw" } else { "pgw" });
+    // PNG, JPEG and WebP get a world file of their own, named as GIS programs look for it,
+    // so that map.png and map.jpg in one folder do not share one.
+    let world = path.with_extension(if jpeg {
+        "jgw"
+    } else if webp {
+        "wpw"
+    } else {
+        "pgw"
+    });
     let aux = PathBuf::from(format!("{}.aux.xml", path.display()));
     let mut stale = vec![path.to_path_buf(), aux.clone()];
     if !tiff && !pdf && crs.is_some() {

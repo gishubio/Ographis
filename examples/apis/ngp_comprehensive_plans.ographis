@@ -1,6 +1,6 @@
 {
   "format": "ographis/1",
-  "name": "Comprehensive plans of two municipalities from the national geodata platform",
+  "name": "Comprehensive plans of Göteborg and Kungsbacka from the national geodata platform",
   "nodes": [
     {
       "id": "areas",
@@ -45,7 +45,7 @@
       "params": {
         "path": "out/comprehensive_plan_files.csv"
       },
-      "comment": "Where each file came from and where it is kept"
+      "comment": "The documents of the plans, one row each: title, type such as PDF or TIFF, address, and the file on disk when they are kept"
     }
   ],
   "edges": [

@@ -32,7 +32,7 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 <main>
 <h1>What Ographis reads and writes</h1>
 <p class="lead">Each format with what handles it: <span class="tag gdal">GDAL</span>, the geodata library installed with the program, or <span class="tag own">Ographis</span>, code of the program's own, with the library it uses in brackets.</p>
-<div class="sum"><div><b>44</b>read</div><div><b>41</b>written</div><div><b>32</b>by Ographis itself</div></div>
+<div class="sum"><div><b>47</b>read</div><div><b>44</b>written</div><div><b>34</b>by Ographis itself</div></div>
 <div class="wrap">
 <table>
 <thead><tr><th scope="col">Format</th><th scope="col">Reads</th><th scope="col">Writes</th><th scope="col">Notes</th></tr></thead>
@@ -64,12 +64,15 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 <tr><th scope="row">Excel<div class="files">.xlsx</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag own">Ographis (umya-spreadsheet)</span></td><td class="note">Written with a font, a locked top row, widths and colours</td></tr>
 <tr><th scope="row">LibreOffice Calc<div class="files">.ods</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag own">Ographis (spreadsheet-ods)</span></td><td class="note">As Excel</td></tr>
 <tr><th scope="row">GeoParquet<div class="files">.parquet</div></th><td><span class="tag own">Ographis (Apache Parquet)</span></td><td><span class="tag own">Ographis (Apache Parquet)</span></td><td class="note">Uncompressed, Snappy, Zstandard, LZ4, gzip and Brotli. Written as GeoParquet 1.1 with Zstandard and a box for each row, which readers skip parts of the file by</td></tr>
+<tr><th scope="row">GeoArrow<div class="files">.arrow, .feather, .arrows</div></th><td><span class="tag own">Ographis (Apache Arrow)</span></td><td><span class="tag own">Ographis (Apache Arrow)</span></td><td class="note">Arrow IPC files and streams, also compressed, with the geometry as WKB or in the native layouts of GeoArrow. Written with Zstandard, the geometry as WKB and the coordinate system in the metadata</td></tr>
+<tr><th scope="row">DuckDB<div class="files">.duckdb, .ddb</div></th><td><span class="tag own">Ographis (DuckDB)</span></td><td><span class="tag own">Ographis (DuckDB)</span></td><td class="note">With DuckDB built in: tables as layers, or a query in their place, also on Parquet, CSV and JSON files. The geometry as GEOMETRY, with the coordinate system as the comment of its column</td></tr>
 <tr><th scope="row">JSON<div class="files">.json, web addresses</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">Flattened, exploded and picked by path; JSON-stat from statistics offices. Written as a list of objects, JSON Lines or one object, and built in the model with Build JSON</td></tr>
 <tr><th scope="row">XML<div class="files">.xml</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">Read as records found in it, as JSON is; values picked by path with Extract XML values; written with an element for each feature and for each attribute</td></tr>
 <tr><th scope="row">LandXML<div class="files">.xml</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">Surfaces as a 3D model of triangles, points with their codes and heights, and alignments as lines with their arcs; written from a TIN and from points</td></tr>
 <tr><th scope="row">Google Sheets<div class="files">the address of a sheet</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">A sheet shared with a link is read as it is; a private one is read and written with a Google service account that it is shared with</td></tr>
 <tr><th scope="row">GeoTIFF and other rasters, heights from SRTM and DTED<div class="files">.tif, .jp2, .asc, .hgt, .dt1 and others</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Cloud Optimized GeoTIFF read over the web and written; grids of values and pictures. Heights as ASCII grids (.asc), SRTM (.hgt) and DTED (.dt0, .dt1, .dt2)</td></tr>
 <tr><th scope="row">PNG and JPEG pictures<div class="files">.png, .jpg</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Maps, charts and 3D scenes, with a world file when they have coordinates</td></tr>
+<tr><th scope="row">WebP pictures<div class="files">.webp</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Smaller than PNG and JPEG, with see-through parts kept; at a quality, or every pixel kept at 100. A world file (.wpw) when they have coordinates, which Ographis also reads</td></tr>
 <tr><th scope="row">SVG drawings<div class="files">.svg</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">Maps and charts as shapes, sharp at any size</td></tr>
 <tr><th scope="row">QGIS projects<div class="files">.qgz, .qgs</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">The layers with their look, the features in a GeoPackage beside it and pictures as GeoTIFF</td></tr>
 <tr><th scope="row">Web maps<div class="files">index.html</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">A folder to open in a browser or put on a web server: Leaflet or MapLibre GL, the layers with their look, a legend and popups, the features as GeoJSON or PMTiles</td></tr>
@@ -91,11 +94,11 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 <tr><th scope="row">PowerPoint<div class="files">.pptx</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">A slide for each picture, from Slides</td></tr>
 <tr><th scope="row">LibreOffice Impress<div class="files">.odp</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">As PowerPoint</td></tr>
 <tr><th scope="row">Zip files<div class="files">.zip</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">Read: the files in them. Written: what the outputs of a model wrote</td></tr>
-<tr><th scope="row">Pictures of models<div class="files">.png, .jpg, .pdf</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">The canvas of a model, from the File menu or og picture</td></tr>
+<tr><th scope="row">Pictures of models<div class="files">.png, .jpg, .webp, .pdf</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">The canvas of a model, from the File menu or og picture</td></tr>
 </tbody>
 </table>
 </div>
-<footer>Ographis 0.96.4 · GDAL 3.8.4. Which further formats GDAL reads depends on how it was built; <code>og info</code> tells whether a file can be read.</footer>
+<footer>Ographis 0.96.5 · GDAL 3.8.4. Which further formats GDAL reads depends on how it was built; <code>og info</code> tells whether a file can be read.</footer>
 </main>
 </body>
 </html>

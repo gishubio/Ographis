@@ -4,6 +4,7 @@
 //! The engine knows nothing about GDAL: file formats and coordinate systems are reached
 //! through [`io::Backend`]. CSV and txt are read and written by the engine itself.
 
+pub mod arrow_io;
 pub mod basemap;
 pub mod bugreport;
 pub mod cad_write;
@@ -14,6 +15,7 @@ pub mod clip3d;
 pub mod cloud;
 pub mod crash;
 pub mod csv_io;
+pub mod duckdb_io;
 pub mod dwg;
 mod dwg_curved;
 pub mod expr;
@@ -35,6 +37,7 @@ pub mod mapdraw;
 pub mod mesh;
 pub mod mesh_write;
 pub mod model;
+pub mod modeldoc;
 pub mod modelpic;
 pub mod network;
 pub mod nodes;

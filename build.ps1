@@ -177,6 +177,14 @@ $open = Get-Process -Name ographis, og -ErrorAction SilentlyContinue |
 if ($open) {
     Fail "Ographis is running from this folder ($(($open | ForEach-Object { $_.ProcessName + '.exe' }) -join ', ')). Close it, and run build.cmd again."
 }
+# The first build, with DuckDB compiled from C++, needs some room on the disk.
+$drive = (Get-Item $root).PSDrive
+$freeGb = [math]::Round($drive.Free / 1GB, 1)
+$needGb = if (Test-Path (Sub $built "ographis.exe")) { 3 } else { 10 }
+if ($freeGb -lt $needGb) {
+    Fail "There is $freeGb GB free on $($drive.Name):, and the build needs about $needGb GB. Make room, for example by removing the folder target\debug, which only development uses, and run build.cmd again."
+}
+Note "$freeGb GB free on $($drive.Name):"
 Push-Location $root
 try {
     & cargo build --release

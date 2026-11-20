@@ -58,7 +58,15 @@ impl App {
                     self.save(true);
                     ui.close();
                 }
-                if ui.button("Save the model as a picture…").on_hover_text("PNG, JPEG or PDF: the canvas with all its nodes, connections, groups and notes").clicked() {
+                if ui
+                    .button("Document the model as a web page…")
+                    .on_hover_text("One page with a picture of the model, what it reads and writes, its variables and connections, and each step with its comment and settings. Passwords are left out")
+                    .clicked()
+                {
+                    self.save_documentation(ui.ctx());
+                    ui.close();
+                }
+                if ui.button("Save the model as a picture…").on_hover_text("PNG, JPEG, WebP or PDF: the canvas with all its nodes, connections, groups and notes").clicked() {
                     self.save_picture();
                     ui.close();
                 }
@@ -152,6 +160,10 @@ impl App {
                 menu_style(ui, pal);
                 if ui.add(egui::Button::new("Zoom to fit").shortcut_text("Home")).clicked() {
                     self.fit_requested = Some(SMALLEST_SCALE);
+                    ui.close();
+                }
+                if ui.add(egui::Button::new("Commands…").shortcut_text("Ctrl+K")).on_hover_text("Search every command, node, tool and example, and do it with Enter").clicked() {
+                    self.commands = Some(Default::default());
                     ui.close();
                 }
                 if ui.add(egui::Button::new("Find a node…").shortcut_text("Ctrl+F")).clicked() {

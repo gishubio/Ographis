@@ -93,7 +93,8 @@ pub enum RasterMode {
 
 /// The file extensions that are read as rasters.
 pub fn is_raster(ext: &str) -> bool {
-    matches!(ext, "tif" | "tiff" | "asc" | "img" | "vrt" | "jp2" | "png" | "jpg" | "jpeg" | "bag" | "h5" | "hgt" | "dt0" | "dt1" | "dt2") || is_cube(ext)
+    matches!(ext, "tif" | "tiff" | "asc" | "img" | "vrt" | "jp2" | "png" | "jpg" | "jpeg" | "webp" | "bag" | "h5" | "hgt" | "dt0" | "dt1" | "dt2")
+        || is_cube(ext)
 }
 
 /// The file extensions of data cubes: variables over a grid, with time or other dimensions,
@@ -130,7 +131,7 @@ pub struct WriteOpts {
     pub cog: bool,
     /// The version of a new GeoPackage, such as "1.2". None: what GDAL writes, 1.4.
     pub gpkg_version: Option<String>,
-    /// How a picture, PNG, JPEG or GeoTIFF, is written.
+    /// How a picture, PNG, JPEG, WebP or GeoTIFF, is written.
     pub image: ImageOpts,
 }
 
@@ -140,7 +141,7 @@ pub struct WriteOpts {
 pub struct ImageOpts {
     /// Pixels to the inch, which programs print the picture by. None: none is said.
     pub dpi: Option<f64>,
-    /// JPEG, also inside a GeoTIFF: 1 to 100.
+    /// JPEG, also inside a GeoTIFF, and WebP: 1 to 100. WebP at 100 keeps every pixel.
     pub quality: u8,
     /// GeoTIFF: deflate, lzw, jpeg or none.
     pub compress: String,

@@ -667,7 +667,7 @@ pub fn is_spreadsheet(ext: &str) -> bool {
 
 /// The formats an output writes as a picture: the image of the stream, not its features.
 pub fn is_image_format(ext: &str) -> bool {
-    matches!(ext, "png" | "jpg" | "jpeg" | "tif" | "tiff" | "pdf" | "svg")
+    matches!(ext, "png" | "jpg" | "jpeg" | "webp" | "tif" | "tiff" | "pdf" | "svg")
 }
 
 /// A choice of yes or no, stored as true or false.
@@ -699,7 +699,7 @@ pub use input::{
 };
 pub use json::{geojson, json_paths_of, name_of_path};
 pub use map::{arrange_layers, map_layers, map_layers_json, MapLayer};
-pub use output::{output_kind, view_name, writer_file, NameTemplate, OUTPUT_FORMATS, SHEET_COLORS, SHEET_FONTS, WRITER_FORMATS};
+pub use output::{output_kind, view_name, writer_file, NameTemplate, OUTPUT_FORMATS, OUTPUT_GROUPS, SHEET_COLORS, SHEET_FONTS, WRITER_FORMATS};
 pub use raster::mosaic_images;
 
 mod attr_filter;
@@ -729,6 +729,7 @@ mod overture_dl;
 mod pointcloud089;
 pub use pointcloud089::class_port;
 mod audit;
+mod changes;
 mod custom096;
 mod engines096;
 mod geodata;
@@ -828,6 +829,7 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         stats096::TYPES,
         movement096::TYPES,
         locate096::TYPES,
+        changes::TYPES,
         lengths096::TYPES,
         raster096::TYPES,
         custom096::TYPES,

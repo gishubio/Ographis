@@ -349,11 +349,12 @@ pub(super) fn run_http(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
     let resent = std::sync::atomic::AtomicU32::new(0);
     let pages_stopped = std::sync::Mutex::new(Vec::<String>::new());
     // One request, with its pages, by a client of its own.
-    let fetch = |client: &mut crate::web::Client, key: &str| -> std::result::Result<Got, GbError> {
+    let fetch = |client: &mut crate::web::Client, key: &str, on_page: &dyn Fn(u64)| -> std::result::Result<Got, GbError> {
         let (url, sent) = &unique[key];
         let mut pages = Vec::new();
         let r = client.pages(&method, url, &headers, sent.as_deref(), &paging, most, &mut |_, _, a| {
             pages.push(a.clone());
+            on_page(pages.len() as u64);
             true
         });
         Ok(match r {
@@ -394,7 +395,8 @@ pub(super) fn run_http(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
             if stopped() {
                 return err(crate::model::STOPPED);
             }
-            let got = fetch(&mut client, key)?;
+            // The pages of a request say how far they have come.
+            let got = fetch(&mut client, key, &|page| progress("pages", page, None))?;
             answers.insert((*key).clone(), got);
         }
         resent.fetch_add(client.resent, std::sync::atomic::Ordering::Relaxed);
@@ -416,7 +418,7 @@ pub(super) fn run_http(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
                         if k >= todo.len() || halted.load(Ordering::Relaxed) {
                             break;
                         }
-                        match fetch(&mut client, todo[k]) {
+                        match fetch(&mut client, todo[k], &|_| {}) {
                             Ok(got) => results.lock().expect("not poisoned").push((todo[k].clone(), got)),
                             Err(_) => halted.store(true, Ordering::Relaxed),
                         }
@@ -545,6 +547,12 @@ fn extension_of(bytes: &[u8]) -> &'static str {
         "png"
     } else if bytes.starts_with(b"\xff\xd8") {
         "jpg"
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        "webp"
+    } else if bytes.starts_with(b"ARROW1") {
+        "arrow"
+    } else if bytes.len() >= 12 && &bytes[8..12] == b"DUCK" {
+        "duckdb"
     } else if bytes.starts_with(b"PK") {
         "zip"
     } else if bytes.starts_with(b"%PDF") {
@@ -997,5 +1005,18 @@ mod stac_time_tests {
         assert_eq!(t("2025-06-01T00:00:00Z/2025-08-31T23:59:59Z"), "2025-06-01T00:00:00Z/2025-08-31T23:59:59Z");
         assert!(stac_datetime("summer").is_err());
         assert!(stac_datetime("2025-02-30").is_err());
+    }
+}
+
+#[cfg(test)]
+mod kind_tests {
+    use super::extension_of;
+
+    #[test]
+    fn a_download_is_named_by_how_it_begins() {
+        assert_eq!(extension_of(b"RIFF\x10\0\0\0WEBPVP8L"), "webp");
+        assert_ne!(extension_of(b"RIFF\x10\0\0\0WAVEfmt "), "webp", "a sound is no picture");
+        assert_eq!(extension_of(b"\x89PNG\r\n"), "png");
+        assert_eq!(extension_of(b"\xff\xd8\xff"), "jpg");
     }
 }

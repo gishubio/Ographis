@@ -1,6 +1,8 @@
 [package]
 name = "og-engine"
 version.workspace = true
+# Built into the program, not published on crates.io.
+publish = false
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -31,7 +33,7 @@ ring = "0.17"
 base64 = "0.22"
 # Sets the text in charts, in the Inter font that is built in.
 ab_glyph = "0.2"
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 # Tiles of 3D Tiles that a server keeps gzipped.
 flate2 = "1"
 # Unpacks glTF compressed with EXT_meshopt_compression, as many 3D Tiles are. Built from the
@@ -41,12 +43,19 @@ meshopt = { version = "0.7", default-features = false }
 las = { version = "0.11", features = ["laz"] }
 # regexp_replace, regexp_match and regexp_substr in expressions.
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 # CityGML, read as it streams.
-quick-xml = "0.38"
+quick-xml = "0.42"
 # Passwords and keys of connections in the credential store of Windows (Credential Manager).
 keyring = { version = "3.6", default-features = false, features = ["windows-native"] }
 # GeoParquet, without GDAL, which often lacks the Parquet driver.
 parquet = { version = "60", default-features = false, features = ["snap", "zstd", "lz4", "flate2-zlib-rs", "brotli"] }
+# DuckDB databases, built in, so that nothing has to be installed.
+duckdb = { version = "1.20000", default-features = false, features = ["bundled", "parquet", "json"] }
+# GeoArrow: Arrow IPC files (.arrow, .feather) with the geometry as WKB.
+arrow-ipc = { version = "60", default-features = false, features = ["lz4", "zstd"] }
+arrow-array = { version = "60", default-features = false }
+arrow-schema = { version = "60", default-features = false }
+arrow-cast = { version = "60", default-features = false }
 # Draws the map icons of Maki, which come as SVG.
 resvg = { version = "0.45", default-features = false }

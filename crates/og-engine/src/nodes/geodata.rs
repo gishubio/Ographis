@@ -10,6 +10,7 @@
 use super::*;
 use crate::model::{err, fmt_count, fmt_real, Feature, Field, FieldType, GbError, Grid, GridMeta, RasterImage, Result, Table, Value};
 use crate::web::Client;
+use std::collections::HashMap;
 
 /// What a product becomes.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -341,8 +342,20 @@ struct Item {
     geometry: Option<geo::Geometry<f64>>,
     /// Every file of the item: the one read and the others, such as a PDF or a preview.
     assets: Vec<String>,
+    /// What the catalogue says of each file: its title, its type and its roles.
+    documents: Vec<Document>,
     /// What the catalogue says of it, for a product of its items.
     properties: serde_json::Map<String, serde_json::Value>,
+}
+
+/// A file of an item as the catalogue tells of it.
+#[derive(Clone)]
+struct Document {
+    key: String,
+    title: String,
+    kind: String,
+    roles: String,
+    href: String,
 }
 
 /// The file of an item: the asset called data, or else the first that is a file of the kind.
@@ -601,14 +614,18 @@ fn fetch_area(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         Some(y) => Some(years(&y)?),
         None => None,
     };
-    let mut url = format!("{}/search?bbox={},{},{},{}&limit=100", base, degrees[0], degrees[1], degrees[2], degrees[3]);
+    // The search of the national geodata platform takes its rectangle in SWEREF 99 TM, as
+    // its products are; other catalogues take degrees, as STAC has it.
+    let platform = product.key.starts_with("ngp_") || base.contains("/geodatakatalog/sokning/");
+    let bbox = if platform && crs == 3006 { rect } else { degrees };
+    let mut url = format!("{}/search?bbox={},{},{},{}&limit=100", base, bbox[0], bbox[1], bbox[2], bbox[3]);
     if !chosen.0.is_empty() {
         url.push_str(&format!("&collections={}", crate::web::encode(&chosen.0)));
     }
     if let Some(d) = &datetime {
         url.push_str(&format!("&datetime={}", crate::web::encode(d)));
     }
-    let mut post = serde_json::json!({"bbox": degrees, "limit": 100});
+    let mut post = serde_json::json!({"bbox": bbox, "limit": 100});
     if !chosen.0.is_empty() {
         post["collections"] = serde_json::json!([chosen.0]);
     }
@@ -662,9 +679,11 @@ fn fetch_area(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
                 };
                 Some((method, href, body))
             });
-        if got == 0 || found.len() >= 2000 {
-            if found.len() >= 2000 {
-                ctx.notes.warn("The search was stopped at 2000 items; choose a smaller area.");
+        // Files are many megabytes each, items such as plans are small: a city has thousands.
+        let cap = if product.kind == Kind::Items { 50_000 } else { 2000 };
+        if got == 0 || found.len() >= cap {
+            if found.len() >= cap {
+                ctx.notes.warn(format!("The search was stopped at {} items; choose a smaller area.", fmt_count(cap as u64)));
             }
             break;
         }
@@ -724,6 +743,28 @@ fn fetch_area(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
                 .and_then(|a| a.as_object())
                 .map(|a| a.values().filter_map(|v| v.get("href").and_then(|h| h.as_str()).map(str::to_string)).collect())
                 .unwrap_or_default(),
+            documents: it
+                .get("assets")
+                .and_then(|a| a.as_object())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|(k, v)| {
+                            let text = |n: &str| v.get(n).and_then(|x| x.as_str()).unwrap_or("").to_string();
+                            Some(Document {
+                                key: k.clone(),
+                                title: text("title"),
+                                kind: text("type"),
+                                roles: v
+                                    .get("roles")
+                                    .and_then(|r| r.as_array())
+                                    .map(|r| r.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", "))
+                                    .unwrap_or_default(),
+                                href: v.get("href")?.as_str()?.to_string(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             properties: props.and_then(|p| p.as_object()).cloned().unwrap_or_default(),
         });
     }
@@ -737,7 +778,7 @@ fn fetch_area(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     if items.is_empty() {
         return err(format!(
             "{} has nothing in the area{}. Is the area in Sweden, and in the coordinate system given?",
-            chosen.0,
+            if chosen.0.is_empty() { product.label.split(':').next().unwrap_or(product.label) } else { &chosen.0 },
             p.get("year").filter(|y| !y.trim().is_empty()).map(|y| format!(" from {}", y)).unwrap_or_default()
         ));
     }
@@ -755,6 +796,8 @@ fn fetch_area(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     // Every file of the area kept whole in a folder, when asked for, and read from there.
     let keep_dir = p.get("keep_in").filter(|d| !d.trim().is_empty()).map(|d| ctx.resolve(d.trim()));
     let mut kept: Vec<Option<std::path::PathBuf>> = vec![None; total];
+    // Where each file kept lies, by its address.
+    let mut kept_files: HashMap<String, std::path::PathBuf> = HashMap::new();
     if let Some(dir) = &keep_dir {
         let (mut fetched, mut there) = (0usize, 0usize);
         let t = std::time::Instant::now();
@@ -802,6 +845,7 @@ fn fetch_area(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
                     fetched += 1;
                 }
                 let name = index.get(href).and_then(|v| v.as_str()).map(str::to_string).unwrap_or(name);
+                kept_files.insert(href.clone(), folder.join(&name));
                 if *href == it.href {
                     kept[k] = Some(folder.join(name));
                 }
@@ -1174,6 +1218,65 @@ fn fetch_area(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             ],
             geom,
         });
+    }
+    // For items such as plans, the files are their documents: one row for each, however many
+    // items refer to it, with what the catalogue says of it and where it lies when kept.
+    if product.kind == Kind::Items {
+        tiles = Table {
+            fields: vec![
+                Field::new("title", FieldType::Text),
+                Field::new("type", FieldType::Text),
+                Field::new("roles", FieldType::Text),
+                Field::new("asset", FieldType::Text),
+                Field::new("items", FieldType::Int),
+                Field::new("first_item", FieldType::Text),
+                Field::new("collection", FieldType::Text),
+                Field::new("href", FieldType::Text),
+                Field::new("file", FieldType::Text),
+            ],
+            crs: Some(4326),
+            ..Table::default()
+        };
+        let mut row_of: HashMap<String, usize> = HashMap::new();
+        let mut boxes: Vec<[f64; 4]> = Vec::new();
+        for it in &items {
+            for d in &it.documents {
+                match row_of.get(&d.href) {
+                    Some(&r) => {
+                        if let Value::Int(n) = &mut tiles.features[r].attrs[4] {
+                            *n += 1;
+                        }
+                        let b = &mut boxes[r];
+                        *b = [b[0].min(it.bbox[0]), b[1].min(it.bbox[1]), b[2].max(it.bbox[2]), b[3].max(it.bbox[3])];
+                    }
+                    None => {
+                        row_of.insert(d.href.clone(), tiles.features.len());
+                        boxes.push(it.bbox);
+                        let text = |s: &str| if s.is_empty() { Value::Null } else { Value::Text(s.to_string()) };
+                        tiles.features.push(Feature {
+                            z: None,
+                            attrs: vec![
+                                text(&d.title),
+                                text(&d.kind),
+                                text(&d.roles),
+                                Value::Text(d.key.clone()),
+                                Value::Int(1),
+                                Value::Text(it.id.clone()),
+                                Value::Text(it.collection.clone()),
+                                Value::Text(d.href.clone()),
+                                kept_files.get(&d.href).map_or(Value::Null, |f| Value::Text(f.to_string_lossy().into_owned())),
+                            ],
+                            geom: None,
+                        });
+                    }
+                }
+            }
+        }
+        // Each document where the items that refer to it lie, as a rectangle around them.
+        for (f, [w, s, e, n]) in tiles.features.iter_mut().zip(boxes) {
+            f.geom = Some(geo::Geometry::Polygon(geo::Polygon::new(geo::LineString::from(vec![(w, s), (e, s), (e, n), (w, n), (w, s)]), vec![])));
+        }
+        ctx.notes.info(format!("{} documents of {} items", fmt_count(tiles.len() as u64), fmt_count(items.len() as u64)));
     }
     let tiles = reproject(&tiles, crs, Some(b))?;
     Ok(vec![("Output".into(), output), ("Files".into(), tiles)])

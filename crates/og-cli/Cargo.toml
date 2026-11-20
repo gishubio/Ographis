@@ -1,6 +1,8 @@
 [package]
 name = "og-cli"
 version.workspace = true
+# Built into the program, not published on crates.io.
+publish = false
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

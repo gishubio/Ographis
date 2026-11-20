@@ -1,0 +1,204 @@
+{
+  "format": "ographis/1",
+  "name": "Workplaces of a municipality from the business register of SCB, as points",
+  "nodes": [
+    {
+      "id": "afr",
+      "type": "HttpCaller",
+      "name": "HTTP request",
+      "x": -12.0,
+      "y": 94.0,
+      "params": {
+        "cache": "disk",
+        "connection": "SCB företagsregister",
+        "cursor_path": "pagination.nextCursorId",
+        "log": "out/scb_requests.log",
+        "page_param": "cursorId",
+        "page_size": "5000",
+        "paging": "cursor",
+        "per_second": "4",
+        "size_param": "limit",
+        "url": "'https://apiafr.scb.se/v1/arbetsstallen/full'"
+      },
+      "comment": "SCB's general business register (AFR): every variable of every workplace in Sweden, with their coordinates, 5 000 to a page, the next page asked for by the cursor in pagination.nextCursorId. Only the whole of Sweden has every variable: a municipality alone gives no coordinates. The answers are kept on disk. The key, of a personal account at registreraafr.scb.se, is the API connection 'SCB företagsregister': a key in the header X-API-Key"
+    },
+    {
+      "id": "items",
+      "type": "JsonExploder",
+      "name": "Explode JSON list",
+      "x": 280.0,
+      "y": 40.0,
+      "params": {
+        "attribute": "_response",
+        "path": "arbetsstallen"
+      },
+      "comment": "A feature per workplace"
+    },
+    {
+      "id": "municipality",
+      "type": "Tester",
+      "name": "Test",
+      "x": 540.0,
+      "y": 40.0,
+      "params": {
+        "test": "\"belagenhetsadress.kommun\" = '$(municipality)' OR upper(\"belagenhetsadress.kommun\") = upper('$(municipality_name)')"
+      },
+      "comment": "The workplaces of the municipality, by its code or its name"
+    },
+    {
+      "id": "points",
+      "type": "PointCreator",
+      "name": "Create points from x and y",
+      "x": 835.0,
+      "y": 58.0,
+      "params": {
+        "crs": "EPSG:3006",
+        "x": "geografiskInformation.ostKoordinatAdressSW",
+        "y": "geografiskInformation.nordKoordinatAdressSW"
+      },
+      "comment": "Points where the address lies, in SWEREF 99 TM. The register also gives the middle of the property: nordKoordinatSW and ostKoordinatSW"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1135.0,
+      "y": -3.0,
+      "params": {
+        "path": "out/workplaces_$(municipality).gpkg"
+      },
+      "comment": "Workplaces\nGeoPackage",
+      "comment_box": [
+        47.0,
+        -52.0,
+        84.0,
+        39.0
+      ]
+    },
+    {
+      "id": "no_xy",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1136.0,
+      "y": 191.0,
+      "params": {
+        "path": "out/workplaces_$(municipality)_without_coordinates.csv"
+      },
+      "comment": "Workplaces without coordinates\nCSV",
+      "comment_box": [
+        0.0,
+        -63.0,
+        188.0,
+        45.0
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "afr",
+        "Output"
+      ],
+      "to": [
+        "items",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "items",
+        "Exploded"
+      ],
+      "to": [
+        "municipality",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "municipality",
+        "Passed"
+      ],
+      "to": [
+        "points",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "points",
+        "Failed"
+      ],
+      "to": [
+        "no_xy",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "points",
+        "Points"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "Input",
+      "x": -42.0,
+      "y": -68.0,
+      "w": 223.0,
+      "h": 304.0,
+      "locked": true
+    },
+    {
+      "name": "Manage JSON and filter by municipality",
+      "x": 254.0,
+      "y": -72.0,
+      "w": 491.0,
+      "h": 311.0,
+      "color": "orange",
+      "locked": true
+    },
+    {
+      "name": "Geometry",
+      "x": 810.0,
+      "y": -88.0,
+      "w": 244.0,
+      "h": 330.0,
+      "color": "purple",
+      "locked": true
+    },
+    {
+      "name": "Output",
+      "x": 1117.0,
+      "y": -85.0,
+      "w": 219.0,
+      "h": 397.0,
+      "color": "pink",
+      "locked": true
+    }
+  ],
+  "notes": [
+    {
+      "text": "Task\nDownload data for workplaces from Statistics Sweden´s Business Register, https://www.scb.se/en/services/ordering-data-and-statistics/statistics-swedens-business-register/.\n\nAPI documentation, https://www.scb.se/vara-tjanster/bestall-data-och-statistik/foretagsregistret/avgiftsfria-uppgifter-i-foretagsregistret/",
+      "x": 191.0,
+      "y": -274.0,
+      "w": 851.0,
+      "h": 89.0
+    }
+  ],
+  "variables": [
+    {
+      "name": "municipality",
+      "value": "1480"
+    },
+    {
+      "name": "municipality_name",
+      "value": "Göteborg"
+    }
+  ]
+}

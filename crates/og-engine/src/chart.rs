@@ -9,6 +9,8 @@ use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Rect, Transform};
 
 static REGULAR: &[u8] = include_bytes!("../fonts/Inter-Regular.otf");
 static SEMIBOLD: &[u8] = include_bytes!("../fonts/Inter-SemiBold.otf");
+/// Letters of one width, for the ports and settings in a picture of a model, as on the canvas.
+static MONO: &[u8] = include_bytes!("../fonts/Hack-Regular.ttf");
 
 /// The colours a bar can have, in the order they are offered, with the light and dark
 /// steps of the reference palette.
@@ -115,28 +117,45 @@ pub(crate) fn nice_step(span: f64, lines: f64) -> f64 {
     }) * p
 }
 
+/// The kinds of letters text is written in.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) enum Face {
+    Regular,
+    Bold,
+    Mono,
+}
+
 /// Writes text into a picture.
 pub(crate) struct Text {
     regular: FontRef<'static>,
     bold: FontRef<'static>,
+    mono: FontRef<'static>,
 }
 
 impl Text {
     pub(crate) fn new() -> Result<Text> {
         let f = |b: &'static [u8]| FontRef::try_from_slice(b).map_err(|_| GbError("The built-in font cannot be read.".into()));
-        Ok(Text { regular: f(REGULAR)?, bold: f(SEMIBOLD)? })
+        Ok(Text { regular: f(REGULAR)?, bold: f(SEMIBOLD)?, mono: f(MONO)? })
     }
 
     fn font(&self, bold: bool) -> &FontRef<'static> {
-        if bold {
-            &self.bold
-        } else {
-            &self.regular
+        self.face(if bold { Face::Bold } else { Face::Regular })
+    }
+
+    fn face(&self, face: Face) -> &FontRef<'static> {
+        match face {
+            Face::Regular => &self.regular,
+            Face::Bold => &self.bold,
+            Face::Mono => &self.mono,
         }
     }
 
     pub(crate) fn width(&self, s: &str, size: f32, bold: bool) -> f32 {
-        let font = self.font(bold).as_scaled(PxScale::from(size));
+        self.width_in(s, size, if bold { Face::Bold } else { Face::Regular })
+    }
+
+    pub(crate) fn width_in(&self, s: &str, size: f32, face: Face) -> f32 {
+        let font = self.face(face).as_scaled(PxScale::from(size));
         let mut w = 0.0;
         let mut last = None;
         for ch in s.chars() {
@@ -166,8 +185,14 @@ impl Text {
     /// `right` is set, or with its middle there when `centre` is set.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn draw(&self, pm: &mut Pixmap, s: &str, x: f32, y: f32, size: f32, bold: bool, rgb: [u8; 3], align: f32) {
-        let font = self.font(bold).as_scaled(PxScale::from(size));
-        let mut pen = x - self.width(s, size, bold) * align;
+        self.draw_in(pm, s, x, y, size, if bold { Face::Bold } else { Face::Regular }, rgb, align)
+    }
+
+    /// As draw, in the letters given.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn draw_in(&self, pm: &mut Pixmap, s: &str, x: f32, y: f32, size: f32, face: Face, rgb: [u8; 3], align: f32) {
+        let font = self.face(face).as_scaled(PxScale::from(size));
+        let mut pen = x - self.width_in(s, size, face) * align;
         let mut last = None;
         let (w, h) = (pm.width() as i32, pm.height() as i32);
         let data = pm.data_mut();
@@ -179,7 +204,7 @@ impl Text {
             let glyph = id.with_scale_and_position(PxScale::from(size), ab_glyph::point(pen, y));
             pen += font.h_advance(id);
             last = Some(id);
-            let Some(outline) = self.font(bold).outline_glyph(glyph) else { continue };
+            let Some(outline) = self.face(face).outline_glyph(glyph) else { continue };
             let b = outline.px_bounds();
             outline.draw(|gx, gy, cov| {
                 let (px, py) = (b.min.x as i32 + gx as i32, b.min.y as i32 + gy as i32);

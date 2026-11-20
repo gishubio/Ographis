@@ -410,6 +410,23 @@ fn excel_sheets_are_chosen_like_layers() {
     }
     assert!(h.query_by_label("Encoding").is_none() && h.query_by_label("Delimiter").is_none());
     shot(&mut h, "111-excel-writer");
+
+    // A Google sheet is written to by its address: the field says so, with no file to browse for.
+    let browse = h.query_all_by_label("Browse…").count();
+    let id = h.state().snarl.nodes().last().unwrap().id.clone();
+    h.state_mut().snarl.nodes_mut().find(|n| n.id == id).unwrap().params.insert("format".into(), serde_json::json!("gsheet"));
+    settle(&mut h);
+    assert!(h.query_by_label("Address of the sheet").is_some() && h.query_by_label("Sheet").is_some());
+    assert_eq!(h.query_all_by_label("Browse…").count(), browse - 1);
+    shot(&mut h, "112-google-sheet-writer");
+    // The formats come in groups, under headings.
+    let format = h.get_all_by_label("Format").last().unwrap().rect().center() + egui::vec2(40.0, 24.0);
+    click_at(&mut h, format);
+    settle(&mut h);
+    shot(&mut h, "113-output-formats");
+    for heading in ["Tables", "GIS data", "Maps and pictures"] {
+        assert!(h.query_by_label(heading).is_some(), "the list of formats should have the heading {}", heading);
+    }
 }
 
 #[test]
@@ -490,17 +507,7 @@ fn a_writer_is_told_the_format_and_the_fields() {
     h.get_by_value("From the file name").click();
     h.run_steps(3);
     shot(&mut h, "138-writer-formats");
-    // In alphabetical order Shapefile is far down the list: the list is scrolled to it.
-    let over = h.get_by_label("GeoPackage (.gpkg)").rect().center();
-    h.event(egui::Event::PointerMoved(over));
-    h.run_steps(2);
-    h.event(egui::Event::MouseWheel {
-        unit: egui::MouseWheelUnit::Point,
-        delta: egui::vec2(0.0, -1400.0),
-        phase: egui::TouchPhase::Move,
-        modifiers: Default::default(),
-    });
-    h.run_steps(6);
+    // Shapefile is among the GIS data, near the top of the list.
     h.get_by_label("Shapefile (.shp)").click();
     h.run_steps(3);
     assert_eq!((param(&h, "out", "path"), param(&h, "out", "format")), ("out/pair.shp".to_string(), "shp".to_string()));
@@ -1006,20 +1013,9 @@ fn postgis_is_reached_from_input_and_output() {
     // A file format makes it an output to a file again.
     h.get_by_value("PostGIS table").click();
     h.run_steps(3);
-    // The list opens where the chosen format is, with the slides and Shapefile below it.
+    // The list opens where the chosen format is, among the GIS data.
     shot(&mut h, "223-formats-list");
-    // Shapefile is below the end of the list as it opens: scrolled to.
-    let over = h.get_by_label("PNG image (.png)").rect().center();
-    h.event(egui::Event::PointerMoved(over));
-    h.run_steps(2);
-    h.event(egui::Event::MouseWheel {
-        unit: egui::MouseWheelUnit::Point,
-        delta: egui::vec2(0.0, -300.0),
-        phase: egui::TouchPhase::Move,
-        modifiers: Default::default(),
-    });
-    h.run_steps(6);
-    h.get_by_label("Shapefile (.shp)").click();
+    h.get_by_label("GPX for GPS units (.gpx)").click();
     h.run_steps(3);
     assert_eq!(h.state().snarl[writer].kind, "Writer");
 }

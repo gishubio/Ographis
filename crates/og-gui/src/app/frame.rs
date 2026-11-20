@@ -143,6 +143,7 @@ impl App {
         self.history_dialog(&ctx, &pal);
         self.schedule_dialog(&ctx, &pal);
         self.picker_dialog(&ctx, &pal);
+        self.commands_dialog(&ctx, &pal);
         self.tips_dialog(&ctx, &pal);
         self.update_dialog(&ctx, &pal);
         self.report_dialog(&ctx, &pal);
@@ -163,6 +164,14 @@ impl App {
     }
 
     pub(super) fn shortcuts(&mut self, ctx: &egui::Context) {
+        // The command palette, also from a text field: Ctrl+K, or Ctrl+Shift+P.
+        if self.commands.is_none()
+            && self.pending.is_none()
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::K) || i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, Key::P))
+        {
+            self.commands = Some(Default::default());
+            return;
+        }
         let typing = ctx.egui_wants_keyboard_input();
         // The window of the system sends Ctrl+Shift+C as Copy alone, with Shift held, and not
         // as a key; the tests send it as a key.
@@ -257,6 +266,7 @@ impl App {
             || self.history_open
             || self.schedule.is_some()
             || self.picker.is_some()
+            || self.commands.is_some()
             || self.tips
             || self.variables_open
             || self.asking.is_some()

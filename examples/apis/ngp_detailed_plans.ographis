@@ -1,0 +1,140 @@
+{
+  "format": "ographis/1",
+  "name": "Detailed plans of Göteborg and Kungsbacka from the national geodata platform",
+  "variables": [
+    {
+      "name": "keep_files_in",
+      "value": ""
+    }
+  ],
+  "nodes": [
+    {
+      "id": "areas",
+      "type": "Reader",
+      "x": 20,
+      "y": 40,
+      "params": {
+        "path": "detailed_plan_areas.csv",
+        "wkt": "wkt",
+        "crs": "EPSG:3006"
+      },
+      "comment": "A rectangle around each municipality, with its name and code. Add a row for another"
+    },
+    {
+      "id": "plans",
+      "type": "GeodataFetcher",
+      "x": 280,
+      "y": 40,
+      "params": {
+        "product": "ngp_detailed_plans",
+        "areas": "each",
+        "max_km2": "1500",
+        "connection": "Lantmäteriet",
+        "keep_in": "$(keep_files_in)"
+      },
+      "comment": "One search for each municipality: every detailed plan within its rectangle, a feature for each provision. With a folder in the variable keep_files_in, every file of each plan is kept, the PDF documents too: thousands for a city. The login is the API connection Lantmäteriet: the Geotorget user that has access to the national geodata platform"
+    },
+    {
+      "id": "producer",
+      "type": "JsonExtractor",
+      "x": 540,
+      "y": 40,
+      "params": {
+        "attribute": "providers",
+        "paths": [
+          [
+            "[roles=producer].kod",
+            "producer_code"
+          ],
+          [
+            "[roles=producer].name",
+            "producer"
+          ]
+        ]
+      },
+      "comment": "The municipality that made the plan: the provider with the role producer"
+    },
+    {
+      "id": "own",
+      "type": "Tester",
+      "x": 800,
+      "y": 40,
+      "params": {
+        "test": "to_string(producer_code) = to_string(code)"
+      },
+      "comment": "Only the plans of the municipality each rectangle was fetched for: those of the neighbours near the border go"
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "x": 1060,
+      "y": 40,
+      "params": {
+        "path": "out/detailed_plans.gpkg"
+      },
+      "comment": "The detailed plans, with their areas and the municipality they were fetched for"
+    },
+    {
+      "id": "files",
+      "type": "Writer",
+      "x": 540,
+      "y": 240,
+      "params": {
+        "path": "out/detailed_plan_files.csv"
+      },
+      "comment": "The documents of the plans, one row each: title, type such as PDF or TIFF, address, and the file on disk when they are kept"
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "areas",
+        "Output"
+      ],
+      "to": [
+        "plans",
+        "Extent"
+      ]
+    },
+    {
+      "from": [
+        "plans",
+        "Files"
+      ],
+      "to": [
+        "files",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "plans",
+        "Output"
+      ],
+      "to": [
+        "producer",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "producer",
+        "Output"
+      ],
+      "to": [
+        "own",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "own",
+        "Passed"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    }
+  ]
+}
