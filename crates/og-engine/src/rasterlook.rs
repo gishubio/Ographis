@@ -338,6 +338,7 @@ mod tests {
             themes: Vec::new(),
             labels: Vec::new(),
             icons: Vec::new(),
+            charts: Vec::new(),
             rasters: vec![r],
             legend: None,
             width: 100,

@@ -30,11 +30,11 @@ pub fn colour(name: &str) -> [u8; 3] {
     COLOURS.iter().find(|c| c.0 == name).map_or(COLOURS[0].2, |c| c.2)
 }
 
-const INK: [u8; 3] = [0x0b, 0x0b, 0x0b];
-const SECONDARY: [u8; 3] = [0x52, 0x51, 0x4e];
-const MUTED: [u8; 3] = [0x89, 0x87, 0x81];
-const GRID: [u8; 3] = [0xe1, 0xe0, 0xd9];
-const BASELINE: [u8; 3] = [0xc3, 0xc2, 0xb7];
+pub(crate) const INK: [u8; 3] = [0x0b, 0x0b, 0x0b];
+pub(crate) const SECONDARY: [u8; 3] = [0x52, 0x51, 0x4e];
+pub(crate) const MUTED: [u8; 3] = [0x89, 0x87, 0x81];
+pub(crate) const GRID: [u8; 3] = [0xe1, 0xe0, 0xd9];
+pub(crate) const BASELINE: [u8; 3] = [0xc3, 0xc2, 0xb7];
 const SURFACE: [u8; 3] = [0xfc, 0xfc, 0xfb];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -303,14 +303,14 @@ impl Text {
     }
 }
 
-fn paint(rgb: [u8; 3]) -> Paint<'static> {
+pub(crate) fn paint(rgb: [u8; 3]) -> Paint<'static> {
     let mut p = Paint::default();
     p.set_color(Color::from_rgba8(rgb[0], rgb[1], rgb[2], 255));
     p.anti_alias = true;
     p
 }
 
-fn rect(pm: &mut Canvas, x: f32, y: f32, w: f32, h: f32, rgb: [u8; 3]) {
+pub(crate) fn rect(pm: &mut Canvas, x: f32, y: f32, w: f32, h: f32, rgb: [u8; 3]) {
     // As a path: tiny-skia's own way with thin smooth rectangles trips on some sizes.
     if let Some(r) = Rect::from_xywh(x, y, w.max(1.0), h.max(1.0)) {
         let path = PathBuilder::from_rect(r);
@@ -320,7 +320,7 @@ fn rect(pm: &mut Canvas, x: f32, y: f32, w: f32, h: f32, rgb: [u8; 3]) {
 
 /// A bar with its far end rounded and its foot square, from (x, y) by (w, h). `across`
 /// says the bar grows to the right; otherwise it grows upwards from its foot at y + h.
-fn bar(pm: &mut Canvas, x: f32, y: f32, w: f32, h: f32, across: bool, rgb: [u8; 3]) {
+pub(crate) fn bar(pm: &mut Canvas, x: f32, y: f32, w: f32, h: f32, across: bool, rgb: [u8; 3]) {
     let r = 4.0f32.min(if across { h / 2.0 } else { w / 2.0 }).min(if across { w } else { h }).max(0.0);
     let mut pb = PathBuilder::new();
     if across {
@@ -557,7 +557,7 @@ pub struct LineChart {
 }
 
 /// A date from days since 1970-01-01, as 2026-10-30.
-fn date_text(days: f64, step_days: f64) -> String {
+pub(crate) fn date_text(days: f64, step_days: f64) -> String {
     let d = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("a date") + chrono::Duration::days(days.round() as i64);
     if step_days >= 360.0 {
         d.format("%Y").to_string()

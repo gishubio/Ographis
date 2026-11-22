@@ -1,0 +1,496 @@
+{
+  "format": "ographis/1",
+  "name": "Statistics and charts of towns and subregions",
+  "nodes": [
+    {
+      "id": "towns",
+      "type": "Reader",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "towns.csv",
+        "crs": "EPSG:4326"
+      },
+      "comment": "Towns with their population"
+    },
+    {
+      "id": "towns_sweref",
+      "type": "Reprojector",
+      "x": 240,
+      "y": 20,
+      "params": {
+        "crs": "EPSG:3006"
+      },
+      "comment": "Towns in metres"
+    },
+    {
+      "id": "subs",
+      "type": "Reader",
+      "x": 20,
+      "y": 260,
+      "params": {
+        "path": "subregions.gpkg"
+      },
+      "comment": "Subregions"
+    },
+    {
+      "id": "subs_sweref",
+      "type": "Reprojector",
+      "x": 240,
+      "y": 260,
+      "params": {
+        "crs": "EPSG:3006"
+      },
+      "comment": "Subregions in metres"
+    },
+    {
+      "id": "towns_in",
+      "type": "SpatialJoiner",
+      "x": 480,
+      "y": 20,
+      "params": {
+        "relation": "intersects",
+        "mode": "first",
+        "attributes": [
+          "subregion"
+        ]
+      },
+      "comment": "Each town gets its subregion"
+    },
+    {
+      "id": "classes",
+      "type": "Classifier",
+      "x": 720,
+      "y": 20,
+      "params": {
+        "attribute": "population",
+        "method": "jenks",
+        "classes": "4"
+      },
+      "comment": "Towns in four natural classes by size"
+    },
+    {
+      "id": "classified_csv",
+      "type": "Writer",
+      "x": 960,
+      "y": 0,
+      "params": {
+        "path": "out/towns_classified.csv"
+      },
+      "comment": "Towns with their class"
+    },
+    {
+      "id": "classes_csv",
+      "type": "Writer",
+      "x": 960,
+      "y": 80,
+      "params": {
+        "path": "out/town_classes.csv"
+      },
+      "comment": "The classes and how many are in each"
+    },
+    {
+      "id": "box",
+      "type": "ChartDrawer",
+      "x": 720,
+      "y": 160,
+      "params": {
+        "kind": "box",
+        "value": "population",
+        "category": "subregion",
+        "sort": "name",
+        "title": "How large the towns are in each subregion",
+        "subtitle": "Inhabitants of the towns in the example data",
+        "note": "Source: towns.csv in the examples",
+        "width": "1000"
+      },
+      "comment": "Box plot of town sizes"
+    },
+    {
+      "id": "box_png",
+      "type": "Writer",
+      "x": 960,
+      "y": 160,
+      "params": {
+        "path": "out/town_sizes_by_subregion.png"
+      },
+      "comment": "Box plot file"
+    },
+    {
+      "id": "hist",
+      "type": "ChartDrawer",
+      "x": 480,
+      "y": 160,
+      "params": {
+        "kind": "histogram",
+        "value": "population",
+        "bins": "12",
+        "title": "Most towns are small",
+        "subtitle": "Number of towns by inhabitants",
+        "x_title": "Inhabitants",
+        "width": "1000"
+      },
+      "comment": "Histogram of town sizes"
+    },
+    {
+      "id": "hist_png",
+      "type": "Writer",
+      "x": 720,
+      "y": 300,
+      "params": {
+        "path": "out/town_sizes.png"
+      },
+      "comment": "Histogram file"
+    },
+    {
+      "id": "heat",
+      "type": "KernelDensity",
+      "x": 480,
+      "y": 400,
+      "params": {
+        "radius": "25000",
+        "cell": "1000",
+        "weight": "population",
+        "unit": "km2"
+      },
+      "comment": "Inhabitants per km² within 25 km of the towns"
+    },
+    {
+      "id": "heat_tif",
+      "type": "Writer",
+      "x": 720,
+      "y": 400,
+      "params": {
+        "path": "out/town_density.tif"
+      },
+      "comment": "Heat map file"
+    },
+    {
+      "id": "per_sub",
+      "type": "SpatialJoiner",
+      "x": 480,
+      "y": 260,
+      "params": {
+        "relation": "intersects",
+        "mode": "summary",
+        "numbers": "sum",
+        "attributes": [
+          "population"
+        ],
+        "count": "towns"
+      },
+      "comment": "Inhabitants of the towns in each subregion"
+    },
+    {
+      "id": "shares",
+      "type": "RunningStatistics",
+      "x": 720,
+      "y": 500,
+      "params": {
+        "attribute": "population",
+        "what": [
+          "share",
+          "rank"
+        ]
+      },
+      "comment": "Each subregion's share of the inhabitants and its rank"
+    },
+    {
+      "id": "dashboard",
+      "type": "DashboardWriter",
+      "x": 960,
+      "y": 500,
+      "params": {
+        "path": "out/subregions_dashboard.html",
+        "name": "subregion",
+        "value": "population_share",
+        "title": "Where the towns' inhabitants live",
+        "subtitle": "Share of the inhabitants of the example towns in each subregion",
+        "note": "Source: towns.csv and subregions.gpkg in the examples",
+        "unit": "%",
+        "decimals": "1",
+        "classes": "3"
+      },
+      "comment": "Map and chart, linked"
+    },
+    {
+      "id": "years",
+      "type": "Reader",
+      "x": 20,
+      "y": 620,
+      "params": {
+        "path": "population_years.csv"
+      },
+      "comment": "Inhabitants year by year"
+    },
+    {
+      "id": "change",
+      "type": "ChangeOverTime",
+      "x": 240,
+      "y": 620,
+      "params": {
+        "attribute": "population",
+        "time": "year",
+        "series": [
+          "municipality"
+        ],
+        "what": [
+          "change",
+          "percent",
+          "index"
+        ]
+      },
+      "comment": "Change since the year before, and an index with 2024 as 100"
+    },
+    {
+      "id": "change_csv",
+      "type": "Writer",
+      "x": 480,
+      "y": 620,
+      "params": {
+        "path": "out/population_change.csv"
+      },
+      "comment": "Change file"
+    },
+    {
+      "id": "lines",
+      "type": "ChartDrawer",
+      "x": 480,
+      "y": 720,
+      "params": {
+        "kind": "lines",
+        "x": "year",
+        "value": "population_index",
+        "facet": "municipality",
+        "markers": "yes",
+        "title": "Growth since 2024",
+        "subtitle": "Index of the inhabitants, 2024 = 100",
+        "decimals": "1",
+        "width": "1200"
+      },
+      "comment": "A small chart for each municipality"
+    },
+    {
+      "id": "lines_png",
+      "type": "Writer",
+      "x": 720,
+      "y": 720,
+      "params": {
+        "path": "out/growth_by_municipality.png"
+      },
+      "comment": "Small multiples file"
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "towns",
+        "Output"
+      ],
+      "to": [
+        "towns_sweref",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "subs",
+        "Output"
+      ],
+      "to": [
+        "subs_sweref",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "towns_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "towns_in",
+        "Features"
+      ]
+    },
+    {
+      "from": [
+        "subs_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "towns_in",
+        "Join"
+      ]
+    },
+    {
+      "from": [
+        "towns_in",
+        "Joined"
+      ],
+      "to": [
+        "classes",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "classes",
+        "Classified"
+      ],
+      "to": [
+        "classified_csv",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "classes",
+        "Classes"
+      ],
+      "to": [
+        "classes_csv",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "towns_in",
+        "Joined"
+      ],
+      "to": [
+        "box",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "box",
+        "Chart"
+      ],
+      "to": [
+        "box_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "towns_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "hist",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "hist",
+        "Chart"
+      ],
+      "to": [
+        "hist_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "towns_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "heat",
+        "Points"
+      ]
+    },
+    {
+      "from": [
+        "heat",
+        "Raster"
+      ],
+      "to": [
+        "heat_tif",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "subs_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "per_sub",
+        "Features"
+      ]
+    },
+    {
+      "from": [
+        "towns_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "per_sub",
+        "Join"
+      ]
+    },
+    {
+      "from": [
+        "per_sub",
+        "Joined"
+      ],
+      "to": [
+        "shares",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "shares",
+        "Output"
+      ],
+      "to": [
+        "dashboard",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "years",
+        "Output"
+      ],
+      "to": [
+        "change",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "change",
+        "Output"
+      ],
+      "to": [
+        "change_csv",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "change",
+        "Output"
+      ],
+      "to": [
+        "lines",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "lines",
+        "Chart"
+      ],
+      "to": [
+        "lines_png",
+        "Input"
+      ]
+    }
+  ]
+}

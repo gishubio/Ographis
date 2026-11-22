@@ -266,6 +266,10 @@ impl App {
             }).response);
             tops.push(ui.menu_button("Help", |ui| {
                 menu_style(ui, pal);
+                if ui.add(egui::Button::new("Ographis help").shortcut_text("F1")).on_hover_text("Getting started, and a page for every tool").clicked() {
+                    self.open_help(None);
+                    ui.close();
+                }
                 if ui.button("Tips and shortcuts").clicked() {
                     self.tips = true;
                     ui.close();
@@ -350,7 +354,19 @@ impl App {
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let (text, color) = self.status(pal);
-                ui.label(RichText::new(text).font(theme::mono(12.0)).color(color));
+                let errors = !self.is_running() && self.message().is_none() && self.result.as_ref().is_some_and(|r| r.errors > 0);
+                let label = egui::Label::new(RichText::new(text).font(theme::mono(12.0)).color(color));
+                if errors {
+                    let r = ui.add(label.sense(Sense::click())).on_hover_text("Go to the node with the error. F8 goes to the next, Shift+F8 back");
+                    if r.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    if r.clicked() {
+                        self.go_to_error(true);
+                    }
+                } else {
+                    ui.add(label);
+                }
             });
         });
     }

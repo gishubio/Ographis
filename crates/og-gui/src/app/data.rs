@@ -47,6 +47,9 @@ impl App {
                 };
                 ui.selectable_value(&mut self.tab, Tab::Log, RichText::new(log).font(theme::strong(13.5)).color(color));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if errors > 0 && ui.button("Next error").on_hover_text("Goes to the next node with an error: F8. Shift+F8 goes back").clicked() {
+                        self.go_to_error(true);
+                    }
                     if self.tab == Tab::Log {
                         if let Some(r) = &self.result {
                             if ui.button("Copy log").clicked() {
@@ -96,7 +99,7 @@ impl App {
             });
         });
         if let Some(id) = go {
-            self.focus_node(&id);
+            self.show_node(&id);
         }
     }
 

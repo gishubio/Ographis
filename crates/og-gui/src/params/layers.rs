@@ -300,6 +300,7 @@ pub(super) fn map_layer_rows(
                 label_rows(ui, &mut row.labels, &row.from, &fields, pal);
                 if !named {
                     icon_rows(ui, &mut row.icon, &row.from, &fields, pal);
+                    chart_rows(ui, &mut row.chart, &row.from, &fields, pal);
                 }
             }
         });
@@ -706,4 +707,66 @@ pub(super) fn icon_rows(ui: &mut Ui, ic: &mut og_engine::mapdraw::IconSpec, from
         });
         ui.label(RichText::new("The point size is the size of the icon; below 10 it is 18.").small().color(pal.muted));
     });
+}
+
+/// Small charts on the features of a layer of Draw map, folded in under "Charts".
+pub(super) fn chart_rows(ui: &mut Ui, ch: &mut og_engine::mapdraw::ChartSpec, from: &str, fields: &[(String, bool)], pal: &Palette) {
+    let on = !ch.kind.is_empty();
+    let title = if on { "Charts · in use" } else { "Charts" };
+    egui::CollapsingHeader::new(RichText::new(title).small().color(if on { pal.accent } else { pal.muted })).id_salt(("charts", from)).default_open(on).show(
+        ui,
+        |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Chart").small().color(pal.muted))
+                    .on_hover_text("A small chart on each area or point, of the values of the attributes ticked below");
+                let kinds = [("", "None"), ("pie", "Pie"), ("bars", "Bars")];
+                let shown = kinds.iter().find(|k| k.0 == ch.kind).map_or("None", |k| k.1);
+                egui::ComboBox::from_id_salt(("chart-kind", from)).selected_text(shown).width(120.0).show_ui(ui, |ui| {
+                    for (v, t) in kinds {
+                        ui.selectable_value(&mut ch.kind, v.to_string(), t);
+                    }
+                });
+                if ch.size < 4.0 {
+                    ch.size = 40.0;
+                }
+                ui.label(RichText::new("width").small().color(pal.muted));
+                ui.add(egui::DragValue::new(&mut ch.size).range(4.0..=500.0).speed(0.5).max_decimals(0))
+                    .on_hover_text("The width of the largest chart, in pixels");
+            });
+            if ch.kind.is_empty() {
+                return;
+            }
+            ui.label(RichText::new("Of").small().color(pal.muted))
+                .on_hover_text("The numbers that make the slices or the bars, each in a colour of its own, in this order");
+            for (f, num) in fields.iter().filter(|(_, n)| *n) {
+                let _ = num;
+                let mut ticked = ch.of.contains(f);
+                if ui.checkbox(&mut ticked, f.as_str()).changed() {
+                    if ticked {
+                        ch.of.push(f.clone());
+                    } else {
+                        ch.of.retain(|x| x != f);
+                    }
+                }
+            }
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Size by").small().color(pal.muted))
+                    .on_hover_text("All as large, as large as the sum of their values, or as large as an attribute, by area");
+                let shown = match ch.size_by.as_str() {
+                    "" => "All the same".to_string(),
+                    "total" => "The total".to_string(),
+                    a => a.to_string(),
+                };
+                egui::ComboBox::from_id_salt(("chart-size-by", from)).selected_text(shown).width(150.0).show_ui(ui, |ui| {
+                    ui.selectable_value(&mut ch.size_by, String::new(), "All the same");
+                    ui.selectable_value(&mut ch.size_by, "total".to_string(), "The total");
+                    for (f, num) in fields {
+                        if *num {
+                            ui.selectable_value(&mut ch.size_by, f.clone(), f.as_str());
+                        }
+                    }
+                });
+            });
+        },
+    );
 }

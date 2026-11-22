@@ -145,6 +145,7 @@ impl App {
         self.picker_dialog(&ctx, &pal);
         self.commands_dialog(&ctx, &pal);
         self.tips_dialog(&ctx, &pal);
+        self.help_window(&ctx, &pal);
         self.update_dialog(&ctx, &pal);
         self.report_dialog(&ctx, &pal);
         self.variables_dialog(&ctx, &pal);
@@ -201,6 +202,19 @@ impl App {
         }
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F6)) {
             self.toggle_pause();
+            return;
+        }
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F1)) {
+            self.help_for_selection();
+            return;
+        }
+        // The nodes with errors in the latest run, one after the other.
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, Key::F8)) {
+            self.go_to_error(false);
+            return;
+        }
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F8)) {
+            self.go_to_error(true);
             return;
         }
         if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Comma)) && self.settings_window.is_none() {

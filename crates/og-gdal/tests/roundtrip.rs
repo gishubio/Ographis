@@ -1403,6 +1403,52 @@ fn a_map_is_written_and_read_as_webp_with_its_coordinates() {
 }
 
 #[test]
+fn a_grid_of_degrees_curves_over_a_map_in_metres() {
+    let dir = tmp("graticule");
+    let b = GdalBackend::new();
+    // Västra Götaland, about 11 to 14 degrees east and 57.5 to 59 north, in SWEREF 99 TM.
+    std::fs::write(dir.join("areas.csv"), "name;wkt\nA;POLYGON ((300000 6380000, 480000 6380000, 480000 6540000, 300000 6540000, 300000 6380000))\n").unwrap();
+    let ws = Workspace::from_json(
+        r##"{
+      "nodes": [
+        {"id": "areas", "type": "Reader", "params": {"path": "areas.csv", "crs": "EPSG:3006"}},
+        {"id": "map", "type": "MapRenderer", "params": {"width": "400", "margin": "5", "background": "none", "grid": "degrees",
+          "layers": [{"from": "areas:Output", "fill": "#ffffff", "stroke": "#ffffff", "width": 1}]}}
+      ],
+      "edges": [{"from": ["areas", "Output"], "to": ["map", "Layers"]}]
+    }"##,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    let img = r.output("map", "Map").unwrap().image.as_ref().unwrap().clone();
+    // The lines are grey over the white area; a meridian runs down most of the map.
+    let grey = |x: usize, y: usize| {
+        let p = &img.rgba[(y * img.width + x) * 4..][..4];
+        p[3] > 0 && p[0] < 240 && p[0] == p[1] && p[1] == p[2]
+    };
+    let rows_with_grey = (0..img.height).filter(|y| (0..img.width).any(|x| grey(x, *y))).count();
+    assert!(rows_with_grey > img.height * 3 / 4, "{} of {}", rows_with_grey, img.height);
+    // Red and green as the colours of a layer are told about: many cannot tell them apart.
+    std::fs::write(dir.join("kinds.csv"), "kind;colour;wkt\nForest;#4d9a21;POINT (350000 6400000)\nFire;#d73027;POINT (400000 6450000)\n").unwrap();
+    let ws = Workspace::from_json(
+        r##"{
+      "nodes": [
+        {"id": "kinds", "type": "Reader", "params": {"path": "kinds.csv", "crs": "EPSG:3006"}},
+        {"id": "map", "type": "MapRenderer", "params": {"width": "300", "background": "none",
+          "layers": [{"from": "kinds:Output", "color_by": "colour", "ramp": "as_written", "size": 10}]}}
+      ],
+      "edges": [{"from": ["kinds", "Output"], "to": ["map", "Layers"]}]
+    }"##,
+    )
+    .unwrap();
+    let r = run(&ws, Some(&b), &dir);
+    assert_eq!(r.errors, 0, "{:?}", r.log);
+    assert!(r.nodes["map"].warnings.iter().any(|w| w.contains("hard to tell apart")), "{:?}", r.nodes["map"].warnings);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn a_map_is_written_as_png_jpg_and_geotiff_with_its_coordinates() {
     let dir = tmp("images");
     let b = GdalBackend::new();

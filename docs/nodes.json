@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.96.5",
+  "version": "0.96.6",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a comment that says what it does in this model (keep the name of the tool, without a name of its own), x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -5900,6 +5900,45 @@
           "shape": "a string",
           "default": "",
           "hint": "Such as 10, 90 for the values a tenth lie below and a tenth above, as _p10 and _p90. Empty gives none"
+        },
+        {
+          "key": "more",
+          "label": "Also",
+          "kind": "picks",
+          "shape": "some of the values in choices: a list of strings, or one string separated by commas",
+          "choices": [
+            {
+              "value": "std",
+              "label": "Standard deviation"
+            },
+            {
+              "value": "cv",
+              "label": "Coefficient of variation, in %"
+            },
+            {
+              "value": "range",
+              "label": "Range: largest less smallest"
+            },
+            {
+              "value": "distinct",
+              "label": "Number of different values"
+            },
+            {
+              "value": "weighted_mean",
+              "label": "Weighted mean"
+            }
+          ],
+          "default": "",
+          "hint": "Further figures for each attribute, as _std, _cv, _range, _distinct and _weighted_mean"
+        },
+        {
+          "key": "weight",
+          "label": "Weight",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "For the weighted mean: what each value counts as, such as the number of inhabitants of each area"
         }
       ]
     },
@@ -8518,7 +8557,7 @@
           "kind": "text",
           "shape": "a string",
           "default": "",
-          "hint": "The path to the list of items in a page, such as values or features, to know when the pages end. Empty takes the first list"
+          "hint": "The path to the list of items in a page, such as values or features, to know when the pages end, and where the places are when they are made into features. Empty takes the first list"
         },
         {
           "key": "max_pages",
@@ -8553,6 +8592,24 @@
           ],
           "default": "text",
           "hint": "A file for answers that are not text, such as a GeoTIFF of travel times. Read the files with an Input, with this stream connected to its Paths"
+        },
+        {
+          "key": "as_features",
+          "label": "Places in the answer",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "no",
+              "label": "Kept as text"
+            },
+            {
+              "value": "yes",
+              "label": "Made into features"
+            }
+          ],
+          "default": "no",
+          "hint": "An answer of GeoJSON, a list of objects with lat and lon, or a list of coordinates, becomes a feature for each place, with its values as attributes, in WGS 84. Others go to Failed"
         },
         {
           "key": "folder",
@@ -9381,10 +9438,14 @@
             {
               "value": "ticks",
               "label": "Marks in the edge"
+            },
+            {
+              "value": "degrees",
+              "label": "Latitude and longitude, in degrees"
             }
           ],
           "default": "none",
-          "hint": "With the coordinates in the edge"
+          "hint": "With the coordinates in the edge: those of the map, such as SWEREF 99 TM, or degrees of WGS 84, whose lines curve on a map in metres"
         },
         {
           "key": "grid_every",
@@ -9392,7 +9453,7 @@
           "kind": "text",
           "shape": "a string",
           "default": "",
-          "hint": "In the units of the map, such as 1000 for every km in SWEREF 99 TM. Empty gives a round number by the size"
+          "hint": "In the units of the map, such as 1000 for every km in SWEREF 99 TM, or in degrees for a grid of degrees. Empty gives a round number by the size"
         },
         {
           "key": "overview",
@@ -9463,7 +9524,7 @@
       "title": "Draw chart",
       "group": "tool",
       "category": "Charts",
-      "description": "Draws a bar chart of the features: a bar for each name, as long as its value, such as the area of each municipality. Or a line chart, with a line for each value of an attribute through its points along a number or a date, such as the inhabitants of each municipality year by year. Sorted by size or by name, with a title, an explanation and a note. The chart comes out as a picture to write to a .png or a .pdf, and can also be written as an interactive web page, where each value shows under the pointer and the bars can be sorted.",
+      "description": "Draws a bar chart of the features: a bar for each name, as long as its value, such as the area of each municipality. Or a line chart, with a line for each value of an attribute through its points along a number or a date, such as the inhabitants of each municipality year by year. Or a histogram of how values are spread, a scatter plot of one number against another with a trend line and its R², box plots of the spread in each group, stacked or grouped bars of the parts of each, or a population pyramid. Any of them can be drawn as small multiples: a small chart for each municipality, say, side by side on one scale. Sorted by size or by name, with a title, an explanation and a note. The chart comes out as a picture to write to a .png or a .pdf, and can also be written as an interactive web page, where each value shows under the pointer and the bars can be sorted.",
       "inputs": [
         "Input"
       ],
@@ -9486,6 +9547,30 @@
             {
               "value": "lines",
               "label": "Lines"
+            },
+            {
+              "value": "histogram",
+              "label": "Histogram: how the values are spread"
+            },
+            {
+              "value": "scatter",
+              "label": "Scatter: one number against another"
+            },
+            {
+              "value": "box",
+              "label": "Box plot: the spread of each group"
+            },
+            {
+              "value": "stacked",
+              "label": "Stacked bars: the parts of each"
+            },
+            {
+              "value": "grouped",
+              "label": "Grouped bars: the parts side by side"
+            },
+            {
+              "value": "pyramid",
+              "label": "Population pyramid"
             }
           ],
           "default": "bars",
@@ -9544,6 +9629,85 @@
           ],
           "default": "no",
           "hint": "For lines"
+        },
+        {
+          "key": "facet",
+          "label": "One chart for each",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "Small multiples: a small chart for each value, such as each municipality, side by side on one scale. Empty draws one chart"
+        },
+        {
+          "key": "free_scales",
+          "label": "Each small chart its own scale",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "no",
+              "label": "No"
+            },
+            {
+              "value": "yes",
+              "label": "Yes"
+            }
+          ],
+          "default": "no",
+          "hint": "One shared scale lets them be compared; scales of their own show the shape of each"
+        },
+        {
+          "key": "bins",
+          "label": "Bins",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "For a histogram: about how many. Empty chooses by the number of values"
+        },
+        {
+          "key": "trend",
+          "label": "Trend line",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "no",
+              "label": "No"
+            },
+            {
+              "value": "yes",
+              "label": "Yes"
+            }
+          ],
+          "default": "yes",
+          "hint": "For a scatter plot: a straight line through the points, with R², how much of the spread it explains"
+        },
+        {
+          "key": "percent",
+          "label": "As shares of 100 %",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "no",
+              "label": "No"
+            },
+            {
+              "value": "yes",
+              "label": "Yes"
+            }
+          ],
+          "default": "no",
+          "hint": "For stacked bars: every bar as tall, the parts as shares"
+        },
+        {
+          "key": "x_title",
+          "label": "Along the bottom",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "For a histogram or a scatter plot: what the numbers along the bottom are"
         },
         {
           "key": "category",
@@ -13034,6 +13198,74 @@
       ]
     },
     {
+      "type": "KernelDensity",
+      "title": "Heat map",
+      "group": "tool",
+      "category": "Raster",
+      "description": "A heat map of points as a raster: each point, such as an accident, a visit or a house, spread over the cells within a radius, most at the point and nothing at the radius (the quartic kernel), so that where many lie close the values are high. Each point counts as one, or as the number in an attribute, such as the people living there. Per square kilometre, per hectare, or the weighted sum within the radius. Draw it with a colour ramp in Draw map.",
+      "inputs": [
+        "Points",
+        "Like"
+      ],
+      "outputs": [
+        "Raster"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "radius",
+          "label": "Radius",
+          "kind": "text",
+          "shape": "a string",
+          "default": "500",
+          "hint": "How far each point spreads, in the units of the coordinate system, such as metres. Larger gives a smoother map"
+        },
+        {
+          "key": "cell",
+          "label": "Cell size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "50",
+          "hint": "In the units of the coordinate system. A raster connected to Like gives its cells instead"
+        },
+        {
+          "key": "weight",
+          "label": "Weight",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Points",
+          "default": "",
+          "hint": "An attribute that each point counts as, such as the number of people at an address. Empty: each point counts as one"
+        },
+        {
+          "key": "unit",
+          "label": "Density",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "km2",
+              "label": "Per square kilometre"
+            },
+            {
+              "value": "ha",
+              "label": "Per hectare"
+            },
+            {
+              "value": "unit",
+              "label": "Per square unit of the coordinate system"
+            },
+            {
+              "value": "sum",
+              "label": "Weighted sum within the radius"
+            }
+          ],
+          "default": "km2"
+        }
+      ]
+    },
+    {
       "type": "Viewshed",
       "title": "Visible area",
       "group": "tool",
@@ -15639,6 +15871,544 @@
           "shape": "a string",
           "default": "_changed",
           "hint": "On Changed: the names of the attributes that differ, and geometry when it does, with commas between"
+        }
+      ]
+    },
+    {
+      "type": "Classifier",
+      "title": "Classify values",
+      "group": "tool",
+      "category": "Statistics",
+      "description": "Puts the features in classes by a number, for a map with a colour for each class: natural breaks (Jenks), where the classes differ as much as they can and the values within each as little; quantiles, with as many features in each; equal intervals; standard deviations from the mean; or breaks of your own. Each feature gets its class, 1 for the lowest, and its name, such as 10–50, for the legend; Classes lists them with how many are in each.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Classified",
+        "Classes"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "attribute",
+          "label": "Values",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "The numbers to put in classes"
+        },
+        {
+          "key": "method",
+          "label": "Classes by",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "jenks",
+              "label": "Natural breaks (Jenks)"
+            },
+            {
+              "value": "quantile",
+              "label": "Quantiles: as many in each class"
+            },
+            {
+              "value": "equal",
+              "label": "Equal intervals"
+            },
+            {
+              "value": "stddev",
+              "label": "Standard deviations from the mean"
+            },
+            {
+              "value": "manual",
+              "label": "Breaks of my own"
+            }
+          ],
+          "default": "jenks"
+        },
+        {
+          "key": "classes",
+          "label": "Number of classes",
+          "kind": "text",
+          "shape": "a string",
+          "default": "5",
+          "hint": "From 2 to 12"
+        },
+        {
+          "key": "breaks",
+          "label": "Breaks",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "For breaks of your own: where one class ends and the next begins, such as 10, 50, 100"
+        },
+        {
+          "key": "name",
+          "label": "Attribute with the class",
+          "kind": "text",
+          "shape": "a string",
+          "default": "class",
+          "hint": "1 for the lowest values"
+        },
+        {
+          "key": "label_name",
+          "label": "Attribute with its name",
+          "kind": "text",
+          "shape": "a string",
+          "default": "class_label",
+          "hint": "Such as 10–50, for the legend of a map"
+        },
+        {
+          "key": "decimals",
+          "label": "Decimals in the names",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0"
+        }
+      ]
+    },
+    {
+      "type": "RunningStatistics",
+      "title": "Shares, ranks and running totals",
+      "group": "tool",
+      "category": "Statistics",
+      "description": "Gives each feature numbers about its place among the others: its share of the total in percent, its rank (1 for the largest), the running total and the running share in the order the features come, and a moving mean of the last few values, for all together or for each group, such as each municipality.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "attribute",
+          "label": "Values",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "The numbers to work with"
+        },
+        {
+          "key": "what",
+          "label": "Add",
+          "kind": "picks",
+          "shape": "some of the values in choices: a list of strings, or one string separated by commas",
+          "choices": [
+            {
+              "value": "share",
+              "label": "Share of the total, in %"
+            },
+            {
+              "value": "rank",
+              "label": "Rank, 1 for the largest"
+            },
+            {
+              "value": "cumulative",
+              "label": "Running total, in the order they come"
+            },
+            {
+              "value": "cumulative_share",
+              "label": "Running share of the total, in %"
+            },
+            {
+              "value": "moving",
+              "label": "Moving mean, in the order they come"
+            }
+          ],
+          "default": "share",
+          "hint": "Each becomes an attribute after the name of the values, such as people_share. Sort the features first for running totals and moving means"
+        },
+        {
+          "key": "group_by",
+          "label": "For each",
+          "kind": "attributes",
+          "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
+          "port": "Input",
+          "default": "",
+          "hint": "Such as the municipality. Empty: all together"
+        },
+        {
+          "key": "window",
+          "label": "Moving mean of",
+          "kind": "text",
+          "shape": "a string",
+          "default": "3",
+          "hint": "How many values, this one and those before it"
+        }
+      ]
+    },
+    {
+      "type": "ChangeOverTime",
+      "title": "Change over time",
+      "group": "tool",
+      "category": "Statistics",
+      "description": "For values over time, such as the inhabitants of each municipality year by year: the change since the time before, in numbers and in percent, an index where the base time is 100, and the mean yearly growth since the base time in percent. The time is a year or a date; each series, such as each municipality, is counted by itself.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "attribute",
+          "label": "Values",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "Such as the number of inhabitants"
+        },
+        {
+          "key": "time",
+          "label": "Time",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "A year, such as 2024, or a date"
+        },
+        {
+          "key": "series",
+          "label": "For each",
+          "kind": "attributes",
+          "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
+          "port": "Input",
+          "default": "",
+          "hint": "What the values are of, such as the municipality. Empty: all are one series"
+        },
+        {
+          "key": "what",
+          "label": "Add",
+          "kind": "picks",
+          "shape": "some of the values in choices: a list of strings, or one string separated by commas",
+          "choices": [
+            {
+              "value": "change",
+              "label": "Change since the time before"
+            },
+            {
+              "value": "percent",
+              "label": "Change since the time before, in %"
+            },
+            {
+              "value": "index",
+              "label": "Index: the base time is 100"
+            },
+            {
+              "value": "growth",
+              "label": "Yearly growth since the base time, in %"
+            }
+          ],
+          "default": "percent",
+          "hint": "Each becomes an attribute after the name of the values"
+        },
+        {
+          "key": "base",
+          "label": "Base time",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "For the index and the yearly growth, such as 2015. Empty: the first time of each series"
+        }
+      ]
+    },
+    {
+      "type": "RateCalculator",
+      "title": "Rates",
+      "group": "tool",
+      "category": "Statistics",
+      "description": "Cases per inhabitant, such as patients per 1 000 inhabitants in each area. Rates from few cases can be hidden, so that no one can be told apart. A smoothed rate draws the rates of small populations towards the mean (empirical Bayes), where chance makes them leap. With a row for each area and age group, Standardised gives the rate of each area as if all had the same ages, directly standardised to the population on Standard, such as that of Sweden, or of all areas together.",
+      "inputs": [
+        "Input",
+        "Standard"
+      ],
+      "outputs": [
+        "Rates",
+        "Standardised"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "count",
+          "label": "Cases",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "How many, such as the number of patients or of accidents"
+        },
+        {
+          "key": "population",
+          "label": "Population",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "Out of how many, such as the inhabitants"
+        },
+        {
+          "key": "per",
+          "label": "Per",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1000",
+          "hint": "Such as 1000 for cases per thousand inhabitants, or 100 for percent"
+        },
+        {
+          "key": "suppress",
+          "label": "Hide fewer cases than",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Rates of from 1 to this many cases less 1 are left empty and marked in suppressed, so that no one can be told apart, such as 5. Empty: none hidden"
+        },
+        {
+          "key": "smooth",
+          "label": "Smoothed rate",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "no",
+              "label": "No"
+            },
+            {
+              "value": "yes",
+              "label": "Yes: small populations drawn towards the mean (empirical Bayes)"
+            }
+          ],
+          "default": "no",
+          "hint": "Small populations give rates that leap by chance; smoothed, they lean on the mean of all as much as they are small"
+        },
+        {
+          "key": "area",
+          "label": "Area, for age standardisation",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "With a row for each area and age group: the attribute that names the area. Standardised gives a row for each area"
+        },
+        {
+          "key": "age",
+          "label": "Age group",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "The attribute that names the age group, such as 0-14"
+        },
+        {
+          "key": "standard_age",
+          "label": "Age group in Standard",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Standard",
+          "default": "",
+          "hint": "The same names as in Age group"
+        },
+        {
+          "key": "standard_population",
+          "label": "Population in Standard",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Standard",
+          "default": "",
+          "hint": "The standard population of each age group, such as that of all of Sweden. Empty on Standard: all areas together"
+        }
+      ]
+    },
+    {
+      "type": "Regression",
+      "title": "Linear regression",
+      "group": "tool",
+      "category": "Statistics",
+      "description": "How a number depends on one or more others, by least squares: such as the price of a house by its area and age. Summary gives each coefficient with its standard error, t and p, and how much the model explains (R², and adjusted R²). Each feature gets what the model gives for it and how far it is off (the residual, also in standard deviations), to draw on a map: where the model misses tells what it leaves out.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Features",
+        "Summary"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "y",
+          "label": "To explain",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "The number that is to be explained, such as the price"
+        },
+        {
+          "key": "x",
+          "label": "Explained by",
+          "kind": "attributes",
+          "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
+          "port": "Input",
+          "default": "",
+          "hint": "One or more numbers, such as the area and the year built"
+        }
+      ]
+    },
+    {
+      "type": "DashboardWriter",
+      "title": "Dashboard web page",
+      "group": "tool",
+      "category": "Charts",
+      "description": "Writes a web page with a map of the areas, coloured by a value in natural classes, and a bar for each area beside it, the two linked: the pointer on a bar lights up its area, and on an area its bar, with the name and the value. The bars sort by size or by name. Light or dark as the reader's computer is set, and nothing to fetch, so it opens from a disk or on any site. The features pass on unchanged.",
+      "inputs": [
+        "Input"
+      ],
+      "outputs": [
+        "Output"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "path",
+          "label": "Web page",
+          "kind": "path",
+          "shape": "a file to write; relative paths start at the folder of the model",
+          "default": "",
+          "hint": "The .html file to write, such as out/dashboard.html"
+        },
+        {
+          "key": "name",
+          "label": "Names",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "What each area is called, such as the municipality"
+        },
+        {
+          "key": "value",
+          "label": "Values",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Input",
+          "default": "",
+          "hint": "The number the map is coloured by and the bars show"
+        },
+        {
+          "key": "title",
+          "label": "Title",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Say what the page shows, in a few words"
+        },
+        {
+          "key": "subtitle",
+          "label": "Explanation",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "A line under the title: what is measured, where and when"
+        },
+        {
+          "key": "note",
+          "label": "Note at the foot",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Such as where the data comes from"
+        },
+        {
+          "key": "unit",
+          "label": "Unit",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Written after the numbers, such as % or per 1 000"
+        },
+        {
+          "key": "decimals",
+          "label": "Decimals",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0"
+        },
+        {
+          "key": "format",
+          "label": "Numbers as",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "sv",
+              "label": "1 234,5"
+            },
+            {
+              "value": "en",
+              "label": "1,234.5"
+            }
+          ],
+          "default": "sv"
+        },
+        {
+          "key": "ramp",
+          "label": "Colours",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "blues",
+              "label": "Blues"
+            },
+            {
+              "value": "greens",
+              "label": "Greens"
+            },
+            {
+              "value": "reds",
+              "label": "Reds"
+            },
+            {
+              "value": "oranges",
+              "label": "Oranges"
+            },
+            {
+              "value": "purples",
+              "label": "Purples"
+            },
+            {
+              "value": "viridis",
+              "label": "Yellow to blue"
+            },
+            {
+              "value": "heat",
+              "label": "Yellow to red"
+            },
+            {
+              "value": "diverging",
+              "label": "Blue to red"
+            }
+          ],
+          "default": "blues",
+          "hint": "From the smallest values to the largest"
+        },
+        {
+          "key": "classes",
+          "label": "Classes",
+          "kind": "text",
+          "shape": "a string",
+          "default": "5",
+          "hint": "Natural breaks (Jenks), from 2 to 9"
         }
       ]
     },

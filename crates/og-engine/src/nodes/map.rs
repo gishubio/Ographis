@@ -122,16 +122,21 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
     ParamSpec {
         key: "grid",
         label: "Grid",
-        kind: ParamKind::Choice(&[("none", "None"), ("lines", "Lines across the map"), ("ticks", "Marks in the edge")]),
+        kind: ParamKind::Choice(&[
+            ("none", "None"),
+            ("lines", "Lines across the map"),
+            ("ticks", "Marks in the edge"),
+            ("degrees", "Latitude and longitude, in degrees"),
+        ]),
         default: "none",
-        hint: "With the coordinates in the edge",
+        hint: "With the coordinates in the edge: those of the map, such as SWEREF 99 TM, or degrees of WGS 84, whose lines curve on a map in metres",
     },
     ParamSpec {
         key: "grid_every",
         label: "Grid every",
         kind: ParamKind::Text,
         default: "",
-        hint: "In the units of the map, such as 1000 for every km in SWEREF 99 TM. Empty gives a round number by the size",
+        hint: "In the units of the map, such as 1000 for every km in SWEREF 99 TM, or in degrees for a grid of degrees. Empty gives a round number by the size",
     },
     ParamSpec {
         key: "overview",
@@ -185,6 +190,8 @@ pub struct MapLayer {
     pub labels: crate::mapdraw::LabelSpec,
     /// Icons for its points.
     pub icon: crate::mapdraw::IconSpec,
+    /// Small charts on its features.
+    pub chart: crate::mapdraw::ChartSpec,
     /// How a raster in it is drawn.
     pub raster: crate::rasterlook::RasterSpec,
 }
@@ -279,6 +286,16 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
                 spaced: flag("label_spaced"),
             };
             let icon = crate::mapdraw::IconSpec { name: text("icon"), by: text("icon_by"), style: text("icon_style") };
+            let chart = crate::mapdraw::ChartSpec {
+                kind: text("chart"),
+                of: match r.get("chart_of") {
+                    Some(serde_json::Value::Array(a)) => a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(),
+                    Some(serde_json::Value::String(t)) => t.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect(),
+                    _ => Vec::new(),
+                },
+                size: num("chart_size", 40.0).clamp(4.0, 500.0) as f32,
+                size_by: text("chart_size_by"),
+            };
             let given = |k: &str| r.get(k).and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(crate::model::parse_number)));
             let raster = crate::rasterlook::RasterSpec {
                 mode: text("raster"),
@@ -300,7 +317,7 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
                     .unwrap_or_default(),
                 opacity: (num("opacity", 100.0) / 100.0).clamp(0.0, 1.0) as f32,
             };
-            Some(MapLayer { from, name, show, style, theme, labels, icon, raster })
+            Some(MapLayer { from, name, show, style, theme, labels, icon, chart, raster })
         })
         .collect()
 }
@@ -422,6 +439,14 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                         o[k] = serde_json::json!(v);
                     }
                 }
+                if !r.chart.kind.is_empty() {
+                    o["chart"] = serde_json::json!(r.chart.kind);
+                    o["chart_of"] = serde_json::json!(r.chart.of);
+                    o["chart_size"] = serde_json::json!(r.chart.size);
+                    if !r.chart.size_by.is_empty() {
+                        o["chart_size_by"] = serde_json::json!(r.chart.size_by);
+                    }
+                }
                 // A raster only when it is set otherwise than chosen by its values.
                 let ra = &r.raster;
                 for (k, v) in [("raster", &ra.mode), ("raster_ramp", &ra.ramp)] {
@@ -460,6 +485,7 @@ pub fn arrange_layers(stored: &[MapLayer], connected: &[String]) -> Vec<MapLayer
             theme: Default::default(),
             labels: Default::default(),
             icon: Default::default(),
+            chart: Default::default(),
             raster: Default::default(),
             show: true,
             style: crate::mapdraw::LayerStyle::default_for(stored.len() + k),
@@ -588,6 +614,18 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
             th.size_keys.iter_mut().for_each(|k| restyle(&mut k.look));
         }
     }
+    // Colours that one man in twelve cannot tell apart, in the legend of a layer.
+    for (th, (part, row)) in themes.iter().zip(&rows_drawn) {
+        let keyed: Vec<(&str, [u8; 3])> = th.keys.iter().filter_map(|k| k.look.fill.or(k.look.stroke).map(|c| (k.text.as_str(), [c[0], c[1], c[2]]))).collect();
+        let colours: Vec<[u8; 3]> = keyed.iter().map(|k| k.1).collect();
+        if let Some((i, j, kind)) = crate::colourvision::confused(&colours) {
+            let name = if row.name.trim().is_empty() { part.label.clone() } else { row.name.trim().to_string() };
+            ctx.notes.warn(format!(
+                "{}: {} and {} have colours that are hard to tell apart for those who are {}, about one man in twelve. A ramp from light to dark, such as Blues or Yellow to blue, can be read by all.",
+                name, keyed[i].0, keyed[j].0, kind
+            ));
+        }
+    }
     // How the layers that carry a raster draw it.
     let mut rasters = Vec::new();
     for ((t, _), (part, row)) in tables.iter().zip(&rows_drawn) {
@@ -616,6 +654,10 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
             }
         }
         icons.push(ic);
+    }
+    let mut charts = Vec::new();
+    for ((t, _), (part, row)) in tables.iter().zip(&rows_drawn) {
+        charts.push(prepare_charts(t, &row.chart).map_err(|e| GbError(format!("{}: charts: {}", part.label, e.0)))?);
     }
     if !map_style.is_empty() {
         for lb in labels.iter_mut().flatten() {
@@ -659,6 +701,7 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
                     size_keys: th.size_keys.clone(),
                     icon: (!row.icon.name.trim().is_empty() && row.icon.by.trim().is_empty()).then(|| crate::icons::icon_for(&row.icon.name)).flatten(),
                     icon_keys: icon_keys(t, &row.icon),
+                    chart_keys: if row.chart.kind.is_empty() { Vec::new() } else { row.chart.of.iter().cloned().zip(chart_colours()).collect() },
                     heat_ramp: (th.heat > 0.0).then(|| th.heat_ramp.clone()),
                 })
                 .collect(),
@@ -688,6 +731,9 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
             th.size_keys.iter_mut().for_each(|k| look(&mut k.look));
             th.cluster *= scale;
             th.heat *= scale;
+        }
+        for c in charts.iter_mut().flatten() {
+            c.sizes.iter_mut().for_each(|s| *s *= scale);
         }
         for l in labels.iter_mut().flatten() {
             l.spec.size *= scale;
@@ -755,6 +801,13 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
         grid: p.get("grid").unwrap_or_default(),
         grid_every: number_param(p, "grid_every", "Grid every")?,
         geographic: ctx.geographic(Some(crs)).unwrap_or(false),
+        graticule: if p.get("grid").as_deref() == Some("degrees") {
+            let layers: Vec<(&Table, crate::mapdraw::LayerStyle)> = tables.iter().map(|(t, s)| (t.as_ref(), s.clone())).collect();
+            let frame = crate::mapdraw::frame(&layers, width, margin)?;
+            graticule(&frame, crs, number_param(p, "grid_every", "Grid every")?, ctx)?
+        } else {
+            Vec::new()
+        },
     };
     let names = rows_drawn.iter().map(|(part, row)| if row.name.trim().is_empty() { part.label.clone() } else { row.name.trim().to_string() }).collect();
     // The overview map: its own layer when one is connected, else the map seen from further.
@@ -817,6 +870,7 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
         themes,
         labels,
         icons,
+        charts,
         rasters,
         legend,
     };
@@ -909,6 +963,111 @@ pub(in crate::nodes) fn prepare_labels(t: &Table, spec: &crate::mapdraw::LabelSp
         items.push(crate::mapdraw::LabelItem { feature: i, text, size, priority, at });
     }
     Ok(Some(crate::mapdraw::Labels { spec: spec.clone(), items }))
+}
+
+/// The lines of latitude and longitude over a map, in its coordinates: every `every` degrees,
+/// or a round number of them by the size of the map.
+fn graticule(frame: &crate::mapdraw::Frame, crs: u32, every: Option<f64>, ctx: &mut NodeCtx) -> Result<Vec<crate::mapdraw::GratLine>> {
+    let b = frame.b;
+    let (w, h) = (frame.width as f64 * frame.px, frame.height as f64 * frame.px);
+    let b = [b[0], b[1], b[0] + w, b[1] + h];
+    // The edges of the map in degrees, from points along them.
+    let n = 24;
+    let (mut xs, mut ys) = (Vec::new(), Vec::new());
+    for i in 0..=n {
+        let f = i as f64 / n as f64;
+        for (x, y) in [(b[0] + f * w, b[1]), (b[0] + f * w, b[3]), (b[0], b[1] + f * h), (b[2], b[1] + f * h)] {
+            xs.push(x);
+            ys.push(y);
+        }
+    }
+    let backend = ctx.backend("A grid of degrees")?;
+    if crs != 4326 {
+        backend.transform(crs, 4326, &mut xs, &mut ys)?;
+    }
+    let fold = |v: &[f64]| v.iter().filter(|x| x.is_finite()).fold((f64::MAX, f64::MIN), |a, x| (a.0.min(*x), a.1.max(*x)));
+    let (lon, lat) = (fold(&xs), fold(&ys));
+    if lon.0 > lon.1 || lat.0 > lat.1 {
+        return Ok(Vec::new());
+    }
+    let span = (lon.1 - lon.0).max(lat.1 - lat.0);
+    const STEPS: &[f64] = &[0.01, 0.02, 0.05, 0.1, 0.2, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0];
+    let step = every.filter(|e| *e > 0.0).unwrap_or_else(|| STEPS.iter().copied().find(|s| span / s <= 6.0).unwrap_or(30.0));
+    if span / step > 200.0 {
+        return err("The grid of degrees would have too many lines: set Grid every to more degrees.");
+    }
+    let text = |v: f64, pos: char, neg: char| {
+        let decimals = if step >= 1.0 { 0 } else { (-step.log10()).ceil() as usize };
+        let s = format!("{:.*}°{}", decimals, v.abs(), if v < 0.0 { neg } else { pos });
+        s.replace('.', ",")
+    };
+    let mut lines = Vec::new();
+    let pad = step;
+    let samples = 60;
+    let mut add = |pts: Vec<(f64, f64)>, label: String, meridian: bool| -> Result<()> {
+        let (mut x, mut y): (Vec<f64>, Vec<f64>) = pts.into_iter().unzip();
+        if crs != 4326 {
+            backend.transform(4326, crs, &mut x, &mut y)?;
+        }
+        let points: Vec<(f64, f64)> = x.into_iter().zip(y).filter(|p| p.0.is_finite() && p.1.is_finite()).collect();
+        if points.len() > 1 {
+            lines.push(crate::mapdraw::GratLine { points, label, meridian });
+        }
+        Ok(())
+    };
+    let (lat0, lat1) = ((lat.0 - pad).max(-89.9), (lat.1 + pad).min(89.9));
+    let mut v = (lon.0 / step).ceil() * step;
+    while v <= lon.1 {
+        let pts = (0..=samples).map(|i| (v, lat0 + (lat1 - lat0) * i as f64 / samples as f64)).collect();
+        add(pts, text(v, 'E', 'W'), true)?;
+        v += step;
+    }
+    let (lon0, lon1) = (lon.0 - pad, lon.1 + pad);
+    let mut v = (lat.0 / step).ceil() * step;
+    while v <= lat.1 {
+        let pts = (0..=samples).map(|i| (lon0 + (lon1 - lon0) * i as f64 / samples as f64, v)).collect();
+        add(pts, text(v, 'N', 'S'), false)?;
+        v += step;
+    }
+    Ok(lines)
+}
+
+/// The colours of the slices and bars of charts on a map, in turn.
+fn chart_colours() -> impl Iterator<Item = [u8; 4]> {
+    crate::chart::COLOURS.iter().filter(|c| c.0 != "grey").map(|c| [c.2[0], c.2[1], c.2[2], 255]).cycle()
+}
+
+/// The charts on the features of a layer: the values of each, and how large each is drawn.
+fn prepare_charts(t: &Table, spec: &crate::mapdraw::ChartSpec) -> Result<Option<crate::mapdraw::MapCharts>> {
+    if spec.kind.is_empty() || spec.kind == "none" {
+        return Ok(None);
+    }
+    if spec.of.is_empty() {
+        return err("Choose the attributes the charts show.");
+    }
+    let idx: Vec<usize> = spec.of.iter().map(|n| t.need_field(n)).collect::<Result<_>>()?;
+    let values: Vec<Vec<f64>> = t
+        .features
+        .iter()
+        .map(|f| {
+            idx.iter()
+                .map(|i| f.attrs[*i].as_f64().or_else(|| crate::model::parse_number(&f.attrs[*i].to_text())).filter(|v| v.is_finite()).unwrap_or(0.0))
+                .collect()
+        })
+        .collect();
+    // How large each is: a pie by its area, so the side grows as the square root.
+    let by: Vec<f64> = match spec.size_by.as_str() {
+        "" => vec![1.0; t.len()],
+        "total" => values.iter().map(|v| v.iter().map(|x| x.max(0.0)).sum()).collect(),
+        a => {
+            let i = t.need_field(a)?;
+            t.features.iter().map(|f| f.attrs[i].as_f64().filter(|v| v.is_finite()).unwrap_or(0.0).max(0.0)).collect()
+        }
+    };
+    let most = by.iter().copied().fold(0.0, f64::max);
+    let sizes = by.iter().map(|b| if most > 0.0 { spec.size * (b / most).sqrt() as f32 } else { spec.size }).collect();
+    let top = values.iter().flatten().copied().fold(0.0, f64::max);
+    Ok(Some(crate::mapdraw::MapCharts { kind: spec.kind.clone(), values, sizes, colours: chart_colours().take(spec.of.len().max(1)).collect(), top }))
 }
 
 /// The icon of each feature of a layer, from the name given or from an attribute.

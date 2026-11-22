@@ -15,6 +15,64 @@ impl App {
         }
     }
 
+    /// Selects a node as focus_node does, and moves the canvas so that it is in sight when
+    /// it is not, at the zoom there is.
+    pub fn show_node(&mut self, id: &str) {
+        self.focus_node(id);
+        let Some(n) = graph::find(&self.snarl, id) else { return };
+        let rect = self
+            .node_rects
+            .iter()
+            .find(|r| r.0 == n)
+            .map(|r| r.1)
+            .unwrap_or_else(|| Rect::from_min_size(self.snarl.get_node_info(n).map_or(egui::Pos2::ZERO, |i| i.pos), egui::vec2(190.0, 110.0)));
+        let on_screen = Rect::from_min_max(self.transform * rect.min, self.transform * rect.max);
+        if self.canvas_rect.is_positive() && !self.canvas_rect.shrink(12.0).contains_rect(on_screen) {
+            let s = self.transform.scaling;
+            self.fit = Some(egui::emath::TSTransform::new(self.canvas_rect.center().to_vec2() - rect.center().to_vec2() * s, s));
+        }
+    }
+
+    /// The nodes that failed in the latest run, in the order the log tells of them.
+    pub fn error_nodes(&self) -> Vec<String> {
+        let Some(r) = &self.result else { return Vec::new() };
+        let mut out: Vec<String> = Vec::new();
+        for l in &r.log {
+            if let (Level::Error, Some(n)) = (l.level, &l.node) {
+                if !out.contains(n) {
+                    out.push(n.clone());
+                }
+            }
+        }
+        let mut rest: Vec<&String> = r.nodes.iter().filter(|(id, nr)| nr.status == Status::Error && !out.contains(id)).map(|(id, _)| id).collect();
+        rest.sort();
+        out.extend(rest.into_iter().cloned());
+        // Only those that are still in the model.
+        out.retain(|id| graph::find(&self.snarl, id).is_some());
+        out
+    }
+
+    /// Goes to the next node with an error after the one selected, or the one before: F8 and
+    /// Shift+F8, round to the first again.
+    pub fn go_to_error(&mut self, forward: bool) {
+        let list = self.error_nodes();
+        if list.is_empty() {
+            self.say(if self.result.is_some() { "There are no errors in the latest run." } else { "Nothing has run yet." });
+            return;
+        }
+        let here = self.selected.first().and_then(|n| self.snarl.get_node(*n)).and_then(|n| list.iter().position(|id| *id == n.id));
+        let len = list.len() as i64;
+        let next = match here {
+            Some(at) => (at as i64 + if forward { 1 } else { -1 }).rem_euclid(len) as usize,
+            None if forward => 0,
+            None => list.len() - 1,
+        };
+        let id = list[next].clone();
+        self.show_node(&id);
+        let name = graph::find(&self.snarl, &id).map(|n| self.snarl[n].name.clone()).unwrap_or_default();
+        self.say(format!("Error {} of {}: {}", next + 1, list.len(), name));
+    }
+
     /// Replaces the selection, here and on the canvas.
     pub fn set_selection(&mut self, nodes: Vec<NodeId>) {
         if !nodes.is_empty() {

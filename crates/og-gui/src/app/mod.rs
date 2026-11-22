@@ -31,6 +31,7 @@ mod frame;
 mod groups;
 mod help;
 mod keyboard;
+mod manual;
 mod navigator;
 mod palette;
 mod run;
@@ -333,6 +334,8 @@ pub struct App {
     pub result_at: Option<chrono::NaiveDateTime>,
     /// Whether the window with tips and shortcuts is open.
     pub tips: bool,
+    /// The help window, when it is open.
+    pub help: Option<manual::Help>,
     /// Whether the start screen shows on the empty canvas. The program turns it on when it
     /// starts without a model.
     pub start_screen: bool,
@@ -533,6 +536,7 @@ impl App {
             run_started: None,
             result_at: None,
             tips: false,
+            help: None,
             start_screen: false,
             update_check: None,
             report: None,

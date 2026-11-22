@@ -28,6 +28,10 @@ updates:
         update-types: [version-update:semver-minor, version-update:semver-major]
       - dependency-name: eframe
         update-types: [version-update:semver-minor, version-update:semver-major]
+      # rstar follows geo, which still uses rstar 0.12 (geo 0.33). Take this away when geo
+      # moves on, and the geometry group brings them together.
+      - dependency-name: rstar
+        update-types: [version-update:semver-minor, version-update:semver-major]
   - package-ecosystem: github-actions
     directory: /
     schedule:

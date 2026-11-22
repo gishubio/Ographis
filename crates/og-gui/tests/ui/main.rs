@@ -15,4 +15,5 @@ mod release091;
 mod release094;
 mod release095;
 mod release096;
+mod release0966;
 mod running;

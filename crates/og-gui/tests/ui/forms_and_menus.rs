@@ -428,15 +428,15 @@ fn the_menus_follow_the_pointer_and_the_keyboard() {
     h.run_steps(3);
     assert!(h.query_by_label("About Ographis").is_some(), "left goes back");
     // Down goes into the menu, past the lines between its parts, and Enter chooses: About is
-    // the fifth.
-    for _ in 0..5 {
+    // the sixth.
+    for _ in 0..6 {
         h.key_press(egui::Key::ArrowDown);
         h.run_steps(3);
     }
     shot(&mut h, "196-menu-by-keys");
     h.key_press(egui::Key::Enter);
     h.run_steps(4);
-    assert!(h.state().about, "Down five times and Enter in Help chooses About");
+    assert!(h.state().about, "Down six times and Enter in Help chooses About");
     h.get_by_label("Close").click();
     h.run_steps(3);
     // F10 opens the first menu, and closes it again.

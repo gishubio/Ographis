@@ -105,6 +105,55 @@ fn model(nodes: &str, edges: &str) -> Workspace {
 }
 
 #[test]
+fn places_in_answers_become_features() {
+    let dir = tmp("places");
+    let b = GdalBackend::new();
+    let (base, _) = server(Arc::new(|r: &Req| {
+        match r.route() {
+        "/geojson" => (
+            200,
+            vec![],
+            r#"{"type": "FeatureCollection", "features": [
+                {"type": "Feature", "id": 7, "properties": {"name": "Borås", "people": 113000}, "geometry": {"type": "Point", "coordinates": [12.94, 57.72]}},
+                {"type": "Feature", "properties": {"name": "Ale"}, "geometry": {"type": "Polygon", "coordinates": [[[12,58],[12.1,58],[12.1,58.1],[12,58]]]}}]}"#
+                .into(),
+        ),
+        // As Nominatim: the latitude and longitude as text.
+        "/search" => (200, vec![], r#"[{"place_id": 1, "lat": "57.7089", "lon": "11.9746", "display_name": "Göteborg"}]"#.into()),
+        "/route" => (200, vec![], r#"{"route": {"path": [[11.97, 57.70], [12.0, 57.71], [12.94, 57.72]]}}"#.into()),
+        _ => (200, vec![], r#"{"ok": true}"#.into()),
+    }
+    }));
+    let ws = model(
+        &format!(
+            r#"{{"id": "gj", "type": "HttpCaller", "params": {{"url": "{b}/geojson", "as_features": "yes"}}}},
+               {{"id": "nom", "type": "HttpCaller", "params": {{"url": "{b}/search", "as_features": "yes"}}}},
+               {{"id": "path", "type": "HttpCaller", "params": {{"url": "{b}/route", "as_features": "yes", "items_path": "route.path"}}}},
+               {{"id": "none", "type": "HttpCaller", "params": {{"url": "{b}/other", "as_features": "yes"}}}}"#,
+            b = base
+        ),
+        "",
+    );
+    let r = run(&ws, Some(&b), &dir);
+    let gj = r.output("gj", "Output").unwrap();
+    assert_eq!(gj.len(), 2);
+    assert_eq!(col(gj, "name"), [Value::Text("Borås".into()), Value::Text("Ale".into())]);
+    assert_eq!(col(gj, "people")[0], Value::Int(113000));
+    assert_eq!(col(gj, "id")[0], Value::Int(7));
+    assert!(gj.field_index("_response").is_none(), "the answer text is left out");
+    assert_eq!(gj.crs, Some(4326));
+    assert!(matches!(gj.features[1].geom, Some(geo::Geometry::Polygon(_))));
+    let nom = r.output("nom", "Output").unwrap();
+    let Some(geo::Geometry::Point(pt)) = nom.features[0].geom else { panic!("{:?}", nom.features[0].geom) };
+    assert!((pt.x() - 11.9746).abs() < 1e-9 && (pt.y() - 57.7089).abs() < 1e-9);
+    assert_eq!(col(nom, "display_name")[0], Value::Text("Göteborg".into()));
+    assert_eq!(r.output("path", "Output").unwrap().len(), 3);
+    assert_eq!(r.output("none", "Output").unwrap().len(), 0);
+    assert_eq!(r.output("none", "Failed").unwrap().len(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn pages_are_followed_by_link_offset_and_number() {
     let dir = tmp("pages");
     let b = GdalBackend::new();

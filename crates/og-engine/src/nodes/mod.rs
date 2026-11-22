@@ -731,6 +731,7 @@ pub use pointcloud089::class_port;
 mod audit;
 mod changes;
 mod custom096;
+mod dashboard;
 mod engines096;
 mod geodata;
 mod ifc096;
@@ -749,6 +750,7 @@ mod scene;
 mod scene096;
 mod solid;
 mod splats096;
+mod statistics;
 mod stats096;
 #[cfg(test)]
 mod tests086;
@@ -830,6 +832,8 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         movement096::TYPES,
         locate096::TYPES,
         changes::TYPES,
+        statistics::TYPES,
+        dashboard::TYPES,
         lengths096::TYPES,
         raster096::TYPES,
         custom096::TYPES,

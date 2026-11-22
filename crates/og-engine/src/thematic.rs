@@ -321,14 +321,28 @@ pub fn prepare(table: &Table, style: &LayerStyle, spec: &ThemeSpec) -> Result<Th
             let classes = spec.classes.clamp(1, 12);
             let mut distinct = sorted.clone();
             distinct.dedup();
-            if distinct.len() >= 2 && distinct.len() <= classes {
+            // The names of the values from an attribute beside it, such as class_label beside
+            // the class of Classify values: used in the legend when each value has one name.
+            let names: Option<Vec<String>> = table.field_index(&format!("{}_label", spec.color_by.trim())).and_then(|li| {
+                let mut named: Vec<Option<String>> = vec![None; distinct.len()];
+                for (f, v) in table.features.iter().zip(&vals) {
+                    let (Some(v), text) = (v, f.attrs[li].to_text()) else { continue };
+                    let at = distinct.iter().position(|d| d == v)?;
+                    match &named[at] {
+                        Some(t) if *t != text => return None,
+                        _ => named[at] = Some(text),
+                    }
+                }
+                named.into_iter().collect()
+            });
+            if distinct.len() >= 2 && (distinct.len() <= classes || (names.is_some() && distinct.len() <= 12)) {
                 // As few values as classes, such as 5, 10 and 15 minutes: a class for each value,
                 // named by it, not ranges between them.
                 let ramp = if RAMPS.iter().any(|r| r.0 == spec.ramp) { spec.ramp.as_str() } else { "blues" };
                 let n = distinct.len();
                 let color_of = |c: usize| ramp_at(ramp, 0.08 + 0.92 * c as f64 / (n - 1) as f64);
                 for (c, v) in distinct.iter().enumerate() {
-                    keys.push((color_of(c), short(*v)));
+                    keys.push((color_of(c), names.as_ref().map_or_else(|| short(*v), |n| n[c].clone())));
                     class_keys.push(ClassKey::Range(*v, *v));
                 }
                 vals.iter().map(|v| v.and_then(|v| distinct.iter().position(|d| *d == v)).map(color_of)).collect()
@@ -385,7 +399,12 @@ pub fn prepare(table: &Table, style: &LayerStyle, spec: &ThemeSpec) -> Result<Th
             let chosen: Vec<String> = ranked.iter().take(CATEGORIES.len()).map(|c| c.0.clone()).collect();
             // In the legend in alphabetical order, Other last.
             let mut named = chosen.clone();
-            named.sort_by_key(|n| crate::nodes::alphabetical(n));
+            // Names that begin with a number, such as 10 – 50, in the order of the numbers.
+            let lead = |t: &str| {
+                let first: String = t.split(['–', '—']).next().unwrap_or("").chars().filter(|c| !c.is_whitespace()).collect();
+                crate::model::parse_number(&first).unwrap_or(f64::INFINITY)
+            };
+            named.sort_by(|a, b| lead(a).total_cmp(&lead(b)).then_with(|| crate::nodes::alphabetical(a).cmp(&crate::nodes::alphabetical(b))));
             let color_of = |t: &str| chosen.iter().position(|c| c == t).map(|k| CATEGORIES[k]);
             for n in &named {
                 keys.push((color_of(n).unwrap_or(OTHER), n.clone()));
@@ -549,6 +568,26 @@ mod tests {
         let th = prepare(&t, &style, &spec).unwrap();
         assert_eq!(th.keys.iter().map(|k| k.text.as_str()).collect::<Vec<_>>(), ["A", "B"]);
         assert!(prepare(&t, &style, &ThemeSpec { color_by: "nothing".into(), ..Default::default() }).is_err());
+    }
+
+    #[test]
+    fn classes_are_named_by_their_label_and_ordered_by_number() {
+        // As Classify values gives them: seven classes, more than the five of the theme.
+        let mut t = Table { fields: vec![Field::new("class", FieldType::Int), Field::new("class_label", FieldType::Text)], ..Default::default() };
+        let labels = ["0 – 2", "2 – 10", "10 – 50", "50 – 100", "100 – 500", "500 – 2 000", "2 000 – 9 000"];
+        for (i, l) in labels.iter().enumerate().rev() {
+            t.features.push(Feature {
+                z: None,
+                attrs: vec![Value::Int(i as i64 + 1), Value::Text(l.to_string())],
+                geom: Some(geo::Geometry::Point(geo::Point::new(i as f64, 0.0))),
+            });
+        }
+        let style = LayerStyle::default_for(0);
+        let th = prepare(&t, &style, &ThemeSpec { color_by: "class".into(), ..Default::default() }).unwrap();
+        assert_eq!(th.keys.iter().map(|k| k.text.as_str()).collect::<Vec<_>>(), labels);
+        // Coloured by the names themselves, they come in the order of their numbers too.
+        let th = prepare(&t, &style, &ThemeSpec { color_by: "class_label".into(), ..Default::default() }).unwrap();
+        assert_eq!(th.keys.iter().map(|k| k.text.as_str()).collect::<Vec<_>>(), labels);
     }
 
     #[test]

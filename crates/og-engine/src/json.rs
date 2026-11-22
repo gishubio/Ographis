@@ -326,6 +326,82 @@ pub fn find_records<'a>(v: &'a Json, path: Option<&str>) -> Result<(Vec<&'a Json
     }
 }
 
+/// One object of an answer that holds places: its values and its geometry.
+pub type Placed = (Vec<(String, Value)>, Option<geo::Geometry<f64>>);
+
+/// The places in an answer, when it holds them: GeoJSON (a feature collection, a feature, a
+/// geometry or a list of features), a list of objects with a latitude and a longitude, such as
+/// lat and lon, or a list of coordinates such as [[11.97, 57.70], …]. The records are looked
+/// for at `items` when it is given. Returns the places and what the answer was, or None when
+/// it holds none of these. Coordinates are taken as longitude and latitude in WGS 84.
+pub fn places_of(v: &Json, items: Option<&str>) -> Option<(Vec<Placed>, &'static str)> {
+    let geometry = |g: &Json| -> Option<geo::Geometry<f64>> {
+        if g.is_null() {
+            return None;
+        }
+        crate::geomtext::parse(&g.to_string(), Some(crate::geomtext::Kind::GeoJson)).ok().map(|p| p.0)
+    };
+    let feature = |f: &Json| -> Placed {
+        let mut values = Vec::new();
+        if let Some(Json::Object(props)) = f.get("properties") {
+            for (k, x) in props {
+                flatten(x, &clean_key(k), Lists::Text, &mut values);
+            }
+        }
+        if let Some(id) = f.get("id").filter(|i| !i.is_null()) {
+            if !values.iter().any(|(k, _)| k == "id") {
+                values.insert(0, ("id".to_string(), to_value(id)));
+            }
+        }
+        (values, f.get("geometry").and_then(geometry))
+    };
+    let kind_of = |x: &Json| x.get("type").and_then(|t| t.as_str()).map(str::to_string);
+    const GEOMETRIES: &[&str] = &["Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon", "GeometryCollection"];
+    let root = match items.map(str::trim).filter(|p| !p.is_empty()) {
+        Some(p) => get(v, &parse_path(p).ok()?)?,
+        None => v,
+    };
+    match kind_of(root).as_deref() {
+        Some("FeatureCollection") => return Some((root.get("features")?.as_array()?.iter().map(feature).collect(), "GeoJSON")),
+        Some("Feature") => return Some((vec![feature(root)], "GeoJSON")),
+        Some(t) if GEOMETRIES.contains(&t) => return Some((vec![(Vec::new(), Some(geometry(root)?))], "GeoJSON")),
+        _ => {}
+    }
+    if let Json::Array(a) = root {
+        if !a.is_empty() && a.iter().all(|f| kind_of(f).as_deref() == Some("Feature")) {
+            return Some((a.iter().map(feature).collect(), "GeoJSON"));
+        }
+        // A list of coordinates.
+        let pair = |x: &Json| -> Option<geo::Point<f64>> {
+            let c = x.as_array()?;
+            (2..=3).contains(&c.len()).then_some(())?;
+            Some(geo::Point::new(c[0].as_f64()?, c[1].as_f64()?))
+        };
+        if !a.is_empty() && a.iter().all(|x| pair(x).is_some()) {
+            return Some((a.iter().map(|x| (Vec::new(), pair(x).map(geo::Geometry::Point))).collect(), "coordinates"));
+        }
+    }
+    // Objects with a latitude and a longitude, also as text, as Nominatim gives them.
+    let (records, _) = find_records(root, None).ok()?;
+    let objects: Vec<&serde_json::Map<String, Json>> = records.iter().filter_map(|r| r.as_object()).collect();
+    if objects.is_empty() || objects.len() < records.len() {
+        return None;
+    }
+    let key = |o: &serde_json::Map<String, Json>, names: &[&str]| o.keys().find(|k| names.contains(&clean_key(k).to_lowercase().as_str())).cloned();
+    let number = |x: &Json| x.as_f64().or_else(|| x.as_str().and_then(|t| t.trim().parse::<f64>().ok()));
+    let mut out = Vec::new();
+    for o in &objects {
+        let (lat, lon) = (key(o, &["lat", "latitude"])?, key(o, &["lon", "lng", "long", "longitude"])?);
+        let (y, x) = (number(&o[&lat])?, number(&o[&lon])?);
+        let mut values = Vec::new();
+        for (k, x) in o.iter() {
+            flatten(x, &clean_key(k), Lists::Text, &mut values);
+        }
+        out.push((values, Some(geo::Geometry::Point(geo::Point::new(x, y)))));
+    }
+    Some((out, "latitudes and longitudes"))
+}
+
 /// A JSON file as a table: a feature for each record.
 pub fn read_table(path: &Path, records: Option<&str>, lists: Lists, nested_as_text: bool, notes: &mut crate::io::Notes) -> Result<Table> {
     let v = read_file(path)?;

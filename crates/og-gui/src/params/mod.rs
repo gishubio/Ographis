@@ -87,6 +87,86 @@ pub struct Edited {
     pub unpack_tool: bool,
 }
 
+/// What the error of a node points at, so that a button under it can lead there.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Fix {
+    /// A database connection (api false) or an API connection in the settings, by its name.
+    Connection { api: bool, name: String },
+    /// A setting of the node, by its key, with the label it has in the form.
+    Setting { key: &'static str, label: &'static str },
+}
+
+/// What an error of a node is most likely about: the connection it names, a file whose path
+/// is wrong, or a setting the error speaks of, an empty one first. None when it tells nothing.
+pub fn fix_for(node: &GNode, error: &str) -> Option<Fix> {
+    let ty = node.ty()?;
+    let low = error.to_lowercase();
+    let value = |k: &str| node.params.get(k).map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string)).unwrap_or_default().trim().to_string();
+    let shown = |s: &ParamSpec| relevant(node, s, None, false, Path::new(""));
+    // A connection: a failure to reach it or to be let in.
+    for spec in ty.params.iter().filter(|s| shown(s)) {
+        let api = match spec.kind {
+            ParamKind::Connection => false,
+            ParamKind::ApiConnection => true,
+            _ => continue,
+        };
+        let name = value(spec.key);
+        let words: &[&str] = if api {
+            &["401", "403", "unauthor", "forbidden", "token", "api key", "the key", "connection", "credential", "password", "sign in", "log in"]
+        } else {
+            &["password", "authenticat", "connect", "database", "server", "role ", "login", "refused", "timed out", "host"]
+        };
+        if !name.is_empty() && (low.contains(&name.to_lowercase()) || words.iter().any(|w| low.contains(w))) {
+            return Some(Fix::Connection { api, name });
+        }
+        if name.is_empty() && low.contains("connection") {
+            return Some(Fix::Setting { key: spec.key, label: spec.label });
+        }
+    }
+    // A file or a folder that cannot be found, read or written.
+    let file_words = [
+        "cannot read",
+        "cannot open",
+        "cannot write",
+        "cannot create",
+        "no such file",
+        "not found",
+        "does not exist",
+        "is not a file",
+        "no file",
+        "permission",
+        "access is denied",
+        "write the path",
+        "choose a file",
+        "say where",
+    ];
+    for spec in ty.params.iter().filter(|s| shown(s) && matches!(s.kind, ParamKind::FileOpen | ParamKind::FileSave | ParamKind::Source)) {
+        let v = value(spec.key);
+        let named = !v.is_empty() && (error.contains(&v) || Path::new(&v).file_name().is_some_and(|f| error.contains(&*f.to_string_lossy())));
+        if named || (file_words.iter().any(|w| low.contains(w)) && (v.is_empty() || !low.contains("http"))) {
+            return Some(Fix::Setting { key: spec.key, label: spec.label });
+        }
+    }
+    // A setting the error speaks of by its label, such as "Choose the attribute with the
+    // population": an empty one first.
+    let named: Vec<&ParamSpec> = ty
+        .params
+        .iter()
+        .filter(|s| shown(s) && s.label.chars().count() > 3 && !matches!(s.kind, ParamKind::Files | ParamKind::Model) && low.contains(&s.label.to_lowercase()))
+        .collect();
+    named.iter().find(|s| value(s.key).is_empty()).or(named.first()).map(|s| Fix::Setting { key: s.key, label: s.label })
+}
+
+fn focus_id() -> egui::Id {
+    egui::Id::new("focus-setting")
+}
+
+/// Marks a setting of a node in its form for a moment, and scrolls the form to it.
+pub fn focus_setting(ctx: &egui::Context, node_id: &str, key: &str) {
+    let now = ctx.input(|i| i.time);
+    ctx.data_mut(|d| d.insert_temp(focus_id(), (node_id.to_string(), key.to_string(), now, false)));
+}
+
 /// The file extensions of formats that keep their data in sheets.
 pub fn is_spreadsheet(ext: &str) -> bool {
     matches!(ext, "xlsx" | "xlsm" | "ods" | "xls")
@@ -141,6 +221,12 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         // The start position only matters when the characters are taken from a position,
         // and the text for other values when that is what they get.
         let param = |k: &str| node.params.get(k).and_then(|v| v.as_str()).map(str::to_string);
+        // A value ticked among several, stored as a list or as text.
+        let list_has = |k: &str, v: &str| match node.params.get(k) {
+            Some(serde_json::Value::Array(a)) => a.iter().any(|x| x.as_str() == Some(v)),
+            Some(serde_json::Value::String(s)) => s.split([',', '\n']).any(|x| x.trim() == v),
+            _ => false,
+        };
         return match (node.kind.as_str(), spec.key) {
             ("SubstringExtractor", "start") => param("part").as_deref() == Some("middle"),
             ("ValueMapper", "default") => param("otherwise").as_deref() == Some("text"),
@@ -198,7 +284,7 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("SpatialJoiner", "distance") => param("relation").as_deref() == Some("near"),
             ("SpatialJoiner", "numbers" | "count") => param("mode").as_deref() == Some("summary"),
             ("ConvexHuller" | "ConcaveHuller", "group_by" | "count") => param("for").as_deref() != Some("each"),
-            ("HttpCaller", "response" | "status" | "paging" | "parallel" | "body" | "content_type" | "per_second")
+            ("HttpCaller", "response" | "status" | "paging" | "parallel" | "body" | "content_type" | "per_second" | "as_features")
                 if param("answer_as").as_deref() == Some("file") =>
             {
                 false
@@ -207,7 +293,8 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("HttpCaller", "cursor_path") => param("paging").as_deref() == Some("cursor"),
             ("HttpCaller", "page_param") => matches!(param("paging").as_deref(), Some("offset" | "page" | "cursor")),
             ("HttpCaller", "size_param" | "page_size") => matches!(param("paging").as_deref(), Some("offset" | "page" | "cursor")),
-            ("HttpCaller", "start" | "items_path") => matches!(param("paging").as_deref(), Some("offset" | "page")),
+            ("HttpCaller", "start") => matches!(param("paging").as_deref(), Some("offset" | "page")),
+            ("HttpCaller", "items_path") => matches!(param("paging").as_deref(), Some("offset" | "page")) || param("as_features").as_deref() == Some("yes"),
             ("HttpCaller", "max_pages") => matches!(param("paging").as_deref(), Some("next" | "offset" | "page" | "cursor")),
             ("SceneRenderer", "date" | "time") => param("sun").as_deref() == Some("date"),
             ("SceneRenderer", "clock") => matches!(param("sun").as_deref(), Some("date" | "study")),
@@ -223,12 +310,43 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("RangeMapper", "ranges") => param("method").is_none_or(|m| m == "own"),
             ("RangeMapper", "classes" | "decimals") => param("method").is_some_and(|m| m != "own"),
             // A count has nothing to put together, and the second colour needs bars to colour.
-            ("ChartDrawer", "combine") => param("value").is_some_and(|v| !v.trim().is_empty()),
-            ("ChartDrawer", "accent") => node.params.get("highlight").is_some_and(|v| match v {
-                serde_json::Value::Array(a) => !a.is_empty(),
-                serde_json::Value::String(s) => !s.trim().is_empty(),
-                _ => false,
-            }),
+            ("ChartDrawer", key) => {
+                let kind = param("kind").unwrap_or_else(|| "bars".into());
+                let k = kind.as_str();
+                let facet = param("facet").is_some_and(|v| !v.trim().is_empty());
+                let bars = k == "bars";
+                match key {
+                    "x" => matches!(k, "lines" | "scatter"),
+                    "series" => matches!(k, "lines" | "scatter" | "stacked" | "grouped" | "pyramid"),
+                    "from_zero" | "markers" => k == "lines",
+                    "free_scales" => facet,
+                    "bins" => k == "histogram",
+                    "trend" => k == "scatter",
+                    "percent" => k == "stacked",
+                    "x_title" => matches!(k, "histogram" | "scatter"),
+                    "category" => matches!(k, "bars" | "box" | "stacked" | "grouped" | "pyramid"),
+                    "combine" => param("value").is_some_and(|v| !v.trim().is_empty()) && matches!(k, "bars" | "lines" | "stacked" | "grouped" | "pyramid"),
+                    "sort" => matches!(k, "bars" | "box" | "stacked" | "grouped"),
+                    "unit" | "decimals" | "format" => true,
+                    "limit" | "mean" | "orientation" | "label_angle" | "labels" | "highlight" => bars && !facet,
+                    "accent" => {
+                        bars && !facet
+                            && node.params.get("highlight").is_some_and(|v| match v {
+                                serde_json::Value::Array(a) => !a.is_empty(),
+                                serde_json::Value::String(s) => !s.trim().is_empty(),
+                                _ => false,
+                            })
+                    }
+                    "html" => bars && !facet,
+                    _ => true,
+                }
+            }
+            ("Classifier", "breaks") => param("method").as_deref() == Some("manual"),
+            ("Classifier", "classes") => param("method").as_deref() != Some("manual"),
+            ("RunningStatistics", "window") => list_has("what", "moving"),
+            ("StatisticsCalculator", "weight") => list_has("more", "weighted_mean"),
+            ("ChangeOverTime", "base") => list_has("what", "index") || list_has("what", "growth"),
+            ("RateCalculator", "age" | "standard_age" | "standard_population") => param("area").is_some_and(|v| !v.trim().is_empty()),
             _ => true,
         };
     }
@@ -610,6 +728,22 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
     let more_set = more.iter().filter(|s| is_set(node, s)).count();
     let mut more_open = ui.data(|d| d.get_temp::<bool>(more_id)).unwrap_or(more_set > 0);
     let more_keys: Vec<&str> = more.iter().map(|s| s.key).collect();
+    // A setting that an error led to: marked for a few seconds, under More too.
+    let now = ui.input(|i| i.time);
+    let focus: Option<(String, String, f64, bool)> = ui.data(|d| d.get_temp(focus_id())).filter(|f: &(String, String, f64, bool)| f.0 == node.id);
+    let focus = match focus {
+        Some(f) if now - f.2 > 3.0 => {
+            ui.data_mut(|d| d.remove::<(String, String, f64, bool)>(focus_id()));
+            None
+        }
+        other => other,
+    };
+    if let Some(f) = &focus {
+        if more_keys.contains(&f.1.as_str()) && !more_open {
+            more_open = true;
+            ui.data_mut(|d| d.insert_temp(more_id, true));
+        }
+    }
     let specs: Vec<&ParamSpec> = main.into_iter().chain(more).collect();
     let mut header_drawn = false;
     for spec in specs {
@@ -1207,6 +1341,16 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
             let field = egui::Rect::from_min_max(top, egui::pos2(ui.max_rect().right(), ui.cursor().min.y));
             ui.interact(field, egui::Id::new(("help", node.id.clone(), spec.key)), egui::Sense::hover()).on_hover_text(hint);
         }
+        if let Some(f) = focus.as_ref().filter(|f| f.1 == spec.key) {
+            let field = egui::Rect::from_min_max(top, egui::pos2(ui.max_rect().right(), ui.cursor().min.y)).expand(3.0);
+            if !f.3 {
+                ui.scroll_to_rect(field, Some(egui::Align::Center));
+                ui.data_mut(|d| d.insert_temp(focus_id(), (f.0.clone(), f.1.clone(), f.2, true)));
+            }
+            let fade = (1.0 - ((now - f.2) / 3.0) as f32).clamp(0.0, 1.0);
+            ui.painter().rect_stroke(field, 4.0, egui::Stroke::new(2.0, cx.pal.accent.gamma_multiply(fade)), egui::StrokeKind::Outside);
+            ui.ctx().request_repaint();
+        }
         if value != before {
             // A newly chosen file gives the node the name of the file, unless the user has already named it.
             if matches!(spec.kind, ParamKind::FileOpen | ParamKind::FileSave | ParamKind::Source) && graph::has_default_name(node) {
@@ -1371,6 +1515,38 @@ fn class_ticks(ui: &mut Ui, value: &mut String, found: &[(i64, u64)], ran: Optio
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn an_error_leads_to_the_connection_or_the_setting() {
+        let node = |kind: &str, params: serde_json::Value| {
+            let mut n = GNode {
+                id: "n".into(),
+                kind: kind.into(),
+                name: kind.into(),
+                params: Default::default(),
+                comment: String::new(),
+                comment_box: None,
+                disabled: false,
+                off_wires: Vec::new(),
+                bends: Vec::new(),
+            };
+            if let serde_json::Value::Object(o) = params {
+                for (k, v) in o {
+                    n.params.insert(k, v);
+                }
+            }
+            n
+        };
+        let pg = node("PostgisReader", serde_json::json!({"connection": "Region"}));
+        assert_eq!(fix_for(&pg, "password authentication failed for user \"gis\""), Some(Fix::Connection { api: false, name: "Region".into() }));
+        let http = node("HttpCaller", serde_json::json!({"url": "'https://x.se'", "connection": "Kolada"}));
+        assert_eq!(fix_for(&http, "The server answered 401"), Some(Fix::Connection { api: true, name: "Kolada".into() }));
+        let reader = node("Reader", serde_json::json!({"path": "nowhere.csv"}));
+        assert!(matches!(fix_for(&reader, "Cannot open nowhere.csv: No such file"), Some(Fix::Setting { key: "path", .. })));
+        let stats = node("Classifier", serde_json::json!({}));
+        assert!(matches!(fix_for(&stats, "Choose the values to put in classes."), Some(Fix::Setting { key: "attribute", .. })));
+        assert_eq!(fix_for(&stats, "Something else went wrong."), None);
+    }
+
     #[test]
     fn colour_codes_as_in_qgis() {
         assert_eq!(super::parse_colour_code("#80d3ff"), Some([0x80, 0xd3, 0xff, 255]));

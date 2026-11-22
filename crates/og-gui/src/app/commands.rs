@@ -45,11 +45,14 @@ enum Cmd {
     Trial,
     Stop,
     Pause,
+    NextError,
+    PreviousError,
     Description,
     Variables,
     History,
     Schedule,
     CommandLine,
+    Help,
     Tips,
     StartScreen,
     Updates,
@@ -64,6 +67,8 @@ const COMMANDS: &[(Cmd, &str, &str, &str)] = &[
     (Cmd::Trial, "Trial run", "Model", "Ctrl+Shift+F5"),
     (Cmd::Stop, "Stop the run", "Model", "Shift+F5"),
     (Cmd::Pause, "Pause or resume the run", "Model", "F6"),
+    (Cmd::NextError, "Go to the next error", "Model", "F8"),
+    (Cmd::PreviousError, "Go to the error before", "Model", "Shift+F8"),
     (Cmd::Save, "Save", "File", "Ctrl+S"),
     (Cmd::SaveAs, "Save as…", "File", ""),
     (Cmd::New, "New model", "File", "Ctrl+N"),
@@ -87,6 +92,7 @@ const COMMANDS: &[(Cmd, &str, &str, &str)] = &[
     (Cmd::History, "Run history…", "Model", ""),
     (Cmd::Schedule, "Schedule runs…", "Model", ""),
     (Cmd::CommandLine, "Copy command line", "Model", ""),
+    (Cmd::Help, "Ographis help", "Help", "F1"),
     (Cmd::Tips, "Tips and shortcuts", "Help", ""),
     (Cmd::StartScreen, "Start screen", "Help", ""),
     (Cmd::Updates, "Check for updates", "Help", ""),
@@ -242,6 +248,8 @@ impl App {
             Cmd::Pause => {
                 self.toggle_pause();
             }
+            Cmd::NextError => self.go_to_error(true),
+            Cmd::PreviousError => self.go_to_error(false),
             Cmd::Description => self.description_open = true,
             Cmd::Variables => self.variables_open = true,
             Cmd::History if self.path.is_some() => self.history_open = true,
@@ -264,6 +272,7 @@ impl App {
                 self.open_report();
             }
             Cmd::About => self.about = true,
+            Cmd::Help => self.help_for_selection(),
         }
     }
 

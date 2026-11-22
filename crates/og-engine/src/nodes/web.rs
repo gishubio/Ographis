@@ -107,7 +107,7 @@ pub(super) const HTTP_PARAMS: &[ParamSpec] = &[
         label: "Items at",
         kind: ParamKind::Text,
         default: "",
-        hint: "The path to the list of items in a page, such as values or features, to know when the pages end. Empty takes the first list",
+        hint: "The path to the list of items in a page, such as values or features, to know when the pages end, and where the places are when they are made into features. Empty takes the first list",
     },
     ParamSpec { key: "max_pages", label: "At most pages", kind: ParamKind::Text, default: "1000", hint: "A stop, should the pages never end" },
     ParamSpec {
@@ -123,6 +123,13 @@ pub(super) const HTTP_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Choice(&[("text", "As text in an attribute"), ("file", "As a file, its path in _file")]),
         default: "text",
         hint: "A file for answers that are not text, such as a GeoTIFF of travel times. Read the files with an Input, with this stream connected to its Paths",
+    },
+    ParamSpec {
+        key: "as_features",
+        label: "Places in the answer",
+        kind: ParamKind::Choice(&[("no", "Kept as text"), ("yes", "Made into features")]),
+        default: "no",
+        hint: "An answer of GeoJSON, a list of objects with lat and lon, or a list of coordinates, becomes a feature for each place, with its values as attributes, in WGS 84. Others go to Failed",
     },
     ParamSpec {
         key: "folder",
@@ -531,11 +538,80 @@ pub(super) fn run_http(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
             bad.features.push(f);
         }
     }
+    if p.get("as_features").as_deref() == Some("yes") {
+        good = places_in_answers(good, at_response, &mut bad, at_error, p.get("items_path").as_deref(), ctx);
+    }
     if !bad.is_empty() {
         let what = if bad.len() == 1 { "1 request got".to_string() } else { format!("{} requests got", fmt_count(bad.len() as u64)) };
         ctx.notes.warn(format!("{} no good answer and went to Failed. The reason is in the attribute _error.", what));
     }
     Ok(vec![("Output".into(), good), ("Failed".into(), bad)])
+}
+
+/// The answers made into a feature for each place in them, with the values of the request's
+/// feature and those of the place; the answer text itself is left out. An answer without
+/// places goes to Failed.
+fn places_in_answers(good: Table, at_response: usize, bad: &mut Table, at_error: usize, items: Option<&str>, ctx: &mut NodeCtx) -> Table {
+    let mut base: Vec<Field> = good.fields.clone();
+    base.remove(at_response);
+    let mut rows: Vec<(Vec<Value>, crate::json::Placed)> = Vec::new();
+    let mut kinds: Vec<&'static str> = Vec::new();
+    for f in good.features {
+        let text = f.attrs[at_response].to_text();
+        match crate::json::parse(&text).ok().and_then(|j| crate::json::places_of(&j, items)) {
+            Some((places, kind)) => {
+                if !kinds.contains(&kind) {
+                    kinds.push(kind);
+                }
+                let mut attrs = f.attrs.clone();
+                attrs.remove(at_response);
+                for (values, geom) in places {
+                    rows.push((attrs.clone(), (values, geom)));
+                }
+            }
+            None => {
+                let mut f = f;
+                f.attrs.resize(bad.fields.len(), Value::Null);
+                f.attrs[at_error] =
+                    Value::Text("The answer holds no places: it is not GeoJSON, a list of objects with lat and lon, or a list of coordinates".into());
+                bad.features.push(f);
+            }
+        }
+    }
+    // The attributes of the places after those of the request; one of the same name as the
+    // request's takes its place.
+    let mut names: Vec<String> = Vec::new();
+    for (_, (values, _)) in &rows {
+        for (k, _) in values {
+            if !names.contains(k) && !base.iter().any(|b| b.name == *k) {
+                names.push(k.clone());
+            }
+        }
+    }
+    let width = base.len() + names.len();
+    let mut features = Vec::with_capacity(rows.len());
+    for (attrs, (values, geom)) in rows {
+        let mut a = attrs;
+        a.resize(width, Value::Null);
+        for (k, v) in values {
+            let at = base.iter().position(|b| b.name == k).unwrap_or_else(|| base.len() + names.iter().position(|n| *n == k).unwrap_or(0));
+            a[at] = v;
+        }
+        features.push(Feature { attrs: a, geom, z: None });
+    }
+    let mut fields = base.clone();
+    for (i, n) in names.iter().enumerate() {
+        fields.push(Field::new(n.clone(), crate::model::infer_type(features.iter().map(|f| &f.attrs[base.len() + i]))));
+    }
+    for (i, b) in base.iter().enumerate() {
+        if b.ty == FieldType::Text && features.iter().any(|f| !matches!(f.attrs[i], Value::Text(_) | Value::Null)) {
+            fields[i].ty = crate::model::infer_type(features.iter().map(|f| &f.attrs[i]));
+        }
+    }
+    if !kinds.is_empty() {
+        ctx.notes.info(format!("{} places from {} in the answers", fmt_count(features.len() as u64), kinds.join(" and ")));
+    }
+    Table { fields, features, crs: Some(4326), ..Table::default() }
 }
 
 /// The kind of file the bytes are, by how they begin.

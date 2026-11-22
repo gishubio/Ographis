@@ -11,6 +11,8 @@ five models.
 
 | To | Do this |
 | --- | --- |
+| Read about a tool | Select its node and press F1, or *Help* at the top of its form. Help → *Ographis help* has getting started and a page for every tool, with each setting and the examples that use it |
+| Find what went wrong | F8 goes to the next node with an error and Shift+F8 back; a click on the errors at the top goes to the first. Under the error in the form, *Go to …* marks the setting it is about, and *Open the connection …* opens the connection in the settings |
 | Add a node | Fold out a list on the left by its arrow and click in it. The lists are folded in from the start, and the search box searches all of them, also by the names the tools had before. The × at the end of a search box empties it. Or right-click the canvas: *Add input*, *Add output*, or *Add tool* with a search box of its own |
 | Add a tool by typing | Double-click empty canvas, or press `/` with the pointer over it. Write a few letters of the name, such as `buff`, choose with the arrow keys and press Enter. With nothing written, the tools used last come first |
 | Do anything by typing | Press Ctrl+K (or Ctrl+Shift+P), or View → *Commands…*: one search box for every command of the menus, the nodes of the model, the tools to add, the latest models and the examples. Write a few letters, such as `sched`, `buff` or `hospital`, choose with the arrow keys and press Enter. Each command shows its menu and its keys |
@@ -148,6 +150,16 @@ five models.
 | Read heights from SRTM, DTED or an ASCII grid | Give the .hgt, .dt1 or .asc file to an Input with *Cells* as a grid of heights |
 | Put a scan of splats on the map | Read the .ply or .spz in an Input, set *Upwards in the scene*, *Metres for a unit of the scene* and the origin, then see it in 3D, alone or in a View with buildings and roads |
 | Make splats of a point cloud | *Make Gaussian splats*, then an Output to .ply or .spz, or the 3D view |
+| Colour a map in good classes | *Classify values* with natural breaks, then *Draw map* coloured by `class` with the legend from `class_label` |
+| Compare municipalities side by side | *Draw chart* with *One chart for each* as the municipality: a small chart for each, on one scale |
+| Show how a number is spread | *Draw chart* as a histogram, or as box plots with a group under *Names* |
+| See if two numbers go together | *Draw chart* as a scatter plot with a trend line, which tells R²; *Linear regression* for the coefficients and the residual of each feature, to draw on a map |
+| Show growth since a year | *Change over time* with the year as the time and the municipality under *For each*, then *Draw chart* of the index as lines |
+| Give rates per 1 000 inhabitants without telling anyone apart | *Rates* with *Hide fewer cases than* 5, and *Smoothed rate* for small municipalities; with a row per age group, *Standardised* compares areas of different ages |
+| Show where many live | *Heat map* of the points, weighed by the inhabitants, then an Output to GeoTIFF or *Draw map* |
+| Share a map and a chart that go together | *Dashboard web page*: one .html with the map and the bars, linked by the pointer |
+| Put latitude and longitude on a map in SWEREF 99 TM | *Grid* in *Draw map*: *Latitude and longitude, in degrees*. The lines curve as they do on the map, with their degrees in the edge |
+| Put pies on a map | Tick the attributes under *Charts* of the layer in *Draw map*, with *Size by* the total |
 | Write a report | Connect maps, charts and tables to *Sections* of *Report*, in the order they are to come, and name the tools as the sections should be called. Write a text first and last, and choose a web page or a PDF |
 | Choose where to fetch OpenStreetMap or Overture | Click *Choose on the map* beside the rectangle, click two corners on the map and press Enter |
 | Read a large point cloud | Drop the LAS or LAZ on the window: every point is read. Filter it by class, thin it or make a raster of it before tools that are not for point clouds, which get every point as a feature |

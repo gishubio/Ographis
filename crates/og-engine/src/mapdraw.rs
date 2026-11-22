@@ -247,6 +247,110 @@ impl IconSpec {
     }
 }
 
+/// Small charts on the features of a layer, as it is stored with the layer: a pie or a few
+/// bars on each area or point, of the values of some attributes, such as the votes of each
+/// party in each municipality.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ChartSpec {
+    /// "pie", "bars", or empty for none.
+    pub kind: String,
+    /// The attributes whose values make the slices or the bars, in that order.
+    pub of: Vec<String>,
+    /// The width of the largest chart, in pixels.
+    pub size: f32,
+    /// "total": pies as large as the sum of their values, by their area; an attribute: as
+    /// large as its value; empty: all as large.
+    pub size_by: String,
+}
+
+/// The charts of a layer, ready to draw: the values of each feature, how large its chart is,
+/// and the colour of each attribute.
+#[derive(Debug, Clone)]
+pub struct MapCharts {
+    pub kind: String,
+    pub values: Vec<Vec<f64>>,
+    pub sizes: Vec<f32>,
+    pub colours: Vec<[u8; 4]>,
+    /// For bars: the largest value of all, which a bar as high as the chart shows.
+    pub top: f64,
+}
+
+/// Draws a chart at (x, y) on the map: a pie with its middle there, or bars with their foot.
+fn draw_map_chart(pm: &mut Canvas, c: &MapCharts, values: &[f64], size: f32, x: f32, y: f32) {
+    let edge = Stroke { width: (size / 40.0).clamp(0.6, 1.5), line_join: tiny_skia::LineJoin::Round, ..Stroke::default() };
+    let white = paint([255, 255, 255, 255]);
+    if c.kind == "bars" {
+        let n = values.len().max(1) as f32;
+        let bw = size / n;
+        let h = size * 0.8;
+        let x0 = x - size / 2.0;
+        let foot = y + h / 2.0;
+        // A line at the foot, so that a bar of nothing still shows where it would be.
+        if let Some(r) = tiny_skia::Rect::from_xywh(x0 - 1.0, foot, size + 2.0, edge.width.max(1.0)) {
+            pm.fill_rect(r, &paint([0x52, 0x51, 0x4e, 255]), Transform::identity(), None);
+        }
+        for (i, v) in values.iter().enumerate() {
+            let bh = if c.top > 0.0 { (v.max(0.0) / c.top) as f32 * h } else { 0.0 };
+            if bh <= 0.0 {
+                continue;
+            }
+            if let Some(r) = tiny_skia::Rect::from_xywh(x0 + bw * i as f32, foot - bh, bw, bh) {
+                let path = PathBuilder::from_rect(r);
+                pm.fill_path(&path, &paint(c.colours[i % c.colours.len()]), FillRule::Winding, Transform::identity(), None);
+                pm.stroke_path(&path, &white, &edge, Transform::identity(), None);
+            }
+        }
+        return;
+    }
+    let total: f64 = values.iter().map(|v| v.max(0.0)).sum();
+    if total <= 0.0 || size < 1.0 {
+        return;
+    }
+    let r = size / 2.0;
+    // From twelve o'clock, clockwise.
+    let mut a0 = -std::f32::consts::FRAC_PI_2;
+    for (i, v) in values.iter().enumerate() {
+        let part = (v.max(0.0) / total) as f32;
+        if part <= 0.0 {
+            continue;
+        }
+        let a1 = a0 + part * std::f32::consts::TAU;
+        let mut pb = PathBuilder::new();
+        if part >= 0.9999 {
+            pb.push_circle(x, y, r);
+        } else {
+            pb.move_to(x, y);
+            let steps = ((part * 64.0).ceil() as usize).max(2);
+            for s in 0..=steps {
+                let a = a0 + (a1 - a0) * s as f32 / steps as f32;
+                pb.line_to(x + r * a.cos(), y + r * a.sin());
+            }
+            pb.close();
+        }
+        if let Some(path) = pb.finish() {
+            pm.fill_path(&path, &paint(c.colours[i % c.colours.len()]), FillRule::Winding, Transform::identity(), None);
+            pm.stroke_path(&path, &white, &edge, Transform::identity(), None);
+        }
+        a0 = a1;
+    }
+}
+
+/// Draws the charts of a layer, the largest first so that small ones are not hidden.
+fn draw_map_charts(pm: &mut Canvas, table: &Table, charts: &MapCharts, to_px: &dyn Fn(f64, f64) -> (f32, f32)) {
+    let mut order: Vec<usize> = (0..table.len()).collect();
+    order.sort_by(|a, b| charts.sizes[*b].total_cmp(&charts.sizes[*a]));
+    for i in order {
+        let Some(g) = table.features[i].geom.as_ref() else { continue };
+        let at = point_of(g).or_else(|| {
+            use geo::InteriorPoint;
+            g.interior_point()
+        });
+        let Some(p) = at else { continue };
+        let (x, y) = to_px(p.x(), p.y());
+        draw_map_chart(pm, charts, &charts.values[i], charts.sizes[i], x, y);
+    }
+}
+
 /// The icons of the points of a layer: the icon of each feature, if it has one.
 #[derive(Debug, Clone)]
 pub struct Icons {
@@ -308,6 +412,8 @@ pub struct Request<'a> {
     pub labels: Vec<Option<Labels>>,
     /// The icons of the points of each layer, in the order of `layers`. Empty: none.
     pub icons: Vec<Option<Icons>>,
+    /// The charts on the features of each layer, in the order of `layers`. Empty: none.
+    pub charts: Vec<Option<MapCharts>>,
     /// How each layer that carries a raster draws it, in the order of `layers`. A layer
     /// without one draws its features. Empty: none does.
     pub rasters: Vec<Option<crate::rasterlook::Prepared>>,
@@ -347,6 +453,18 @@ pub struct Furniture {
     pub grid_every: Option<f64>,
     /// Whether the coordinates are degrees, for the lengths of the scale bar.
     pub geographic: bool,
+    /// Lines of latitude and longitude, in the coordinates of the map, for a grid of degrees
+    /// on a map in another coordinate system, where they curve.
+    pub graticule: Vec<GratLine>,
+}
+
+/// A line of the grid of degrees: its points in the coordinates of the map, its degree as text,
+/// and whether it runs north and south (a meridian) or east and west.
+#[derive(Debug, Clone, Default)]
+pub struct GratLine {
+    pub points: Vec<(f64, f64)>,
+    pub label: String,
+    pub meridian: bool,
 }
 
 /// Where a map lies and how large it is: west, south, east and north, the size of a pixel
@@ -419,6 +537,8 @@ pub struct LegendItem {
     /// stand for, when there are icons.
     pub icon: Option<&'static str>,
     pub icon_keys: Vec<(String, &'static str)>,
+    /// The attributes of the charts on the features, each with its colour.
+    pub chart_keys: Vec<(String, [u8; 4])>,
     /// The colour ramp of a heatmap, drawn as a band from little to most.
     pub heat_ramp: Option<String>,
 }
@@ -608,6 +728,9 @@ pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
             if let Some(ic) = icons {
                 draw_icons(&mut pixmap, req.layers[li].0, style, Some(theme), ic, &to_px);
             }
+            if let Some(ch) = req.charts.get(li).and_then(|c| c.as_ref()) {
+                draw_map_charts(&mut pixmap, req.layers[li].0, ch, &to_px);
+            }
             continue;
         }
         let stroke = style.stroke();
@@ -694,6 +817,9 @@ pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
         flush(&mut pixmap, &mut lines, &mut dots);
         if let Some(ic) = icons {
             draw_icons(&mut pixmap, req.layers[li].0, style, theme, ic, &to_px);
+        }
+        if let Some(ch) = req.charts.get(li).and_then(|c| c.as_ref()) {
+            draw_map_charts(&mut pixmap, req.layers[li].0, ch, &to_px);
         }
     }
     pixmap.set_opacity(1.0);
@@ -1462,7 +1588,7 @@ fn halo_text(pixmap: &mut Canvas, t: &crate::chart::Text, s: &str, x: f32, y: f3
 /// room for the line that says who the background map is from.
 fn draw_furniture(pixmap: &mut Canvas, f: &Furniture, b: [f64; 4], px: f64, credit: bool) -> Result<()> {
     let on = |c: &str| !c.is_empty() && c != "none";
-    if !on(&f.scale_bar) && !on(&f.north) && !on(&f.grid) {
+    if !on(&f.scale_bar) && !on(&f.north) && !on(&f.grid) && f.graticule.is_empty() {
         return Ok(());
     }
     let t = crate::chart::Text::new()?;
@@ -1502,8 +1628,59 @@ fn draw_furniture(pixmap: &mut Canvas, f: &Furniture, b: [f64; 4], px: f64, cred
         keep_clear.push([x - 8.0 * k, y - 8.0 * k, x + aw + 8.0 * k, y + ah + nh + 8.0 * k]);
     }
     let clear = |r: [f32; 4]| !keep_clear.iter().any(|c| r[0] < c[2] && r[2] > c[0] && r[1] < c[3] && r[3] > c[1]);
+    // The lines of latitude and longitude, with their degrees where they leave the map at the
+    // top and on the left.
+    if !f.graticule.is_empty() {
+        let to = |(x, y): (f64, f64)| (((x - b[0]) / px) as f32, ((b[3] - y) / px) as f32);
+        let mut pb = PathBuilder::new();
+        let small = 10.5 * k;
+        let mut labels: Vec<(f32, f32, &str, bool)> = Vec::new();
+        for g in &f.graticule {
+            for (i, p) in g.points.iter().enumerate() {
+                let (x, y) = to(*p);
+                if i == 0 {
+                    pb.move_to(x, y);
+                } else {
+                    pb.line_to(x, y);
+                }
+            }
+            // Where the line crosses the top edge (a meridian) or the left one.
+            for w in g.points.windows(2) {
+                let ((x0, y0), (x1, y1)) = (to(w[0]), to(w[1]));
+                if g.meridian && (y0 - 0.0) * (y1 - 0.0) <= 0.0 && y0 != y1 {
+                    let x = x0 + (x1 - x0) * (0.0 - y0) / (y1 - y0);
+                    labels.push((x, 0.0, &g.label, true));
+                    break;
+                }
+                if !g.meridian && x0 * x1 <= 0.0 && x0 != x1 {
+                    let y = y0 + (y1 - y0) * (0.0 - x0) / (x1 - x0);
+                    labels.push((0.0, y, &g.label, false));
+                    break;
+                }
+            }
+        }
+        if let Some(path) = pb.finish() {
+            let st = Stroke { width: (0.8 * k).max(0.6), ..Stroke::default() };
+            pixmap.stroke_path(&path, &paint([0x22, 0x22, 0x22, 80]), &st, Transform::identity(), None);
+        }
+        for (x, y, s, top) in labels {
+            let w = t.width(s, small, false);
+            if top {
+                if x - w / 2.0 > 2.0 && x + w / 2.0 < pw - 2.0 && clear([x - w / 2.0, 0.0, x + w / 2.0, small * 1.6]) {
+                    halo_text(pixmap, &t, s, x - w / 2.0, small * 1.3, small, false, ink);
+                }
+            } else if y - w / 2.0 > 2.0 && y + w / 2.0 < ph - 2.0 && clear([0.0, y - w / 2.0, small * 1.6, y + w / 2.0]) {
+                if let Some(path) = t.path(s, small, false) {
+                    let at = Transform::from_rotate(-90.0).post_translate(small * 1.3, y + w / 2.0);
+                    let edge = Stroke { width: small * 0.25, line_join: tiny_skia::LineJoin::Round, ..Stroke::default() };
+                    pixmap.stroke_path(&path, &paint([255, 255, 255, 230]), &edge, at, None);
+                    pixmap.fill_path(&path, &paint(ink), FillRule::Winding, at, None);
+                }
+            }
+        }
+    }
     // The grid, under the rest: lines at round coordinates, and the coordinates in the edge.
-    if on(&f.grid) {
+    if on(&f.grid) && f.grid != "degrees" {
         let step = f.grid_every.filter(|s| *s > 0.0).unwrap_or_else(|| crate::chart::nice_step((b[2] - b[0]).max(b[3] - b[1]), 5.0));
         if (b[2] - b[0]) / step <= 200.0 && (b[3] - b[1]) / step <= 200.0 {
             let to_x = |x: f64| ((x - b[0]) / px) as f32;
@@ -1675,6 +1852,10 @@ fn draw_legend(pixmap: &mut Canvas, legend: &Legend) -> Result<()> {
             for key in &item.size_keys {
                 rows.push((0.0, key.text.clone(), false, Sym::Look(key.look, item.shape, item.style.width, Some(&item.style)), small));
             }
+        }
+        for (what, c) in &item.chart_keys {
+            let look = crate::thematic::Look { fill: Some(*c), stroke: None, size: 0.0 };
+            rows.push((0.0, what.clone(), false, Sym::Look(look, "area", 0.0, None), small));
         }
     }
     if rows.is_empty() {
@@ -1849,6 +2030,7 @@ mod tests {
             themes: vec![],
             labels: vec![],
             icons: vec![],
+            charts: vec![],
             legend: None,
         };
         let img = draw(&req, &|| true).unwrap();
@@ -1875,6 +2057,7 @@ mod tests {
             themes: vec![],
             labels: vec![],
             icons: vec![],
+            charts: vec![],
             legend: None,
         };
         let img = draw(&req, &|| true).unwrap();
@@ -1896,6 +2079,7 @@ mod tests {
             themes: vec![],
             labels: vec![],
             icons: vec![],
+            charts: vec![],
             legend: None,
         };
         assert_eq!(draw(&req, &|| true).unwrap().rgba[3], 0);
@@ -1919,6 +2103,7 @@ mod tests {
                 themes: vec![],
                 labels: vec![],
                 icons: vec![],
+                charts: vec![],
                 legend: None
             },
             &|| true
@@ -1941,6 +2126,7 @@ mod tests {
                 themes: vec![],
                 labels: vec![],
                 icons: vec![],
+                charts: vec![],
                 legend: None,
             },
             &|| true,
@@ -1985,6 +2171,7 @@ mod tests {
                 themes: vec![],
                 labels: vec![Some(labels)],
                 icons: vec![],
+                charts: vec![],
                 legend: None,
             };
             draw(&req, &|| true).unwrap()
@@ -2028,6 +2215,7 @@ mod tests {
                 items: vec![LabelItem { feature: 0, text: "MMMM".into(), size: 20.0, priority: 0.0, at: None }],
             })],
             icons: vec![],
+            charts: vec![],
             legend: None,
         };
         let img = draw(&req, &|| true).unwrap();
@@ -2057,6 +2245,7 @@ mod tests {
             map_style: String::new(),
             themes: vec![],
             labels: vec![],
+            charts: vec![],
             icons: vec![Some(Icons { style: "circle".into(), names: vec![Some("hospital"), None] })],
             legend: None,
         };
@@ -2067,6 +2256,42 @@ mod tests {
         let (cx, cy) = (cx as usize, cy as usize);
         assert!(px(cx, cy).iter().all(|c| *c > 230), "white in the middle: {:?}", px(cx, cy));
         assert!(px(cx + 17, cy)[0] > 150 && px(cx + 17, cy)[1] < 60, "red around: {:?}", px(cx + 17, cy));
+    }
+
+    #[test]
+    fn pies_are_drawn_on_the_features() {
+        let pts = table(vec![point!(x: 0.0, y: 0.0).into(), point!(x: 1000.0, y: 1000.0).into()]);
+        let style = LayerStyle { fill: None, stroke: None, size: 1.0, ..LayerStyle::default() };
+        let (blue, orange) = ([0x2a, 0x78, 0xd6, 255], [0xeb, 0x68, 0x34, 255]);
+        let charts =
+            MapCharts { kind: "pie".into(), values: vec![vec![1.0, 1.0], vec![0.0, 5.0]], sizes: vec![40.0, 40.0], colours: vec![blue, orange], top: 5.0 };
+        let req = Request {
+            rasters: Vec::new(),
+            layers: vec![(&pts, style)],
+            width: 200,
+            margin: 0.2,
+            background: Some([255, 255, 255, 255]),
+            backdrop: None,
+            attribution: None,
+            furniture: Default::default(),
+            names: Vec::new(),
+            overview: None,
+            map_style: String::new(),
+            themes: vec![],
+            labels: vec![],
+            charts: vec![Some(charts)],
+            icons: vec![],
+            legend: None,
+        };
+        let img = draw(&req, &|| true).unwrap();
+        let px = |x: usize, y: usize| &img.rgba[(y * img.width + x) * 4..][..3];
+        let (cx, cy) = ((0.2 * 1000.0 / 7.0) as usize, (1200.0 / 7.0) as usize);
+        // Half blue to the right of twelve o'clock, half orange to the left.
+        assert_eq!(px(cx + 10, cy), &blue[..3]);
+        assert_eq!(px(cx - 10, cy), &orange[..3]);
+        // The second all orange.
+        let (cx, cy) = ((1200.0 / 7.0) as usize, (200.0 / 7.0) as usize);
+        assert_eq!(px(cx + 10, cy), &orange[..3]);
     }
 }
 

@@ -67,6 +67,7 @@ impl App {
         }
         let base = self.base_dir();
         let result = self.result.clone();
+        let mut help_asked = false;
         let (id, kind, group, desc) = {
             let n = &self.snarl[node_id];
             (n.id.clone(), n.kind.clone(), n.ty().map(|t| t.group), n.ty().map_or("", |t| t.desc))
@@ -122,9 +123,15 @@ impl App {
                 ui.painter().rect_filled(Rect::from_center_size(dot.center(), egui::vec2(9.0, 9.0)), 2.0, pal.group(g).0);
             }
             ui.label(RichText::new(graph::title_of(&kind)).font(theme::strong(17.0)));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.small_button("Help").on_hover_text("The page about this tool, with all its settings (F1)").clicked() {
+                    help_asked = true;
+                }
+            });
         });
         let mut remove = false;
         let mut toggle = false;
+        let mut fix_connection: Option<(bool, String)> = None;
         ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             // The form must never be wider than the panel, or the panel grows. Room is left
             // for the scroll bar, which otherwise lies on top of the fields.
@@ -470,6 +477,26 @@ impl App {
                             .inner_margin(egui::Margin::symmetric(8, 6))
                             .show(ui, |ui| {
                                 ui.label(RichText::new(e).color(pal.err));
+                                ui.horizontal_wrapped(|ui| {
+                                // A way to what is most likely wrong: the connection, or the setting.
+                                match params::fix_for(&self.snarl[node_id], e) {
+                                    Some(params::Fix::Connection { api, name }) => {
+                                        let what = if api { "API connection" } else { "connection" };
+                                        if ui
+                                            .small_button(format!("Open the {} {}", what, name))
+                                            .on_hover_text("Opens it in the settings, to look over the address, the user and the password")
+                                            .clicked()
+                                        {
+                                            fix_connection = Some((api, name));
+                                        }
+                                    }
+                                    Some(params::Fix::Setting { key, label })
+                                            if ui.small_button(format!("Go to {}", label)).on_hover_text("Marks the setting the error is about, above").clicked() =>
+                                        {
+                                            params::focus_setting(ui.ctx(), &id, key);
+                                        }
+                                        _ => {}
+                                }
                                 // The error, with the node and its warnings, to paste in a mail or a chat.
                                 if ui.small_button("Copy").on_hover_text("Copies the error, with the name of the node and its warnings").clicked() {
                                     let mut text = format!("{} ({}): {}", self.snarl[node_id].name, graph::title_of(&kind), e);
@@ -479,6 +506,7 @@ impl App {
                                     ui.ctx().copy_text(text);
                                     self.say("The error is copied.");
                                 }
+                                });
                             });
                     }
                 }
@@ -536,6 +564,12 @@ impl App {
         }
         if remove {
             self.remove_nodes(&[node_id]);
+        }
+        if help_asked {
+            self.open_help(Some(&kind));
+        }
+        if let Some((api, name)) = fix_connection {
+            self.open_connection(api, Some(&name));
         }
     }
 

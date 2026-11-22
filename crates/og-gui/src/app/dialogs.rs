@@ -632,6 +632,19 @@ impl App {
         self.settings_window = Some(crate::settings::SettingsWindow::new(&self.settings));
     }
 
+    /// Opens the settings at a database or API connection, by its name, to look it over.
+    pub fn open_connection(&mut self, api: bool, name: Option<&str>) {
+        let mut w = crate::settings::SettingsWindow::new(&self.settings);
+        if api {
+            w.tab = crate::settings::Tab::Apis;
+            w.api = name.and_then(|n| self.settings.apis.iter().position(|a| a.name == n)).or(w.api).or((!self.settings.apis.is_empty()).then_some(0));
+        } else {
+            w.tab = crate::settings::Tab::Connections;
+            w.selected = name.and_then(|n| self.settings.connections.iter().position(|c| c.name == n)).or(w.selected);
+        }
+        self.settings_window = Some(w);
+    }
+
     pub(super) fn settings_dialog(&mut self, ctx: &egui::Context, pal: &Palette) {
         let Some(mut w) = self.settings_window.take() else { return };
         let (close, changed) = w.show(ctx, pal, &mut self.settings, &self.backend);
@@ -881,6 +894,7 @@ pub(super) const TIPS: &[&str] = &[
     "Scroll to zoom. Hold Space and drag, or drag with the middle mouse button, to move the canvas.",
     "Right-click a node to disable, duplicate or delete it, to run the model up to it, or from it with Model → Use cache. Right-click a port to remove its connections.",
     "F5 runs the model, F6 pauses and resumes it, and Shift+F5 stops it. Ctrl+Z takes back the latest change. Delete removes what is selected.",
+    "F8 goes to the next node with an error in the latest run, and Shift+F8 to the one before. A click on the errors in the top bar, or on a line of the log, goes there too. Under the error in the form, a button often leads to what to fix: the connection or the setting.",
     "Alt and the first letter of a menu, or F10, opens the menus from the keyboard. The arrows move in them, Enter chooses and Esc closes.",
     "Model → Copy command line gives the command that runs the model without the window, for a script or a scheduled task.",
     "Model → Run history shows each run of the model, from here and from og run, with its log. A model that is running cannot be started a second time.",

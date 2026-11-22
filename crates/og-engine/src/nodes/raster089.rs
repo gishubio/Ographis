@@ -1036,6 +1036,140 @@ fn run_distance(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     Ok(vec![("Raster".into(), grid.into_table())])
 }
 
+// ---------- Heat map (KernelDensity) ----------
+
+const DENSITY_UNITS: &[(&str, &str)] =
+    &[("km2", "Per square kilometre"), ("ha", "Per hectare"), ("unit", "Per square unit of the coordinate system"), ("sum", "Weighted sum within the radius")];
+
+const DENSITY_PARAMS: &[ParamSpec] = &[
+    ParamSpec {
+        key: "radius",
+        label: "Radius",
+        kind: ParamKind::Text,
+        default: "500",
+        hint: "How far each point spreads, in the units of the coordinate system, such as metres. Larger gives a smoother map",
+    },
+    ParamSpec {
+        key: "cell",
+        label: "Cell size",
+        kind: ParamKind::Text,
+        default: "50",
+        hint: "In the units of the coordinate system. A raster connected to Like gives its cells instead",
+    },
+    ParamSpec {
+        key: "weight",
+        label: "Weight",
+        kind: ParamKind::Attribute("Points"),
+        default: "",
+        hint: "An attribute that each point counts as, such as the number of people at an address. Empty: each point counts as one",
+    },
+    ParamSpec { key: "unit", label: "Density", kind: ParamKind::Choice(DENSITY_UNITS), default: "km2", hint: "" },
+];
+
+/// A heat map: each point spread over the cells around it by the quartic (biweight) kernel,
+/// which is 0 at the radius, so that the sum over all cells is the number of points, or
+/// their weight.
+fn run_density(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+    let t = input(inp, "Points");
+    let like = input(inp, "Like");
+    let to = like.grid.as_ref().and_then(|g| g.crs).or(if like.image.is_some() { like.crs } else { None }).or(t.crs);
+    let radius = number_param(p, "radius", "The radius")?.unwrap_or(500.0);
+    if radius <= 0.0 {
+        return err("The radius must be more than 0.");
+    }
+    let wi = match p.get("weight").filter(|w| !w.trim().is_empty()) {
+        Some(w) => Some(t.need_field(&w)?),
+        None => None,
+    };
+    let geoms = geoms_in(t, to, ctx)?;
+    // The points, with what each counts as; a line or an area by a point inside it.
+    let (mut pts, mut not_points, mut no_weight) = (Vec::new(), 0usize, 0usize);
+    for (f, g) in t.features.iter().zip(&geoms) {
+        let Some(g) = g else { continue };
+        let w = match wi {
+            Some(i) => match f.attrs[i].as_f64() {
+                Some(w) => w,
+                None => {
+                    no_weight += 1;
+                    continue;
+                }
+            },
+            None => 1.0,
+        };
+        match g {
+            Geometry::Point(pt) => pts.push((pt.0, w)),
+            Geometry::MultiPoint(mp) => pts.extend(mp.0.iter().map(|pt| (pt.0, w))),
+            other => {
+                if let Some(c) = point_on(other) {
+                    not_points += 1;
+                    pts.push((c, w));
+                }
+            }
+        }
+    }
+    if pts.is_empty() {
+        return err("There are no points to make a heat map of.");
+    }
+    if not_points > 0 {
+        ctx.notes.info(format!("{} lines or areas counted as a point inside each", fmt_count(not_points as u64)));
+    }
+    if no_weight > 0 {
+        ctx.notes.warn(format!("{} points without a number as their weight were left out.", fmt_count(no_weight as u64)));
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for (c, _) in &pts {
+        x0 = x0.min(c.x);
+        y0 = y0.min(c.y);
+        x1 = x1.max(c.x);
+        y1 = y1.max(c.y);
+    }
+    let rect = Some([x0 - radius, y0 - radius, x1 + radius, y1 + radius]);
+    let (cells, crs) = new_cells(p, like, rect, to, ctx)?;
+    let (left, cw, top, ch) = (cells.gt[0], cells.gt[1], cells.gt[3], cells.gt[5].abs());
+    let mut sum = vec![0f64; cells.width * cells.height];
+    let r2 = radius * radius;
+    // 3 / (π r²): the kernel then adds up to 1 over the plane.
+    let norm = 3.0 / (std::f64::consts::PI * r2);
+    for (c, w) in &pts {
+        let c0 = (((c.x - radius - left) / cw).floor().max(0.0)) as usize;
+        let c1 = ((((c.x + radius - left) / cw).ceil()) as isize).clamp(0, cells.width as isize) as usize;
+        let r0 = (((top - (c.y + radius)) / ch).floor().max(0.0)) as usize;
+        let r1 = ((((top - (c.y - radius)) / ch).ceil()) as isize).clamp(0, cells.height as isize) as usize;
+        for row in r0..r1 {
+            let y = top - (row as f64 + 0.5) * ch;
+            let dy2 = (y - c.y) * (y - c.y);
+            if dy2 >= r2 {
+                continue;
+            }
+            for col in c0..c1 {
+                let x = left + (col as f64 + 0.5) * cw;
+                let d2 = dy2 + (x - c.x) * (x - c.x);
+                if d2 < r2 {
+                    let u = 1.0 - d2 / r2;
+                    sum[row * cells.width + col] += w * norm * u * u;
+                }
+            }
+        }
+    }
+    let unit = p.get("unit").unwrap_or_else(|| "km2".into());
+    let geographic = ctx.geographic(crs) == Some(true);
+    let factor = match unit.as_str() {
+        "km2" if !geographic => 1e6,
+        "ha" if !geographic => 1e4,
+        // The weighted sum within the radius: the density times the area of the circle.
+        "sum" => std::f64::consts::PI * r2,
+        _ => 1.0,
+    };
+    if geographic && matches!(unit.as_str(), "km2" | "ha") {
+        ctx.notes.warn("The points are in degrees, so the density is per square degree. Reproject them first to have it per square kilometre.");
+    }
+    let values: Vec<f32> = sum.iter().map(|v| (v * factor) as f32).collect();
+    let grid = Grid { width: cells.width, height: cells.height, values, geotransform: cells.gt, crs, bands: Vec::new(), meta: Default::default() };
+    ctx.notes.info(format!("{} points, a radius of {}", fmt_count(pts.len() as u64), short(radius)));
+    note_range(&grid, ctx, "densities");
+    Ok(vec![("Raster".into(), grid.into_table())])
+}
+
 // ---------- Visible area (Viewshed) ----------
 
 const VIEW_RESULT: &[(&str, &str)] = &[("count", "How many of the places see each cell"), ("visible", "1 where any of them sees, 0 elsewhere")];
@@ -1333,6 +1467,23 @@ pub(super) const TYPES: &[NodeType] = &[
         summary: |p| format!("as far as {}", p.get("reach").unwrap_or_else(|| "1000".into())),
     },
     NodeType {
+        name: "KernelDensity",
+        title: "Heat map",
+        hidden: false,
+        group: Group::Transformer,
+        category: "Raster",
+        desc: "A heat map of points as a raster: each point, such as an accident, a visit or a house, spread over the cells within a radius, most at the point and nothing at the radius (the quartic kernel), so that where many lie close the values are high. Each point counts as one, or as the number in an attribute, such as the people living there. Per square kilometre, per hectare, or the weighted sum within the radius. Draw it with a colour ramp in Draw map.",
+        inputs: &["Points", "Like"],
+        outputs: &["Raster"],
+        ports: None,
+        params: DENSITY_PARAMS,
+        run: run_density,
+        summary: |p| {
+            let w = p.get("weight").filter(|w| !w.is_empty()).map(|w| format!(" · weighted by {}", w)).unwrap_or_default();
+            format!("radius {}{}", p.get("radius").unwrap_or_else(|| "500".into()), w)
+        },
+    },
+    NodeType {
         name: "Viewshed",
         title: "Visible area",
         hidden: false,
@@ -1350,6 +1501,31 @@ pub(super) const TYPES: &[NodeType] = &[
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_heat_map_adds_up_to_the_points() {
+        use crate::model::{Feature, Field, FieldType, Value};
+        let mut t = Table { fields: vec![Field::new("people", FieldType::Int)], crs: Some(3006), ..Default::default() };
+        for (x, y, n) in [(1000.0, 1000.0, 1), (1010.0, 1000.0, 3), (3000.0, 3000.0, 2)] {
+            t.features.push(Feature::new(vec![Value::Int(n)], Some(Geometry::Point(geo::point!(x: x, y: y)))));
+        }
+        let total = |out: &Outputs, factor: f64| -> f64 {
+            let g = out[0].1.grid.clone().unwrap();
+            let area = g.cell_size().0 * g.cell_size().0;
+            g.values.iter().map(|v| *v as f64).sum::<f64>() * area / factor
+        };
+        let (out, _) = run_for_test("KernelDensity", &[("radius", "200"), ("cell", "10"), ("unit", "unit")], vec![("Points", t.clone())]).unwrap();
+        // The kernel adds up to one point each, but for the coarseness of the cells.
+        assert!((total(&out, 1.0) - 3.0).abs() < 0.05, "{}", total(&out, 1.0));
+        let (out, notes) = run_for_test("KernelDensity", &[("radius", "200"), ("cell", "10"), ("weight", "people")], vec![("Points", t.clone())]).unwrap();
+        assert!((total(&out, 1e6) - 6.0).abs() < 0.1, "{}", total(&out, 1e6));
+        assert!(notes.info.iter().any(|n| n.contains("3 points")), "{:?}", notes.info);
+        // Highest where two lie close together, nothing beyond the radius.
+        let g = out[0].1.grid.clone().unwrap();
+        let at = |x: f64, y: f64| g.at(x, y).unwrap();
+        assert!(at(1005.0, 1000.0) > at(3000.0, 3000.0));
+        assert_eq!(at(2000.0, 2000.0), 0.0);
+    }
+
     use super::*;
     use geo::{line_string, point, polygon};
 

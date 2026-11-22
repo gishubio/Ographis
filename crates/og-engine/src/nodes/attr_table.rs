@@ -441,6 +441,30 @@ pub(super) const STATS_PARAMS: &[ParamSpec] = &[
         default: "",
         hint: "Such as 10, 90 for the values a tenth lie below and a tenth above, as _p10 and _p90. Empty gives none",
     },
+    ParamSpec {
+        key: "more",
+        label: "Also",
+        kind: ParamKind::Picks(MORE_STATS),
+        default: "",
+        hint: "Further figures for each attribute, as _std, _cv, _range, _distinct and _weighted_mean",
+    },
+    ParamSpec {
+        key: "weight",
+        label: "Weight",
+        kind: ParamKind::Attribute("Input"),
+        default: "",
+        hint: "For the weighted mean: what each value counts as, such as the number of inhabitants of each area",
+    },
+];
+
+/// The further figures Calculate statistics can give: (key, label), the key also the end of
+/// the name of the attribute.
+pub(super) const MORE_STATS: &[(&str, &str)] = &[
+    ("std", "Standard deviation"),
+    ("cv", "Coefficient of variation, in %"),
+    ("range", "Range: largest less smallest"),
+    ("distinct", "Number of different values"),
+    ("weighted_mean", "Weighted mean"),
 ];
 
 /// A percentile of sorted numbers, between the two nearest as spreadsheets count it.
@@ -471,10 +495,17 @@ pub(super) fn run_stats(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
             _ => err(format!("A percentile is a number from 0 to 100, not \"{}\".", t.trim())),
         })
         .collect::<Result<_>>()?;
+    let more: Vec<String> = p.list("more").into_iter().filter(|m| MORE_STATS.iter().any(|x| x.0 == m)).collect();
+    let wi = match p.get("weight").filter(|w| !w.trim().is_empty()) {
+        Some(w) => Some(table.need_field(&w)?),
+        None if more.iter().any(|m| m == "weighted_mean") => return err("Choose the attribute to weigh by for the weighted mean."),
+        None => None,
+    };
     let mut stat_fields: Vec<Field> = vec![Field::new("_count", FieldType::Int)];
     for a in &attrs {
         stat_fields.extend(STATS.iter().map(|s| Field::new(format!("{}_{}", a, s), FieldType::Real)));
         stat_fields.extend(percentiles.iter().map(|q| Field::new(format!("{}_p{}", a, crate::model::fmt_real(*q).replace(['.', ','], "_")), FieldType::Real)));
+        stat_fields.extend(more.iter().map(|m| Field::new(format!("{}_{}", a, m), if m == "distinct" { FieldType::Int } else { FieldType::Real })));
     }
     if let Some(clash) = stat_fields.iter().find(|f| by.contains(&f.name)) {
         return err(format!("The result attribute \"{}\" has the same name as a group-by attribute. Rename it first.", clash.name));
@@ -509,6 +540,7 @@ pub(super) fn run_stats(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
             if nums.is_empty() {
                 stats.extend(STATS.iter().map(|_| Value::Null));
                 stats.extend(percentiles.iter().map(|_| Value::Null));
+                stats.extend(more.iter().map(|m| if m == "distinct" { Value::Int(0) } else { Value::Null }));
                 continue;
             }
             nums.sort_by(|x, y| x.total_cmp(y));
@@ -517,6 +549,38 @@ pub(super) fn run_stats(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
             let median = if nums.len() % 2 == 1 { nums[mid] } else { (nums[mid - 1] + nums[mid]) / 2.0 };
             stats.extend([sum, nums[0], nums[nums.len() - 1], sum / nums.len() as f64, median].map(Value::Real));
             stats.extend(percentiles.iter().map(|q| Value::Real(percentile(&nums, *q))));
+            for m in &more {
+                let n = nums.len() as f64;
+                let mean = sum / n;
+                // The sample standard deviation, as spreadsheets give with STDEV.
+                let std = if nums.len() > 1 { (nums.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)).sqrt() } else { 0.0 };
+                stats.push(match m.as_str() {
+                    "std" => Value::Real(std),
+                    "cv" if mean != 0.0 => Value::Real(std / mean.abs() * 100.0),
+                    "range" => Value::Real(nums[nums.len() - 1] - nums[0]),
+                    "distinct" => {
+                        let mut d = nums.clone();
+                        d.dedup();
+                        Value::Int(d.len() as i64)
+                    }
+                    "weighted_mean" => {
+                        let (mut sw, mut swx) = (0.0, 0.0);
+                        for mm in &members {
+                            let f = &table.features[*mm];
+                            if let (Some(x), Some(w)) = (f.attrs[*a].as_f64(), wi.and_then(|wi| f.attrs[wi].as_f64())) {
+                                sw += w;
+                                swx += w * x;
+                            }
+                        }
+                        if sw != 0.0 {
+                            Value::Real(swx / sw)
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    _ => Value::Null,
+                });
+            }
         }
         let mut row: Vec<Value> = gi.iter().map(|i| table.features[members[0]].attrs[*i].clone()).collect();
         row.extend(stats.iter().cloned());

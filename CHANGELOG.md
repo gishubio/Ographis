@@ -3,6 +3,76 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.96.6
+
+### Added
+
+- **More charts** in *Draw chart*: a *histogram* of how values are spread; a *scatter plot*
+  of one number against another, coloured by group, with a trend line, its equation and
+  R²; *box plots* of the spread in each group; *stacked* bars, also as shares of 100 %, and
+  *grouped* bars, with a legend; and a *population pyramid*. All are drawn as the bars and
+  lines are, as shapes in a PDF.
+- **Small multiples.** *One chart for each* in *Draw chart* draws a small chart for each
+  value of an attribute, such as each municipality, side by side on one shared scale, so
+  that they can be compared at a glance, or each on a scale of its own. Bars and lines too.
+- **Charts on the map.** A layer of *Draw map* can have a pie or a few bars on each area or
+  point, of the values of the attributes ticked under *Charts*, all as large, as large as
+  their total or as an attribute, with the colours in the legend.
+- **Dashboard web page** (`DashboardWriter`): one .html with a map of the areas coloured by
+  a value and a bar for each area beside it, linked: the pointer on a bar lights up its
+  area, and on an area its bar.
+- **Classify values** (`Classifier`): natural breaks (Jenks), quantiles, equal intervals,
+  standard deviations or breaks of your own, with the class and its name for the legend of
+  each feature, and a table of the classes.
+- **Shares, ranks and running totals** (`RunningStatistics`): the share of the total, the
+  rank, the running total and share, and a moving mean, for all or for each group.
+- **Change over time** (`ChangeOverTime`): the change since the time before, in numbers and
+  percent, an index with a base time of 100, and the mean yearly growth.
+- **Rates** (`RateCalculator`): cases per inhabitant, with small numbers hidden, a rate
+  smoothed towards the mean for small populations (empirical Bayes), and rates directly
+  standardised by age to a standard population.
+- **Heat map** (`KernelDensity`): how dense points are, as a raster, weighed by an attribute
+  if asked, per km², per hectare or within the radius.
+- **Linear regression** (`Regression`): coefficients with their standard errors, t and p,
+  R² and adjusted R², and what the model gives and misses for each feature.
+- **More figures in *Calculate statistics***: under *Also*, the standard deviation, the
+  coefficient of variation, the range, the number of different values and a weighted mean.
+  What it gave before is unchanged.
+- `examples/statistics.ographis` shows them on the towns and subregions of the examples.
+- **Help in the program.** Help → *Ographis help*, or F1, opens a window with a few pages on
+  getting started and a page for every tool: what it does, what comes in and goes out, each
+  setting with its help, its choices and what it is when not set, and the examples that use
+  it. The pages are made from the tools themselves, so they always tell what this version
+  does. F1 with a node selected, or *Help* at the top of its form, opens the page of its tool.
+- **From error to error.** F8 goes to the next node with an error in the latest run, and
+  Shift+F8 to the one before; a click on the errors at the top, or on an error in the log,
+  goes there too, and moves the canvas to it. *Next error* is above the log.
+- **To what is wrong.** Under the error in the form, a button leads to what it is most likely
+  about: *Open the connection …* opens the database or API connection in the settings, and
+  *Go to …* marks the setting, such as a path to a file that is not there, or a setting the
+  error names.
+- **Places in API answers as features.** *Places in the answer* in *HTTP request* makes an
+  answer of GeoJSON, a list of objects with `lat` and `lon` (as Nominatim gives them), or a
+  list of coordinates into a feature for each place, with its values as attributes, without
+  a Flatten JSON and a Make points after it.
+- **A grid of degrees.** *Grid* in *Draw map* can be *Latitude and longitude, in degrees*:
+  the lines of WGS 84 over a map in another coordinate system, such as SWEREF 99 TM, where
+  they curve and lean, with their degrees, such as 58°N and 12°E, in the edge. *Grid every*
+  then counts degrees.
+- **Colours all can read.** *Draw map* and *Draw chart* warn when two colours of a legend are
+  easy to tell apart for most but hard for those who see red and green alike, about one man
+  in twelve, and say what to choose instead. The ramps and the colours that are given out
+  from the start pass the test.
+- **Legends of classes in their order.** A map coloured by `class` from *Classify values* gets
+  the names of the classes from `class_label` in its legend, in the order of the classes, also
+  with more classes than the theme has. Coloured by the names themselves, those that begin
+  with a number, such as 10 – 50, come in the order of their numbers.
+
+### Changed
+
+- Dependabot leaves rstar to follow geo, which still uses rstar 0.12.
+- url 2.5.9, for RUSTSEC-2026-0592; base64 0.23, wkt 0.15 and bytes 1.12.2.
+
 ## 0.96.5
 
 ### Added

@@ -24,7 +24,16 @@ pub(super) const COLOURS: &[(&str, &str)] = &[
     ("grey", "Grey"),
 ];
 
-const KINDS: &[(&str, &str)] = &[("bars", "Bars"), ("lines", "Lines")];
+const KINDS: &[(&str, &str)] = &[
+    ("bars", "Bars"),
+    ("lines", "Lines"),
+    ("histogram", "Histogram: how the values are spread"),
+    ("scatter", "Scatter: one number against another"),
+    ("box", "Box plot: the spread of each group"),
+    ("stacked", "Stacked bars: the parts of each"),
+    ("grouped", "Grouped bars: the parts side by side"),
+    ("pyramid", "Population pyramid"),
+];
 
 pub(super) const CHART_PARAMS: &[ParamSpec] = &[
     ParamSpec {
@@ -56,6 +65,48 @@ pub(super) const CHART_PARAMS: &[ParamSpec] = &[
         hint: "For lines. Else it starts near the smallest value",
     },
     ParamSpec { key: "markers", label: "A dot at each point", kind: ParamKind::Choice(YES_NO), default: "no", hint: "For lines" },
+    ParamSpec {
+        key: "facet",
+        label: "One chart for each",
+        kind: ParamKind::Attribute("Input"),
+        default: "",
+        hint: "Small multiples: a small chart for each value, such as each municipality, side by side on one scale. Empty draws one chart",
+    },
+    ParamSpec {
+        key: "free_scales",
+        label: "Each small chart its own scale",
+        kind: ParamKind::Choice(YES_NO),
+        default: "no",
+        hint: "One shared scale lets them be compared; scales of their own show the shape of each",
+    },
+    ParamSpec {
+        key: "bins",
+        label: "Bins",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "For a histogram: about how many. Empty chooses by the number of values",
+    },
+    ParamSpec {
+        key: "trend",
+        label: "Trend line",
+        kind: ParamKind::Choice(YES_NO),
+        default: "yes",
+        hint: "For a scatter plot: a straight line through the points, with R², how much of the spread it explains",
+    },
+    ParamSpec {
+        key: "percent",
+        label: "As shares of 100 %",
+        kind: ParamKind::Choice(YES_NO),
+        default: "no",
+        hint: "For stacked bars: every bar as tall, the parts as shares",
+    },
+    ParamSpec {
+        key: "x_title",
+        label: "Along the bottom",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "For a histogram or a scatter plot: what the numbers along the bottom are",
+    },
     ParamSpec {
         key: "category",
         label: "Names",
@@ -259,7 +310,12 @@ fn run_lines(p: &P, table: &Table, ctx: &mut NodeCtx) -> Result<Outputs> {
 
 pub(super) fn run_chart(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let table = input(inp, "Input");
-    if p.get("kind").as_deref() == Some("lines") {
+    let kind = p.get("kind").unwrap_or_else(|| "bars".into());
+    let facet = p.get("facet").is_some_and(|f| !f.is_empty());
+    if facet || !matches!(kind.as_str(), "bars" | "lines") {
+        return run_plot(p, &kind, table, ctx);
+    }
+    if kind == "lines" {
         return run_lines(p, table, ctx);
     }
     let cat = p.need("category", "Choose the attribute that names the bars.")?;
@@ -419,6 +475,256 @@ pub(super) fn run_chart(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
     Ok(vec![("Chart".into(), image.into_table(None))])
 }
 
+/// A number of an attribute, also when written as text.
+fn number_of(v: &Value) -> Option<f64> {
+    v.as_f64().filter(|x| x.is_finite()).or_else(|| crate::model::parse_number(&v.to_text()))
+}
+
+/// Puts values together as the setting Features with the same name says.
+fn combined(v: &[f64], how: &str) -> f64 {
+    match how {
+        "mean" => v.iter().sum::<f64>() / v.len().max(1) as f64,
+        "max" => v.iter().copied().fold(f64::MIN, f64::max),
+        "min" => v.iter().copied().fold(f64::MAX, f64::min),
+        _ => v.iter().sum(),
+    }
+}
+
+/// The names in the order the features first have them.
+fn first_seen(table: &Table, rows: &[usize], i: usize) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    rows.iter().map(|r| table.features[*r].attrs[i].to_text()).filter(|n| seen.insert(n.clone())).collect()
+}
+
+/// Histograms, scatter plots, box plots, stacked bars, pyramids, and small multiples of any.
+fn run_plot(p: &P, kind: &str, table: &Table, ctx: &mut NodeCtx) -> Result<Outputs> {
+    use crate::plot::{Panel, Plot};
+    let field = |key: &str| -> Result<Option<usize>> {
+        match p.get(key).filter(|v| !v.is_empty()) {
+            Some(v) => Ok(Some(table.need_field(&v)?)),
+            None => Ok(None),
+        }
+    };
+    let need = |key: &str, what: &str| -> Result<usize> { table.need_field(&p.need(key, what)?) };
+    let combine = p.get("combine").unwrap_or_else(|| "sum".into());
+    let sort = p.get("sort").unwrap_or_else(|| "down".into());
+    let all: Vec<usize> = (0..table.len()).collect();
+    // The series: their names, the same in every small chart.
+    let si = field("series")?;
+    let mut series: Vec<String> = si.map(|i| first_seen(table, &all, i)).unwrap_or_default();
+    if matches!(kind, "stacked" | "grouped" | "pyramid" | "lines") {
+        series.sort_by_cached_key(|s| (alphabetical(s), s.clone()));
+    }
+    let series_of = |r: usize| si.map_or(0, |i| series.iter().position(|s| *s == table.features[r].attrs[i].to_text()).unwrap_or(0));
+    // Categories in one order for every small chart.
+    let order_names = |ci: usize, vi: Option<usize>| -> Vec<String> {
+        let mut names = first_seen(table, &all, ci);
+        let total = |n: &String| -> f64 {
+            all.iter()
+                .filter(|r| table.features[**r].attrs[ci].to_text() == *n)
+                .map(|r| vi.and_then(|v| number_of(&table.features[*r].attrs[v])).unwrap_or(1.0))
+                .sum()
+        };
+        match sort.as_str() {
+            "name" => names.sort_by_cached_key(|b| (alphabetical(b), b.clone())),
+            "none" => {}
+            "up" => names.sort_by(|a, b| total(a).total_cmp(&total(b))),
+            _ => names.sort_by(|a, b| total(b).total_cmp(&total(a))),
+        }
+        names
+    };
+    let mut left_out = 0usize;
+    let build = |rows: &[usize], left_out: &mut usize| -> Result<Panel> {
+        Ok(match kind {
+            "histogram" => {
+                let vi = need("value", "Choose the values to count into bins.")?;
+                let v: Vec<f64> = rows.iter().filter_map(|r| number_of(&table.features[*r].attrs[vi])).collect();
+                *left_out += rows.len() - v.len();
+                Panel::Histogram(v)
+            }
+            "scatter" => {
+                let xi = need("x", "Choose the number along the bottom.")?;
+                let yi = need("value", "Choose the number up the side.")?;
+                let pts: Vec<(f64, f64, usize)> = rows
+                    .iter()
+                    .filter_map(|r| Some((number_of(&table.features[*r].attrs[xi])?, number_of(&table.features[*r].attrs[yi])?, series_of(*r))))
+                    .collect();
+                *left_out += rows.len() - pts.len();
+                Panel::Scatter(pts)
+            }
+            "box" => {
+                let vi = need("value", "Choose the values whose spread is drawn.")?;
+                let groups = match field("category")? {
+                    Some(ci) => order_names(ci, None).into_iter().map(|g| (g, Vec::new())).collect::<Vec<_>>(),
+                    None => vec![(String::new(), Vec::new())],
+                };
+                let mut groups = groups;
+                let ci = field("category")?;
+                for r in rows {
+                    let f = &table.features[*r];
+                    let Some(v) = number_of(&f.attrs[vi]) else {
+                        *left_out += 1;
+                        continue;
+                    };
+                    let g = ci.map_or(0, |ci| groups.iter().position(|g| g.0 == f.attrs[ci].to_text()).unwrap_or(0));
+                    groups[g].1.push(v);
+                }
+                Panel::Boxes(groups)
+            }
+            "stacked" | "grouped" | "pyramid" | "bars" => {
+                let ci = need(
+                    "category",
+                    if kind == "pyramid" {
+                        "Choose the attribute with the groups, such as the age group."
+                    } else {
+                        "Choose the attribute that names the bars."
+                    },
+                )?;
+                let vi = field("value")?;
+                let mut cats = order_names(ci, vi);
+                if kind == "pyramid" && sort != "none" {
+                    // The groups in their own order, the first at the foot, such as the ages.
+                    let start = |c: &str| crate::model::parse_number(c.split(['-', '–', ' ', '+']).next().unwrap_or("")).unwrap_or(f64::MAX);
+                    cats.sort_by(|a, b| start(a).total_cmp(&start(b)).then_with(|| alphabetical(a).cmp(&alphabetical(b))));
+                }
+                let ns = if kind == "bars" { 1 } else { series.len().max(1) };
+                let mut cells: Vec<Vec<Vec<f64>>> = vec![vec![Vec::new(); cats.len()]; ns];
+                for r in rows {
+                    let f = &table.features[*r];
+                    let v = match vi {
+                        Some(vi) => match number_of(&f.attrs[vi]) {
+                            Some(v) => v,
+                            None => {
+                                *left_out += 1;
+                                continue;
+                            }
+                        },
+                        None => 1.0,
+                    };
+                    let Some(c) = cats.iter().position(|c| *c == f.attrs[ci].to_text()) else { continue };
+                    let s = if kind == "bars" { 0 } else { series_of(*r) };
+                    cells[s][c].push(v);
+                }
+                let how = if vi.is_none() { "sum" } else { combine.as_str() };
+                let values: Vec<Vec<f64>> = cells.iter().map(|s| s.iter().map(|c| if c.is_empty() { 0.0 } else { combined(c, how) }).collect()).collect();
+                match kind {
+                    "bars" => Panel::Bars(cats.into_iter().zip(values[0].iter().copied()).collect()),
+                    "pyramid" => Panel::Pyramid { groups: cats, left: values[0].clone(), right: values.get(1).cloned().unwrap_or_default() },
+                    _ => Panel::Stacked { categories: cats, values },
+                }
+            }
+            _ => {
+                // Lines.
+                let xi = need("x", "Choose the attribute along the bottom, such as the year.")?;
+                let yi = need("value", "Choose the values the line goes through.")?;
+                let mut pts: Vec<std::collections::BTreeMap<i64, (f64, Vec<f64>)>> = vec![Default::default(); series.len().max(1)];
+                for r in rows {
+                    let f = &table.features[*r];
+                    let (Some((x, _)), Some(y)) = (x_value(&f.attrs[xi]), number_of(&f.attrs[yi])) else {
+                        *left_out += 1;
+                        continue;
+                    };
+                    pts[series_of(*r)].entry((x * 1e6).round() as i64).or_insert((x, Vec::new())).1.push(y);
+                }
+                let names = if series.is_empty() { vec![String::new()] } else { series.clone() };
+                Panel::Lines(
+                    names
+                        .into_iter()
+                        .zip(pts)
+                        .filter(|s| !s.1.is_empty())
+                        .map(|(n, m)| (n, m.into_values().map(|(x, ys)| (x, combined(&ys, &combine))).collect()))
+                        .collect(),
+                )
+            }
+        })
+    };
+    if kind == "pyramid" && series.len() != 2 {
+        return err(format!(
+            "A population pyramid needs an attribute under A line for each with two values, such as the sex, one for each side; {} has {}.",
+            p.get("series").unwrap_or_else(|| "nothing chosen".into()),
+            series.len()
+        ));
+    }
+    let panels: Vec<(String, Panel)> = match field("facet")? {
+        Some(fi) => {
+            let mut names = first_seen(table, &all, fi);
+            names.sort_by_cached_key(|b| (alphabetical(b), b.clone()));
+            if names.len() > 36 {
+                ctx.notes.warn(format!("{} small charts are too many to read; the first 36 are drawn.", names.len()));
+                names.truncate(36);
+            }
+            names
+                .into_iter()
+                .map(|n| {
+                    let rows: Vec<usize> = all.iter().copied().filter(|r| table.features[*r].attrs[fi].to_text() == n).collect();
+                    Ok((n, build(&rows, &mut left_out)?))
+                })
+                .collect::<Result<_>>()?
+        }
+        None => vec![(String::new(), build(&all, &mut left_out)?)],
+    };
+    if left_out > 0 {
+        ctx.notes.info(format!("{} features without a number left out", fmt_count(left_out as u64)));
+    }
+    let width = number_param(p, "width", "The width")?.unwrap_or(1200.0);
+    if !(200.0..=8000.0).contains(&width) {
+        return err("The width must be from 200 to 8000 pixels.");
+    }
+    let dates = kind == "lines" && field("x")?.is_some_and(|xi| table.features.iter().any(|f| x_value(&f.attrs[xi]).is_some_and(|x| x.1)));
+    let plot = Plot {
+        series: if kind == "bars" || kind == "box" || kind == "histogram" { Vec::new() } else { series },
+        title: p.exact("title").trim().to_string(),
+        subtitle: p.exact("subtitle").trim().to_string(),
+        note: p.exact("note").trim().to_string(),
+        unit: p.exact("unit").trim().to_string(),
+        x_title: p.exact("x_title").trim().to_string(),
+        decimals: number_param(p, "decimals", "The decimals")?.unwrap_or(0.0).clamp(0.0, 6.0) as usize,
+        swedish: p.get("format").as_deref() != Some("en"),
+        bins: number_param(p, "bins", "The bins")?.map_or(0, |b| b.clamp(2.0, 200.0) as usize),
+        trend: p.get("trend").as_deref() != Some("no"),
+        grouped: kind == "grouped",
+        percent: p.get("percent").as_deref() == Some("yes"),
+        dates,
+        free_scales: p.get("free_scales").as_deref() == Some("yes"),
+        markers: p.get("markers").as_deref() == Some("yes"),
+        colour: chart::colour(&p.get("colour").unwrap_or_default()),
+        width: width as u32,
+        height: number_param(p, "height", "The height")?.map(|h| h.clamp(150.0, 20000.0) as u32),
+        background: match p.get("background").as_deref() {
+            Some("white") => Some([255, 255, 255]),
+            Some("none") => None,
+            _ => Some(chart::PAPER),
+        },
+        panels,
+        ..Default::default()
+    };
+    if plot.series.len() > 9 && matches!(kind, "stacked" | "grouped" | "scatter") {
+        ctx.notes.warn(format!("{} parts are more than there are colours to tell apart; some share a colour.", plot.series.len()));
+    }
+    if p.get("html").is_some_and(|h| !h.trim().is_empty()) {
+        ctx.notes.warn("The web page is made for a single bar chart, so none was written for this chart.");
+    }
+    if plot.series.len() > 1 {
+        let colours: Vec<[u8; 3]> = crate::plot::palette(plot.colour).into_iter().cycle().take(plot.series.len()).collect();
+        if let Some((i, j, kind)) = crate::colourvision::confused(&colours) {
+            ctx.notes.warn(format!(
+                "{} and {} have colours that are hard to tell apart for those who are {}, about one man in twelve. Another first colour, or fewer parts, helps.",
+                plot.series[i], plot.series[j], kind
+            ));
+        }
+    }
+    let image = crate::plot::draw(&plot)?;
+    let n = plot.panels.len();
+    ctx.notes.info(format!(
+        "{}{} · {} × {} pixels",
+        KINDS.iter().find(|k| k.0 == kind).map_or(kind, |k| k.1).split(':').next().unwrap_or(kind),
+        if n > 1 { format!(", {} small charts", n) } else { String::new() },
+        image.width,
+        image.height
+    ));
+    Ok(vec![("Chart".into(), image.into_table(None))])
+}
+
 /// The tools of this module, for the registry in mod.rs.
 pub(super) const TYPES: &[NodeType] = &[
     NodeType {
@@ -427,15 +733,23 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Charts",
-        desc: "Draws a bar chart of the features: a bar for each name, as long as its value, such as the area of each municipality. Or a line chart, with a line for each value of an attribute through its points along a number or a date, such as the inhabitants of each municipality year by year. Sorted by size or by name, with a title, an explanation and a note. The chart comes out as a picture to write to a .png or a .pdf, and can also be written as an interactive web page, where each value shows under the pointer and the bars can be sorted.",
+        desc: "Draws a bar chart of the features: a bar for each name, as long as its value, such as the area of each municipality. Or a line chart, with a line for each value of an attribute through its points along a number or a date, such as the inhabitants of each municipality year by year. Or a histogram of how values are spread, a scatter plot of one number against another with a trend line and its R², box plots of the spread in each group, stacked or grouped bars of the parts of each, or a population pyramid. Any of them can be drawn as small multiples: a small chart for each municipality, say, side by side on one scale. Sorted by size or by name, with a title, an explanation and a note. The chart comes out as a picture to write to a .png or a .pdf, and can also be written as an interactive web page, where each value shows under the pointer and the bars can be sorted.",
         inputs: &["Input"],
         outputs: &["Chart"],
         ports: None,
         params: CHART_PARAMS,
         run: run_chart,
         summary: |p| {
-            if p.get("kind").as_deref() == Some("lines") {
-                return format!("lines of {} along {}", p.get("value").unwrap_or_default(), p.get("x").unwrap_or_default());
+            let each = p.get("facet").filter(|f| !f.is_empty()).map(|f| format!(" · for each {}", f)).unwrap_or_default();
+            match p.get("kind").as_deref() {
+                Some("lines") => return format!("lines of {} along {}{}", p.get("value").unwrap_or_default(), p.get("x").unwrap_or_default(), each),
+                Some("histogram") => return format!("histogram of {}{}", p.get("value").unwrap_or_default(), each),
+                Some("scatter") => return format!("{} against {}{}", p.get("value").unwrap_or_default(), p.get("x").unwrap_or_default(), each),
+                Some("box") => return format!("spread of {} by {}{}", p.get("value").unwrap_or_default(), p.get("category").unwrap_or_default(), each),
+                Some(k @ ("stacked" | "grouped" | "pyramid")) => {
+                    return format!("{} {} per {} and {}{}", k, p.get("value").filter(|v| !v.is_empty()).unwrap_or_else(|| "count".into()), p.get("category").unwrap_or_default(), p.get("series").unwrap_or_default(), each)
+                }
+                _ => {}
             }
             let what = p.get("value").filter(|v| !v.is_empty()).unwrap_or_else(|| "count".into());
             let sort = match p.get("sort").as_deref() {
@@ -485,6 +799,50 @@ mod tests {
         }
         let (out, _) = run_for_test("ChartDrawer", &[("kind", "lines"), ("x", "year"), ("value", "people"), ("series", "place")], vec![("Input", t)]).unwrap();
         assert!(out[0].1.image.is_some());
+    }
+
+    #[test]
+    fn the_other_kinds_draw_and_small_multiples_split_by_an_attribute() {
+        let mut t = Table {
+            fields: vec![
+                Field::new("place", FieldType::Text),
+                Field::new("sex", FieldType::Text),
+                Field::new("age", FieldType::Text),
+                Field::new("people", FieldType::Int),
+            ],
+            ..Default::default()
+        };
+        for (pl, sx, a, n) in [
+            ("Borås", "men", "0-9", 10),
+            ("Borås", "women", "0-9", 11),
+            ("Borås", "men", "10-19", 8),
+            ("Borås", "women", "10-19", 9),
+            ("Skövde", "men", "0-9", 5),
+            ("Skövde", "women", "0-9", 4),
+            ("Skövde", "men", "10-19", 6),
+            ("Skövde", "women", "10-19", 7),
+        ] {
+            t.features.push(Feature::new(vec![Value::Text(pl.into()), Value::Text(sx.into()), Value::Text(a.into()), Value::Int(n)], None));
+        }
+        let base = [("category", "age"), ("series", "sex"), ("value", "people"), ("x", "people"), ("width", "600")];
+        for kind in ["histogram", "scatter", "box", "stacked", "grouped", "pyramid"] {
+            let mut ps = base.to_vec();
+            ps.push(("kind", kind));
+            let (out, notes) = run_for_test("ChartDrawer", &ps, vec![("Input", t.clone())]).unwrap_or_else(|e| panic!("{}: {}", kind, e));
+            assert!(out[0].1.image.is_some(), "{}", kind);
+            ps.push(("facet", "place"));
+            let (_, notes2) = run_for_test("ChartDrawer", &ps, vec![("Input", t.clone())]).unwrap();
+            assert!(notes2.info.iter().any(|n| n.contains("2 small charts")), "{} {:?} {:?}", kind, notes.info, notes2.info);
+        }
+        // Bars and lines as small multiples too.
+        let (_, notes) = run_for_test("ChartDrawer", &[("category", "age"), ("value", "people"), ("facet", "place")], vec![("Input", t.clone())]).unwrap();
+        assert!(notes.info.iter().any(|n| n.contains("2 small charts")), "{:?}", notes.info);
+        // A pyramid needs two sides.
+        assert!(run_for_test("ChartDrawer", &[("kind", "pyramid"), ("category", "age"), ("series", "place"), ("value", "people")], vec![("Input", t.clone())])
+            .is_ok());
+        assert!(
+            run_for_test("ChartDrawer", &[("kind", "pyramid"), ("category", "age"), ("series", "people"), ("value", "people")], vec![("Input", t)]).is_err()
+        );
     }
 
     #[test]
