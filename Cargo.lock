@@ -3763,7 +3763,7 @@ dependencies = [
 
 [[package]]
 name = "og-cli"
-version = "0.96.6"
+version = "0.96.7"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -3776,7 +3776,7 @@ dependencies = [
 
 [[package]]
 name = "og-engine"
-version = "0.96.6"
+version = "0.96.7"
 dependencies = [
  "ab_glyph",
  "acadrust",
@@ -3814,7 +3814,7 @@ dependencies = [
 
 [[package]]
 name = "og-gdal"
-version = "0.96.6"
+version = "0.96.7"
 dependencies = [
  "flate2",
  "gdal",
@@ -3832,7 +3832,7 @@ dependencies = [
 
 [[package]]
 name = "og-gui"
-version = "0.96.6"
+version = "0.96.7"
 dependencies = [
  "arboard",
  "chrono",

@@ -1,0 +1,186 @@
+{
+  "format": "ographis/1",
+  "name": "A map series: a page for each subregion",
+  "nodes": [
+    {
+      "id": "areas",
+      "type": "Reader",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "subregions.gpkg"
+      },
+      "comment": "Subregions"
+    },
+    {
+      "id": "areas_sweref",
+      "type": "Reprojector",
+      "x": 240,
+      "y": 20,
+      "params": {
+        "crs": "EPSG:3006"
+      },
+      "comment": "Subregions in metres"
+    },
+    {
+      "id": "area",
+      "type": "AreaCalculator",
+      "x": 460,
+      "y": 20,
+      "params": {
+        "name": "area_km2",
+        "unit": "km2",
+        "decimals": "0"
+      },
+      "comment": "Area of each subregion in km²"
+    },
+    {
+      "id": "towns",
+      "type": "Reader",
+      "x": 20,
+      "y": 200,
+      "params": {
+        "path": "towns.csv",
+        "crs": "EPSG:4326"
+      },
+      "comment": "Towns with their population"
+    },
+    {
+      "id": "towns_sweref",
+      "type": "Reprojector",
+      "x": 240,
+      "y": 200,
+      "params": {
+        "crs": "EPSG:3006"
+      },
+      "comment": "Towns in metres"
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "x": 700,
+      "y": 160,
+      "params": {
+        "print_dpi": "150",
+        "crs": "EPSG:3006",
+        "title": "",
+        "subtitle": "",
+        "simplify": "yes",
+        "legend": "top-right",
+        "scale_bar": "bottom-right",
+        "grid": "none",
+        "source": "Example data in Ographis",
+        "layers": [
+          {
+            "from": "towns_sweref:Reprojected",
+            "name": "Towns",
+            "fill": "#222222",
+            "stroke": "#ffffff",
+            "width": 1,
+            "size": 6,
+            "label": "name",
+            "label_bold_where": "population > 50000",
+            "label_size": 12,
+            "label_priority": "population",
+            "size_by": "population",
+            "size_min": 4,
+            "size_max": 26,
+            "nested": true,
+            "order": "large_below"
+          },
+          {
+            "from": "area:Output",
+            "name": "Subregions",
+            "fill": "#f2f0e6",
+            "stroke": "#7a8a99",
+            "width": 1,
+            "label": "upper(subregion)\nformat_number(area_km2) || ' km²'",
+            "label_size": 13,
+            "label_italic": false,
+            "label_colour": "#5a6470",
+            "label_spaced": false,
+            "dots_by": "area_km2",
+            "dots_per": 10
+          }
+        ],
+        "size_as": "print",
+        "print_mm": "180",
+        "atlas_by": "subregion",
+        "focus_fade": "55"
+      },
+      "comment": "A page for each subregion, its towns sized by population and the land as dots"
+    },
+    {
+      "id": "pdf",
+      "type": "Writer",
+      "comment": "All the pages in one PDF",
+      "params": {
+        "path": "out/subregion_pages.pdf"
+      },
+      "x": 960,
+      "y": 220
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "areas",
+        "Output"
+      ],
+      "to": [
+        "areas_sweref",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "areas_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "area",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "towns",
+        "Output"
+      ],
+      "to": [
+        "towns_sweref",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "towns_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "area",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "pdf",
+        "Input"
+      ]
+    }
+  ]
+}

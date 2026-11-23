@@ -25,8 +25,24 @@ pub(super) const BASEMAPS: &[(&str, &str)] = &[
     ("own", "One of my own, or an address"),
 ];
 
-pub(super) const LEGEND_PLACES: &[(&str, &str)] =
-    &[("none", "None"), ("bottom-left", "Lower left"), ("bottom-right", "Lower right"), ("top-left", "Upper left"), ("top-right", "Upper right")];
+pub(super) const LEGEND_PLACES: &[(&str, &str)] = &[
+    ("none", "None"),
+    ("bottom-left", "Lower left"),
+    ("bottom-center", "Lower middle"),
+    ("bottom-right", "Lower right"),
+    ("top-left", "Upper left"),
+    ("top-center", "Upper middle"),
+    ("top-right", "Upper right"),
+];
+
+const CORNERS: &[(&str, &str)] = &[
+    ("bottom-left", "Lower left"),
+    ("bottom-center", "Lower middle"),
+    ("bottom-right", "Lower right"),
+    ("top-left", "Upper left"),
+    ("top-center", "Upper middle"),
+    ("top-right", "Upper right"),
+];
 
 pub(super) const MAP_PARAMS: &[ParamSpec] = &[
     ParamSpec {
@@ -39,7 +55,11 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
     ParamSpec {
         key: "size_as",
         label: "Size",
-        kind: ParamKind::Choice(&[("pixels", "In pixels, for the screen"), ("print", "For print: width in mm and pixels to the inch")]),
+        kind: ParamKind::Choice(&[
+            ("pixels", "In pixels, for the screen"),
+            ("print", "For print: width in mm and pixels to the inch"),
+            ("scale", "At a scale on a paper, such as 1:50 000 on A3"),
+        ]),
         default: "pixels",
         hint: "",
     },
@@ -57,6 +77,29 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Text,
         default: "300",
         hint: "300 for print, 150 for a draft. Lines, points and labels keep the size they have on the screen, measured on paper, and the picture tells Output its resolution",
+    },
+    ParamSpec {
+        key: "map_scale",
+        label: "Scale 1:",
+        kind: ParamKind::Text,
+        default: "50000",
+        hint: "Such as 50000 for 1:50 000. The map is as large as the paper less 10 mm on every side, centred on the features, in a coordinate system in metres",
+    },
+    ParamSpec {
+        key: "paper",
+        label: "Paper",
+        kind: ParamKind::Choice(&[
+            ("a4l", "A4 landscape"),
+            ("a4p", "A4 portrait"),
+            ("a3l", "A3 landscape"),
+            ("a3p", "A3 portrait"),
+            ("a2l", "A2 landscape"),
+            ("a2p", "A2 portrait"),
+            ("a1l", "A1 landscape"),
+            ("a1p", "A1 portrait"),
+        ]),
+        default: "a3l",
+        hint: "",
     },
     ParamSpec {
         key: "map_style",
@@ -111,6 +154,9 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
         hint: "A box with the layers and what their colours and sizes stand for",
     },
     ParamSpec { key: "legend_title", label: "Title of the legend", kind: ParamKind::Text, default: "", hint: "" },
+    ParamSpec { key: "legend_columns", label: "Legend columns", kind: ParamKind::Text, default: "1", hint: "Its rows in this many columns, for a long legend" },
+    ParamSpec { key: "legend_fill", label: "Legend box", kind: ParamKind::Text, default: "", hint: "The colour of its box, such as #ffffffe6, or none. Empty: white, a little see-through" },
+    ParamSpec { key: "legend_line", label: "Legend edge", kind: ParamKind::Text, default: "", hint: "The colour of the edge of its box, or none. Empty: light grey" },
     ParamSpec {
         key: "scale_bar",
         label: "Scale bar",
@@ -119,6 +165,22 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
         hint: "A round length of about a fifth of the map, in metres or km",
     },
     ParamSpec { key: "north_arrow", label: "North arrow", kind: ParamKind::Choice(LEGEND_PLACES), default: "none", hint: "" },
+    ParamSpec {
+        key: "scale_style",
+        label: "Scale bar as",
+        kind: ParamKind::Choice(&[("bar", "Fields dark and light"), ("line", "A line with ticks")]),
+        default: "bar",
+        hint: "",
+    },
+    ParamSpec { key: "scale_parts", label: "Fields of the scale bar", kind: ParamKind::Text, default: "4", hint: "From 1 to 10" },
+    ParamSpec { key: "scale_unit", label: "Scale bar in", kind: ParamKind::Choice(&[("auto", "As fits"), ("km", "Kilometres"), ("m", "Metres")]), default: "auto", hint: "" },
+    ParamSpec {
+        key: "north_style",
+        label: "North arrow as",
+        kind: ParamKind::Choice(&[("arrow", "An arrow, half dark"), ("simple", "A thin arrow"), ("star", "A compass star")]),
+        default: "arrow",
+        hint: "",
+    },
     ParamSpec {
         key: "grid",
         label: "Grid",
@@ -137,6 +199,13 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Text,
         default: "",
         hint: "In the units of the map, such as 1000 for every km in SWEREF 99 TM, or in degrees for a grid of degrees. Empty gives a round number by the size",
+    },
+    ParamSpec {
+        key: "map_frame",
+        label: "Frame",
+        kind: ParamKind::Choice(&[("none", "None"), ("frame", "A frame, with the coordinates outside it")]),
+        default: "none",
+        hint: "A line around the map with a white margin, where the coordinates of the grid are written, as on a printed map",
     },
     ParamSpec {
         key: "overview",
@@ -158,6 +227,117 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Text,
         default: "5",
         hint: "How many times wider than the map, when nothing is connected to Overview",
+    },
+    ParamSpec { key: "overview_fill", label: "Overview areas", kind: ParamKind::Text, default: "", hint: "A colour for the areas of the overview map, such as #e4e2dc. Empty: as the layers have it" },
+    ParamSpec { key: "overview_line", label: "Overview lines", kind: ParamKind::Text, default: "", hint: "A colour for its lines and outlines, such as #777777. Empty: as the layers have it" },
+    ParamSpec { key: "overview_frame", label: "Overview frame", kind: ParamKind::Text, default: "#444444", hint: "The colour of the frame around it" },
+    ParamSpec { key: "overview_mark", label: "Where the map is", kind: ParamKind::Text, default: "#d73027", hint: "The colour of the box in the overview map that shows where the map is" },
+    ParamSpec { key: "title", label: "Title", kind: ParamKind::Text, default: "", hint: "Written large over the map, where Title in the says" },
+    ParamSpec { key: "subtitle", label: "Subtitle", kind: ParamKind::Text, default: "", hint: "Under the title: what is shown, where and when" },
+    ParamSpec { key: "logo", label: "Logo", kind: ParamKind::FileOpen, default: "", hint: "A picture, such as a PNG with a see-through background" },
+    ParamSpec { key: "title_place", label: "Title in the", kind: ParamKind::Choice(CORNERS), default: "top-left", hint: "Where the title and the subtitle go" },
+    ParamSpec {
+        key: "title_fill",
+        label: "Box behind the title",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "A colour for a box behind the title and the subtitle, such as #ffffff, or #ffffffcc to let a little show through. Empty: no box",
+    },
+    ParamSpec { key: "title_line", label: "Edge of the box", kind: ParamKind::Text, default: "", hint: "A colour for the edge of the box, such as #888888. Empty: no edge" },
+    ParamSpec { key: "title_font", label: "Font", kind: ParamKind::FileOpen, default: "", hint: "A font file, such as a TTF or an OTF from C:\\Windows\\Fonts. Empty: the built-in one" },
+    ParamSpec { key: "title_size", label: "Title size", kind: ParamKind::Text, default: "26", hint: "In pixels on a map 800 pixels high: larger maps have it larger" },
+    ParamSpec { key: "title_colour", label: "Title colour", kind: ParamKind::Text, default: "#111111", hint: "" },
+    ParamSpec {
+        key: "title_bold",
+        label: "Title in bold",
+        kind: ParamKind::Choice(&[("yes", "Yes"), ("no", "No")]),
+        default: "yes",
+        hint: "With a font file of one's own, the letters are as the file has them",
+    },
+    ParamSpec { key: "subtitle_size", label: "Subtitle size", kind: ParamKind::Text, default: "15", hint: "" },
+    ParamSpec { key: "subtitle_colour", label: "Subtitle colour", kind: ParamKind::Text, default: "#444444", hint: "" },
+    ParamSpec { key: "logo_corner", label: "Logo in the corner", kind: ParamKind::Choice(CORNERS), default: "bottom-right", hint: "" },
+    ParamSpec { key: "logo_size", label: "Logo width in %", kind: ParamKind::Text, default: "12", hint: "Of the width of the map" },
+    ParamSpec {
+        key: "inset",
+        label: "Inset of",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "An enlarged map in a corner of the features this expression picks out, such as kommunnamn = 'Göteborg', with a frame on the map where it is. Empty: none",
+    },
+    ParamSpec { key: "inset_corner", label: "Inset in the corner", kind: ParamKind::Choice(CORNERS), default: "top-right", hint: "" },
+    ParamSpec { key: "inset_size", label: "Inset width in %", kind: ParamKind::Text, default: "30", hint: "Of the width of the map" },
+    ParamSpec {
+        key: "knockout",
+        label: "Lines break under labels",
+        kind: ParamKind::Choice(&[("no", "No"), ("yes", "Yes")]),
+        default: "no",
+        hint: "Roads, borders and outlines stop where a label goes, so that the names are free",
+    },
+    ParamSpec {
+        key: "template",
+        label: "Template",
+        kind: ParamKind::FileOpen,
+        default: "",
+        hint: "A map template, .ogmap, saved from another map: what this map does not set itself is taken from it, so that maps look alike",
+    },
+    ParamSpec {
+        key: "notes",
+        label: "Notes on the map",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "One to a line: east, north in the coordinates of the map, and the text, as 323000 6402000 New bridge 2027. Each points to its place with a line",
+    },
+    ParamSpec {
+        key: "map_font",
+        label: "Font of the map",
+        kind: ParamKind::FileOpen,
+        default: "",
+        hint: "A TTF or an OTF for all the text of the map: labels, legend, scale bar and the rest. Empty: the built-in one",
+    },
+    ParamSpec {
+        key: "multiples_by",
+        label: "A map for each value of",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "An attribute, such as year: the map is drawn once for each of its values, side by side at one scale, with one legend. Empty: one map",
+    },
+    ParamSpec { key: "multiples_columns", label: "Maps across", kind: ParamKind::Text, default: "", hint: "Empty: as many as make a square" },
+    ParamSpec {
+        key: "atlas_by",
+        label: "A page for each feature, named by",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "An attribute of a layer, such as kommunnamn: a map of each feature of it, centred on it and named by it, as pages of one PDF or a file each. Empty: one map",
+    },
+    ParamSpec {
+        key: "focus",
+        label: "The map is about",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "An expression that picks out the areas the map is about, such as lan = 'Västra Götaland': the rest is paler, and the areas can have a shadow or lines along their coast. Empty: all of it",
+    },
+    ParamSpec {
+        key: "focus_rest",
+        label: "The rest",
+        kind: ParamKind::Choice(&[("fade", "Paler"), ("hide", "Left out")]),
+        default: "fade",
+        hint: "Paler, or left out so that only the areas are drawn, in their own shape",
+    },
+    ParamSpec { key: "focus_fade", label: "The rest paler by %", kind: ParamKind::Text, default: "60", hint: "0 keeps it as it is" },
+    ParamSpec {
+        key: "focus_effect",
+        label: "Around the areas",
+        kind: ParamKind::Choice(&[("none", "Nothing"), ("shadow", "A soft shadow"), ("waterlines", "Lines along the coast")]),
+        default: "none",
+        hint: "Under the layers, around the areas the map is about",
+    },
+    ParamSpec {
+        key: "simplify",
+        label: "Simplify to the scale",
+        kind: ParamKind::Choice(&[("no", "No"), ("yes", "Yes")]),
+        default: "no",
+        hint: "Points of lines and outlines closer than a pixel are left out: calmer lines and smaller files, with no change that can be seen",
     },
     ParamSpec {
         key: "source",
@@ -230,6 +410,31 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
             if let Some(p) = r.get("pattern").and_then(|v| v.as_str()) {
                 style.pattern = p.to_string();
             }
+            if let Some(a) = r.get("arrows").and_then(|v| v.as_str()) {
+                style.arrows = a.to_string();
+            }
+            if let Some(w) = r.get("arrow_size").and_then(|v| v.as_f64()) {
+                style.arrow_size = w.clamp(1.0, 10.0) as f32;
+            }
+            if let Some(w) = r.get("gap").and_then(|v| v.as_f64()) {
+                style.gap = w.clamp(0.0, 100.0) as f32;
+            }
+            if let Some(w) = r.get("scale_min").and_then(|v| v.as_f64()) {
+                style.scale_min = w.max(0.0);
+            }
+            if let Some(w) = r.get("scale_max").and_then(|v| v.as_f64()) {
+                style.scale_max = w.max(0.0);
+            }
+            if let Some(b) = r.get("blend").and_then(|v| v.as_str()) {
+                style.blend = b.to_string();
+            }
+            style.smooth = r.get("smooth").and_then(|v| v.as_bool()).unwrap_or(false);
+            if let Some(g) = r.get("glow").and_then(|v| v.as_str()) {
+                style.glow = g.to_string();
+            }
+            if let Some(c) = r.get("glow_colour").and_then(|v| v.as_str()) {
+                style.glow_colour = crate::mapdraw::parse_color(c).ok().flatten();
+            }
             if let Some(Ok(c)) = color("pattern_colour") {
                 style.pattern_colour = c;
             }
@@ -244,6 +449,7 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
             let name = r.get("name").and_then(|v| v.as_str()).map(str::to_string).unwrap_or_default();
             let text = |k: &str| r.get(k).and_then(|v| v.as_str()).map(str::to_string).unwrap_or_default();
             let num = |k: &str, d: f64| r.get(k).and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(crate::model::parse_number))).unwrap_or(d);
+            let flag_of = |k: &str| r.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
             let theme = crate::thematic::ThemeSpec {
                 size_by: text("size_by"),
                 size_min: num("size_min", 4.0) as f32,
@@ -259,6 +465,13 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
                 arrow_from: r.get("arrow_from").and_then(|v| v.as_bool()).unwrap_or(false),
                 heat: num("heat", 0.0).max(0.0) as f32,
                 heat_by: text("heat_by"),
+                reverse: r.get("reverse").and_then(|v| v.as_bool()).unwrap_or(false),
+                round_breaks: flag_of("round_breaks"),
+                color_by2: text("color_by2"),
+                dots_by: text("dots_by"),
+                dots_per: num("dots_per", 0.0).max(0.0),
+                nested: flag_of("nested"),
+                histogram: flag_of("histogram"),
             };
             let d = crate::mapdraw::LabelSpec::default();
             let flag = |k: &str| r.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
@@ -284,6 +497,11 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
                 },
                 halo_width: num("label_halo_width", d.halo_width as f64).clamp(0.0, 20.0) as f32,
                 spaced: flag("label_spaced"),
+                italic: flag("label_italic"),
+                bold_where: text("label_bold_where"),
+                min_px: num("label_min_px", 0.0).clamp(0.0, 2000.0) as f32,
+                repeat: num("label_repeat", 0.0).clamp(0.0, 20000.0) as f32,
+                leaders: flag("label_leaders"),
             };
             let icon = crate::mapdraw::IconSpec { name: text("icon"), by: text("icon_by"), style: text("icon_style") };
             let chart = crate::mapdraw::ChartSpec {
@@ -344,6 +562,31 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                     o["casing"] = serde_json::json!(crate::mapdraw::color_text(r.style.casing));
                     o["casing_width"] = serde_json::json!(r.style.casing_width);
                 }
+                if !r.style.arrows.is_empty() {
+                    o["arrows"] = serde_json::json!(r.style.arrows);
+                    o["arrow_size"] = serde_json::json!(r.style.arrow_size);
+                }
+                if r.style.gap > 0.0 {
+                    o["gap"] = serde_json::json!(r.style.gap);
+                }
+                if r.style.scale_min > 0.0 {
+                    o["scale_min"] = serde_json::json!(r.style.scale_min);
+                }
+                if r.style.scale_max > 0.0 {
+                    o["scale_max"] = serde_json::json!(r.style.scale_max);
+                }
+                if !r.style.blend.is_empty() {
+                    o["blend"] = serde_json::json!(r.style.blend);
+                }
+                if r.style.smooth {
+                    o["smooth"] = serde_json::json!(true);
+                }
+                if !r.style.glow.is_empty() {
+                    o["glow"] = serde_json::json!(r.style.glow);
+                    if r.style.glow_colour.is_some() {
+                        o["glow_colour"] = serde_json::json!(crate::mapdraw::color_text(r.style.glow_colour));
+                    }
+                }
                 if !r.style.pattern.is_empty() {
                     o["pattern"] = serde_json::json!(r.style.pattern);
                     o["pattern_every"] = serde_json::json!(r.style.pattern_every);
@@ -362,6 +605,8 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                     ("method", &t.method),
                     ("order", &t.order),
                     ("order_by", &t.order_by),
+                    ("color_by2", &t.color_by2),
+                    ("dots_by", &t.dots_by),
                 ] {
                     if !v.is_empty() {
                         put(k, serde_json::Value::String(v.clone()));
@@ -382,6 +627,17 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                     if t.arrow_from {
                         put("arrow_from", serde_json::json!(true));
                     }
+                }
+                if t.reverse {
+                    put("reverse", serde_json::json!(true));
+                }
+                for (k, on) in [("round_breaks", t.round_breaks), ("nested", t.nested), ("histogram", t.histogram)] {
+                    if on {
+                        put(k, serde_json::json!(true));
+                    }
+                }
+                if !t.dots_by.is_empty() && t.dots_per > 0.0 {
+                    put("dots_per", serde_json::json!(t.dots_per));
                 }
                 if t.heat > 0.0 {
                     put("heat", serde_json::json!(t.heat));
@@ -408,21 +664,31 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                         ("label_y", &l.y_attr, &d.y_attr),
                         ("label_size_by", &l.size_by, &d.size_by),
                         ("label_priority", &l.priority_by, &d.priority_by),
+                        ("label_bold_where", &l.bold_where, &d.bold_where),
                     ] {
                         if v != dv {
                             put(k, serde_json::json!(v));
                         }
                     }
-                    for (k, v, dv) in
-                        [("label_all", l.all, d.all), ("label_bold", l.bold, d.bold), ("label_upper", l.upper, d.upper), ("label_spaced", l.spaced, d.spaced)]
-                    {
+                    for (k, v, dv) in [
+                        ("label_all", l.all, d.all),
+                        ("label_bold", l.bold, d.bold),
+                        ("label_upper", l.upper, d.upper),
+                        ("label_spaced", l.spaced, d.spaced),
+                        ("label_italic", l.italic, d.italic),
+                        ("label_leaders", l.leaders, d.leaders),
+                    ] {
                         if v != dv {
                             put(k, serde_json::json!(v));
                         }
                     }
-                    for (k, v, dv) in
-                        [("label_size", l.size, d.size), ("label_size_max", l.size_max, d.size_max), ("label_halo_width", l.halo_width, d.halo_width)]
-                    {
+                    for (k, v, dv) in [
+                        ("label_size", l.size, d.size),
+                        ("label_size_max", l.size_max, d.size_max),
+                        ("label_halo_width", l.halo_width, d.halo_width),
+                        ("label_min_px", l.min_px, d.min_px),
+                        ("label_repeat", l.repeat, d.repeat),
+                    ] {
                         if v != dv {
                             put(k, serde_json::json!(v));
                         }
@@ -496,6 +762,34 @@ pub fn arrange_layers(stored: &[MapLayer], connected: &[String]) -> Vec<MapLayer
 }
 
 pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+    // A template gives what the map does not set itself.
+    if let Some(path) = p.get("template").filter(|t| !t.trim().is_empty()) {
+        let file = ctx.resolve(&path);
+        let text = std::fs::read_to_string(&file).map_err(|e| GbError(format!("The template {} cannot be read: {}", file.display(), e)))?;
+        let Ok(serde_json::Value::Object(template)) = serde_json::from_str::<serde_json::Value>(&text) else {
+            return err(format!("{} is not a template of a map.", file.display()));
+        };
+        let mut merged = p.values.clone();
+        for (k, v) in template {
+            let unset = merged.get(&k).is_none_or(|own| own.as_str().is_some_and(|s| s.trim().is_empty()));
+            if unset && k != "template" && k != "layers" {
+                merged.insert(k, v);
+            }
+        }
+        let q = P::new(&merged, MAP_PARAMS);
+        return draw_map_node(&q, inp, ctx);
+    }
+    draw_map_node(p, inp, ctx)
+}
+
+/// The settings of a map that make its look, to keep as a template for other maps: all but
+/// its layers, what it shows and where, and what it is about.
+pub fn map_template(params: &Params) -> Params {
+    const OWN: &[&str] = &["layers", "template", "title", "subtitle", "notes", "focus", "inset", "multiples_by", "atlas_by", "map_scale", "crs", "source"];
+    params.iter().filter(|(k, _)| !OWN.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect()
+}
+
+fn draw_map_node(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let parts: Vec<Part> = ctx.parts.iter().filter(|x| x.port == "Layers").cloned().collect();
     if parts.is_empty() {
         return err("Connect the streams to draw to Layers. Each connection is a layer.");
@@ -515,8 +809,28 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
     // For print, the width on paper and the resolution give the pixels, and what is drawn
     // in pixels on the screen, at 96 to the inch, is made as large on paper.
     let print = p.get("size_as").as_deref() == Some("print");
-    let (width, dpi) = if print {
-        let mm = number_param(p, "print_mm", "Width in mm")?.unwrap_or(180.0);
+    let at_scale = p.get("size_as").as_deref() == Some("scale");
+    // At a scale on a paper: the paper less 10 mm on every side, in mm across and down.
+    let paper_mm = if at_scale {
+        let (w, h) = match p.get("paper").as_deref().unwrap_or("a3l") {
+            "a4p" => (210.0, 297.0),
+            "a4l" => (297.0, 210.0),
+            "a3p" => (297.0, 420.0),
+            "a2l" => (594.0, 420.0),
+            "a2p" => (420.0, 594.0),
+            "a1l" => (841.0, 594.0),
+            "a1p" => (594.0, 841.0),
+            _ => (420.0, 297.0),
+        };
+        Some((w - 20.0, h - 20.0))
+    } else {
+        None
+    };
+    let (width, dpi) = if print || at_scale {
+        let mm = match paper_mm {
+            Some((w, _)) => w,
+            None => number_param(p, "print_mm", "Width in mm")?.unwrap_or(180.0),
+        };
         let dpi = number_param(p, "print_dpi", "Pixels to the inch")?.unwrap_or(300.0);
         if !(1.0..=10_000.0).contains(&dpi) {
             return err("Pixels to the inch is a number from 1 to 10 000, such as 300.");
@@ -572,6 +886,9 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
             None => return err("None of the layers has a coordinate system, so there is nothing to place on a map."),
         },
     };
+    if at_scale && ctx.geographic(Some(crs)).unwrap_or(false) {
+        return err("A map at a scale needs a coordinate system in metres, such as SWEREF 99 TM: choose one under Coordinate system.");
+    }
     let mut tables: Vec<(std::borrow::Cow<Table>, crate::mapdraw::LayerStyle)> = Vec::new();
     let mut rows_drawn: Vec<(&Part, &MapLayer)> = Vec::new();
     for (part, style, row) in drawn {
@@ -588,11 +905,47 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
         }
         rows_drawn.push((part, row));
     }
+    // Smooth layers have their corners rounded off, twice.
+    for (t, style) in tables.iter_mut() {
+        if style.smooth {
+            let mut owned = t.as_ref().clone();
+            for f in owned.features.iter_mut() {
+                if let Some(g) = f.geom.take() {
+                    f.geom = Some(smoothed(g));
+                }
+            }
+            *t = std::borrow::Cow::Owned(owned);
+        }
+    }
     if !map_style.is_empty() {
         for (_, style) in tables.iter_mut() {
             *style = style.in_style(&map_style);
         }
     }
+    // At a scale, the area drawn: the paper at that scale, centred on the features.
+    let fixed = match paper_mm {
+        Some((w_mm, h_mm)) => {
+            let n = number_param(p, "map_scale", "Scale")?.unwrap_or(50_000.0);
+            if !(1.0..=100_000_000.0).contains(&n) {
+                return err("The scale is a number such as 50000 for 1:50 000.");
+            }
+            let layers: Vec<(&Table, crate::mapdraw::LayerStyle)> = tables.iter().map(|(t, s)| (t.as_ref(), s.clone())).collect();
+            let Some(e) = crate::mapdraw::extent_of(&layers) else { return err("There is nothing to draw: the layers have no geometry.") };
+            let (cx, cy) = ((e[0] + e[2]) / 2.0, (e[1] + e[3]) / 2.0);
+            let (hw, hh) = (w_mm / 1000.0 * n / 2.0, h_mm / 1000.0 * n / 2.0);
+            if e[2] - e[0] > 2.0 * hw || e[3] - e[1] > 2.0 * hh {
+                ctx.notes.warn(format!(
+                    "At 1:{} the paper shows {} × {} km, and the features reach further: the map shows the middle of them.",
+                    crate::chart::number(n, 0, true).replace('\u{a0}', " "),
+                    crate::model::fmt_real((hw * 2.0 / 100.0).round() / 10.0),
+                    crate::model::fmt_real((hh * 2.0 / 100.0).round() / 10.0)
+                ));
+            }
+            ctx.notes.info(format!("at 1:{} on {} × {} mm", crate::chart::number(n, 0, true).replace('\u{a0}', " "), w_mm, h_mm));
+            Some([cx - hw, cy - hh, cx + hw, cy + hh])
+        }
+        None => None,
+    };
     // What each layer shows of its values, and the legend from the top layer down.
     let mut themes = Vec::new();
     for ((t, style), (part, row)) in tables.iter().zip(&rows_drawn) {
@@ -670,6 +1023,9 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
         Some(corner) => Some(crate::mapdraw::Legend {
             corner: corner.to_string(),
             title: p.get("legend_title").unwrap_or_default(),
+            fill: box_colour(p, "legend_fill", "Legend box")?,
+            line: box_colour(p, "legend_line", "Legend edge")?,
+            columns: number_param(p, "legend_columns", "Legend columns")?.map_or(1, |c| c.clamp(1.0, 6.0) as usize),
             items: tables
                 .iter()
                 .zip(&rows_drawn)
@@ -689,6 +1045,8 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
                         "heat"
                     } else if th.angles.is_some() {
                         "arrow"
+                    } else if th.sized_lines {
+                        "flow"
                     } else {
                         crate::mapdraw::shape_of(t)
                     },
@@ -703,6 +1061,13 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
                     icon_keys: icon_keys(t, &row.icon),
                     chart_keys: if row.chart.kind.is_empty() { Vec::new() } else { row.chart.of.iter().cloned().zip(chart_colours()).collect() },
                     heat_ramp: (th.heat > 0.0).then(|| th.heat_ramp.clone()),
+                    counts: th.counts.clone(),
+                    bivariate: th.bivariate.clone(),
+                    nested: th.nested,
+                    dots: th
+                        .dots
+                        .as_ref()
+                        .map(|_| (crate::thematic::Look { fill: Some(th.dot_colour), stroke: None, size: th.dot_size.max(3.0) }, th.dot_text.clone())),
                 })
                 .collect(),
             icon_styles: rows_drawn
@@ -723,6 +1088,7 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
         for (_, style) in tables.iter_mut() {
             style.width *= scale;
             style.size *= scale;
+            style.gap *= scale;
         }
         for th in themes.iter_mut() {
             th.classes.iter_mut().for_each(|(_, l)| look(l));
@@ -731,6 +1097,7 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
             th.size_keys.iter_mut().for_each(|k| look(&mut k.look));
             th.cluster *= scale;
             th.heat *= scale;
+            th.dot_size *= scale;
         }
         for c in charts.iter_mut().flatten() {
             c.sizes.iter_mut().for_each(|s| *s *= scale);
@@ -748,7 +1115,7 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
     let (backdrop, attribution) = match chosen.as_str() {
         "map" | "picture" => {
             let layers: Vec<(&Table, crate::mapdraw::LayerStyle)> = tables.iter().map(|(t, s)| (t.as_ref(), s.clone())).collect();
-            let frame = crate::mapdraw::frame(&layers, width, margin)?;
+            let frame = crate::mapdraw::frame_in(&layers, width, margin, fixed)?;
             let fade = (number_param(p, "background_fade", "Paler by %")?.unwrap_or(0.0).clamp(0.0, 100.0) / 100.0) as f32;
             if chosen == "map" {
                 let which = p.get("basemap").unwrap_or_else(|| "osm".into());
@@ -795,6 +1162,31 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
         (Some(a), Some(s)) => Some(format!("{} · {}", a, s)),
         (a, s) => a.or(s),
     };
+    // For print: what will not look well on paper.
+    if dpi.is_some() {
+        let layers: Vec<(&Table, crate::mapdraw::LayerStyle)> = tables.iter().map(|(t, s)| (t.as_ref(), s.clone())).collect();
+        let frame = crate::mapdraw::frame_in(&layers, width, margin, fixed)?;
+        for ((t, style), (part, _)) in tables.iter().zip(&rows_drawn) {
+            let cell = t.image.as_ref().map(|i| i.geotransform[1]).or_else(|| t.grid.as_ref().map(|g| g.geotransform[1])).unwrap_or(0.0).abs();
+            if cell > 0.0 && cell / frame.px > 2.5 {
+                ctx.notes.warn(format!(
+                    "{}: each cell becomes {} pixels on paper, so it looks blocky in print. A finer raster, a smaller map or a lower resolution shows it as it is.",
+                    part.label,
+                    (cell / frame.px).round()
+                ));
+            }
+            // Lines thinner than a tenth of a millimetre are lost in print. The widths are
+            // in pixels at the resolution of the paper by now.
+            let mm = style.width as f64 / dpi.unwrap_or(96.0) * 25.4;
+            if style.stroke.is_some() && style.width > 0.0 && mm < 0.1 {
+                ctx.notes.warn(format!(
+                    "{}: lines {} mm wide are hard to see on paper. Make them at least 0.1 mm, 0.4 pixels on the screen.",
+                    part.label,
+                    crate::model::fmt_real((mm * 100.0).round() / 100.0)
+                ));
+            }
+        }
+    }
     let furniture = crate::mapdraw::Furniture {
         scale_bar: p.get("scale_bar").unwrap_or_default(),
         north: p.get("north_arrow").unwrap_or_default(),
@@ -803,11 +1195,63 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
         geographic: ctx.geographic(Some(crs)).unwrap_or(false),
         graticule: if p.get("grid").as_deref() == Some("degrees") {
             let layers: Vec<(&Table, crate::mapdraw::LayerStyle)> = tables.iter().map(|(t, s)| (t.as_ref(), s.clone())).collect();
-            let frame = crate::mapdraw::frame(&layers, width, margin)?;
+            let frame = crate::mapdraw::frame_in(&layers, width, margin, fixed)?;
             graticule(&frame, crs, number_param(p, "grid_every", "Grid every")?, ctx)?
         } else {
             Vec::new()
         },
+        knockout: p.get("knockout").as_deref() == Some("yes"),
+        extent: fixed,
+        title: p.exact("title").trim().to_string(),
+        subtitle: p.exact("subtitle").trim().to_string(),
+        title_place: p.get("title_place").unwrap_or_else(|| "top-left".into()),
+        title_fill: colour_of(p, "title_fill", "Box behind the title")?,
+        title_line: colour_of(p, "title_line", "Edge of the box")?,
+        title_font: p.get("title_font").filter(|f| !f.trim().is_empty()).map(|f| ctx.resolve(&f).to_string_lossy().into_owned()).unwrap_or_default(),
+        title_size: number_param(p, "title_size", "Title size")?.unwrap_or(26.0).clamp(4.0, 200.0) as f32,
+        subtitle_size: number_param(p, "subtitle_size", "Subtitle size")?.unwrap_or(15.0).clamp(4.0, 200.0) as f32,
+        title_colour: colour_of(p, "title_colour", "Title colour")?,
+        subtitle_colour: colour_of(p, "subtitle_colour", "Subtitle colour")?,
+        title_regular: p.get("title_bold").as_deref() == Some("no"),
+        logo: match p.get("logo").filter(|l| !l.trim().is_empty()) {
+            Some(path) => {
+                let size = number_param(p, "logo_size", "Logo width")?.unwrap_or(12.0);
+                Some(logo(&ctx.resolve(&path), width, size, dpi.is_some(), ctx)?)
+            }
+            None => None,
+        },
+        logo_corner: p.get("logo_corner").unwrap_or_else(|| "bottom-right".into()),
+        inset: match p.get("inset").filter(|e| !e.trim().is_empty()) {
+            Some(e) => Some(crate::mapdraw::Inset {
+                area: inset_area(&tables, &e, ctx)?,
+                corner: p.get("inset_corner").unwrap_or_else(|| "top-right".into()),
+                share: (number_param(p, "inset_size", "Inset width")?.unwrap_or(30.0) / 100.0) as f32,
+            }),
+            None => None,
+        },
+        simplify: p.get("simplify").as_deref() == Some("yes"),
+        dpi: dpi.unwrap_or(0.0) as f32,
+        focus: match p.get("focus").filter(|e| !e.trim().is_empty()) {
+            Some(e) => {
+                let found = matching(&tables, &e, ctx)?;
+                if found.is_empty() {
+                    ctx.notes.warn(format!("No area matches {}, so the whole map is as it is.", e.trim()));
+                }
+                found
+            }
+            None => Vec::new(),
+        },
+        focus_fade: (number_param(p, "focus_fade", "The rest paler by %")?.unwrap_or(60.0).clamp(0.0, 100.0) / 100.0) as f32,
+        focus_effect: p.get("focus_effect").filter(|e| e != "none").unwrap_or_default(),
+        focus_only: p.get("focus_rest").as_deref() == Some("hide"),
+        frame: p.get("map_frame").as_deref() == Some("frame"),
+        map_font: p.get("map_font").filter(|f| !f.trim().is_empty()).map(|f| ctx.resolve(&f).to_string_lossy().into_owned()).unwrap_or_default(),
+        notes: notes_of(&p.exact("notes"))?,
+        scale_style: p.get("scale_style").unwrap_or_default(),
+        scale_parts: number_param(p, "scale_parts", "Fields of the scale bar")?.map_or(4, |n| n.clamp(1.0, 10.0) as usize),
+        scale_unit: p.get("scale_unit").unwrap_or_default(),
+        north_style: p.get("north_style").unwrap_or_default(),
+        coords_outside: false,
     };
     let names = rows_drawn.iter().map(|(part, row)| if row.name.trim().is_empty() { part.label.clone() } else { row.name.trim().to_string() }).collect();
     // The overview map: its own layer when one is connected, else the map seen from further.
@@ -831,11 +1275,27 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
             } else {
                 "an overview map in a corner, of what is connected to Overview".to_string()
             });
-            let mut ov = crate::mapdraw::Overview { corner: corner.to_string(), share, zoom, layers, backdrop: None };
+            let colour = |key: &str, label: &str| -> Result<Option<[u8; 4]>> {
+                match p.get(key).filter(|c| !c.trim().is_empty()) {
+                    Some(c) => crate::mapdraw::parse_color(&c).map_err(|e| GbError(format!("{}: {}", label, e))),
+                    None => Ok(None),
+                }
+            };
+            let mut ov = crate::mapdraw::Overview {
+                corner: corner.to_string(),
+                share,
+                zoom,
+                layers,
+                backdrop: None,
+                fill: colour("overview_fill", "Overview areas")?,
+                line: colour("overview_line", "Overview lines")?,
+                frame: colour("overview_frame", "Overview frame")?,
+                mark: colour("overview_mark", "Where the map is")?,
+            };
             // The background map of the map, fetched for the overview too.
             if chosen == "map" && ov.layers.is_empty() {
                 let drawn: Vec<(&Table, crate::mapdraw::LayerStyle)> = tables.iter().map(|(t, s)| (t.as_ref(), s.clone())).collect();
-                let f = crate::mapdraw::frame(&drawn, width, margin)?;
+                let f = crate::mapdraw::frame_in(&drawn, width, margin, fixed)?;
                 let main = [f.b[0], f.b[1], f.b[0] + f.width as f64 * f.px, f.b[1] + f.height as f64 * f.px];
                 let ext = ov.extent(main);
                 let (bw, bh) = ov.size(f.width, f.height, ext);
@@ -875,7 +1335,117 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
         legend,
     };
     let gate = ctx.gate;
-    let image = crate::mapdraw::draw(&req, &|| gate.going())?;
+    let multiples = p.get("multiples_by").map(|a| a.trim().to_string()).filter(|a| !a.is_empty());
+    let atlas = p.get("atlas_by").map(|a| a.trim().to_string()).filter(|a| !a.is_empty());
+    if multiples.is_some() && atlas.is_some() {
+        return err("A map for each value and a page for each feature cannot both be drawn: empty one of them.");
+    }
+    // The top layer that has the attribute.
+    let layer_with = |attr: &str| -> Result<(usize, usize)> {
+        req.layers
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(li, (t, _))| t.field_index(attr).map(|k| (li, k)))
+            .ok_or_else(|| GbError(format!("None of the layers has an attribute {}. Choose one that the layers have.", attr)))
+    };
+    if (multiples.is_some() || atlas.is_some()) && matches!(chosen.as_str(), "map" | "picture") {
+        ctx.notes.warn("The background map is drawn on a single map only, so these maps are drawn without it.");
+    }
+    let mut georeferenced = true;
+    let image = if let Some(attr) = &multiples {
+        let (li, k) = layer_with(attr)?;
+        let t = req.layers[li].0;
+        let mut values: Vec<String> = t.features.iter().map(|f| f.attrs[k].to_text()).filter(|v| !v.trim().is_empty()).collect();
+        values.sort_by(|a, b| {
+            let (x, y) = (parse_number(a), parse_number(b));
+            match (x, y) {
+                (Some(x), Some(y)) => x.total_cmp(&y),
+                _ => crate::nodes::alphabetical(a).cmp(&crate::nodes::alphabetical(b)),
+            }
+        });
+        values.dedup();
+        if values.is_empty() {
+            return err(format!("{} has no values to draw a map for.", attr));
+        }
+        if values.len() > 36 {
+            ctx.notes.warn(format!("{} has {} values: the first 36 are drawn.", attr, values.len()));
+            values.truncate(36);
+        }
+        let values: Vec<(String, Vec<bool>)> = values
+            .into_iter()
+            .map(|v| {
+                let keep = t.features.iter().map(|f| f.attrs[k].to_text() == v).collect();
+                (v, keep)
+            })
+            .collect();
+        let columns = number_param(p, "multiples_columns", "Maps across")?.map_or(0, |c| c.clamp(1.0, 12.0) as usize);
+        ctx.notes.info(format!("{} maps, one for each {}", values.len(), attr));
+        georeferenced = false;
+        crate::mapdraw::draw_multiples(&req, &crate::mapdraw::Multiples { layer: li, values, columns }, &|| gate.going())?
+    } else if let Some(attr) = &atlas {
+        let (li, k) = layer_with(attr)?;
+        let t = req.layers[li].0;
+        let mut pages: Vec<(String, usize)> = t.features.iter().enumerate().filter(|(_, f)| f.geom.is_some()).map(|(i, f)| (f.attrs[k].to_text(), i)).collect();
+        pages.sort_by_key(|a| crate::nodes::alphabetical(&a.0));
+        if pages.is_empty() {
+            return err(format!("The layer with {} has no features to make pages of.", attr));
+        }
+        if pages.len() > 500 {
+            ctx.notes.warn(format!("{} features: the first 500 get a page.", pages.len()));
+            pages.truncate(500);
+        }
+        let mut drawn = Vec::with_capacity(pages.len());
+        for (name, i) in &pages {
+            if !gate.going() {
+                return Err(GbError(crate::model::STOPPED.into()));
+            }
+            let Some(g) = &t.features[*i].geom else { continue };
+            use geo::BoundingRect;
+            let Some(bb) = g.bounding_rect() else { continue };
+            let (cx, cy) = ((bb.min().x + bb.max().x) / 2.0, (bb.min().y + bb.max().y) / 2.0);
+            // At a scale, the paper around the middle of the feature; else the feature with
+            // room around it.
+            let ext = match fixed {
+                Some(f) => {
+                    let (hw, hh) = ((f[2] - f[0]) / 2.0, (f[3] - f[1]) / 2.0);
+                    [cx - hw, cy - hh, cx + hw, cy + hh]
+                }
+                None => {
+                    let side = bb.width().max(bb.height()).max(1e-9);
+                    let pad = side * margin.max(0.02) + if bb.width() == 0.0 && bb.height() == 0.0 { 500.0 } else { 0.0 };
+                    [bb.min().x - pad, bb.min().y - pad, bb.max().x + pad, bb.max().y + pad]
+                }
+            };
+            let mut furniture = req.furniture.clone();
+            furniture.extent = Some(ext);
+            furniture.inset = None;
+            furniture.graticule = Vec::new();
+            if furniture.title.is_empty() {
+                furniture.title = name.clone();
+            } else {
+                furniture.subtitle = name.clone();
+            }
+            // The feature of the page stands out, unless the map says what it is about.
+            if furniture.focus.is_empty() && matches!(g, geo::Geometry::Polygon(_) | geo::Geometry::MultiPolygon(_)) {
+                furniture.focus = vec![g.clone()];
+            }
+            let page = crate::mapdraw::Request { furniture, backdrop: None, ..req.clone() };
+            drawn.push((name.clone(), crate::mapdraw::draw(&page, &|| gate.going())?));
+        }
+        ctx.notes.info(format!("{} pages, one for each {}", drawn.len(), attr));
+        let mut rest = drawn.into_iter();
+        let (_, mut first) = rest.next().ok_or_else(|| GbError("No feature could be drawn as a page.".into()))?;
+        let more: Vec<(String, std::sync::Arc<crate::model::RasterImage>)> = rest.map(|(n, img)| (n, std::sync::Arc::new(img))).collect();
+        if let Some(v) = first.vector.take() {
+            let mut pic = (*v).clone();
+            pic.pages = more;
+            first.vector = Some(std::sync::Arc::new(pic));
+        }
+        first
+    } else {
+        crate::mapdraw::draw(&req, &|| gate.going())?
+    };
     let layers = req.layers.len();
     if placed > 0 {
         ctx.notes.info(format!("{} labels to place", fmt_count(placed as u64)));
@@ -889,7 +1459,7 @@ pub(super) fn run_map(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs>
         fmt_count(image.width as u64),
         fmt_count(image.height as u64)
     ));
-    let mut out = image.into_table(Some(crs));
+    let mut out = image.into_table(if georeferenced { Some(crs) } else { None });
     // The resolution goes with the picture, for Output to write into the file.
     if let Some(d) = dpi {
         out.fields.push(crate::model::Field::new("dpi", crate::model::FieldType::Real));
@@ -906,12 +1476,17 @@ pub(in crate::nodes) fn prepare_labels(t: &Table, spec: &crate::mapdraw::LabelSp
         return Ok(None);
     }
     let names = t.field_names();
-    // An attribute by its name, also one with spaces in it; else an expression.
-    let field = t.field_index(src);
-    let compiled = match field {
-        Some(_) => None,
-        None => Some(crate::expr::compile(src, &names)?),
-    };
+    // Each line of the text a line of the label: an attribute by its name, also one with
+    // spaces in it, or else an expression.
+    let parts: Vec<(Option<usize>, Option<crate::expr::Compiled>)> = src
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(|l| match t.field_index(l) {
+            Some(k) => Ok((Some(k), None)),
+            None => Ok((None, Some(crate::expr::compile(l, &names)?))),
+        })
+        .collect::<Result<_>>()?;
     let attr = |name: &str| -> Result<Option<usize>> {
         if name.trim().is_empty() {
             return Ok(None);
@@ -934,14 +1509,26 @@ pub(in crate::nodes) fn prepare_labels(t: &Table, spec: &crate::mapdraw::LabelSp
         None => (0.0, 0.0),
     };
     let geographic = ctx.geographic(t.crs);
+    let bold_where = match spec.bold_where.trim() {
+        "" => None,
+        w => Some(crate::expr::compile(w, &names).map_err(|e| GbError(format!("Bold where: {}", e.0)))?),
+    };
     let mut items = Vec::new();
     for (i, f) in t.features.iter().enumerate() {
-        let v = match (field, &compiled) {
-            (Some(k), _) => f.attrs[k].clone(),
-            (None, Some(e)) => e.eval(&crate::expr::Row { feature: f, index: i, geographic }).map_err(|e| at_row(e, i))?,
-            _ => continue,
-        };
-        let mut text = v.to_text().trim().to_string();
+        let mut lines = Vec::with_capacity(parts.len());
+        for (field, compiled) in &parts {
+            let v = match (field, compiled) {
+                (Some(k), _) => f.attrs[*k].clone(),
+                (None, Some(e)) => e.eval(&crate::expr::Row { feature: f, index: i, geographic }).map_err(|e| at_row(e, i))?,
+                _ => continue,
+            };
+            let line = v.to_text();
+            let line = line.trim();
+            if !line.is_empty() {
+                lines.push(line.to_string());
+            }
+        }
+        let mut text = lines.join("\n");
         if text.is_empty() {
             continue;
         }
@@ -960,7 +1547,11 @@ pub(in crate::nodes) fn prepare_labels(t: &Table, spec: &crate::mapdraw::LabelSp
             None => None,
         };
         let priority = prio_at.and_then(|k| number(i, k)).unwrap_or(f64::NEG_INFINITY).max(-1e300) + if size_at.is_some() { size as f64 * 1e-9 } else { 0.0 };
-        items.push(crate::mapdraw::LabelItem { feature: i, text, size, priority, at });
+        let bold = match &bold_where {
+            Some(e) => e.test(&crate::expr::Row { feature: f, index: i, geographic }).map_err(|e| at_row(e, i))?,
+            None => spec.bold,
+        };
+        items.push(crate::mapdraw::LabelItem { feature: i, text, size, priority, at, bold });
     }
     Ok(Some(crate::mapdraw::Labels { spec: spec.clone(), items }))
 }
@@ -1030,6 +1621,117 @@ fn graticule(frame: &crate::mapdraw::Frame, crs: u32, every: Option<f64>, ctx: &
         v += step;
     }
     Ok(lines)
+}
+
+/// A logo read from its file and made as wide as a share of the map.
+fn logo(path: &std::path::Path, map_width: u32, percent: f64, print: bool, ctx: &mut NodeCtx) -> Result<crate::model::RasterImage> {
+    let img = image::open(path).map_err(|e| GbError(format!("Cannot read the logo {}: {}", path.display(), e)))?.to_rgba8();
+    let w = ((map_width as f64 * percent.clamp(1.0, 60.0) / 100.0).round() as u32).max(4);
+    let h = ((img.height() as f64 * w as f64 / img.width().max(1) as f64).round() as u32).max(1);
+    // Made larger than it is, it is blurred on paper.
+    if print && w as f64 > img.width() as f64 * 1.3 {
+        ctx.notes.warn(format!(
+            "The logo is {} pixels wide and is drawn {} wide, so it is blurred in print. A logo at least {} pixels wide, or as an SVG made into a large PNG, is sharp.",
+            img.width(),
+            w,
+            w
+        ));
+    }
+    let small = image::imageops::resize(&img, w, h, image::imageops::FilterType::Lanczos3);
+    Ok(crate::model::RasterImage { vector: None, width: w as usize, height: h as usize, rgba: small.into_raw(), geotransform: [0.0, 1.0, 0.0, 0.0, 0.0, -1.0] })
+}
+
+/// The areas of the layers that an expression picks out, for the area a map is about.
+fn matching(tables: &[(std::borrow::Cow<Table>, crate::mapdraw::LayerStyle)], expr: &str, ctx: &NodeCtx) -> Result<Vec<geo::Geometry<f64>>> {
+    let mut out = Vec::new();
+    for (t, _) in tables {
+        let Ok(e) = crate::expr::compile(expr, &t.field_names()) else { continue };
+        let geographic = ctx.geographic(t.crs);
+        for (i, f) in t.features.iter().enumerate() {
+            let Some(g) = f.geom.as_ref().filter(|g| matches!(g, geo::Geometry::Polygon(_) | geo::Geometry::MultiPolygon(_))) else { continue };
+            if e.test(&crate::expr::Row { feature: f, index: i, geographic }).unwrap_or(false) {
+                out.push(g.clone());
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Notes as they are written, one to a line: east, north and the text, as
+/// "323000 6402000 New bridge 2027".
+fn notes_of(text: &str) -> Result<Vec<(f64, f64, String)>> {
+    let mut out = Vec::new();
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let mut parts = line.splitn(3, char::is_whitespace);
+        let x = parts.next().and_then(parse_number);
+        let y = parts.next().and_then(parse_number);
+        match (x, y, parts.next().map(str::trim).filter(|t| !t.is_empty())) {
+            (Some(x), Some(y), Some(t)) => out.push((x, y, t.to_string())),
+            _ => return err(format!("A note is east, north and its text, as \"323000 6402000 New bridge 2027\", not \"{}\".", line)),
+        }
+    }
+    Ok(out)
+}
+
+/// A line or an area with its corners rounded off; anything else as it is.
+fn smoothed(g: geo::Geometry<f64>) -> geo::Geometry<f64> {
+    use geo::ChaikinSmoothing;
+    match g {
+        geo::Geometry::LineString(l) => l.chaikin_smoothing(2).into(),
+        geo::Geometry::MultiLineString(l) => l.chaikin_smoothing(2).into(),
+        geo::Geometry::Polygon(p) => p.chaikin_smoothing(2).into(),
+        geo::Geometry::MultiPolygon(p) => p.chaikin_smoothing(2).into(),
+        other => other,
+    }
+}
+
+/// The colour of a box: None when empty, for its own colour; Some(None) for "none".
+fn box_colour(p: &super::P, key: &str, label: &str) -> Result<Option<Option<[u8; 4]>>> {
+    match p.get(key).map(|c| c.trim().to_string()).filter(|c| !c.is_empty()) {
+        None => Ok(None),
+        Some(c) if c.eq_ignore_ascii_case("none") => Ok(Some(None)),
+        Some(c) => crate::mapdraw::parse_color(&c).map(Some).map_err(|e| GbError(format!("{}: {}", label, e))),
+    }
+}
+
+/// A colour setting, or None when it is empty.
+fn colour_of(p: &super::P, key: &str, label: &str) -> Result<Option<[u8; 4]>> {
+    match p.get(key).filter(|c| !c.trim().is_empty()) {
+        Some(c) => crate::mapdraw::parse_color(&c).map_err(|e| GbError(format!("{}: {}", label, e))),
+        None => Ok(None),
+    }
+}
+
+/// The area of an inset: around the features of every layer that the expression picks out,
+/// with a little room.
+fn inset_area(tables: &[(std::borrow::Cow<Table>, crate::mapdraw::LayerStyle)], expr: &str, ctx: &NodeCtx) -> Result<[f64; 4]> {
+    use geo::BoundingRect;
+    let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+    let mut found = 0usize;
+    for (t, _) in tables {
+        // A layer without the attributes the expression names is passed by.
+        let Ok(e) = crate::expr::compile(expr, &t.field_names()) else { continue };
+        let geographic = ctx.geographic(t.crs);
+        for (i, f) in t.features.iter().enumerate() {
+            if !e.test(&crate::expr::Row { feature: f, index: i, geographic }).unwrap_or(false) {
+                continue;
+            }
+            if let Some(r) = f.geom.as_ref().and_then(|g| g.bounding_rect()) {
+                b = [b[0].min(r.min().x), b[1].min(r.min().y), b[2].max(r.max().x), b[3].max(r.max().y)];
+                found += 1;
+            }
+        }
+    }
+    if found == 0 {
+        return err(format!("Inset of: no feature of any layer is picked out by {}.", expr));
+    }
+    // At least a tenth of the whole map across, so that a town picked out shows its
+    // surroundings, and a little room around.
+    let layers: Vec<(&Table, crate::mapdraw::LayerStyle)> = tables.iter().map(|(t, s)| (t.as_ref(), s.clone())).collect();
+    let whole = crate::mapdraw::extent_of(&layers).map_or(0.0, |e| (e[2] - e[0]).max(e[3] - e[1]));
+    let (cx, cy) = ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0);
+    let half = ((b[2] - b[0]).max(b[3] - b[1]) * 0.55).max(whole * 0.05).max(50.0);
+    Ok([cx - half, cy - half, cx + half, cy + half])
 }
 
 /// The colours of the slices and bars of charts on a map, in turn.
@@ -1119,9 +1821,35 @@ pub(super) const TYPES: &[NodeType] = &[
         summary: |p| {
             if p.get("size_as").as_deref() == Some("print") {
                 format!("{} mm at {} dpi", p.get("print_mm").unwrap_or_else(|| "180".into()), p.get("print_dpi").unwrap_or_else(|| "300".into()))
+            } else if p.get("size_as").as_deref() == Some("scale") {
+                let paper = p.get("paper").unwrap_or_else(|| "a3l".into());
+                format!(
+                    "1:{} on {} {}",
+                    p.get("map_scale").unwrap_or_else(|| "50000".into()),
+                    paper[..2].to_uppercase(),
+                    if paper.ends_with('p') { "portrait" } else { "landscape" }
+                )
             } else {
                 format!("{} px wide", p.get("width").unwrap_or_else(|| "1600".into()))
             }
         },
     },
 ];
+
+#[cfg(test)]
+mod template_tests {
+    use super::*;
+
+    #[test]
+    fn notes_are_read_and_a_template_keeps_the_look_only() {
+        let n = notes_of("323000 6402000 New bridge 2027\n\n 1,5 2 A").unwrap();
+        assert_eq!(n, vec![(323000.0, 6402000.0, "New bridge 2027".to_string()), (1.5, 2.0, "A".to_string())]);
+        assert!(notes_of("323000 New bridge").is_err());
+        let mut p = Params::new();
+        for (k, v) in [("layers", "[]"), ("title", "Towns"), ("legend", "top-right"), ("legend_fill", "#ffffff"), ("notes", "1 2 A")] {
+            p.insert(k.into(), serde_json::Value::String(v.into()));
+        }
+        let t = map_template(&p);
+        assert_eq!(t.keys().cloned().collect::<Vec<_>>(), vec!["legend".to_string(), "legend_fill".to_string()]);
+    }
+}

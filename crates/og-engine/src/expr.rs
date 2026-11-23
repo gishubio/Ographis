@@ -147,6 +147,8 @@ enum BinOp {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Func {
+    Newline,
+    FormatNumber,
     Round,
     Abs,
     Sqrt,
@@ -220,6 +222,14 @@ const FUNCS: &[(&str, Func, usize, usize, &str)] = &[
     ("min", Func::Min, 1, 99, "min(a, b, …) gives the smallest number"),
     ("max", Func::Max, 1, 99, "max(a, b, …) gives the largest number"),
     ("upper", Func::Upper, 1, 1, "upper(text) gives upper case"),
+    (
+        "format_number",
+        Func::FormatNumber,
+        1,
+        3,
+        "format_number(number, decimals, 'en') writes a number to be read: format_number(7936.7) gives 7 937, format_number(1234.5, 1) 1 234,5, and with 'en' 1,234.5",
+    ),
+    ("newline", Func::Newline, 0, 0, "newline() breaks the line, as in name || newline() || area for a label of two lines"),
     ("lower", Func::Lower, 1, 1, "lower(text) gives lower case"),
     (
         "url_encode",
@@ -1046,6 +1056,16 @@ fn call(f: Func, args: &[Expr], row: &Row) -> Result<Value> {
             }
         }
         Func::Upper => Value::Text(text(0).to_uppercase()),
+        Func::Newline => Value::Text("\n".into()),
+        Func::FormatNumber => {
+            if v[0].is_null() {
+                return Ok(Value::Null);
+            }
+            let x = n(0)?;
+            let d = if v.len() > 1 { int(1)?.clamp(0, 12) as usize } else { 0 };
+            let swedish = v.get(2).is_none_or(|l| !l.to_text().trim().eq_ignore_ascii_case("en"));
+            Value::Text(crate::chart::number(x, d, swedish).replace('\u{a0}', " "))
+        }
         Func::Lower => Value::Text(text(0).to_lowercase()),
         Func::UrlEncode => Value::Text(url_encode(&text(0))),
         Func::Length => Value::Int(text(0).chars().count() as i64),
@@ -1397,6 +1417,11 @@ mod tests {
         assert_eq!(run("concat(name, null, 1)", &f, row()).unwrap(), t("Upplands Väsby1"));
         assert_eq!(run("'it''s'", &f, row()).unwrap(), t("it's"));
         assert_eq!(run("right(name, 5)", &f, row()).unwrap(), t("Väsby"));
+        // A line break, for labels of two lines.
+        assert_eq!(run("name || newline() || code", &f, row()).unwrap(), t("Upplands Väsby\n114"));
+        assert_eq!(run("format_number(7936.7) || ' km²'", &f, row()).unwrap(), t("7 937 km²"));
+        assert_eq!(run("format_number(1234.5, 1)", &f, row()).unwrap(), t("1 234,5"));
+        assert_eq!(run("format_number(1234.5, 1, 'en')", &f, row()).unwrap(), t("1,234.5"));
     }
 
     #[test]

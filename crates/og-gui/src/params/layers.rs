@@ -252,6 +252,83 @@ pub(super) fn map_layer_rows(
                         .on_hover_text("How much wider than the line, in pixels on each side");
                 }
             });
+            // Arrow heads on the lines, such as on flows or one-way streets: in Draw map.
+            if !named {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.label(RichText::new("arrows").small().color(pal.muted));
+                    let shown = og_engine::mapdraw::ARROWS.iter().find(|d| d.0 == row.style.arrows).map_or("No arrows", |d| d.1);
+                    egui::ComboBox::from_id_salt(("arrows", i))
+                        .selected_text(shown)
+                        .width(110.0)
+                        .show_ui(ui, |ui| {
+                            for (key, name) in og_engine::mapdraw::ARROWS {
+                                ui.selectable_value(&mut row.style.arrows, key.to_string(), *name);
+                            }
+                        })
+                        .response
+                        .on_hover_text("A head on each line, the way it was drawn: from its first point to its last");
+                    if !row.style.arrows.is_empty() {
+                        ui.label(RichText::new("as long as").small().color(pal.muted));
+                        ui.add(egui::DragValue::new(&mut row.style.arrow_size).range(1.0..=10.0).speed(0.1).max_decimals(1))
+                            .on_hover_text("How long the head is, in widths of the line, but at least 7 pixels");
+                        ui.label(RichText::new("widths").small().color(pal.muted));
+                    }
+                    ui.label(RichText::new("short by").small().color(pal.muted));
+                    ui.add(egui::DragValue::new(&mut row.style.gap).range(0.0..=100.0).speed(0.2).max_decimals(1))
+                        .on_hover_text("Lines stop this many pixels short of their ends, as flows short of the towns, so that the arrows show");
+                });
+                // How it is laid on what is under it, smoothed, and with a glow or a shadow.
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.label(RichText::new("laid on").small().color(pal.muted));
+                    let shown = og_engine::mapdraw::BLENDS.iter().find(|d| d.0 == row.style.blend).map_or("Normal", |d| d.1);
+                    egui::ComboBox::from_id_salt(("blend", i))
+                        .selected_text(shown)
+                        .width(90.0)
+                        .show_ui(ui, |ui| {
+                            for (key, name) in og_engine::mapdraw::BLENDS {
+                                ui.selectable_value(&mut row.style.blend, key.to_string(), *name);
+                            }
+                        })
+                        .response
+                        .on_hover_text("Multiply lets shading or an aerial photo under it show through the colours, as in a map of relief");
+                    ui.checkbox(&mut row.style.smooth, RichText::new("smooth").small())
+                        .on_hover_text("Corners rounded off, so that coarse lines and areas look smooth");
+                });
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.label(RichText::new("around").small().color(pal.muted));
+                    let shown = og_engine::mapdraw::GLOWS.iter().find(|d| d.0 == row.style.glow).map_or("Nothing", |d| d.1);
+                    egui::ComboBox::from_id_salt(("glow", i))
+                        .selected_text(shown)
+                        .width(110.0)
+                        .show_ui(ui, |ui| {
+                            for (key, name) in og_engine::mapdraw::GLOWS {
+                                ui.selectable_value(&mut row.style.glow, key.to_string(), *name);
+                            }
+                        })
+                        .response
+                        .on_hover_text("A soft glow around the features, or a shadow under them, to lift them from the map");
+                    if !row.style.glow.is_empty() {
+                        let default = if row.style.glow == "shadow" { [0x1e, 0x24, 0x2c, 255] } else { [255, 255, 255, 255] };
+                        let mut c = row.style.glow_colour.unwrap_or(default);
+                        if colour_button(ui, &mut c) {
+                            row.style.glow_colour = Some(c);
+                        }
+                    }
+                });
+                // Drawn only at some scales, such as small roads from 1:50 000 and closer.
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.label(RichText::new("drawn from 1:").small().color(pal.muted));
+                    ui.add(egui::DragValue::new(&mut row.style.scale_max).range(0.0..=1.0e9).speed(100.0).max_decimals(0))
+                        .on_hover_text("The layer is drawn at this scale and closer. 0: at every scale");
+                    ui.label(RichText::new("to 1:").small().color(pal.muted));
+                    ui.add(egui::DragValue::new(&mut row.style.scale_min).range(0.0..=1.0e9).speed(100.0).max_decimals(0))
+                        .on_hover_text("And not closer than this. 0: as close as you like");
+                });
+            }
             // A pattern over the fill of areas, and how much the layer covers what is under
             // it: in Draw map.
             if !named {
@@ -481,6 +558,8 @@ pub(super) fn theme_rows(ui: &mut Ui, t: &mut og_engine::thematic::ThemeSpec, fr
                     ui.label(RichText::new("to").small().color(pal.muted));
                     ui.add(egui::DragValue::new(&mut t.size_max).range(1.0..=300.0).speed(0.2).max_decimals(1));
                     ui.label(RichText::new("pixels").small().color(pal.muted));
+                    ui.checkbox(&mut t.nested, RichText::new("within each other").small())
+                        .on_hover_text("The sizes in the legend as circles standing within each other, each with its value");
                 });
             }
             ui.horizontal(|ui| {
@@ -492,10 +571,13 @@ pub(super) fn theme_rows(ui: &mut Ui, t: &mut og_engine::thematic::ThemeSpec, fr
                 let numeric = fields.iter().find(|f| f.0 == t.color_by).is_none_or(|f| f.1) && t.ramp != "categories" && t.ramp != "as_written";
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
+                    let own = og_engine::thematic::own_ramp(&t.ramp);
                     let shown = if t.ramp == "categories" {
                         "A colour per value"
                     } else if t.ramp == "as_written" {
                         "The colours written in it"
+                    } else if own.is_some() {
+                        "Between two colours"
                     } else {
                         og_engine::thematic::RAMPS.iter().find(|r| r.0 == t.ramp).map_or("Blues", |r| r.1)
                     };
@@ -503,10 +585,27 @@ pub(super) fn theme_rows(ui: &mut Ui, t: &mut og_engine::thematic::ThemeSpec, fr
                         for (v, l, _) in og_engine::thematic::RAMPS {
                             ui.selectable_value(&mut t.ramp, v.to_string(), *l);
                         }
+                        if ui.selectable_label(own.is_some(), "Between two colours").on_hover_text("A ramp of your own, from a light colour to a dark one").clicked() && own.is_none() {
+                            t.ramp = "#fff5eb,#7f2704".to_string();
+                        }
                         ui.selectable_value(&mut t.ramp, "categories".to_string(), "A colour per value");
                         ui.selectable_value(&mut t.ramp, "as_written".to_string(), "The colours written in it")
                             .on_hover_text("For an attribute that holds colours as #rrggbb, such as colour in a CAD drawing");
                     });
+                    // The two colours of a ramp of one's own.
+                    if let Some((a, b)) = og_engine::thematic::own_ramp(&t.ramp) {
+                        let mut a4 = [a[0], a[1], a[2], 255];
+                        let mut b4 = [b[0], b[1], b[2], 255];
+                        let ca = colour_button(ui, &mut a4);
+                        ui.label(RichText::new("to").small().color(pal.muted));
+                        let cb = colour_button(ui, &mut b4);
+                        if ca || cb {
+                            t.ramp = format!("#{:02x}{:02x}{:02x},#{:02x}{:02x}{:02x}", a4[0], a4[1], a4[2], b4[0], b4[1], b4[2]);
+                        }
+                    }
+                    if t.ramp != "categories" && t.ramp != "as_written" {
+                        ui.checkbox(&mut t.reverse, "the other way").on_hover_text("Dark for the smallest values and light for the largest");
+                    }
                     if numeric {
                         ui.add(egui::DragValue::new(&mut t.classes).range(1..=12).speed(0.1)).on_hover_text("The number of classes");
                         ui.label(RichText::new("classes").small().color(pal.muted));
@@ -517,9 +616,31 @@ pub(super) fn theme_rows(ui: &mut Ui, t: &mut og_engine::thematic::ThemeSpec, fr
                                 ui.selectable_value(&mut t.method, v.to_string(), l);
                             }
                         });
+                        ui.checkbox(&mut t.round_breaks, RichText::new("even numbers").small())
+                            .on_hover_text("The limits of the classes rounded, as 1 000 – 2 000 rather than 1 237 – 2 191");
                     }
+                    ui.checkbox(&mut t.histogram, RichText::new("bars in the legend").small())
+                        .on_hover_text("Under the classes, a bar for each, as high as how many features it has");
                 });
+                if numeric {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("and by").small().color(pal.muted)).on_hover_text(
+                            "A second attribute: both in thirds, in a square of nine colours, as in a bivariate map. The ramp is then the nine colours",
+                        );
+                        pick(ui, "color-by2", &mut t.color_by2, true);
+                    });
+                }
             }
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Dots by").small().color(pal.muted))
+                    .on_hover_text("A dot for every so many of the value, strewn over each area, as in a dot density map");
+                pick(ui, "dots-by", &mut t.dots_by, true);
+                if !t.dots_by.is_empty() {
+                    ui.label(RichText::new("a dot for").small().color(pal.muted));
+                    ui.add(egui::DragValue::new(&mut t.dots_per).range(0.0..=1.0e9).speed(1.0).max_decimals(2))
+                        .on_hover_text("0: a round number that gives about 2 000 dots");
+                }
+            });
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Order").small().color(pal.muted))
                     .on_hover_text("Which are drawn first, and so lie underneath. By the attribute of the size, or else of the colour");
@@ -608,9 +729,16 @@ pub(super) fn label_rows(ui: &mut Ui, l: &mut og_engine::mapdraw::LabelSpec, fro
                     l.text = chosen;
                 }
             });
+            // Shift+Enter breaks the line: each line of the text is a line of the label.
             ui.add(
-                TextEdit::singleline(&mut l.text).id_salt(("label-text", from)).hint_text("an attribute or an expression").desired_width(ui.available_width()),
+                TextEdit::multiline(&mut l.text)
+                    .id_salt(("label-text", from))
+                    .hint_text("an attribute or an expression")
+                    .desired_rows(1)
+                    .return_key(Some(egui::KeyboardShortcut::new(egui::Modifiers::SHIFT, egui::Key::Enter)))
+                    .desired_width(ui.available_width()),
             )
+            .on_hover_text("An attribute, or an expression such as name || ' ' || year. Shift+Enter starts a new line of the label, such as the name on one line and round(area_km2) || ' km²' on the next")
             .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, "Label text"));
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Placed").small().color(pal.muted));
@@ -640,6 +768,24 @@ pub(super) fn label_rows(ui: &mut Ui, l: &mut og_engine::mapdraw::LabelSpec, fro
                     .on_hover_text("Otherwise a label that would cover another, or reach outside the map, is left out");
             });
             ui.horizontal(|ui| {
+                ui.label(RichText::new("Bold where").small().color(pal.muted))
+                    .on_hover_text("An expression: the labels of the features where it is true are bold, such as kind = 'county seat'. Empty: as Bold says, for all");
+                ui.add(TextEdit::singleline(&mut l.bold_where).id_salt(("label-bold-where", from)).hint_text("an expression").desired_width(ui.available_width()));
+            });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(RichText::new("areas from").small().color(pal.muted))
+                    .on_hover_text("Areas fewer pixels across than this get no label, or one beside them with a line, if that is ticked. 0: every area");
+                ui.add(egui::DragValue::new(&mut l.min_px).range(0.0..=2000.0).speed(0.5).max_decimals(0).suffix(" px"));
+                ui.checkbox(&mut l.leaders, "beside, with a line").on_hover_text("A label that does not fit in its area is put beside it, with a thin line in to it");
+            });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(RichText::new("along lines every").small().color(pal.muted))
+                    .on_hover_text("A label every so many pixels along a long line, such as the number of a road or the name of a river. 0: once");
+                ui.add(egui::DragValue::new(&mut l.repeat).range(0.0..=20000.0).speed(2.0).max_decimals(0).suffix(" px"));
+            });
+            ui.horizontal(|ui| {
                 ui.label(RichText::new("First").small().color(pal.muted))
                     .on_hover_text("When there is not room for all: the largest values of this attribute get it first");
                 attribute_pick(ui, ("label-priority", from), &mut l.priority_by, fields, true, 120.0);
@@ -658,6 +804,7 @@ pub(super) fn label_rows(ui: &mut Ui, l: &mut og_engine::mapdraw::LabelSpec, fro
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.checkbox(&mut l.bold, "Bold");
+                ui.checkbox(&mut l.italic, "Italic").on_hover_text("Leaning letters, as the names of lakes, rivers and the sea are written");
                 ui.checkbox(&mut l.upper, "CAPITALS");
                 ui.checkbox(&mut l.spaced, "Spread out").on_hover_text("The letters spread out over an area, as the name of a lake or a district");
                 let mut c = Some(l.colour);

@@ -225,6 +225,10 @@ pub struct PdfPage {
     pub title: Option<String>,
     /// Where the heading goes along the top of the picture: left, center or right.
     pub title_align: String,
+    /// For a printer: how far the page reaches past where it is cut, in millimetres, and
+    /// marks outside it where it is to be cut.
+    pub bleed_mm: f64,
+    pub marks: bool,
 }
 
 impl Default for PdfPage {
@@ -239,6 +243,8 @@ impl Default for PdfPage {
             margin_mm: 10.0,
             title: None,
             title_align: "left".into(),
+            bleed_mm: 0.0,
+            marks: false,
         }
     }
 }

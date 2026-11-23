@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.96.6. Written by og schema.",
+  "description": "A model of Ographis 0.96.7. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -246,6 +246,7 @@
             "RateCalculator",
             "Regression",
             "DashboardWriter",
+            "FlowLines",
             "LineLengthInAreas",
             "ImageClassifier",
             "Depressions",
@@ -1738,6 +1739,28 @@
                     "title": "Margin in mm",
                     "description": "a string.",
                     "default": "10"
+                  },
+                  "pdf_bleed": {
+                    "title": "Bleed in mm",
+                    "description": "a string. For a printer: the page reaches this far past where it is cut, often 3 mm",
+                    "default": "0"
+                  },
+                  "pdf_marks": {
+                    "title": "Crop marks",
+                    "description": "one of the values in choices, as a string. Short lines outside the page that show the printer where to cut",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "no",
+                          "yes"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "no"
                   },
                   "pdf_title": {
                     "title": "Title",
@@ -6336,7 +6359,8 @@
                       {
                         "enum": [
                           "pixels",
-                          "print"
+                          "print",
+                          "scale"
                         ]
                       },
                       {
@@ -6360,6 +6384,34 @@
                     "title": "Pixels to the inch",
                     "description": "a string. 300 for print, 150 for a draft. Lines, points and labels keep the size they have on the screen, measured on paper, and the picture tells Output its resolution",
                     "default": "300"
+                  },
+                  "map_scale": {
+                    "title": "Scale 1:",
+                    "description": "a string. Such as 50000 for 1:50 000. The map is as large as the paper less 10 mm on every side, centred on the features, in a coordinate system in metres",
+                    "default": "50000"
+                  },
+                  "paper": {
+                    "title": "Paper",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "a4l",
+                          "a4p",
+                          "a3l",
+                          "a3p",
+                          "a2l",
+                          "a2p",
+                          "a1l",
+                          "a1p"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "a3l"
                   },
                   "map_style": {
                     "title": "Style",
@@ -6457,8 +6509,10 @@
                         "enum": [
                           "none",
                           "bottom-left",
+                          "bottom-center",
                           "bottom-right",
                           "top-left",
+                          "top-center",
                           "top-right"
                         ]
                       },
@@ -6473,6 +6527,19 @@
                     "title": "Title of the legend",
                     "description": "a string."
                   },
+                  "legend_columns": {
+                    "title": "Legend columns",
+                    "description": "a string. Its rows in this many columns, for a long legend",
+                    "default": "1"
+                  },
+                  "legend_fill": {
+                    "title": "Legend box",
+                    "description": "a string. The colour of its box, such as #ffffffe6, or none. Empty: white, a little see-through"
+                  },
+                  "legend_line": {
+                    "title": "Legend edge",
+                    "description": "a string. The colour of the edge of its box, or none. Empty: light grey"
+                  },
                   "scale_bar": {
                     "title": "Scale bar",
                     "description": "one of the values in choices, as a string. A round length of about a fifth of the map, in metres or km",
@@ -6481,8 +6548,10 @@
                         "enum": [
                           "none",
                           "bottom-left",
+                          "bottom-center",
                           "bottom-right",
                           "top-left",
+                          "top-center",
                           "top-right"
                         ]
                       },
@@ -6501,8 +6570,10 @@
                         "enum": [
                           "none",
                           "bottom-left",
+                          "bottom-center",
                           "bottom-right",
                           "top-left",
+                          "top-center",
                           "top-right"
                         ]
                       },
@@ -6512,6 +6583,64 @@
                       }
                     ],
                     "default": "none"
+                  },
+                  "scale_style": {
+                    "title": "Scale bar as",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "bar",
+                          "line"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "bar"
+                  },
+                  "scale_parts": {
+                    "title": "Fields of the scale bar",
+                    "description": "a string. From 1 to 10",
+                    "default": "4"
+                  },
+                  "scale_unit": {
+                    "title": "Scale bar in",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "auto",
+                          "km",
+                          "m"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "auto"
+                  },
+                  "north_style": {
+                    "title": "North arrow as",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "arrow",
+                          "simple",
+                          "star"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "arrow"
                   },
                   "grid": {
                     "title": "Grid",
@@ -6536,6 +6665,23 @@
                     "title": "Grid every",
                     "description": "a string. In the units of the map, such as 1000 for every km in SWEREF 99 TM, or in degrees for a grid of degrees. Empty gives a round number by the size"
                   },
+                  "map_frame": {
+                    "title": "Frame",
+                    "description": "one of the values in choices, as a string. A line around the map with a white margin, where the coordinates of the grid are written, as on a printed map",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "frame"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "none"
+                  },
                   "overview": {
                     "title": "Overview map",
                     "description": "one of the values in choices, as a string. A small map in a corner that shows where the map lies, with the map as a red frame: what is connected to Overview, such as the outline of the county, or else the lines and areas of the map seen from further away",
@@ -6544,8 +6690,10 @@
                         "enum": [
                           "none",
                           "bottom-left",
+                          "bottom-center",
                           "bottom-right",
                           "top-left",
+                          "top-center",
                           "top-right"
                         ]
                       },
@@ -6565,6 +6713,264 @@
                     "title": "Overview reaches",
                     "description": "a string. How many times wider than the map, when nothing is connected to Overview",
                     "default": "5"
+                  },
+                  "overview_fill": {
+                    "title": "Overview areas",
+                    "description": "a string. A colour for the areas of the overview map, such as #e4e2dc. Empty: as the layers have it"
+                  },
+                  "overview_line": {
+                    "title": "Overview lines",
+                    "description": "a string. A colour for its lines and outlines, such as #777777. Empty: as the layers have it"
+                  },
+                  "overview_frame": {
+                    "title": "Overview frame",
+                    "description": "a string. The colour of the frame around it",
+                    "default": "#444444"
+                  },
+                  "overview_mark": {
+                    "title": "Where the map is",
+                    "description": "a string. The colour of the box in the overview map that shows where the map is",
+                    "default": "#d73027"
+                  },
+                  "title": {
+                    "title": "Title",
+                    "description": "a string. Written large over the map, where Title in the says"
+                  },
+                  "subtitle": {
+                    "title": "Subtitle",
+                    "description": "a string. Under the title: what is shown, where and when"
+                  },
+                  "logo": {
+                    "title": "Logo",
+                    "description": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model. A picture, such as a PNG with a see-through background"
+                  },
+                  "title_place": {
+                    "title": "Title in the",
+                    "description": "one of the values in choices, as a string. Where the title and the subtitle go",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "bottom-left",
+                          "bottom-center",
+                          "bottom-right",
+                          "top-left",
+                          "top-center",
+                          "top-right"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "top-left"
+                  },
+                  "title_fill": {
+                    "title": "Box behind the title",
+                    "description": "a string. A colour for a box behind the title and the subtitle, such as #ffffff, or #ffffffcc to let a little show through. Empty: no box"
+                  },
+                  "title_line": {
+                    "title": "Edge of the box",
+                    "description": "a string. A colour for the edge of the box, such as #888888. Empty: no edge"
+                  },
+                  "title_font": {
+                    "title": "Font",
+                    "description": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model. A font file, such as a TTF or an OTF from C:\\Windows\\Fonts. Empty: the built-in one"
+                  },
+                  "title_size": {
+                    "title": "Title size",
+                    "description": "a string. In pixels on a map 800 pixels high: larger maps have it larger",
+                    "default": "26"
+                  },
+                  "title_colour": {
+                    "title": "Title colour",
+                    "description": "a string.",
+                    "default": "#111111"
+                  },
+                  "title_bold": {
+                    "title": "Title in bold",
+                    "description": "one of the values in choices, as a string. With a font file of one's own, the letters are as the file has them",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "yes",
+                          "no"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "yes"
+                  },
+                  "subtitle_size": {
+                    "title": "Subtitle size",
+                    "description": "a string.",
+                    "default": "15"
+                  },
+                  "subtitle_colour": {
+                    "title": "Subtitle colour",
+                    "description": "a string.",
+                    "default": "#444444"
+                  },
+                  "logo_corner": {
+                    "title": "Logo in the corner",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "bottom-left",
+                          "bottom-center",
+                          "bottom-right",
+                          "top-left",
+                          "top-center",
+                          "top-right"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "bottom-right"
+                  },
+                  "logo_size": {
+                    "title": "Logo width in %",
+                    "description": "a string. Of the width of the map",
+                    "default": "12"
+                  },
+                  "inset": {
+                    "title": "Inset of",
+                    "description": "a string. An enlarged map in a corner of the features this expression picks out, such as kommunnamn = 'Göteborg', with a frame on the map where it is. Empty: none"
+                  },
+                  "inset_corner": {
+                    "title": "Inset in the corner",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "bottom-left",
+                          "bottom-center",
+                          "bottom-right",
+                          "top-left",
+                          "top-center",
+                          "top-right"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "top-right"
+                  },
+                  "inset_size": {
+                    "title": "Inset width in %",
+                    "description": "a string. Of the width of the map",
+                    "default": "30"
+                  },
+                  "knockout": {
+                    "title": "Lines break under labels",
+                    "description": "one of the values in choices, as a string. Roads, borders and outlines stop where a label goes, so that the names are free",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "no",
+                          "yes"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "no"
+                  },
+                  "template": {
+                    "title": "Template",
+                    "description": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model. A map template, .ogmap, saved from another map: what this map does not set itself is taken from it, so that maps look alike"
+                  },
+                  "notes": {
+                    "title": "Notes on the map",
+                    "description": "a string. One to a line: east, north in the coordinates of the map, and the text, as 323000 6402000 New bridge 2027. Each points to its place with a line"
+                  },
+                  "map_font": {
+                    "title": "Font of the map",
+                    "description": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model. A TTF or an OTF for all the text of the map: labels, legend, scale bar and the rest. Empty: the built-in one"
+                  },
+                  "multiples_by": {
+                    "title": "A map for each value of",
+                    "description": "a string. An attribute, such as year: the map is drawn once for each of its values, side by side at one scale, with one legend. Empty: one map"
+                  },
+                  "multiples_columns": {
+                    "title": "Maps across",
+                    "description": "a string. Empty: as many as make a square"
+                  },
+                  "atlas_by": {
+                    "title": "A page for each feature, named by",
+                    "description": "a string. An attribute of a layer, such as kommunnamn: a map of each feature of it, centred on it and named by it, as pages of one PDF or a file each. Empty: one map"
+                  },
+                  "focus": {
+                    "title": "The map is about",
+                    "description": "a string. An expression that picks out the areas the map is about, such as lan = 'Västra Götaland': the rest is paler, and the areas can have a shadow or lines along their coast. Empty: all of it"
+                  },
+                  "focus_rest": {
+                    "title": "The rest",
+                    "description": "one of the values in choices, as a string. Paler, or left out so that only the areas are drawn, in their own shape",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "fade",
+                          "hide"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "fade"
+                  },
+                  "focus_fade": {
+                    "title": "The rest paler by %",
+                    "description": "a string. 0 keeps it as it is",
+                    "default": "60"
+                  },
+                  "focus_effect": {
+                    "title": "Around the areas",
+                    "description": "one of the values in choices, as a string. Under the layers, around the areas the map is about",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "shadow",
+                          "waterlines"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "none"
+                  },
+                  "simplify": {
+                    "title": "Simplify to the scale",
+                    "description": "one of the values in choices, as a string. Points of lines and outlines closer than a pixel are left out: calmer lines and smaller files, with no change that can be seen",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "no",
+                          "yes"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "no"
                   },
                   "source": {
                     "title": "Source",
@@ -11545,6 +11951,49 @@
                     "title": "Classes",
                     "description": "a string. Natural breaks (Jenks), from 2 to 9",
                     "default": "5"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "FlowLines"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "title": "From",
+                    "description": "the name of one attribute of the stream on the port. Where each flow starts: the name or code of a place"
+                  },
+                  "to": {
+                    "title": "To",
+                    "description": "the name of one attribute of the stream on the port. Where it ends"
+                  },
+                  "value": {
+                    "title": "How many",
+                    "description": "the name of one attribute of the stream on the port. Such as the number of commuters. Empty: each row counts as one"
+                  },
+                  "id": {
+                    "title": "Names of the places",
+                    "description": "the name of one attribute of the stream on the port. The attribute of Places that From and To name"
+                  },
+                  "bend": {
+                    "title": "Bend in %",
+                    "description": "a string. How much the lines curve, as a share of their length. Each bends to its right, so that the flows both ways lie side by side. 0: straight",
+                    "default": "20"
+                  },
+                  "smallest": {
+                    "title": "Leave out fewer than",
+                    "description": "a string. Flows smaller than this are left out, so that the large ones can be seen. Empty: all"
                   }
                 }
               }

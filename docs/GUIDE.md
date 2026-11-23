@@ -123,6 +123,27 @@ five models.
 | Print a map | Draw it with *Draw map* (a scale bar, a north arrow and a grid are in its form) and write it with an Output to a `.pdf`. The PDF is of shapes, sharp at any size, placed on the map in QGIS and with a layer for each layer of the map, named as in the form. *A map as: a picture of pixels* gives the PDF of pixels instead. See `examples/print_map.ographis` |
 | Give a map a ready look | Choose *Style* in Draw map: Light, Dark, Old topographic or Print in black and white. The layers keep their own hues in it. A pattern and an opacity for a layer are under its colours |
 | Put a small map in the corner | *Overview map* in Draw map, and connect the outline of the county or the country to *Overview*. Without it, the overview shows the map from further away |
+| A label of two lines | Write it in *Label* of the layer with Shift+Enter between the lines, an attribute or an expression on each, such as `upper(name)` and then `format_number(area_km2) || ' km²'` |
+| Print at a fixed scale | Set *Size* in Draw map to *At a scale on a paper*, the scale, such as 50000, and the paper, such as A3 landscape. The map is centred on the data, and a warning says if the data reaches further than the paper |
+| Title, logo and an enlarged part | *Title* and *Subtitle* in Draw map go at the top left; *Logo* is a PNG or JPG in a corner, a share of the width. *Inset of* is an expression, such as `name = 'Göteborg'`: what it picks out is drawn larger in a corner, with a frame on the map where it is |
+| Draw flows | Connect a table with from, to and a number to *Flows* of *Flow lines*, and the places, such as towns, to *Places*. In Draw map, *Size by* the number makes them as wide as they are, and *arrows* under the line of the layer puts a head where they go. See `examples/cartography.ographis` |
+| A railway or a tramway | *line* under the layer in Draw map: *Railway* draws it black and white in turn, *Tram, with ticks* with short marks across. The width sets how heavy |
+| A map per municipality | *A page for each feature, named by* in Draw map, and an attribute of the layer, such as kommunnamn: a PDF of a page for each, or a PNG each named by it. See `examples/map_series.ographis` |
+| The same map for each year | *A map for each value of* in Draw map, and the attribute, such as year: the maps side by side at one scale, with one legend |
+| Make one county stand out | *The map is about* in Draw map, such as `lan = 'Västra Götaland'`: the rest is paler. *Around the areas* gives a shadow or lines along the coast |
+| Two values on one map | *Colour by* one attribute *and by* another: a square of nine colours, explained in the legend |
+| The same look on every map | *Save as a template…* at the top of Draw map, then *Template* in the other maps: what they do not set themselves comes from the .ogmap file |
+| A printed map with a frame | *Frame* under *Grid and coordinates*, with a grid: the coordinates go in the margin outside the frame. *Bleed in mm* and *Crop marks* in the PDF writer are for a printer |
+| Relief under coloured areas | A layer of shading under the areas, and *laid on* *Multiply* for the areas: the shading shows through the colours |
+| Only the county, no rectangle | *The map is about* the county, and *The rest* *Left out* |
+| A note with an arrow on the map | *Notes on the map*: one to a line, east, north and the text |
+| Find a setting in Draw map | The settings are in sections that fold, such as *Size and paper* and *Overview map and inset*: a click on the name opens one. Those with something set are open |
+| A title that stands out from the map | *Box behind the title* in a colour, such as #ffffffdd for a little see-through white, and *Edge of the box*. *Font* takes a TTF or an OTF, such as one from C:\Windows\Fonts, and the sizes and colours are beside it |
+| Put the title in the middle | *Title in the* under *Title, logo and source*: *Upper middle* centres it over the map |
+| Legend and overview map in the same corner | Choose the same corner for both: they are stacked, the one over the other, and beside each other when there is no room. *Upper middle* and *Lower middle* are places too |
+| An overview map in the colours of the map | *Overview areas*, *Overview lines*, *Overview frame* and *Where the map is* in Draw map, as colours such as #e4e2dc |
+| Show small roads only close up | *drawn from 1:* under the layer: 50000 draws it at 1:50 000 and closer |
+| Keep labels clear of lines | *Lines break under labels* in Draw map. Small areas get their name beside them with a line under *Labels* → *beside, with a line*, and long roads their name again under *along lines every* |
 | Read a Google sheet | Paste its address as the file of an Input. A sheet shared with a link is read at once; for a private one, make an API connection of the kind *A Google service account*, read its key file, share the sheet with the address it shows, and choose the connection |
 | Write to a Google sheet | Choose *Google Sheets* as the format of an Output, paste the address of the sheet as the file, name the sheet, and choose an API connection with a Google service account that the sheet is shared with as an editor |
 | Write JSON for a web service | Choose *JSON* as the format of an Output. *Build JSON* with *Make* set to lists gathers features, such as the rooms of each storey, into one object each first |

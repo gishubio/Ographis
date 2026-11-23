@@ -1,0 +1,272 @@
+{
+  "format": "ographis/1",
+  "name": "Flow map of commuting between towns",
+  "nodes": [
+    {
+      "id": "areas",
+      "type": "Reader",
+      "x": 20,
+      "y": 20,
+      "params": {
+        "path": "subregions.gpkg"
+      },
+      "comment": "Subregions"
+    },
+    {
+      "id": "areas_sweref",
+      "type": "Reprojector",
+      "x": 240,
+      "y": 20,
+      "params": {
+        "crs": "EPSG:3006"
+      },
+      "comment": "Subregions in metres"
+    },
+    {
+      "id": "area",
+      "type": "AreaCalculator",
+      "x": 460,
+      "y": 20,
+      "params": {
+        "name": "area_km2",
+        "unit": "km2",
+        "decimals": "0"
+      },
+      "comment": "Area of each subregion in km²"
+    },
+    {
+      "id": "towns",
+      "type": "Reader",
+      "x": 20,
+      "y": 200,
+      "params": {
+        "path": "towns.csv",
+        "crs": "EPSG:4326"
+      },
+      "comment": "Towns with their population"
+    },
+    {
+      "id": "towns_sweref",
+      "type": "Reprojector",
+      "x": 240,
+      "y": 200,
+      "params": {
+        "crs": "EPSG:3006"
+      },
+      "comment": "Towns in metres"
+    },
+    {
+      "id": "commuting",
+      "type": "Reader",
+      "x": 20,
+      "y": 380,
+      "params": {
+        "path": "commuting.csv"
+      },
+      "comment": "Commuters between towns (made-up example numbers)"
+    },
+    {
+      "id": "flows",
+      "type": "FlowLines",
+      "x": 460,
+      "y": 300,
+      "params": {
+        "from": "from",
+        "to": "to",
+        "value": "people",
+        "id": "name",
+        "bend": "18"
+      },
+      "comment": "A curved line for each flow"
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "x": 700,
+      "y": 160,
+      "params": {
+        "size_as": "scale",
+        "map_scale": "1300000",
+        "paper": "a4l",
+        "print_dpi": "150",
+        "crs": "EPSG:3006",
+        "title": "Commuting in Västra Götaland",
+        "subtitle": "People who commute between the larger towns (made-up example numbers)",
+        "inset": "name = 'Göteborg'",
+        "inset_corner": "bottom-left",
+        "inset_size": "22",
+        "knockout": "yes",
+        "simplify": "yes",
+        "legend": "top-right",
+        "scale_bar": "bottom-right",
+        "grid": "degrees",
+        "source": "Example data in Ographis",
+        "layers": [
+          {
+            "from": "flows:Lines",
+            "name": "Commuters",
+            "stroke": "#b2182b",
+            "fill": "none",
+            "width": 2,
+            "size_by": "value",
+            "size_min": 1,
+            "size_max": 10,
+            "arrows": "end",
+            "arrow_size": 2.5,
+            "gap": 4
+          },
+          {
+            "from": "towns_sweref:Reprojected",
+            "name": "Towns",
+            "fill": "#222222",
+            "stroke": "#ffffff",
+            "width": 1,
+            "size": 6,
+            "label": "name",
+            "label_bold_where": "population > 50000",
+            "label_size": 12,
+            "label_priority": "population"
+          },
+          {
+            "from": "area:Output",
+            "name": "Subregions",
+            "fill": "#e8eef2",
+            "stroke": "#7a8a99",
+            "width": 1,
+            "color_by": "area_km2",
+            "ramp": "#f2f0e6,#cfd8c4",
+            "classes": 4,
+            "label": "upper(subregion)\nformat_number(area_km2) || ' km²'",
+            "label_size": 13,
+            "label_italic": false,
+            "label_colour": "#5a6470",
+            "label_spaced": false
+          }
+        ]
+      },
+      "comment": "Flow map at 1:1 300 000 on A4, with an inset of Göteborg"
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "x": 960,
+      "y": 100,
+      "params": {
+        "path": "out/commuting.png"
+      },
+      "comment": "The map as a picture"
+    },
+    {
+      "id": "pdf",
+      "type": "Writer",
+      "x": 960,
+      "y": 220,
+      "params": {
+        "path": "out/commuting.pdf"
+      },
+      "comment": "The map as a PDF"
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "areas",
+        "Output"
+      ],
+      "to": [
+        "areas_sweref",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "areas_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "area",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "towns",
+        "Output"
+      ],
+      "to": [
+        "towns_sweref",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "commuting",
+        "Output"
+      ],
+      "to": [
+        "flows",
+        "Flows"
+      ]
+    },
+    {
+      "from": [
+        "towns_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "flows",
+        "Places"
+      ]
+    },
+    {
+      "from": [
+        "flows",
+        "Lines"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "towns_sweref",
+        "Reprojected"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "area",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "pdf",
+        "Input"
+      ]
+    }
+  ]
+}

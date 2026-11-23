@@ -4,7 +4,7 @@
 
 use crate::model::{GbError, RasterImage, Result};
 use crate::vector::Canvas;
-use ab_glyph::{Font, FontRef, PxScale, ScaleFont};
+use ab_glyph::{Font, FontArc, PxScale, ScaleFont};
 use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Rect, Transform};
 
 static REGULAR: &[u8] = include_bytes!("../fonts/Inter-Regular.otf");
@@ -126,23 +126,64 @@ pub(crate) enum Face {
 }
 
 /// Writes text into a picture.
+#[derive(Clone)]
 pub(crate) struct Text {
-    regular: FontRef<'static>,
-    bold: FontRef<'static>,
-    mono: FontRef<'static>,
+    regular: FontArc,
+    bold: FontArc,
+    mono: FontArc,
+}
+
+thread_local! {
+    /// The font of a map being drawn on this thread, in place of the built-in one.
+    static OWN: std::cell::RefCell<Option<FontArc>> = const { std::cell::RefCell::new(None) };
+}
+
+/// While it lives, text on this thread is in the font of this file, such as the font of a
+/// map; then as before.
+pub(crate) struct OwnFont(Option<FontArc>);
+
+impl Drop for OwnFont {
+    fn drop(&mut self) {
+        let before = self.0.take();
+        OWN.with(|o| *o.borrow_mut() = before);
+    }
+}
+
+/// Text in the font of this file until what is given back is dropped. An empty path keeps the
+/// font as it is.
+pub(crate) fn own_font(path: &str) -> Result<OwnFont> {
+    let before = OWN.with(|o| o.borrow().clone());
+    if !path.trim().is_empty() {
+        let bytes = std::fs::read(path.trim()).map_err(|e| GbError(format!("The font {} cannot be read: {}", path.trim(), e)))?;
+        let f = FontArc::try_from_vec(bytes).map_err(|_| GbError("The font cannot be read: choose a TTF or an OTF file.".into()))?;
+        OWN.with(|o| *o.borrow_mut() = Some(f));
+    }
+    Ok(OwnFont(before))
 }
 
 impl Text {
     pub(crate) fn new() -> Result<Text> {
-        let f = |b: &'static [u8]| FontRef::try_from_slice(b).map_err(|_| GbError("The built-in font cannot be read.".into()));
-        Ok(Text { regular: f(REGULAR)?, bold: f(SEMIBOLD)?, mono: f(MONO)? })
+        let f = |b: &'static [u8]| FontArc::try_from_slice(b).map_err(|_| GbError("The built-in font cannot be read.".into()));
+        let mono = f(MONO)?;
+        if let Some(own) = OWN.with(|o| o.borrow().clone()) {
+            return Ok(Text { regular: own.clone(), bold: own, mono });
+        }
+        Ok(Text { regular: f(REGULAR)?, bold: f(SEMIBOLD)?, mono })
     }
 
-    fn font(&self, bold: bool) -> &FontRef<'static> {
+    /// Text in letters of a font file of one's own, such as a TTF or an OTF: the same letters
+    /// whether bold or not, as the file has them.
+    pub(crate) fn with_font(bytes: Vec<u8>) -> Result<Text> {
+        let own = FontArc::try_from_vec(bytes).map_err(|_| GbError("The font cannot be read: choose a TTF or an OTF file.".into()))?;
+        let built_in = Text::new()?;
+        Ok(Text { regular: own.clone(), bold: own, mono: built_in.mono })
+    }
+
+    fn font(&self, bold: bool) -> &FontArc {
         self.face(if bold { Face::Bold } else { Face::Regular })
     }
 
-    fn face(&self, face: Face) -> &FontRef<'static> {
+    fn face(&self, face: Face) -> &FontArc {
         match face {
             Face::Regular => &self.regular,
             Face::Bold => &self.bold,

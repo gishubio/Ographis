@@ -295,8 +295,9 @@ fn the_extension_and_the_registry_entry_match_the_server() {
     let version = env!("CARGO_PKG_VERSION");
     assert_eq!(manifest["version"], version);
     assert_eq!(server["version"], version);
+    // The tags of the releases have no v before the version, as 0.96.5.
     let id = server["packages"][0]["identifier"].as_str().unwrap();
-    assert!(id.contains(&format!("v{}/Ographis-{}-windows.mcpb", version, version)), "{}", id);
+    assert!(id.contains(&format!("/{}/Ographis-{}-windows.mcpb", version, version)), "{}", id);
     assert!(server["description"].as_str().unwrap().len() <= 100);
     let dir = folder("manifest");
     let mut s = Session::start(&dir, &[]);

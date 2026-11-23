@@ -698,7 +698,7 @@ pub use input::{
     DEFAULT_PATTERN, READ_FORMATS, SERVICE_PREFIXES, WEB_SERVICES,
 };
 pub use json::{geojson, json_paths_of, name_of_path};
-pub use map::{arrange_layers, map_layers, map_layers_json, MapLayer};
+pub use map::{arrange_layers, map_layers, map_layers_json, map_template, MapLayer};
 pub use output::{output_kind, view_name, writer_file, NameTemplate, OUTPUT_FORMATS, OUTPUT_GROUPS, SHEET_COLORS, SHEET_FONTS, WRITER_FORMATS};
 pub use raster::mosaic_images;
 
@@ -733,6 +733,7 @@ mod changes;
 mod custom096;
 mod dashboard;
 mod engines096;
+mod flows;
 mod geodata;
 mod ifc096;
 mod lengths096;
@@ -834,6 +835,7 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         changes::TYPES,
         statistics::TYPES,
         dashboard::TYPES,
+        flows::TYPES,
         lengths096::TYPES,
         raster096::TYPES,
         custom096::TYPES,

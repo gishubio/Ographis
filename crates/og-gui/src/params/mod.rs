@@ -256,10 +256,26 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("SceneRenderer", "study_dates" | "study_from" | "study_to" | "study_every" | "study_folder") => param("sun").as_deref() == Some("study"),
             ("SceneRenderer", "background_colour") => param("background").as_deref() == Some("colour"),
             ("SceneRenderer", "elevation" | "projection" | "fov") => param("camera").is_none_or(|c| c.is_empty()),
-            ("MapRenderer", "width") => param("size_as").as_deref() != Some("print"),
+            ("MapRenderer", "width") => !matches!(param("size_as").as_deref(), Some("print" | "scale")),
+            ("MapRenderer", "map_scale" | "paper") => param("size_as").as_deref() == Some("scale"),
+            (
+                "MapRenderer",
+                "title_place" | "title_fill" | "title_line" | "title_font" | "title_size" | "title_colour" | "title_bold" | "subtitle_size" | "subtitle_colour",
+            ) => ["title", "subtitle"].iter().any(|k| param(k).is_some_and(|v| !v.trim().is_empty())),
+            ("MapRenderer", "logo_corner" | "logo_size") => param("logo").is_some_and(|v| !v.trim().is_empty()),
+            ("MapRenderer", "inset_corner" | "inset_size") => param("inset").is_some_and(|v| !v.trim().is_empty()),
+            ("MapRenderer", "focus_fade") => ["focus", "atlas_by"].iter().any(|k| param(k).is_some_and(|v| !v.trim().is_empty())),
+            ("MapRenderer", "legend_columns" | "legend_fill" | "legend_line") => param("legend").is_some_and(|v| v != "none"),
+            ("MapRenderer", "scale_style" | "scale_parts" | "scale_unit") => param("scale_bar").is_some_and(|v| !v.is_empty() && v != "none"),
+            ("MapRenderer", "north_style") => param("north_arrow").is_some_and(|v| !v.is_empty() && v != "none"),
+            ("MapRenderer", "focus_effect" | "focus_rest") => param("focus").is_some_and(|v| !v.trim().is_empty()),
+            ("MapRenderer", "multiples_columns") => param("multiples_by").is_some_and(|v| !v.trim().is_empty()),
             ("MapRenderer", "grid_every") => !matches!(param("grid").as_deref(), None | Some("none") | Some("")),
-            ("MapRenderer", "overview_size" | "overview_zoom") => !matches!(param("overview").as_deref(), None | Some("none") | Some("")),
-            ("MapRenderer", "print_mm" | "print_dpi") => param("size_as").as_deref() == Some("print"),
+            ("MapRenderer", "overview_size" | "overview_zoom" | "overview_fill" | "overview_line" | "overview_frame" | "overview_mark") => {
+                !matches!(param("overview").as_deref(), None | Some("none") | Some(""))
+            }
+            ("MapRenderer", "print_mm") => param("size_as").as_deref() == Some("print"),
+            ("MapRenderer", "print_dpi") => matches!(param("size_as").as_deref(), Some("print" | "scale")),
             ("MapRenderer", "background_colour") => param("background").as_deref() == Some("colour"),
             ("MapRenderer", "basemap") => param("background").as_deref() == Some("map"),
             ("MapRenderer", "basemap_own") => param("background").as_deref() == Some("map") && param("basemap").as_deref() == Some("own"),
@@ -444,6 +460,7 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         "key_name" => writer && ext == "gpkg" && node.params.get("key").and_then(|v| v.as_str()) != Some("attribute"),
         "key_attribute" => writer && ext == "gpkg" && node.params.get("key").and_then(|v| v.as_str()) == Some("attribute"),
         "pdf_title_align" => writer && ext == "pdf" && filled("pdf_title"),
+        "pdf_bleed" | "pdf_marks" => writer && ext == "pdf",
         "x" | "y" | "wkt" | "delimiter" | "decimal_comma" => text,
         "geometry" => text || sheets,
         "font" | "bold_header" | "freeze" | "colors" => writer && sheets,
@@ -722,8 +739,11 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
     } else {
         "layers"
     };
-    // What is seldom changed goes last, under More, which is open when any of it is set.
-    let (main, more): (Vec<&ParamSpec>, Vec<&ParamSpec>) = specs.into_iter().partition(|s| !is_more(&node.kind, s.key));
+    // A tool with many settings shows them in sections that fold, each open when any of its
+    // settings is set. Others put what is seldom changed last, under More.
+    let sections = sections_of(&node.kind);
+    let section_of = |key: &str| sections.map_or(0, |s| s.iter().position(|(_, keys)| keys.contains(&key)).unwrap_or(s.len()));
+    let (main, more): (Vec<&ParamSpec>, Vec<&ParamSpec>) = specs.into_iter().partition(|s| sections.is_some() || !is_more(&node.kind, s.key));
     let more_id = egui::Id::new(("more-settings", node.id.clone()));
     let more_set = more.iter().filter(|s| is_set(node, s)).count();
     let mut more_open = ui.data(|d| d.get_temp::<bool>(more_id)).unwrap_or(more_set > 0);
@@ -744,9 +764,52 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
             ui.data_mut(|d| d.insert_temp(more_id, true));
         }
     }
-    let specs: Vec<&ParamSpec> = main.into_iter().chain(more).collect();
+    // A map can be kept as a template, and take its look from one.
+    if node.kind == "MapRenderer" {
+        changed |= template_buttons(ui, node, cx.base_dir);
+    }
+    let mut specs: Vec<&ParamSpec> = main.into_iter().chain(more).collect();
+    // In the order of the sections, and as they were within each.
+    specs.sort_by_key(|s| section_of(s.key));
+    let count = sections.map_or(0, |s| s.len() + 1);
+    let set_in: Vec<usize> = (0..count).map(|i| specs.iter().filter(|s| section_of(s.key) == i && is_set(node, s)).count()).collect();
+    let mut open_now = vec![false; count];
+    let mut last_section = usize::MAX;
     let mut header_drawn = false;
     for spec in specs {
+        if let Some(secs) = sections {
+            let i = section_of(spec.key);
+            if i != last_section {
+                last_section = i;
+                let name = secs.get(i).map_or("Other", |s| s.0);
+                let id = egui::Id::new(("settings-section", node.id.clone(), name));
+                let mut open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(i == 0 || set_in[i] > 0);
+                // A setting that an error led to opens its section.
+                if focus.as_ref().is_some_and(|f| section_of(&f.1) == i) && !open {
+                    open = true;
+                    ui.data_mut(|d| d.insert_temp(id, true));
+                }
+                ui.add_space(if i == 0 { 2.0 } else { 6.0 });
+                let arrow = if open { "▾" } else { "▸" };
+                let set = if set_in[i] > 0 && !open { format!(" · {} set", set_in[i]) } else { String::new() };
+                let clicked = ui
+                    .horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        let a = ui.add(egui::Button::new(RichText::new(arrow).font(theme::mono(12.0)).color(cx.pal.muted)).frame(false));
+                        let b = ui.add(egui::Button::new(RichText::new(format!("{}{}", name, set)).strong()).frame(false));
+                        a.clicked() || b.clicked()
+                    })
+                    .inner;
+                if clicked {
+                    open = !open;
+                    ui.data_mut(|d| d.insert_temp(id, open));
+                }
+                open_now[i] = open;
+            }
+            if !open_now[i] {
+                continue;
+            }
+        }
         if more_keys.contains(&spec.key) {
             if !header_drawn {
                 header_drawn = true;
@@ -911,6 +974,21 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
             ParamKind::Text if spec.key == "classes" && node.kind == "PointCloudFilter" => {
                 ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
                 class_ticks(ui, &mut value, &(cx.classes)("Points"), cx.ran_at.as_deref(), &cx.pal);
+            }
+            // A colour as text gets a button beside it that opens the colour picker.
+            ParamKind::Text if is_colour(spec) => {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let mut c = og_engine::mapdraw::parse_color(&value).ok().flatten().unwrap_or([0xcc, 0xcc, 0xcc, 255]);
+                    if layers::colour_button(ui, &mut c) {
+                        value = layers::colour_code(c);
+                    }
+                    ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
+                });
+            }
+            // Notes are written one to a line.
+            ParamKind::Text if spec.key == "notes" => {
+                ui.add(TextEdit::multiline(&mut value).desired_width(f32::INFINITY).desired_rows(3).hint_text("323000 6402000 New bridge 2027"));
             }
             ParamKind::Text => {
                 ui.add(TextEdit::singleline(&mut value).desired_width(f32::INFINITY));
@@ -1382,6 +1460,118 @@ pub fn node_form(ui: &mut Ui, node: &mut GNode, cx: &ParamCtx) -> Edited {
 }
 
 /// Settings that are seldom changed, shown under More at the end of the form.
+/// Buttons to keep the look of a map as a template, a .ogmap file, and to give a map the look
+/// of one. Gives whether the map changed.
+fn template_buttons(ui: &mut Ui, node: &mut GNode, base: &Path) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        if ui
+            .small_button("Save as a template…")
+            .on_hover_text("Keeps the look of this map, all but its layers, title, notes and what it is about, in a .ogmap file for other maps")
+            .clicked()
+        {
+            if let Some(path) = rfd::FileDialog::new().set_directory(base).add_filter("Map template", &["ogmap"]).set_file_name("map.ogmap").save_file() {
+                let template = og_engine::nodes::map_template(&node.params);
+                let text = serde_json::to_string_pretty(&Json::Object(template)).unwrap_or_default();
+                let _ = std::fs::write(path.with_extension("ogmap"), text);
+            }
+        }
+        if ui.small_button("Use a template…").on_hover_text("Takes the look of a .ogmap file into this map, in place of its own").clicked() {
+            if let Some(path) = rfd::FileDialog::new().set_directory(base).add_filter("Map template", &["ogmap"]).pick_file() {
+                if let Some(Json::Object(t)) = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<Json>(&t).ok()) {
+                    for (k, v) in og_engine::nodes::map_template(&t) {
+                        node.params.insert(k, v);
+                    }
+                    changed = true;
+                }
+            }
+        }
+    });
+    changed
+}
+
+/// Whether a setting written as text holds a colour, such as #e8eef2: by its name, or by a
+/// default that is one.
+fn is_colour(spec: &ParamSpec) -> bool {
+    let k = spec.key;
+    k.ends_with("colour")
+        || k.ends_with("color")
+        || matches!(k, "overview_fill" | "overview_line" | "overview_frame" | "overview_mark" | "title_fill" | "title_line" | "legend_fill" | "legend_line")
+        || (spec.default.starts_with('#') && og_engine::mapdraw::parse_color(spec.default).is_ok_and(|c| c.is_some()))
+}
+
+/// The sections the settings of a tool are shown in, each with its settings, for tools with
+/// many. Settings in none of them go last, under Other.
+fn sections_of(kind: &str) -> Option<&'static [(&'static str, &'static [&'static str])]> {
+    match kind {
+        "MapRenderer" => Some(&[
+            ("Layers and coordinate system", &["layers", "crs"]),
+            ("Size and paper", &["size_as", "width", "print_mm", "print_dpi", "map_scale", "paper", "margin"]),
+            (
+                "Background and style",
+                &["background", "background_colour", "basemap", "basemap_own", "background_picture", "background_crs", "background_fade", "map_style"],
+            ),
+            (
+                "Title, logo and source",
+                &[
+                    "title",
+                    "subtitle",
+                    "title_place",
+                    "title_fill",
+                    "title_line",
+                    "title_font",
+                    "title_size",
+                    "title_colour",
+                    "title_bold",
+                    "subtitle_size",
+                    "subtitle_colour",
+                    "logo",
+                    "logo_corner",
+                    "logo_size",
+                    "source",
+                ],
+            ),
+            ("Template, font and notes", &["template", "map_font", "notes"]),
+            (
+                "Legend, scale bar and north arrow",
+                &[
+                    "legend",
+                    "legend_title",
+                    "legend_columns",
+                    "legend_fill",
+                    "legend_line",
+                    "scale_bar",
+                    "scale_style",
+                    "scale_parts",
+                    "scale_unit",
+                    "north_arrow",
+                    "north_style",
+                ],
+            ),
+            ("Grid and coordinates", &["grid", "grid_every", "map_frame"]),
+            (
+                "Overview map and inset",
+                &[
+                    "overview",
+                    "overview_size",
+                    "overview_zoom",
+                    "overview_fill",
+                    "overview_line",
+                    "overview_frame",
+                    "overview_mark",
+                    "inset",
+                    "inset_corner",
+                    "inset_size",
+                ],
+            ),
+            ("What the map is about", &["focus", "focus_rest", "focus_fade", "focus_effect"]),
+            ("Several maps or pages", &["multiples_by", "multiples_columns", "atlas_by"]),
+            ("Lines and labels", &["knockout", "simplify"]),
+        ]),
+        _ => None,
+    }
+}
+
 fn is_more(kind: &str, key: &str) -> bool {
     match kind {
         "PostgisWriter" => {
@@ -1403,7 +1593,6 @@ fn is_more(kind: &str, key: &str) -> bool {
                 | "t3_most"
                 | "t3_dz"
         ),
-        "MapRenderer" => matches!(key, "margin" | "background_fade" | "grid_every" | "overview_size" | "overview_zoom"),
         "SceneRenderer" => matches!(key, "tree_height" | "tree_height_by" | "tree_kind" | "tree_kind_by"),
         _ => false,
     }

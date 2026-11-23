@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.96.6",
+  "version": "0.96.7",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a comment that says what it does in this model (keep the name of the tool, without a name of its own), x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -122,6 +122,18 @@
         "min_args": 1,
         "max_args": 1,
         "help": "upper(text) gives upper case"
+      },
+      {
+        "name": "format_number",
+        "min_args": 1,
+        "max_args": 3,
+        "help": "format_number(number, decimals, 'en') writes a number to be read: format_number(7936.7) gives 7 937, format_number(1234.5, 1) 1 234,5, and with 'en' 1,234.5"
+      },
+      {
+        "name": "newline",
+        "min_args": 0,
+        "max_args": 0,
+        "help": "newline() breaks the line, as in name || newline() || area for a label of two lines"
       },
       {
         "name": "lower",
@@ -2588,6 +2600,32 @@
           "kind": "text",
           "shape": "a string",
           "default": "10"
+        },
+        {
+          "key": "pdf_bleed",
+          "label": "Bleed in mm",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "For a printer: the page reaches this far past where it is cut, often 3 mm"
+        },
+        {
+          "key": "pdf_marks",
+          "label": "Crop marks",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "no",
+              "label": "No"
+            },
+            {
+              "value": "yes",
+              "label": "Yes"
+            }
+          ],
+          "default": "no",
+          "hint": "Short lines outside the page that show the printer where to cut"
         },
         {
           "key": "pdf_title",
@@ -9152,6 +9190,10 @@
             {
               "value": "print",
               "label": "For print: width in mm and pixels to the inch"
+            },
+            {
+              "value": "scale",
+              "label": "At a scale on a paper, such as 1:50 000 on A3"
             }
           ],
           "default": "pixels"
@@ -9179,6 +9221,55 @@
           "shape": "a string",
           "default": "300",
           "hint": "300 for print, 150 for a draft. Lines, points and labels keep the size they have on the screen, measured on paper, and the picture tells Output its resolution"
+        },
+        {
+          "key": "map_scale",
+          "label": "Scale 1:",
+          "kind": "text",
+          "shape": "a string",
+          "default": "50000",
+          "hint": "Such as 50000 for 1:50 000. The map is as large as the paper less 10 mm on every side, centred on the features, in a coordinate system in metres"
+        },
+        {
+          "key": "paper",
+          "label": "Paper",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "a4l",
+              "label": "A4 landscape"
+            },
+            {
+              "value": "a4p",
+              "label": "A4 portrait"
+            },
+            {
+              "value": "a3l",
+              "label": "A3 landscape"
+            },
+            {
+              "value": "a3p",
+              "label": "A3 portrait"
+            },
+            {
+              "value": "a2l",
+              "label": "A2 landscape"
+            },
+            {
+              "value": "a2p",
+              "label": "A2 portrait"
+            },
+            {
+              "value": "a1l",
+              "label": "A1 landscape"
+            },
+            {
+              "value": "a1p",
+              "label": "A1 portrait"
+            }
+          ],
+          "default": "a3l"
         },
         {
           "key": "map_style",
@@ -9340,12 +9431,20 @@
               "label": "Lower left"
             },
             {
+              "value": "bottom-center",
+              "label": "Lower middle"
+            },
+            {
               "value": "bottom-right",
               "label": "Lower right"
             },
             {
               "value": "top-left",
               "label": "Upper left"
+            },
+            {
+              "value": "top-center",
+              "label": "Upper middle"
             },
             {
               "value": "top-right",
@@ -9363,6 +9462,30 @@
           "default": ""
         },
         {
+          "key": "legend_columns",
+          "label": "Legend columns",
+          "kind": "text",
+          "shape": "a string",
+          "default": "1",
+          "hint": "Its rows in this many columns, for a long legend"
+        },
+        {
+          "key": "legend_fill",
+          "label": "Legend box",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The colour of its box, such as #ffffffe6, or none. Empty: white, a little see-through"
+        },
+        {
+          "key": "legend_line",
+          "label": "Legend edge",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The colour of the edge of its box, or none. Empty: light grey"
+        },
+        {
           "key": "scale_bar",
           "label": "Scale bar",
           "kind": "choice",
@@ -9377,12 +9500,20 @@
               "label": "Lower left"
             },
             {
+              "value": "bottom-center",
+              "label": "Lower middle"
+            },
+            {
               "value": "bottom-right",
               "label": "Lower right"
             },
             {
               "value": "top-left",
               "label": "Upper left"
+            },
+            {
+              "value": "top-center",
+              "label": "Upper middle"
             },
             {
               "value": "top-right",
@@ -9407,6 +9538,10 @@
               "label": "Lower left"
             },
             {
+              "value": "bottom-center",
+              "label": "Lower middle"
+            },
+            {
               "value": "bottom-right",
               "label": "Lower right"
             },
@@ -9415,11 +9550,82 @@
               "label": "Upper left"
             },
             {
+              "value": "top-center",
+              "label": "Upper middle"
+            },
+            {
               "value": "top-right",
               "label": "Upper right"
             }
           ],
           "default": "none"
+        },
+        {
+          "key": "scale_style",
+          "label": "Scale bar as",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "bar",
+              "label": "Fields dark and light"
+            },
+            {
+              "value": "line",
+              "label": "A line with ticks"
+            }
+          ],
+          "default": "bar"
+        },
+        {
+          "key": "scale_parts",
+          "label": "Fields of the scale bar",
+          "kind": "text",
+          "shape": "a string",
+          "default": "4",
+          "hint": "From 1 to 10"
+        },
+        {
+          "key": "scale_unit",
+          "label": "Scale bar in",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "auto",
+              "label": "As fits"
+            },
+            {
+              "value": "km",
+              "label": "Kilometres"
+            },
+            {
+              "value": "m",
+              "label": "Metres"
+            }
+          ],
+          "default": "auto"
+        },
+        {
+          "key": "north_style",
+          "label": "North arrow as",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "arrow",
+              "label": "An arrow, half dark"
+            },
+            {
+              "value": "simple",
+              "label": "A thin arrow"
+            },
+            {
+              "value": "star",
+              "label": "A compass star"
+            }
+          ],
+          "default": "arrow"
         },
         {
           "key": "grid",
@@ -9456,6 +9662,24 @@
           "hint": "In the units of the map, such as 1000 for every km in SWEREF 99 TM, or in degrees for a grid of degrees. Empty gives a round number by the size"
         },
         {
+          "key": "map_frame",
+          "label": "Frame",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "None"
+            },
+            {
+              "value": "frame",
+              "label": "A frame, with the coordinates outside it"
+            }
+          ],
+          "default": "none",
+          "hint": "A line around the map with a white margin, where the coordinates of the grid are written, as on a printed map"
+        },
+        {
           "key": "overview",
           "label": "Overview map",
           "kind": "choice",
@@ -9470,12 +9694,20 @@
               "label": "Lower left"
             },
             {
+              "value": "bottom-center",
+              "label": "Lower middle"
+            },
+            {
               "value": "bottom-right",
               "label": "Lower right"
             },
             {
               "value": "top-left",
               "label": "Upper left"
+            },
+            {
+              "value": "top-center",
+              "label": "Upper middle"
             },
             {
               "value": "top-right",
@@ -9500,6 +9732,397 @@
           "shape": "a string",
           "default": "5",
           "hint": "How many times wider than the map, when nothing is connected to Overview"
+        },
+        {
+          "key": "overview_fill",
+          "label": "Overview areas",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "A colour for the areas of the overview map, such as #e4e2dc. Empty: as the layers have it"
+        },
+        {
+          "key": "overview_line",
+          "label": "Overview lines",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "A colour for its lines and outlines, such as #777777. Empty: as the layers have it"
+        },
+        {
+          "key": "overview_frame",
+          "label": "Overview frame",
+          "kind": "text",
+          "shape": "a string",
+          "default": "#444444",
+          "hint": "The colour of the frame around it"
+        },
+        {
+          "key": "overview_mark",
+          "label": "Where the map is",
+          "kind": "text",
+          "shape": "a string",
+          "default": "#d73027",
+          "hint": "The colour of the box in the overview map that shows where the map is"
+        },
+        {
+          "key": "title",
+          "label": "Title",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Written large over the map, where Title in the says"
+        },
+        {
+          "key": "subtitle",
+          "label": "Subtitle",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Under the title: what is shown, where and when"
+        },
+        {
+          "key": "logo",
+          "label": "Logo",
+          "kind": "path",
+          "shape": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model",
+          "default": "",
+          "hint": "A picture, such as a PNG with a see-through background"
+        },
+        {
+          "key": "title_place",
+          "label": "Title in the",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "bottom-left",
+              "label": "Lower left"
+            },
+            {
+              "value": "bottom-center",
+              "label": "Lower middle"
+            },
+            {
+              "value": "bottom-right",
+              "label": "Lower right"
+            },
+            {
+              "value": "top-left",
+              "label": "Upper left"
+            },
+            {
+              "value": "top-center",
+              "label": "Upper middle"
+            },
+            {
+              "value": "top-right",
+              "label": "Upper right"
+            }
+          ],
+          "default": "top-left",
+          "hint": "Where the title and the subtitle go"
+        },
+        {
+          "key": "title_fill",
+          "label": "Box behind the title",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "A colour for a box behind the title and the subtitle, such as #ffffff, or #ffffffcc to let a little show through. Empty: no box"
+        },
+        {
+          "key": "title_line",
+          "label": "Edge of the box",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "A colour for the edge of the box, such as #888888. Empty: no edge"
+        },
+        {
+          "key": "title_font",
+          "label": "Font",
+          "kind": "path",
+          "shape": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model",
+          "default": "",
+          "hint": "A font file, such as a TTF or an OTF from C:\\Windows\\Fonts. Empty: the built-in one"
+        },
+        {
+          "key": "title_size",
+          "label": "Title size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "26",
+          "hint": "In pixels on a map 800 pixels high: larger maps have it larger"
+        },
+        {
+          "key": "title_colour",
+          "label": "Title colour",
+          "kind": "text",
+          "shape": "a string",
+          "default": "#111111"
+        },
+        {
+          "key": "title_bold",
+          "label": "Title in bold",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "yes",
+              "label": "Yes"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ],
+          "default": "yes",
+          "hint": "With a font file of one's own, the letters are as the file has them"
+        },
+        {
+          "key": "subtitle_size",
+          "label": "Subtitle size",
+          "kind": "text",
+          "shape": "a string",
+          "default": "15"
+        },
+        {
+          "key": "subtitle_colour",
+          "label": "Subtitle colour",
+          "kind": "text",
+          "shape": "a string",
+          "default": "#444444"
+        },
+        {
+          "key": "logo_corner",
+          "label": "Logo in the corner",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "bottom-left",
+              "label": "Lower left"
+            },
+            {
+              "value": "bottom-center",
+              "label": "Lower middle"
+            },
+            {
+              "value": "bottom-right",
+              "label": "Lower right"
+            },
+            {
+              "value": "top-left",
+              "label": "Upper left"
+            },
+            {
+              "value": "top-center",
+              "label": "Upper middle"
+            },
+            {
+              "value": "top-right",
+              "label": "Upper right"
+            }
+          ],
+          "default": "bottom-right"
+        },
+        {
+          "key": "logo_size",
+          "label": "Logo width in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "12",
+          "hint": "Of the width of the map"
+        },
+        {
+          "key": "inset",
+          "label": "Inset of",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "An enlarged map in a corner of the features this expression picks out, such as kommunnamn = 'Göteborg', with a frame on the map where it is. Empty: none"
+        },
+        {
+          "key": "inset_corner",
+          "label": "Inset in the corner",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "bottom-left",
+              "label": "Lower left"
+            },
+            {
+              "value": "bottom-center",
+              "label": "Lower middle"
+            },
+            {
+              "value": "bottom-right",
+              "label": "Lower right"
+            },
+            {
+              "value": "top-left",
+              "label": "Upper left"
+            },
+            {
+              "value": "top-center",
+              "label": "Upper middle"
+            },
+            {
+              "value": "top-right",
+              "label": "Upper right"
+            }
+          ],
+          "default": "top-right"
+        },
+        {
+          "key": "inset_size",
+          "label": "Inset width in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "30",
+          "hint": "Of the width of the map"
+        },
+        {
+          "key": "knockout",
+          "label": "Lines break under labels",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "no",
+              "label": "No"
+            },
+            {
+              "value": "yes",
+              "label": "Yes"
+            }
+          ],
+          "default": "no",
+          "hint": "Roads, borders and outlines stop where a label goes, so that the names are free"
+        },
+        {
+          "key": "template",
+          "label": "Template",
+          "kind": "path",
+          "shape": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model",
+          "default": "",
+          "hint": "A map template, .ogmap, saved from another map: what this map does not set itself is taken from it, so that maps look alike"
+        },
+        {
+          "key": "notes",
+          "label": "Notes on the map",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "One to a line: east, north in the coordinates of the map, and the text, as 323000 6402000 New bridge 2027. Each points to its place with a line"
+        },
+        {
+          "key": "map_font",
+          "label": "Font of the map",
+          "kind": "path",
+          "shape": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model",
+          "default": "",
+          "hint": "A TTF or an OTF for all the text of the map: labels, legend, scale bar and the rest. Empty: the built-in one"
+        },
+        {
+          "key": "multiples_by",
+          "label": "A map for each value of",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "An attribute, such as year: the map is drawn once for each of its values, side by side at one scale, with one legend. Empty: one map"
+        },
+        {
+          "key": "multiples_columns",
+          "label": "Maps across",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Empty: as many as make a square"
+        },
+        {
+          "key": "atlas_by",
+          "label": "A page for each feature, named by",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "An attribute of a layer, such as kommunnamn: a map of each feature of it, centred on it and named by it, as pages of one PDF or a file each. Empty: one map"
+        },
+        {
+          "key": "focus",
+          "label": "The map is about",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "An expression that picks out the areas the map is about, such as lan = 'Västra Götaland': the rest is paler, and the areas can have a shadow or lines along their coast. Empty: all of it"
+        },
+        {
+          "key": "focus_rest",
+          "label": "The rest",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "fade",
+              "label": "Paler"
+            },
+            {
+              "value": "hide",
+              "label": "Left out"
+            }
+          ],
+          "default": "fade",
+          "hint": "Paler, or left out so that only the areas are drawn, in their own shape"
+        },
+        {
+          "key": "focus_fade",
+          "label": "The rest paler by %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "60",
+          "hint": "0 keeps it as it is"
+        },
+        {
+          "key": "focus_effect",
+          "label": "Around the areas",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "Nothing"
+            },
+            {
+              "value": "shadow",
+              "label": "A soft shadow"
+            },
+            {
+              "value": "waterlines",
+              "label": "Lines along the coast"
+            }
+          ],
+          "default": "none",
+          "hint": "Under the layers, around the areas the map is about"
+        },
+        {
+          "key": "simplify",
+          "label": "Simplify to the scale",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "no",
+              "label": "No"
+            },
+            {
+              "value": "yes",
+              "label": "Yes"
+            }
+          ],
+          "default": "no",
+          "hint": "Points of lines and outlines closer than a pixel are left out: calmer lines and smaller files, with no change that can be seen"
         },
         {
           "key": "source",
@@ -16409,6 +17032,76 @@
           "shape": "a string",
           "default": "5",
           "hint": "Natural breaks (Jenks), from 2 to 9"
+        }
+      ]
+    },
+    {
+      "type": "FlowLines",
+      "title": "Flow lines",
+      "group": "tool",
+      "category": "Maps",
+      "description": "A curved line from place to place for each flow, such as the people who commute from one municipality to another, with how many as an attribute: for a flow map in Draw map, with the width of the lines by value. The flows come in as rows with where they start and end, named as the places on Places are, which can be points or areas. Each line bends to its right, so that the flows both ways lie side by side, and the largest come last, so that they are drawn on top.",
+      "inputs": [
+        "Flows",
+        "Places"
+      ],
+      "outputs": [
+        "Lines"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "from",
+          "label": "From",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Flows",
+          "default": "",
+          "hint": "Where each flow starts: the name or code of a place"
+        },
+        {
+          "key": "to",
+          "label": "To",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Flows",
+          "default": "",
+          "hint": "Where it ends"
+        },
+        {
+          "key": "value",
+          "label": "How many",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Flows",
+          "default": "",
+          "hint": "Such as the number of commuters. Empty: each row counts as one"
+        },
+        {
+          "key": "id",
+          "label": "Names of the places",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Places",
+          "default": "",
+          "hint": "The attribute of Places that From and To name"
+        },
+        {
+          "key": "bend",
+          "label": "Bend in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "20",
+          "hint": "How much the lines curve, as a share of their length. Each bends to its right, so that the flows both ways lie side by side. 0: straight"
+        },
+        {
+          "key": "smallest",
+          "label": "Leave out fewer than",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Flows smaller than this are left out, so that the large ones can be seen. Empty: all"
         }
       ]
     },

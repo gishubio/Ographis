@@ -85,3 +85,51 @@ fn the_help_has_a_page_for_each_tool() {
     assert!(h.query_all_by_label_contains("Press F5 to run").next().is_some());
     shot(&mut h, "966-help-getting-started");
 }
+
+// ---------- Version 0.96.7 ----------
+
+/// Draw map shows its settings in sections that fold: Layers open, those with something set
+/// open and saying so when closed, the rest closed until clicked.
+#[test]
+fn draw_map_shows_its_settings_in_sections() {
+    let dir = example_copy();
+    std::fs::write(
+        dir.join("sections.json"),
+        r#"{
+      "format": "ographis/1", "name": "Sections",
+      "nodes": [
+        {"id": "map", "type": "MapRenderer", "name": "Map", "x": 0, "y": 0, "params": {"title": "Towns", "legend": "top-right"}}
+      ],
+      "edges": []
+    }"#,
+    )
+    .unwrap();
+    let mut app = App::new();
+    app.load(&dir.join("sections.json")).unwrap();
+    app.quiet = true;
+    let mut h = harness_for(app, egui::Theme::Light);
+    h.run_steps(4);
+    let map = graph_id(&h, "map");
+    h.state_mut().set_selection(vec![map]);
+    settle(&mut h);
+    for name in [
+        "Layers and coordinate system",
+        "Size and paper",
+        "Background and style",
+        "Title, logo and source",
+        "Legend, scale bar and north arrow",
+        "Grid and coordinates",
+        "What the map is about",
+    ] {
+        assert!(h.query_by_label(name).is_some(), "the section {}", name);
+    }
+    // The title is set, so its section is open; nothing of the size is, so its is closed.
+    assert!(h.query_by_label("Subtitle").is_some());
+    assert!(h.query_by_label("Margin in %").is_none());
+    h.get_by_label("Size and paper").scroll_to_me();
+    settle(&mut h);
+    h.get_by_label("Size and paper").click();
+    settle(&mut h);
+    shot(&mut h, "967-sections");
+    assert!(h.query_by_label("Margin in %").is_some());
+}

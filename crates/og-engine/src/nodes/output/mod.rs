@@ -233,6 +233,8 @@ pub(super) fn pdf_page(p: &P) -> Result<crate::io::PdfPage> {
         margin_mm: number_param(p, "pdf_margin", "The margin")?.unwrap_or(10.0),
         title: p.get("pdf_title").filter(|t| !t.trim().is_empty()),
         title_align: p.get("pdf_title_align").unwrap_or_else(|| "left".into()),
+        bleed_mm: number_param(p, "pdf_bleed", "The bleed")?.unwrap_or(0.0).clamp(0.0, 20.0),
+        marks: p.get("pdf_marks").as_deref() == Some("yes"),
     })
 }
 pub(super) const PDF_ORIENTATIONS: &[(&str, &str)] = &[("auto", "After the picture"), ("portrait", "Portrait"), ("landscape", "Landscape")];
@@ -627,6 +629,20 @@ pub(super) const WRITER_PARAMS: &[ParamSpec] = &[
         hint: "After the picture: landscape when the picture is wider than it is high",
     },
     ParamSpec { key: "pdf_margin", label: "Margin in mm", kind: ParamKind::Text, default: "10", hint: "" },
+    ParamSpec {
+        key: "pdf_bleed",
+        label: "Bleed in mm",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "For a printer: the page reaches this far past where it is cut, often 3 mm",
+    },
+    ParamSpec {
+        key: "pdf_marks",
+        label: "Crop marks",
+        kind: ParamKind::Choice(&[("no", "No"), ("yes", "Yes")]),
+        default: "no",
+        hint: "Short lines outside the page that show the printer where to cut",
+    },
     ParamSpec { key: "pdf_title", label: "Title", kind: ParamKind::Text, default: "", hint: "Written above the picture. Empty gives none" },
     ParamSpec {
         key: "pdf_title_align",
@@ -1317,17 +1333,55 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
                 );
             };
             let bytes = if ext == "svg" {
+                // The pages of a map series: a file each beside the first.
+                for (i, (name, img)) in pic.pages.iter().enumerate() {
+                    if let Some(v) = &img.vector {
+                        let one = page_path(&path, i + 2, name);
+                        std::fs::write(&one, crate::vector::svg(v)).map_err(|e| GbError(format!("Cannot write {}: {}", one.display(), e)))?;
+                        ctx.files.push(one);
+                    }
+                }
                 crate::vector::svg(&pic).into_bytes()
             } else {
                 let page = pdf_page(p)?;
-                let l = page.layout(pic.width as usize, pic.height as usize);
-                let heading = page.title.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(|t| (t, l.title_at.0, l.page_h - l.title_at.1));
+                let heading_of = |l: &crate::io::PdfLayout| {
+                    page.title.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(|t| (t, l.title_at.0, l.page_h - l.title_at.1))
+                };
                 let geo = vector_geo(ctx, table, &pic);
                 if geo.is_none() && table.crs.is_some() {
                     ctx.notes
                         .warn("The corners of the map could not be put in degrees, so the PDF has no coordinates. Choose PDF as picture for one that has.");
                 }
-                crate::vector::pdf(&pic, l.page_w, l.page_h, l.left, l.top, l.scale, heading, geo.as_ref())
+                // The first page, and the pages after it of a map series, each with its own
+                // place on the ground.
+                let mut all: Vec<(std::sync::Arc<crate::vector::Picture>, crate::io::PdfLayout, Option<crate::vector::Geo>)> =
+                    vec![(pic.clone(), page.layout(pic.width as usize, pic.height as usize), geo)];
+                for (_, img) in &pic.pages {
+                    if let Some(v) = &img.vector {
+                        let t = (**img).clone().into_table(table.crs);
+                        let g = vector_geo(ctx, &t, v);
+                        all.push((v.clone(), page.layout(v.width as usize, v.height as usize), g));
+                    }
+                }
+                let pages: Vec<crate::vector::PdfPage> = all
+                    .iter()
+                    .map(|(v, l, g)| crate::vector::PdfPage {
+                        pic: v,
+                        page_w: l.page_w,
+                        page_h: l.page_h,
+                        left: l.left,
+                        top: l.top,
+                        scale: l.scale,
+                        heading: heading_of(l),
+                        geo: g.as_ref(),
+                        bleed: page.bleed_mm * 72.0 / 25.4,
+                        marks: page.marks,
+                    })
+                    .collect();
+                if pages.len() > 1 {
+                    ctx.notes.info(format!("{} pages", pages.len()));
+                }
+                crate::vector::pdf_book(&pages)
             };
             std::fs::write(&path, bytes).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))?;
             let n = pic.ops.len();
@@ -1370,6 +1424,17 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             }
         }
         let files = b.write(table, &path, &WriteOpts { pdf, cog, image: image_opts(p, table)?, ..Default::default() }, &mut ctx.notes)?;
+        // The pages of a map series after the first: a file each.
+        let pages = table.image.as_ref().and_then(|i| i.vector.as_ref()).map(|v| v.pages.clone()).unwrap_or_default();
+        for (i, (name, img)) in pages.iter().enumerate() {
+            let one = page_path(&path, i + 2, name);
+            let t = (**img).clone().into_table(table.crs);
+            let more = b.write(&t, &one, &WriteOpts { pdf: pdf_page(p)?, cog, image: image_opts(p, &t)?, ..Default::default() }, &mut ctx.notes)?;
+            ctx.files.extend(more);
+        }
+        if !pages.is_empty() {
+            ctx.notes.info(format!("{} pictures, a file for each page", pages.len() + 1));
+        }
         if cog {
             ctx.notes.info("written as a Cloud Optimized GeoTIFF, with overviews");
         }
@@ -1571,6 +1636,16 @@ pub(super) const TYPES: &[NodeType] = &[
 /// Where a map drawn as shapes lies, for a PDF with coordinates: its corners from the
 /// placement of the picture, in degrees. None when the map has no coordinate system, or no
 /// backend can put the corners in degrees.
+/// The file of a later page of a map series: the name of the first with its number and name,
+/// as map_02_Ale.png.
+fn page_path(path: &std::path::Path, n: usize, name: &str) -> std::path::PathBuf {
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let ext = path.extension().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let safe: String = name.chars().map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' }).collect();
+    let safe = safe.trim_matches('_');
+    path.with_file_name(format!("{}_{:02}{}{}.{}", stem, n, if safe.is_empty() { "" } else { "_" }, safe, ext))
+}
+
 fn vector_geo(ctx: &mut NodeCtx, table: &Table, pic: &crate::vector::Picture) -> Option<crate::vector::Geo> {
     let epsg = table.crs?;
     let gt = table.image.as_ref()?.geotransform;

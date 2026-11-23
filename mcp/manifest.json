@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "ographis",
   "display_name": "Ographis",
-  "version": "0.96.6",
+  "version": "0.96.7",
   "description": "Spatial ETL on your own computer: describe data, build and run models of Ographis, and see maps of the result.",
   "long_description": "Ographis reads and writes some hundred formats of maps, rasters, point clouds and 3D models through GDAL and its own readers. With this extension Claude describes your files, finds the tools of Ographis, builds a model while you see it on the canvas, tries it on a sample, runs it and looks at maps of what came out. It works only in the folder you choose, never sees passwords or keys, never writes over a file it did not make, and goes to the web or writes to a database only when you allow it.",
   "author": {

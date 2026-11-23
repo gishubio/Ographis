@@ -3,6 +3,121 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.96.7
+
+### Added
+
+- **Labels of several lines.** The label of a layer in *Draw map* can have a line for each
+  attribute or expression, such as the name of a subregion and its area under it: Shift+Enter
+  in the form, or `newline()` in an expression. The lines are centred under each other.
+- **Numbers as people write them.** `format_number(x)` in expressions writes `7 937`, with
+  decimals if asked, `format_number(1234.5, 1)` as `1 234,5`, and `'en'` as a third value
+  for `1,234.5`.
+- **Labels as a mapmaker sets them**: in *italics*, as water is named; *bold where* an
+  expression holds, such as `population > 50000`; names of areas only on areas from a number
+  of pixels, or **beside them with a thin line** when they do not fit; names **again and
+  again** along long lines, such as a road or a river, every so many pixels; and the names
+  of areas move within their area to make room for the names of towns.
+- **Lines break under labels.** Roads, borders and outlines stop where a label is, so that
+  the names stand clear, in the picture and as clipping in a PDF and an SVG.
+- **Colour ramps the other way**, and a ramp **between two colours of your own**, chosen with
+  the colour picker.
+- **A fixed scale on paper.** *Size* in *Draw map* can be *At a scale on a paper*, such as
+  1:50 000 on A3 landscape (A4 to A1, landscape or portrait): the map is centred on the data,
+  and a warning says if the data reaches outside the paper.
+- **Title, subtitle and logo.** Written large at the top left, and a picture of your own in a
+  corner, as a share of the width. The scale bar and the north arrow move aside for it.
+- **An inset.** *Inset of* takes an expression, such as `name = 'Göteborg'`: what it picks
+  out is drawn larger in a corner, and a frame on the map shows where it is.
+- **Simpler lines at the scale.** *Simplify to the scale* leaves out corners closer than a
+  pixel to the one before, so that large layers draw faster and make smaller PDFs.
+- **Flow maps.** *Flow lines* (`FlowLines`) makes a curve between two places for each row of
+  a table of flows, such as commuters, bent to its right so that flows both ways lie side by
+  side. With *Size by* in *Draw map* the lines are as wide as their value, also in the legend.
+- **Arrow heads on lines**, at the end, the start or both, as long as a number of widths of
+  the line, for flows, one-way streets or routes; the line stops under the head, and the
+  legend shows it too. Lines can also stop a few pixels short of their ends, so that a flow
+  ends beside its town rather than under it.
+- **Railways and tramways.** Two new line styles: *Railway*, black and white in turn, and
+  *Tram, with ticks*, a thin line with short marks across it.
+- **Even class limits.** *even numbers* beside the classes rounds the limits, as 1 000 – 2 000
+  rather than 1 237 – 2 191, as far as each stays near where it was.
+- **Bivariate maps.** *and by* a second attribute colours areas by both at once, each in
+  thirds, in a square of nine colours, with the square and its two arrows in the legend.
+- **Dot density maps.** *Dots by* strews a dot for every so many of a value over each area,
+  the same each time the map is drawn, with "1 dot = …" in the legend.
+- **Nested circles in the legend.** *within each other* shows the sizes of points as circles
+  standing within each other, each with a line to its value.
+- **Bars in the legend.** Under the classes, a bar for each, as high as how many features it
+  has, so that an uneven classification shows at once.
+- **What the map is about.** *The map is about* takes an expression, such as a county: the
+  rest is paler, the areas are outlined, and they can have a soft shadow or lines along their
+  coast.
+- **Layers by scale.** A layer can be drawn only between two scales, such as small roads from
+  1:50 000 and closer. It leaves the legend too when it is not drawn.
+- **Small multiples.** *A map for each value of* draws the map once for each value of an
+  attribute, such as a year, side by side at one scale, each named, with one legend.
+- **Map series.** *A page for each feature, named by* draws a map of each feature of a layer,
+  such as each municipality, centred on it, named by it and with the rest paler: the pages of
+  one PDF, or a PNG or an SVG each. `examples/map_series.ographis` makes one of the subregions.
+- **Things around the map keep clear of each other.** The legend, the overview map, the scale
+  bar, the north arrow, the logo and the inset are placed before anything is drawn: those
+  that share a corner are stacked, in a column beside them when there is no more room, and
+  the labels keep clear of them all.
+- **In the middle of the top or the bottom.** *Upper middle* and *Lower middle* beside the
+  four corners, for the legend, the scale bar, the north arrow, the overview map, the logo and
+  the inset.
+- **Clear of the coordinates.** With a grid, what goes along the top and the left edge begins
+  past the coordinates written there, and the coordinates keep clear of the title, the legend
+  and the rest.
+- **The title where you want it.** *Title in the* places the title and the subtitle in a
+  corner or in the middle of the top or the bottom, lined up with that side. It can have a
+  box behind it, with an edge, its own font from a TTF or an OTF file, sizes and colours, and
+  bold or not.
+- **One font for the whole map.** *Font of the map* takes a TTF or an OTF for the labels,
+  the legend, the scale bar, the coordinates and the title, such as the font of an
+  organisation.
+- **A frame with the coordinates outside.** *Frame* draws a line around the map with a white
+  margin, and the coordinates of the grid are written in the margin on all four sides, with
+  ticks, as on a printed map. At a scale, the map keeps its size and the margin comes
+  outside it.
+- **The legend as you want it.** The colour of its box and of its edge, or none, and its rows
+  in up to six columns, each begun at a heading when one is near.
+- **Scale bar and north arrow in more styles.** The scale bar as fields dark and light or as
+  a line with ticks, with 1 to 10 fields and in kilometres or metres; the north arrow as an
+  arrow half dark, a thin arrow or a compass star.
+- **Layers laid on in other ways.** *laid on* under a layer: multiply, screen, darken, lighten
+  or overlay, so that shaded relief or an aerial photo shows through the colours. Kept as
+  such in a PDF and an SVG.
+- **Only the area itself.** *The rest* under *The map is about* can be *Left out*: only the
+  areas are drawn, in their own shape, background map and labels too, rather than a
+  rectangle.
+- **Smooth lines and areas.** *smooth* under a layer rounds off its corners, so that coarse
+  data looks smooth at small scales.
+- **A glow or a shadow.** *around* under a layer gives its features a soft glow around them or
+  a shadow under them, in a colour of your own.
+- **Notes on the map.** *Notes on the map*, one to a line: east, north and the text. Each is
+  written in a box with a line to its place, where it keeps clear of the rest; the labels
+  keep clear of it.
+- **Map templates.** *Save as a template…* keeps the look of a map, all but its layers,
+  title, notes and what it is about, in a .ogmap file; *Use a template…* gives a map that
+  look, and *Template* takes from the file whatever the map does not set itself, so that
+  a change to the template changes every map that uses it.
+- **Bleed and crop marks.** A PDF can reach a few millimetres past where it is cut, with
+  marks outside that show the printer where to cut, and the page as cut and the bleed named
+  in the PDF.
+- **Settings in sections.** The settings of *Draw map* are in sections that fold: layers, size
+  and paper, background, title, legend, grid, overview map and inset, what the map is about,
+  several maps or pages, and lines and labels. A section is open when anything in it is set.
+- **A colour picker** beside every setting that is a colour, such as the colour of the
+  background or of the frame of the overview map.
+- **The look of the overview map.** The colours of its areas and lines, of its frame and of
+  the box that shows where the map is.
+- **Checked for print.** When a map is made for paper, a logo that would be enlarged, a raster
+  whose cells become blocks and lines thinner than 0.1 mm get a warning.
+- `examples/cartography.ographis` shows them: commuting between the towns of Västra Götaland
+  (made-up numbers) at 1:1 300 000 on A4.
+
 ## 0.96.6
 
 ### Added

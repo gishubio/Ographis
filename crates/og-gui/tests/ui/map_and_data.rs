@@ -530,8 +530,15 @@ fn draw_map_shows_values_by_attribute() {
     settle(&mut h);
     h.state_mut().focus_node("map");
     settle(&mut h);
+    // The legend is in a section of its own, which a click opens.
+    h.get_by_label("Legend, scale bar and north arrow").scroll_to_me();
+    settle(&mut h);
+    h.get_by_label("Legend, scale bar and north arrow").click();
+    settle(&mut h);
     assert!(h.query_by_label("Legend").is_some());
     // Each layer has its values folded in; one is opened.
+    h.get_all_by_label("Values").next().unwrap().scroll_to_me();
+    settle(&mut h);
     let values = h.get_all_by_label("Values").next().unwrap().rect().center();
     click_at(&mut h, values);
     h.run_steps(3);

@@ -1,0 +1,15 @@
+from;to;people
+Borås;Göteborg;9200
+Göteborg;Borås;3100
+Alingsås;Göteborg;7400
+Göteborg;Alingsås;2300
+Kungälv;Göteborg;8800
+Trollhättan;Göteborg;3900
+Uddevalla;Trollhättan;2600
+Trollhättan;Uddevalla;2100
+Vänersborg;Trollhättan;4700
+Skövde;Göteborg;1200
+Lidköping;Skövde;1800
+Falköping;Skövde;2400
+Mariestad;Skövde;2100
+Ulricehamn;Borås;1500
