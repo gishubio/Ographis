@@ -9,15 +9,15 @@ Why Ographis works as it does, and what it does not do yet.
   metre-based systems and geodesic in degrees.
 - **Distances are in metres.** Buffer refuses a stream in degrees and asks for a
   Reproject before it.
-- **Points on a boundary count as inside**, in Clip, Join by location and Count points in
-  polygons. A point on the boundary between two areas therefore matches both. It is
+- **Points on a boundary count as inside**, in Clip and Join by location. A point on the boundary between two areas therefore matches both. It is
   counted in both, gets the attributes of the first, and is reported in a warning.
 - **Join by location does not overwrite.** An attribute of the polygon with a name the
   feature already has is not fetched, and the node says which. Give a prefix to get it
   under another name. A line or an area is placed by a point that lies on it, and keeps
   its own geometry.
-- **Count points in polygons counts single points.** Lines, areas and multipoints in the
-  Points port are not counted, with a warning. A polygon with no points gets 0.
+- **Join by location counts what it finds.** Counted only, it gives each feature the
+  number of features in Join that it touches or overlaps, as *Count points in polygons*
+  did before 0.96.8: a polygon with no points gets 0, and a line counts the points on it.
 - **Tools are named by what they do, types keep their names.** *Sort* is `Sorter` in the
   file, as before. A node that still has the name the program gave it, such as `Sorter` or
   `Sorter_2`, is shown as *Sort* and *Sort 2* when an older model is opened. A name
@@ -428,8 +428,7 @@ Why Ographis works as it does, and what it does not do yet.
   lines have an index.
 - Dissolve keeps only the group-by attributes and a count.
 - Join by location cannot take the feature in Join that a feature overlaps most.
-- Join by location and Count points in polygons test against polygons only: there is no
-  join to the nearest feature, and none by line or by distance.
+- Join by location cannot join to the nearest feature: Find nearest does that.
 - Dates are read as text, from Excel as `2026-10-11`. An output can write text, whole
   numbers and decimal numbers, not dates.
 - The attributes at each step are known after a run, not before. A new node shows them

@@ -1,0 +1,67 @@
+{
+ "type": "FeatureCollection",
+ "name": "made_up_sea_section",
+ "crs": {
+  "type": "name",
+  "properties": {
+   "name": "urn:ogc:def:crs:EPSG::3035"
+  }
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "The section"
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      3116250,
+      1848750
+     ],
+     [
+      3213750,
+      1848750
+     ],
+     [
+      3376250,
+      1836250
+     ],
+     [
+      3526250,
+      1848750
+     ],
+     [
+      3726250,
+      1793750
+     ],
+     [
+      3926250,
+      1748750
+     ],
+     [
+      4088750,
+      1693750
+     ],
+     [
+      4313750,
+      1756250
+     ],
+     [
+      4426250,
+      1723750
+     ],
+     [
+      4601250,
+      1711250
+     ],
+     [
+      4851250,
+      1811250
+     ]
+    ]
+   }
+  }
+ ]
+}

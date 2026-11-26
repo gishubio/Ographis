@@ -179,12 +179,13 @@
     },
     {
       "id": "length",
-      "type": "LengthCalculator",
+      "type": "AreaCalculator",
       "x": 868,
       "y": 500,
       "params": {
-        "name": "length_km",
-        "unit": "km"
+        "length_name": "length_km",
+        "length_unit": "km",
+        "what": "length"
       }
     },
     {

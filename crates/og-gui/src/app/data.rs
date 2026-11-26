@@ -69,7 +69,11 @@ impl App {
 
     pub(super) fn log_tab(&mut self, ui: &mut Ui, pal: &Palette) {
         let mut go = None;
-        ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        let mut area = ScrollArea::vertical().auto_shrink([false, false]);
+        if let Some(y) = self.log_scroll.take() {
+            area = area.vertical_scroll_offset(y);
+        }
+        let out = area.show(ui, |ui| {
             egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
                 let Some(r) = &self.result else {
                     ui.label(RichText::new("No run yet. Press Run or F5.").color(pal.muted));
@@ -78,26 +82,58 @@ impl App {
                 if self.live {
                     ui.label(RichText::new("Running. The log is filled in when the run has finished.").color(pal.muted));
                 }
-                for l in &r.log {
+                // The whole log is one text, so that it can be marked all at once, with Ctrl+A
+                // or with the mouse from end to end, and copied with Ctrl+C.
+                let font = theme::mono(12.0);
+                let mut job = egui::text::LayoutJob::default();
+                job.wrap.max_width = ui.available_width();
+                // Where each line begins in the text, in characters, to find the line clicked.
+                let mut starts: Vec<usize> = Vec::with_capacity(r.log.len());
+                let mut chars = 0usize;
+                for (k, l) in r.log.iter().enumerate() {
                     let color = match l.level {
                         Level::Info => pal.muted,
                         Level::Warn => pal.warn,
                         Level::Error => pal.err,
                     };
-                    ui.horizontal_top(|ui| {
-                        ui.add(egui::Label::new(RichText::new(level_tag(l.level)).font(theme::mono(12.0)).color(color)).selectable(true));
-                        let text = RichText::new(&l.msg).font(theme::mono(12.0)).color(if l.level == Level::Info { pal.ink } else { color });
-                        // The text can be marked with the mouse and copied with Ctrl+C, across
-                        // lines too; a plain click on a line about a node still goes to it.
-                        let label = egui::Label::new(text).wrap().selectable(true);
-                        let resp = ui.add(if l.node.is_some() { label.sense(Sense::click()) } else { label });
-                        if resp.clicked() {
-                            go = l.node.clone();
-                        }
-                    });
+                    starts.push(chars);
+                    let tag = format!("{} ", level_tag(l.level));
+                    let msg = if k + 1 < r.log.len() { format!("{}\n", l.msg) } else { l.msg.clone() };
+                    chars += tag.chars().count() + msg.chars().count();
+                    job.append(&tag, 0.0, egui::TextFormat::simple(font.clone(), color));
+                    job.append(&msg, 0.0, egui::TextFormat::simple(font.clone(), if l.level == Level::Info { pal.ink } else { color }));
+                }
+                let galley = ui.fonts_mut(|f| f.layout_job(job));
+                // A plain click on a line about a node still goes to it.
+                let resp = ui.add(egui::Label::new(galley.clone()).selectable(true).sense(Sense::click()));
+                if resp.clicked() {
+                    if let Some(pos) = resp.interact_pointer_pos() {
+                        let at: usize = galley.cursor_from_pos(pos - resp.rect.min).index.into();
+                        let line = starts.partition_point(|s| *s <= at).saturating_sub(1);
+                        go = r.log.get(line).and_then(|l| l.node.clone());
+                    }
                 }
             });
         });
+        // Marking text past the top or the bottom scrolls the log along, faster the further.
+        let rect = out.inner_rect;
+        let (down, from, at) = ui.input(|i| (i.pointer.primary_down(), i.pointer.press_origin(), i.pointer.latest_pos()));
+        if let (true, Some(from), Some(at)) = (down, from, at) {
+            if rect.contains(from) {
+                let past = if at.y < rect.top() {
+                    at.y - rect.top()
+                } else if at.y > rect.bottom() {
+                    at.y - rect.bottom()
+                } else {
+                    0.0
+                };
+                if past != 0.0 {
+                    let most = (out.content_size.y - rect.height()).max(0.0);
+                    self.log_scroll = Some((out.state.offset.y + past.clamp(-60.0, 60.0) * 0.5).clamp(0.0, most));
+                    ui.ctx().request_repaint();
+                }
+            }
+        }
         if let Some(id) = go {
             self.show_node(&id);
         }

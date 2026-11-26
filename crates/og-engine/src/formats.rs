@@ -189,11 +189,11 @@ pub const FORMATS: &[Format] = &[
         note: "A sheet shared with a link is read as it is; a private one is read and written with a Google service account that it is shared with",
     },
     Format {
-        name: "GeoTIFF and other rasters, heights from SRTM and DTED",
-        files: ".tif, .jp2, .asc, .hgt, .dt1 and others",
+        name: "GeoTIFF and other rasters, heights from SRTM, DTED and GTOPO30",
+        files: ".tif, .jp2, .asc, .hgt, .dt1, .dem, .bil and others",
         read: GDAL,
         write: GDAL,
-        note: "Cloud Optimized GeoTIFF read over the web and written; grids of values and pictures. Heights as ASCII grids (.asc), SRTM (.hgt) and DTED (.dt0, .dt1, .dt2)",
+        note: "Cloud Optimized GeoTIFF read over the web and written; grids of values and pictures. Heights as ASCII grids (.asc), SRTM (.hgt), DTED (.dt0, .dt1, .dt2), and GTOPO30, SRTM30 and GMTED as a .dem or .bil with its .hdr",
     },
     Format {
         name: "PNG and JPEG pictures",
@@ -208,6 +208,13 @@ pub const FORMATS: &[Format] = &[
         read: GDAL,
         write: GDAL,
         note: "Smaller than PNG and JPEG, with see-through parts kept; at a quality, or every pixel kept at 100. A world file (.wpw) when they have coordinates, which Ographis also reads",
+    },
+    Format {
+        name: "Moving pictures (GIF)",
+        files: ".gif",
+        read: "",
+        write: OWN,
+        note: "The pages of a map series, or the pictures of a sun study or a day in 3D, one after another",
     },
     Format {
         name: "SVG drawings",

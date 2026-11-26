@@ -113,3 +113,42 @@ fn runs_are_kept_with_their_logs_and_a_model_runs_once_at_a_time() {
     assert_eq!(gb(&["run", f]).0, 0);
     assert_eq!(std::fs::read_to_string(runs.join("history.csv")).unwrap().lines().count(), 4, "no line for the run without history");
 }
+
+#[test]
+fn a_folder_of_models_is_checked_with_a_report_of_what_went_wrong() {
+    let dir = tmp("check");
+    std::fs::write(dir.join("towns.csv"), "name;population;e;n\nBorås;75000;377605;6399600\nKinna;16000;362270;6376250\n").unwrap();
+    model(&dir, "a_good.json", "population > 20000");
+    std::fs::create_dir_all(dir.join("more")).unwrap();
+    std::fs::write(dir.join("more/towns.csv"), "name;population;e;n\nBorås;75000;377605;6399600\n").unwrap();
+    model(&dir.join("more"), "b_bad.json", "nonsense >");
+    std::fs::write(dir.join("more/c_broken.ographis"), "{\"nodes\": [").unwrap();
+    // Data beside the models is not a model, nor is a folder of runs or of results.
+    std::fs::write(dir.join("more/roads.json"), "{\"type\": \"FeatureCollection\", \"features\": []}").unwrap();
+    std::fs::create_dir_all(dir.join("a_good.runs")).unwrap();
+    model(&dir.join("a_good.runs"), "never.json", "population > 1");
+    let report = dir.join("check.json");
+    let (code, out) = gb(&["run", dir.to_str().unwrap(), "--recursive", "--quiet", "--no-history", "--report", report.to_str().unwrap()]);
+    assert_eq!(code, 1, "{}", out);
+    // A line for each model, and what went wrong, node by node, without the whole logs.
+    assert!(out.starts_with("Running 3 models in "), "{}", out);
+    assert!(out.contains("1/3") && out.contains("3/3") && !out.contains("never.json"), "{}", out);
+    assert!(out.contains("more/b_bad.json") && out.contains("    ERROR Big: "), "{}", out);
+    assert!(out.contains("3 models: 1 OK, 0 with warnings, 2 with errors"), "{}", out);
+    assert!(!out.contains("INFO "), "{}", out);
+    let r: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&report).unwrap()).unwrap();
+    let models = r["models"].as_array().unwrap();
+    let outcome: Vec<(&str, &str)> = models.iter().map(|m| (m["model"].as_str().unwrap(), m["outcome"].as_str().unwrap())).collect();
+    assert_eq!(outcome, [("a_good.json", "OK"), ("more/b_bad.json", "ERRORS"), ("more/c_broken.ographis", "ERRORS")]);
+    assert_eq!(models[1]["problems"][0]["node"], "Big");
+    assert!(models[2]["problems"][0]["message"].as_str().unwrap().contains("cannot be read"));
+    // Markdown and HTML too.
+    for name in ["check.md", "check.html"] {
+        let path = dir.join(name);
+        gb(&["run", dir.to_str().unwrap(), "-r", "-q", "--no-history", "--report", path.to_str().unwrap()]);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("more/b_bad.json") && text.contains("Big"), "{}", text);
+    }
+    // A report is for a folder.
+    assert_eq!(gb(&["run", dir.join("a_good.json").to_str().unwrap(), "--report", report.to_str().unwrap()]).0, 2);
+}

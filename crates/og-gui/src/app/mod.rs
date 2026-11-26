@@ -183,6 +183,8 @@ pub struct App {
     previous: Option<Arc<RunResult>>,
     /// A run is going on. The result is then filled in node by node.
     live: bool,
+    /// Where the log is to be scrolled to, while text is marked past its edge.
+    log_scroll: Option<f32>,
     /// The id of the node that is running right now.
     pub running_node: Option<String>,
     /// How far the node that runs has come, such as "read 430 373 of 4 303 726 features (10 %)".
@@ -461,6 +463,7 @@ impl App {
             paste_at: None,
             previous: None,
             live: false,
+            log_scroll: None,
             running_node: None,
             running_step: None,
             progress: (0, 0),

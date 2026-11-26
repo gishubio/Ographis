@@ -1,0 +1,186 @@
+{
+  "format": "ographis/1",
+  "name": "Clip by each square of a grid",
+  "description": "Cuts 3D models by the squares of a grid, each square on its own: a block across a line between squares is cut in two and closed with a wall, and each piece gets the number, row and column of its square. The pieces are written to a glTF file for each square, and drawn from above in a colour for each row of squares.",
+  "nodes": [
+    {
+      "id": "blocks",
+      "type": "Reader",
+      "x": 40,
+      "y": 40,
+      "comment": "The outlines of some blocks, with their number of floors",
+      "params": {
+        "path": "blocks.geojson"
+      }
+    },
+    {
+      "id": "extrude",
+      "type": "Extruder",
+      "x": 300,
+      "y": 40,
+      "comment": "The blocks as 3D models, 3.2 m a floor, as the meshes of a DWG would come",
+      "params": {
+        "height": "floors * 3.2",
+        "name": "id"
+      }
+    },
+    {
+      "id": "grid",
+      "type": "GridCreator",
+      "x": 300,
+      "y": 240,
+      "comment": "Squares of 40 m over the blocks, each with its number, row and column",
+      "params": {
+        "size": "40",
+        "keep": "touching"
+      }
+    },
+    {
+      "id": "clip",
+      "type": "Clipper",
+      "x": 560,
+      "y": 140,
+      "comment": "Each square cuts its own piece of the models, and gives it its number, row and column, as square_cell_id, square_row and square_col. A block across a line between squares is cut in two, each half closed with a wall",
+      "params": {
+        "each": "each",
+        "prefix": "square_",
+        "close": "true"
+      }
+    },
+    {
+      "id": "glb",
+      "type": "Writer",
+      "x": 820,
+      "y": 40,
+      "comment": "A glTF file for each square, named by its number",
+      "params": {
+        "path": "out/clip_by_grid/square_{square_cell_id}.glb"
+      }
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "x": 820,
+      "y": 240,
+      "comment": "The pieces seen from above in a colour for each row of squares, with the squares and their numbers, so that a block cut by a line between two rows shows its two halves",
+      "params": {
+        "width": "1000",
+        "title": "Blocks cut by a grid, a colour for each row",
+        "legend": "none",
+        "layers": [
+          {
+            "from": "grid:Grid",
+            "name": "Squares",
+            "fill": "none",
+            "stroke": "#555555",
+            "width": 1.2,
+            "label": "cell_id",
+            "label_size": 16,
+            "label_place": "center",
+            "label_colour": "#999999"
+          },
+          {
+            "from": "clip:Inside",
+            "name": "Pieces",
+            "color_by": "square_row",
+            "ramp": "categories",
+            "stroke": "#333333",
+            "width": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "x": 1080,
+      "y": 240,
+      "comment": "",
+      "params": {
+        "path": "out/clip_by_grid/blocks_cut_by_a_grid.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "blocks",
+        "Output"
+      ],
+      "to": [
+        "extrude",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "blocks",
+        "Output"
+      ],
+      "to": [
+        "grid",
+        "Extent"
+      ]
+    },
+    {
+      "from": [
+        "extrude",
+        "Output"
+      ],
+      "to": [
+        "clip",
+        "Clippee"
+      ]
+    },
+    {
+      "from": [
+        "grid",
+        "Grid"
+      ],
+      "to": [
+        "clip",
+        "Clipper"
+      ]
+    },
+    {
+      "from": [
+        "clip",
+        "Inside"
+      ],
+      "to": [
+        "glb",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "grid",
+        "Grid"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "clip",
+        "Inside"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    }
+  ]
+}

@@ -903,7 +903,7 @@ pub(super) const TIPS: &[&str] = &[
     "Edit → Settings (Ctrl+,) holds the database connections. PostGIS… on an Input reads tables from one, and the format PostGIS table of an Output writes to one. The model keeps only the name of the connection.",
     "Drag from a connected input to move its connection to another input. Right-click a connection to disable it, so that nothing goes through, or to delete it.",
     "Web addresses in comments and notes can be clicked. A note is resized from any edge or corner, as a comment.",
-    "An input reads JSON from a file or a web address. Flatten JSON, Explode JSON list and Extract JSON values make it a plain table.",
+    "An input reads JSON from a file or a web address. Extract JSON values and Explode JSON list make it a plain table.",
     "The format GeoSpatial PDF with layers of Output writes a PDF where each connected stream is a layer that can be turned on and off.",
     "Draw chart makes a bar chart of an attribute per name, such as the area of each municipality, to write as PNG or PDF.",
     "Under Values in a layer of Draw map, points get a size by a number, and points, lines and areas a colour by a value. Areas coloured by a number make a choropleth map. Legend puts a key to it in a corner.",

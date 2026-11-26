@@ -1,0 +1,542 @@
+{
+  "format": "ographis/1",
+  "name": "Five ways to draw a sea floor",
+  "description": "The made-up sea of inner_sea_floor drawn in five manners of bathymetric maps: depths in steps as layers of paper with soft shadows; land and sea in a colour each with strong relief; an atlas map with flat blue steps, cream land and named lands and waters; the sea alone in blues over a land of grey relief with a white coast and a frame with coordinates; and heights and depths in colours with relief.",
+  "nodes": [
+    {
+      "id": "floor",
+      "type": "Reader",
+      "x": 40,
+      "y": 40,
+      "comment": "Made-up heights and depths of an inland sea, in metres, on a grid of 2.5 km in ETRS89 / LAEA Europe",
+      "params": {
+        "path": "made_up_sea_floor.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "relief",
+      "type": "Reader",
+      "x": 40,
+      "y": 200,
+      "comment": "The same heights again, for the grey relief of the land under the sea in the fourth map",
+      "params": {
+        "path": "made_up_sea_floor.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "waters",
+      "type": "Reader",
+      "x": 40,
+      "y": 360,
+      "comment": "The names of the basins and the gulf",
+      "params": {
+        "path": "made_up_sea_waters.geojson"
+      }
+    },
+    {
+      "id": "lands",
+      "type": "Reader",
+      "x": 40,
+      "y": 520,
+      "comment": "The names of the lands around the sea",
+      "params": {
+        "path": "made_up_sea_lands.geojson"
+      }
+    },
+    {
+      "id": "coast",
+      "type": "ContourGenerator",
+      "x": 300,
+      "y": 40,
+      "comment": "The coast: the line at 0 m. Every 100 km is more than the heights reach, so it is the only line",
+      "params": {
+        "interval": "100000",
+        "base": "0",
+        "kind": "lines"
+      }
+    },
+    {
+      "id": "paper",
+      "type": "MapRenderer",
+      "x": 620,
+      "y": 40,
+      "comment": "Depths in steps as layers of paper: from pale lilac at the shore through blues to black, each step casting a soft shadow on the deeper ones, the land white",
+      "params": {
+        "width": "1400",
+        "margin": "2",
+        "title_place": "top-left",
+        "legend": "top-right",
+        "title": "Depths as layers of paper",
+        "title_fill": "none",
+        "legend_fill": "none",
+        "legend_line": "none",
+        "background": "colour",
+        "background_colour": "#f6f5f8",
+        "layers": [
+          {
+            "from": "coast:Contours",
+            "name": "Coast",
+            "stroke": "#7a7983",
+            "width": 0.6,
+            "legend": false
+          },
+          {
+            "from": "floor:Output",
+            "name": "Depth",
+            "raster": "paper"
+          }
+        ]
+      }
+    },
+    {
+      "id": "paper_png",
+      "type": "Writer",
+      "x": 960,
+      "y": 40,
+      "comment": "",
+      "params": {
+        "path": "out/sea_floor_styles/paper.png"
+      }
+    },
+    {
+      "id": "landsea",
+      "type": "MapRenderer",
+      "x": 620,
+      "y": 280,
+      "comment": "Land and sea in a colour each, beige and turquoise, both with a strong relief, as a model seen from above",
+      "params": {
+        "width": "1400",
+        "margin": "2",
+        "title_place": "top-left",
+        "legend": "none",
+        "title": "Land and sea in two colours",
+        "title_fill": "#f4ece0",
+        "layers": [
+          {
+            "from": "floor:Output",
+            "name": "Heights and depths",
+            "raster": "landsea"
+          }
+        ]
+      }
+    },
+    {
+      "id": "landsea_png",
+      "type": "Writer",
+      "x": 960,
+      "y": 280,
+      "comment": "",
+      "params": {
+        "path": "out/sea_floor_styles/landsea.png"
+      }
+    },
+    {
+      "id": "atlas",
+      "type": "MapRenderer",
+      "x": 620,
+      "y": 520,
+      "comment": "An atlas map: the depths in flat blue steps, the land cream, the names of the lands in bold capitals and of the waters in blue italics, and degrees of latitude and longitude",
+      "params": {
+        "width": "1400",
+        "margin": "2",
+        "title_place": "top-left",
+        "legend": "top-right",
+        "title": "An atlas map",
+        "title_fill": "#fdf3d4",
+        "grid": "degrees",
+        "grid_every": "5",
+        "layers": [
+          {
+            "from": "lands:Output",
+            "name": "Lands",
+            "fill": "none",
+            "stroke": "none",
+            "size": 0,
+            "legend": false,
+            "label": "name",
+            "label_place": "center",
+            "label_bold": true,
+            "label_size": 17,
+            "label_colour": "#2b2a26",
+            "label_halo": "none"
+          },
+          {
+            "from": "waters:Output",
+            "name": "Waters",
+            "fill": "none",
+            "stroke": "none",
+            "size": 0,
+            "legend": false,
+            "label": "name",
+            "label_italic": true,
+            "label_place": "center",
+            "label_size": 17,
+            "label_colour": "#eaf6ff",
+            "label_halo": "none"
+          },
+          {
+            "from": "coast:Contours",
+            "name": "Coast",
+            "stroke": "#8c8574",
+            "width": 0.6,
+            "legend": false
+          },
+          {
+            "from": "floor:Output",
+            "name": "Depth",
+            "raster": "bands",
+            "raster_colors": [
+              [
+                "0",
+                "#fdf0c8",
+                "Land"
+              ],
+              [
+                "-200",
+                "#7fd0f7",
+                "0–200 m"
+              ],
+              [
+                "-1000",
+                "#3db4f2",
+                "200–1 000 m"
+              ],
+              [
+                "-2000",
+                "#2a97e3",
+                "1 000–2 000 m"
+              ],
+              [
+                "-3000",
+                "#1f7bd2",
+                "2 000–3 000 m"
+              ],
+              [
+                "-4000",
+                "#1863bd",
+                "3 000–4 000 m"
+              ],
+              [
+                "-100000",
+                "#134ca3",
+                "Deeper"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "atlas_png",
+      "type": "Writer",
+      "x": 960,
+      "y": 520,
+      "comment": "",
+      "params": {
+        "path": "out/sea_floor_styles/atlas.png"
+      }
+    },
+    {
+      "id": "grey_land",
+      "type": "MapRenderer",
+      "x": 620,
+      "y": 760,
+      "comment": "The sea alone in blues with relief over a land of grey relief, a white line along the coast, the waters in italics and a frame with the coordinates",
+      "params": {
+        "width": "1400",
+        "margin": "2",
+        "title_place": "top-left",
+        "legend": "top-right",
+        "title": "The sea over a grey land",
+        "title_fill": "#ffffff",
+        "map_frame": "frame",
+        "grid": "degrees",
+        "grid_every": "5",
+        "layers": [
+          {
+            "from": "waters:Output",
+            "name": "Waters",
+            "fill": "none",
+            "stroke": "none",
+            "size": 0,
+            "legend": false,
+            "label": "name",
+            "label_italic": true,
+            "label_place": "center",
+            "label_size": 17,
+            "label_colour": "#1b1b1b",
+            "label_halo": "none"
+          },
+          {
+            "from": "coast:Contours",
+            "name": "Coast",
+            "stroke": "#ffffff",
+            "width": 2.0,
+            "legend": false
+          },
+          {
+            "from": "floor:Output",
+            "name": "Depth",
+            "raster": "sea"
+          },
+          {
+            "from": "relief:Output",
+            "name": "Land",
+            "raster": "soft",
+            "legend": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "grey_land_png",
+      "type": "Writer",
+      "x": 960,
+      "y": 760,
+      "comment": "",
+      "params": {
+        "path": "out/sea_floor_styles/grey_land.png"
+      }
+    },
+    {
+      "id": "hypsometric",
+      "type": "MapRenderer",
+      "x": 620,
+      "y": 1000,
+      "comment": "Heights in colours from green lowland to brown hills and depths in blues, both with relief",
+      "params": {
+        "width": "1400",
+        "margin": "2",
+        "title_place": "top-left",
+        "legend": "top-right",
+        "title": "Heights and depths in colours",
+        "title_fill": "#ffffff",
+        "layers": [
+          {
+            "from": "waters:Output",
+            "name": "Waters",
+            "fill": "none",
+            "stroke": "none",
+            "size": 0,
+            "legend": false,
+            "label": "name",
+            "label_italic": true,
+            "label_place": "center",
+            "label_size": 17,
+            "label_colour": "#173a63",
+            "label_halo": "none"
+          },
+          {
+            "from": "floor:Output",
+            "name": "Height and depth",
+            "raster": "depths"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hypsometric_png",
+      "type": "Writer",
+      "x": 960,
+      "y": 1000,
+      "comment": "",
+      "params": {
+        "path": "out/sea_floor_styles/hypsometric.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "floor",
+        "Output"
+      ],
+      "to": [
+        "coast",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "coast",
+        "Contours"
+      ],
+      "to": [
+        "paper",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "floor",
+        "Output"
+      ],
+      "to": [
+        "paper",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "paper",
+        "Map"
+      ],
+      "to": [
+        "paper_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "floor",
+        "Output"
+      ],
+      "to": [
+        "landsea",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "landsea",
+        "Map"
+      ],
+      "to": [
+        "landsea_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "lands",
+        "Output"
+      ],
+      "to": [
+        "atlas",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "waters",
+        "Output"
+      ],
+      "to": [
+        "atlas",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "coast",
+        "Contours"
+      ],
+      "to": [
+        "atlas",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "floor",
+        "Output"
+      ],
+      "to": [
+        "atlas",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "atlas",
+        "Map"
+      ],
+      "to": [
+        "atlas_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "waters",
+        "Output"
+      ],
+      "to": [
+        "grey_land",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "coast",
+        "Contours"
+      ],
+      "to": [
+        "grey_land",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "floor",
+        "Output"
+      ],
+      "to": [
+        "grey_land",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "relief",
+        "Output"
+      ],
+      "to": [
+        "grey_land",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "grey_land",
+        "Map"
+      ],
+      "to": [
+        "grey_land_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "waters",
+        "Output"
+      ],
+      "to": [
+        "hypsometric",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "floor",
+        "Output"
+      ],
+      "to": [
+        "hypsometric",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "hypsometric",
+        "Map"
+      ],
+      "to": [
+        "hypsometric_png",
+        "Input"
+      ]
+    }
+  ]
+}

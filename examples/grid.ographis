@@ -36,11 +36,13 @@
     },
     {
       "id": "count",
-      "type": "PointCounter",
+      "type": "SpatialJoiner",
       "x": 444,
       "y": 180,
       "params": {
-        "name": "towns"
+        "count": "towns",
+        "mode": "count",
+        "relation": "intersects"
       },
       "comment": "Towns per square"
     },
@@ -108,7 +110,7 @@
       ],
       "to": [
         "count",
-        "Polygons"
+        "Features"
       ]
     },
     {
@@ -118,13 +120,13 @@
       ],
       "to": [
         "count",
-        "Points"
+        "Join"
       ]
     },
     {
       "from": [
         "count",
-        "Polygons"
+        "Joined"
       ],
       "to": [
         "some",

@@ -12,6 +12,12 @@ use crate::model::{Grid, RasterImage};
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+#[path = "render3d_weather.rs"]
+mod weather;
+
+#[path = "render3d_more.rs"]
+mod more;
+
 type V3 = [f32; 3];
 
 fn add(a: V3, b: V3) -> V3 {
@@ -382,6 +388,8 @@ pub enum Look {
     White,
     /// All light wood, as a model of a city in a planning office.
     Wood,
+    /// Paper white, as a drawing, best with lines along the edges.
+    Sketch,
 }
 
 /// Water: a surface at a height, everywhere or within some areas.
@@ -465,6 +473,60 @@ pub struct Settings {
     pub sky_tint: [f32; 3],
     /// How much stronger the colours are made, 0 for as they are: 0.15 is a little livelier.
     pub vivid: f32,
+    /// Snow falling and rain, 0 to 1: flakes and streaks in the air in front of the eye.
+    pub snow_fall: f32,
+    pub rain: f32,
+    /// Snow lying on all that faces up, 0 to 1: from a dusting to white all over.
+    pub snow_cover: f32,
+    /// How wet the ground is, 0 to 1: darker, with puddles that mirror what is around.
+    pub wet: f32,
+    /// Bolts of lightning in the sky, whose flash lights the scene. 0: none.
+    pub lightning: u32,
+    /// Fog lying in the low parts, 0 to 1, and how deep it is in metres. None: by the scene.
+    pub fog: f32,
+    pub fog_height: Option<f64>,
+    /// Night: the moon stands where the sun would, among stars, and the light is the moon's.
+    pub night: bool,
+    /// Northern lights in the sky to the north at night, 0 to 1.
+    pub aurora: f32,
+    /// Lines along the edges of what is seen and where surfaces turn, as in a drawing.
+    pub outlines: bool,
+    /// Names floating over places: a point on the ground, in the coordinates of the models,
+    /// and the name; and how high above the ground they float, in metres.
+    pub names: Vec<([f64; 3], String)>,
+    pub names_height: f64,
+    /// Rime on everything out in the cold and frost on the panes, 0 to 1.
+    pub frost: f32,
+    /// The water frozen, 0 to 1: ice with cracks and snow blown over it.
+    pub ice: f32,
+    /// Icicles under the eaves, 0 to 1.
+    pub icicles: f32,
+    /// The share of the buildings with smoke or steam rising from them, 0 to 1.
+    pub smoke: f32,
+    /// The share of the lit windows with an advent candlestick or a star, 0 to 1.
+    pub advent: f32,
+    /// Rays of sun through cloud, fog and haze, 0 to 1.
+    pub sun_rays: f32,
+    /// The shadows of clouds drifting over the land, 0 to 1.
+    pub cloud_shadows: f32,
+    /// A rainbow opposite the sun, 0 to 1. Seen when the sun is lower than 42°.
+    pub rainbow: f32,
+    /// Cones of light under the lamps, as in fog or snow, 0 to 1, and how high the lamps
+    /// stand, in metres.
+    pub lamp_cones: f32,
+    pub lamp_height: f32,
+    /// How hard the wind blows, 0 to 1, and where it comes from, in degrees clockwise from
+    /// north: it slants the rain and the snow, raises waves and lays down smoke.
+    pub wind: f32,
+    pub wind_from: f64,
+    /// Roads, as lines in the coordinates of the models, along which the lights of cars
+    /// make trails at night; and how bright, 0 to 1.
+    pub trails: Vec<Vec<[f64; 3]>>,
+    pub trail_strength: f32,
+    /// Bursts of fireworks in the sky.
+    pub fireworks: u32,
+    /// Tilt-shift, 0 to 1: sharp in a band across the picture, blurred above and below.
+    pub tilt_shift: f32,
 }
 
 /// A light at a point, as a street lamp, in the coordinates of the models.
@@ -516,6 +578,34 @@ impl Default for Settings {
             lights: Vec::new(),
             blur: 0.0,
             focus: None,
+            snow_fall: 0.0,
+            rain: 0.0,
+            snow_cover: 0.0,
+            wet: 0.0,
+            lightning: 0,
+            fog: 0.0,
+            fog_height: None,
+            night: false,
+            aurora: 0.0,
+            outlines: false,
+            names: Vec::new(),
+            names_height: 30.0,
+            frost: 0.0,
+            ice: 0.0,
+            icicles: 0.0,
+            smoke: 0.0,
+            advent: 0.0,
+            sun_rays: 0.0,
+            cloud_shadows: 0.0,
+            rainbow: 0.0,
+            lamp_cones: 0.0,
+            lamp_height: 5.0,
+            wind: 0.0,
+            wind_from: 225.0,
+            trails: Vec::new(),
+            trail_strength: 1.0,
+            fireworks: 0,
+            tilt_shift: 0.0,
         }
     }
 }
@@ -636,6 +726,7 @@ struct Sky {
     cloud_grey: V3,
     /// The colour the light from the sky is given.
     tint: V3,
+    night: Option<weather::NightSky>,
 }
 
 impl Sky {
@@ -646,6 +737,7 @@ impl Sky {
 
     fn untinted(&self, d: V3) -> V3 {
         let clear = match (&self.model, self.background) {
+            _ if self.night.is_some() => self.night.as_ref().expect("night").light(d),
             (Some(m), Background::Sky) => m.light(d),
             _ => {
                 // An even, white room, a little lighter above.
@@ -664,6 +756,15 @@ impl Sky {
 
     /// The sky as the eye sees it: with the clouds where they are.
     fn seen(&self, d: V3) -> V3 {
+        if let (Some(n), Background::Sky) = (&self.night, self.background) {
+            let c = n.seen(d, self.clouds);
+            if self.clouds <= 0.0 || d[2] <= 0.0 {
+                return c;
+            }
+            let k = 1.0 / (d[2] + 0.06);
+            let cover = ((fbm(d[0] * k * 1.6 + 7.3, d[1] * k * 1.6 - 3.1, 5) - (1.0 - self.clouds) + 0.12) / 0.3).clamp(0.0, 1.0);
+            return add(mul(c, 1.0 - cover), mul(self.cloud_grey, cover));
+        }
         let base = match (&self.model, self.background) {
             (Some(m), Background::Sky) => m.light(d),
             _ => return self.light(d),
@@ -739,6 +840,53 @@ struct World<'a> {
     windows: bool,
     /// The lowest point of each object, where its first floor begins.
     object_base: Vec<f32>,
+    /// Where the middle of the scene is, in the coordinates of the models.
+    origin: [f64; 3],
+    /// The map laid over the terrain, looked up where each ray meets it.
+    drape: Option<&'a RasterImage>,
+    look: Look,
+    snow_cover: f32,
+    wet: f32,
+    fog: Option<Fog>,
+    /// The flash of a bolt of lightning, a light far off that lights everything.
+    flash: Option<LightIn>,
+    frost: f32,
+    ice: f32,
+    advent: f32,
+    cloud_shadows: f32,
+    /// Where the shadows of the clouds are, moved with the wind, and how large the clouds are.
+    cloud_offset: [f32; 3],
+    /// Where the icicles begin among the triangles of the terrain, which they are kept with.
+    icicles_from: u32,
+}
+
+/// Fog lying low: how thick it is at its foot, how fast it thins upwards, where its foot is,
+/// and its colour.
+struct Fog {
+    thick: f32,
+    depth: f32,
+    foot: f32,
+    colour: V3,
+}
+
+/// The colour of snow, a little blue in the shade of the sky.
+const SNOW: V3 = [0.86, 0.88, 0.92];
+
+/// Smooth from 0 at `a` to 1 at `b`.
+fn smooth(a: f32, b: f32, x: f32) -> f32 {
+    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// How much snow lies at a place on a surface that faces `up`: on what is flat first, and on
+/// steeper slopes with more snow, in drifts where it is not all white.
+fn snow_on(cover: f32, up: f32, p: V3) -> f32 {
+    if cover <= 0.0 || up <= 0.2 {
+        return 0.0;
+    }
+    let steep = smooth(0.85 - 0.5 * cover, 0.95 - 0.45 * cover, up);
+    let drifts = if cover >= 0.95 { 1.0 } else { smooth(1.0 - cover - 0.12, 1.0 - cover + 0.12, fbm(p[0] * 0.45 + 5.0, p[1] * 0.45 - 2.0, 4)) };
+    steep * drifts
 }
 
 /// A light at a point, in the coordinates of the scene: its light at 1 m, and how far it
@@ -875,6 +1023,7 @@ pub fn render(meshes: &[&Mesh], terrain: Option<&Grid>, drape: Option<&RasterIma
                         let t = crate::terrain::tint(c, 0.5);
                         [linear(t[0] as f32 / 255.0), linear(t[1] as f32 / 255.0), linear(t[2] as f32 / 255.0)]
                     }
+                    None if s.look == Look::Sketch => [0.80, 0.79, 0.76],
                     None => [0.16, 0.26, 0.11],
                 }
             };
@@ -911,6 +1060,15 @@ pub fn render(meshes: &[&Mesh], terrain: Option<&Grid>, drape: Option<&RasterIma
             }
         }
     }
+    // Icicles under the eaves, kept with the triangles of the terrain, in a colour of ice.
+    let icicles_from = terrain_colour.len() as u32;
+    if let Some(m) = mesh.filter(|_| s.icicles > 0.0) {
+        for tri in more::icicles(m, &local, s.icicles.clamp(0.0, 1.0)) {
+            prims.push(Prim { index: terrain_colour.len() as u32, terrain: true });
+            corners.push(tri);
+            terrain_colour.push([more::ICE; 3]);
+        }
+    }
     // Water that covers everything stands in for the floor.
     let sea = s.water.as_ref().is_some_and(|w| w.areas.is_empty());
     let floor = (terrain.is_none() && s.ground && mesh.is_some() && !sea).then_some(-0.002f32);
@@ -929,6 +1087,7 @@ pub fn render(meshes: &[&Mesh], terrain: Option<&Grid>, drape: Option<&RasterIma
                     Look::Materials => albedo,
                     Look::White => [0.70, 0.70, 0.68],
                     Look::Wood => wood,
+                    Look::Sketch => [0.80, 0.79, 0.76],
                 };
                 // How much a surface mirrors, from its shine: metal and polished stone much,
                 // painted walls hardly at all.
@@ -956,7 +1115,12 @@ pub fn render(meshes: &[&Mesh], terrain: Option<&Grid>, drape: Option<&RasterIma
     let haze = s.haze.clamp(0.0, 1.0);
     let through_air = sun_colour(salt.max(0.0), haze);
     let above = ((salt.to_degrees() + 1.0) / 3.0).clamp(0.0, 1.0);
-    let sun_col = mul(hadamard(hadamard([1.0, 0.95, 0.88], through_air), s.sun_tint), 2.6 * s.sun_strength * above * (1.0 - 0.92 * clouds.powf(1.3)));
+    let sun_col = if s.night {
+        // The moon: a cool, faint light.
+        mul(hadamard([0.55, 0.66, 1.0], s.sun_tint), 0.075 * s.sun_strength * above * (1.0 - 0.92 * clouds.powf(1.3)))
+    } else {
+        mul(hadamard(hadamard([1.0, 0.95, 0.88], through_air), s.sun_tint), 2.6 * s.sun_strength * above * (1.0 - 0.92 * clouds.powf(1.3)))
+    };
     let sun_size = s.sun_size as f32 + 30.0 * clouds * clouds;
     let sun_cos = (sun_size.clamp(0.1, 60.0) / 2.0).to_radians().cos();
     // Cloud or not, a sky in more cloud lights a little more evenly, and the light through
@@ -964,9 +1128,19 @@ pub fn render(meshes: &[&Mesh], terrain: Option<&Grid>, drape: Option<&RasterIma
     let sky_k = s.sky_strength * (1.0 + 0.4 * clouds + 0.2 * haze);
     let model = (s.background == Background::Sky).then(|| Preetham::new(sun_dir, 2.4 + 6.0 * haze));
     let grey_level = model.as_ref().map_or(0.45, |m| (m.light([0.0, 0.0, 1.0]).iter().sum::<f32>() / 3.0 * 1.4).max(0.03));
-    let cloud_grey = mul([0.92, 0.93, 0.96], grey_level);
+    let cloud_grey = if s.night {
+        // Clouds at night are dark, and warm over a lit town.
+        if s.lights.is_empty() && s.lit_windows <= 0.0 {
+            [0.010, 0.011, 0.015]
+        } else {
+            [0.026, 0.020, 0.016]
+        }
+    } else {
+        mul([0.92, 0.93, 0.96], grey_level)
+    };
     let cloud_lit = add(mul(cloud_grey, 1.25), mul(sun_col, 0.12 * (1.0 - clouds)));
-    let sky = Sky { background: s.background, model, clouds, cloud_lit, cloud_grey, tint: s.sky_tint };
+    let night = s.night.then(|| weather::NightSky { moon: sun_dir, aurora: s.aurora.clamp(0.0, 1.0) });
+    let sky = Sky { background: s.background, model, clouds, cloud_lit, cloud_grey, tint: s.sky_tint, night };
     let water = s.water.as_ref().map(|w| {
         let z = (w.level - origin[2]) as f32;
         let areas = w
@@ -979,7 +1153,9 @@ pub fn render(meshes: &[&Mesh], terrain: Option<&Grid>, drape: Option<&RasterIma
                 Some(([r.min().x, r.min().y, r.max().x, r.max().y], q))
             })
             .collect();
-        WaterIn { z, areas, waves: w.waves.clamp(0.0, 1.0) }
+        // A wind raises waves, and ice has none.
+        let waves = (w.waves + s.wind.clamp(0.0, 1.0) * 0.8).clamp(0.0, 1.0) * (1.0 - s.ice.clamp(0.0, 1.0));
+        WaterIn { z, areas, waves }
     });
     let haze_len = (haze > 0.0).then(|| 40_000.0 * (1.0 - haze).powi(2) + 300.0);
     // The lights: a street lamp lights the ground a few metres around it, and is seen as far
@@ -1023,7 +1199,25 @@ pub fn render(meshes: &[&Mesh], terrain: Option<&Grid>, drape: Option<&RasterIma
         lit_windows: s.lit_windows.clamp(0.0, 1.0),
         windows: s.windows,
         object_base,
+        origin,
+        drape: drape.filter(|_| terrain.is_some()),
+        look: s.look,
+        snow_cover: s.snow_cover.clamp(0.0, 1.0),
+        wet: s.wet.clamp(0.0, 1.0),
+        fog: None,
+        flash: None,
+        frost: s.frost.clamp(0.0, 1.0),
+        ice: s.ice.clamp(0.0, 1.0),
+        advent: s.advent.clamp(0.0, 1.0),
+        cloud_shadows: s.cloud_shadows.clamp(0.0, 1.0),
+        cloud_offset: {
+            let d = more::down_wind(s.wind_from);
+            let scale = ((hi[0] - lo[0]).max(hi[1] - lo[1]) as f32 * 0.35).clamp(40.0, 900.0);
+            [-d[0] * scale * 0.5 * s.wind, -d[1] * scale * 0.5 * s.wind, scale]
+        },
+        icicles_from,
     };
+    let mut world = world;
 
     // The camera, far enough away to see everything at the angle it has.
     let size = [(hi[0] - lo[0]) as f32, (hi[1] - lo[1]) as f32, (hi[2] - lo[2]) as f32];
@@ -1051,7 +1245,50 @@ pub fn render(meshes: &[&Mesh], terrain: Option<&Grid>, drape: Option<&RasterIma
     let light = Light { sun: sun_dir, sun_col, sun_cos, sky_k };
     // As a camera does: in the dimmer light of dusk the picture is exposed longer, so that
     // the warm light shows rather than darkness. The noon sky is the measure.
+    // Fog in the low parts, as deep as a quarter of the heights of the scene, and thick
+    // enough at its foot to hide what is as far as the camera.
+    if s.fog > 0.0 {
+        let depth = match s.fog_height {
+            Some(h) if h > 0.0 => h as f32,
+            _ => ((hi[2] - lo[2]) as f32 * 0.35).max(6.0),
+        };
+        let horizon = world.sky.light(norm([fwd[0], fwd[1], 0.05]));
+        let colour = add(mul(horizon, light.sky_k * 1.15), mul(light.sun_col, 0.1 * light.sun[2].max(0.0)));
+        // Thick enough that a ray down through it at the angle of the camera is mostly hidden
+        // at full fog. Its foot is at the foot of the scene, and lower down it is thicker.
+        let steep = (-fwd[2]).max(0.1);
+        world.fog = Some(Fog { thick: s.fog.clamp(0.0, 1.0) * 1.6 * steep / depth, depth, foot: 0.0, colour });
+    }
+    let cam = weather::Cam {
+        eye,
+        fwd,
+        right,
+        up,
+        half_w,
+        half_h,
+        parallel: s.parallel,
+        width: s.width,
+        height: s.height,
+        reach: dot(sub(target, eye), fwd).max(1.0),
+    };
+    // Where the bolts of lightning strike; the flash of the first lights the scene.
+    let bolts = if s.lightning > 0 { weather::bolt_places(&cam, target, 0.0, s.lightning.min(5)) } else { Vec::new() };
+    if let Some((g, top)) = bolts.first() {
+        let at = add(*g, mul(sub(*top, *g), 0.6));
+        let far = sub(at, target);
+        world.flash = Some(LightIn { at, power: mul([0.8, 0.85, 1.0], 1.4 * dot(far, far)), reach: f32::INFINITY });
+    }
+    // Fireworks, whose light colours what is below them, where no lightning does.
+    let bursts = if s.fireworks > 0 { more::bursts(&cam, target, s.fireworks.min(40)) } else { Vec::new() };
+    if let (None, Some((at, _))) = (&world.flash, bursts.first()) {
+        // Their light together, from the first of them, in the mean of their colours.
+        let mean = mul(bursts.iter().fold([0.0; 3], |a, b| add(a, b.1)), 1.0 / bursts.len() as f32);
+        let far = sub(*at, target);
+        let k = if s.night { 0.006 } else { 0.001 };
+        world.flash = Some(LightIn { at: *at, power: mul(mean, k * dot(far, far) * (bursts.len() as f32).sqrt()), reach: f32::INFINITY });
+    }
     let exposure = match &world.sky.model {
+        _ if s.night => 5.0,
         Some(m) => {
             let z = m.light([0.0, 0.0, 1.0]);
             let lum = 0.2126 * z[0] + 0.7152 * z[1] + 0.0722 * z[2];
@@ -1071,13 +1308,54 @@ pub fn render(meshes: &[&Mesh], terrain: Option<&Grid>, drape: Option<&RasterIma
     // alike for a house and for a town.
     let lens = if s.parallel { 0.0 } else { s.blur.clamp(0.0, 1.0) * 0.06 * to_target };
     let n = s.samples.clamp(1, 1024);
-    let lines: Vec<(Vec<V3>, Vec<f32>)> = (0..s.height)
+    // What the middle of each pixel sees, for what is laid on the picture after: how far,
+    // which object and which way it faces.
+    let gbuffer = s.snow_fall > 0.0
+        || s.rain > 0.0
+        || !bolts.is_empty()
+        || s.outlines
+        || s.smoke > 0.0
+        || s.sun_rays > 0.0
+        || s.rainbow > 0.0
+        || (s.lamp_cones > 0.0 && !s.lights.is_empty())
+        || (!s.trails.is_empty() && s.trail_strength > 0.0)
+        || !bursts.is_empty();
+    type Line = (Vec<V3>, Vec<f32>, Vec<f32>, Vec<u32>, Vec<V3>);
+    let lines: Vec<Line> = (0..s.height)
         .into_par_iter()
         .map(|y| {
             let mut row = vec![[0.0f32; 3]; s.width];
             let mut alphas = vec![0.0f32; s.width];
+            let (mut depths, mut ids, mut normals) = (Vec::new(), Vec::new(), Vec::new());
             if stop.load(Ordering::Relaxed) {
-                return (row, alphas);
+                return (row, alphas, depths, ids, normals);
+            }
+            if gbuffer {
+                depths.reserve(s.width);
+                for x in 0..s.width {
+                    let px = ((x as f32 + 0.5) / s.width as f32 * 2.0 - 1.0) * half_w;
+                    let py = (1.0 - (y as f32 + 0.5) / s.height as f32 * 2.0) * half_h;
+                    let (from, d) =
+                        if s.parallel { (add(eye, add(mul(right, px), mul(up, py))), fwd) } else { (eye, norm(add(fwd, add(mul(right, px), mul(up, py))))) };
+                    let (t, id, nrm) = match meet(&world, from, d, 1e7) {
+                        None => (f32::INFINITY, 0, [0.0; 3]),
+                        Some(Met::Water(t)) => (t, u32::MAX - 1, [0.0, 0.0, 1.0]),
+                        Some(Met::Floor(t)) => (t, u32::MAX - 2, [0.0, 0.0, 1.0]),
+                        Some(Met::Tri(h)) => {
+                            let prim = world.bvh.prims[h.k as usize];
+                            let [_, e1, e2] = world.bvh.tris[h.k as usize];
+                            let mut nn = norm(cross(e1, e2));
+                            if dot(nn, d) > 0.0 {
+                                nn = mul(nn, -1.0);
+                            }
+                            let id = if prim.terrain { u32::MAX - 3 } else { world.mesh.map_or(1, |m| m.tris[prim.index as usize].object + 1) };
+                            (h.t, id, nn)
+                        }
+                    };
+                    depths.push(t * dot(d, fwd));
+                    ids.push(id);
+                    normals.push(nrm);
+                }
             }
             let mut rng = Rng(0x9E37_79B9_7F4A_7C15 ^ (y as u64 + 1).wrapping_mul(0x2545_F491_4F6C_DD1D));
             for x in 0..s.width {
@@ -1120,16 +1398,72 @@ pub fn render(meshes: &[&Mesh], terrain: Option<&Grid>, drape: Option<&RasterIma
                 alphas[x] = alpha / n as f32;
             }
             rows.fetch_add(1, Ordering::Relaxed);
-            (row, alphas)
+            (row, alphas, depths, ids, normals)
         })
         .collect();
     if stop.load(Ordering::Relaxed) {
         return None;
     }
-    let (mut colour, alpha): (Vec<V3>, Vec<f32>) = {
-        let (c, a): (Vec<Vec<V3>>, Vec<Vec<f32>>) = lines.into_iter().unzip();
-        (c.concat(), a.concat())
-    };
+    let (mut colour, mut alpha_all, mut depth, mut ids, mut normals) = (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for (c, a, d, i, n) in lines {
+        colour.extend(c);
+        alpha_all.extend(a);
+        depth.extend(d);
+        ids.extend(i);
+        normals.extend(n);
+    }
+    // What is in the air, and the lines of a drawing, before the lamps that shine through.
+    if gbuffer {
+        let sky_light = mul(world.sky.light([0.0, 0.0, 1.0]), light.sky_k);
+        let lit = add(mul(sky_light, 1.6), mul(light.sun_col, 0.35 * light.sun[2].max(0.0)));
+        // A flake is as light as the sky above it, and at night lit a little by the town.
+        let flake = mul(lit, exposure);
+        let flake = if s.night { add(flake, [0.04, 0.045, 0.06]) } else { flake };
+        if s.outlines {
+            weather::outlines(&mut colour, &depth, &ids, &normals, s.width, s.height);
+        }
+        for (k, (g, top)) in bolts.iter().enumerate() {
+            weather::bolt(&mut colour, &depth, &cam, *g, *top, k as u64);
+        }
+        let wind = mul(more::down_wind(s.wind_from), s.wind.clamp(0.0, 1.0));
+        // Smoke from chimneys, lit as the flakes are, its shaded side darker.
+        if s.smoke > 0.0 {
+            if let Some(m) = mesh {
+                let sources = more::chimneys(m, &local, s.smoke.clamp(0.0, 1.0));
+                let lit = add(mul(flake, 0.85), mul(light.sun_col, 0.25 * exposure * light.sun[2].max(0.0)));
+                more::smoke(&mut colour, &depth, &cam, &sources, more::down_wind(s.wind_from), s.wind.clamp(0.0, 1.0), lit, mul(flake, 0.5));
+            }
+        }
+        if s.sun_rays > 0.0 && !s.night {
+            more::sun_rays(&mut colour, &depth, &cam, light.sun, mul(light.sun_col, exposure), s.sun_rays.clamp(0.0, 1.0));
+        }
+        if s.rainbow > 0.0 && !s.night {
+            more::rainbow(&mut colour, &depth, &cam, light.sun, s.rainbow.clamp(0.0, 1.0), matches!(s.background, Background::Studio));
+        }
+        if s.lamp_cones > 0.0 {
+            let lamps: Vec<(V3, V3)> = world.lights.iter().map(|l| (l.at, l.power)).collect();
+            // Stronger where the air holds more to light up.
+            let air = (0.35 + s.fog + s.haze + s.snow_fall + s.rain * 0.7).min(1.6);
+            more::lamp_cones(&mut colour, &depth, &cam, &lamps, s.lamp_height, s.lamp_cones.clamp(0.0, 1.0) * air * exposure * 0.25);
+        }
+        if !s.trails.is_empty() && s.trail_strength > 0.0 {
+            let roads: Vec<Vec<V3>> = s.trails.iter().map(|r| r.iter().map(|p| local(*p)).collect()).collect();
+            more::trails(&mut colour, &depth, &cam, &roads, s.trail_strength.clamp(0.0, 1.0) * if s.night { 1.0 } else { 0.25 });
+        }
+        if !bursts.is_empty() {
+            more::fireworks(&mut colour, &depth, &cam, &bursts);
+        }
+        if s.rain > 0.0 {
+            weather::particles(&mut colour, &depth, &cam, flake, s.rain, true, wind);
+        }
+        if s.snow_fall > 0.0 {
+            weather::particles(&mut colour, &depth, &cam, mul(flake, 1.15), s.snow_fall, false, wind);
+        }
+        depth.clear();
+        ids.clear();
+        normals.clear();
+    }
+    let alpha = alpha_all;
     // The lamps themselves, as small bright points with a glow around them, where the eye
     // sees them.
     let px_per_rad = s.height as f32 / 2.0 / half_h;
@@ -1165,6 +1499,11 @@ pub fn render(meshes: &[&Mesh], terrain: Option<&Grid>, drape: Option<&RasterIma
             }
         }
     }
+    if s.tilt_shift > 0.0 {
+        // Sharp where the camera looks.
+        let band = cam.project(target).map_or(0.55, |(_, y, _)| (y / s.height as f32).clamp(0.2, 0.8));
+        more::tilt_shift(&mut colour, s.width, s.height, s.tilt_shift.clamp(0.0, 1.0), band);
+    }
     let mut rgba = Vec::with_capacity(s.width * s.height * 4);
     for (c, a) in colour.iter().zip(&alpha) {
         let c = if s.vivid != 0.0 {
@@ -1176,6 +1515,26 @@ pub fn render(meshes: &[&Mesh], terrain: Option<&Grid>, drape: Option<&RasterIma
         };
         let c = tone(c);
         rgba.extend_from_slice(&[c[0], c[1], c[2], if s.background == Background::Clear { (a * 255.0).round() as u8 } else { 255 }]);
+    }
+    // Names over their places, where the eye sees them.
+    if !s.names.is_empty() {
+        let list: Vec<weather::Name> = s
+            .names
+            .iter()
+            .map(|(p, name)| {
+                let foot = local(*p);
+                (foot, add(foot, [0.0, 0.0, s.names_height.max(0.0) as f32]), name.clone())
+            })
+            .collect();
+        let seen = |p: V3| {
+            let v = sub(p, eye);
+            let dist = dot(v, v).sqrt().max(1e-3);
+            let from = if s.parallel { sub(p, mul(fwd, cam.reach * 4.0)) } else { eye };
+            let dir = if s.parallel { fwd } else { mul(v, 1.0 / dist) };
+            let far = if s.parallel { cam.reach * 4.0 } else { dist };
+            world.bvh.through(from, dir, far * 0.995, &|_| 1.0) > 0.0
+        };
+        let _ = weather::names(&mut rgba, &cam, &list, &seen);
     }
     Some(RasterImage { vector: None, width: s.width, height: s.height, rgba, geotransform: [0.0, 1.0, 0.0, s.height as f64, 0.0, -1.0] })
 }
@@ -1309,7 +1668,32 @@ fn surface(w: &World, h: &Hit, o: V3, d: V3) -> Surface {
     let wgt = [1.0 - u - v, u, v];
     if prim.terrain {
         let c = w.terrain_colour[prim.index as usize];
-        let albedo = [0, 1, 2].map(|k| c[0][k] * wgt[0] + c[1][k] * wgt[1] + c[2][k] * wgt[2]);
+        let mut albedo = [0, 1, 2].map(|k| c[0][k] * wgt[0] + c[1][k] * wgt[1] + c[2][k] * wgt[2]);
+        // The map, looked up where the ray meets the terrain, so that its lines and names
+        // are as sharp as the map is, not as the triangles of the terrain.
+        if prim.index >= w.icicles_from {
+            // An icicle: clear ice, glossy.
+            return Surface { albedo, normal: geo_n, opacity: 1.0, specular: 0.6, shininess: 220.0, mirror: 0.12, gloss: 0.9, glow: [0.0; 3], pane: false };
+        }
+        if let Some(img) = w.drape {
+            let p = add(o, mul(d, h.t));
+            let ig = img.geotransform;
+            let (x, y) = ((p[0] as f64 + w.origin[0] - ig[0]) / ig[1] - 0.5, (p[1] as f64 + w.origin[1] - ig[3]) / ig[5] - 0.5);
+            if x >= 0.0 && y >= 0.0 && x < (img.width - 1) as f64 && y < (img.height - 1) as f64 {
+                let (x0, y0) = (x as usize, y as usize);
+                let (fx, fy) = ((x - x0 as f64) as f32, (y - y0 as f64) as f32);
+                let at = |xx: usize, yy: usize| -> [f32; 4] {
+                    let q = &img.rgba[(yy * img.width + xx) * 4..][..4];
+                    [linear(q[0] as f32 / 255.0), linear(q[1] as f32 / 255.0), linear(q[2] as f32 / 255.0), q[3] as f32 / 255.0]
+                };
+                let (a, b, c2, e) = (at(x0, y0), at(x0 + 1, y0), at(x0, y0 + 1), at(x0 + 1, y0 + 1));
+                let mix = |k: usize| (a[k] * (1.0 - fx) + b[k] * fx) * (1.0 - fy) + (c2[k] * (1.0 - fx) + e[k] * fx) * fy;
+                let alpha = mix(3);
+                if alpha > 0.0 {
+                    albedo = [0, 1, 2].map(|k| albedo[k] * (1.0 - alpha) + mix(k) / alpha.max(1e-3) * alpha);
+                }
+            }
+        }
         return Surface { albedo, normal: geo_n, opacity: 1.0, specular: 0.0, shininess: 1.0, mirror: 0.0, gloss: 0.0, glow: [0.0; 3], pane: false };
     }
     let m = w.mesh.expect("a mesh");
@@ -1333,10 +1717,12 @@ fn surface(w: &World, h: &Hit, o: V3, d: V3) -> Surface {
     }
     let own = w.materials[t.material as usize];
     let mut albedo = own.albedo;
+    let mut uv_at: Option<(f32, f32)> = None;
     if let (Some(tex), true) = (&mat.texture, own.textured) {
         if t.t.iter().all(|i| *i != NONE && (*i as usize) < m.uvs.len()) {
             let uv = t.t.map(|i| m.uvs[i as usize]);
             let (tu, tv) = (uv[0][0] * wgt[0] + uv[1][0] * wgt[1] + uv[2][0] * wgt[2], uv[0][1] * wgt[0] + uv[1][1] * wgt[1] + uv[2][1] * wgt[2]);
+            uv_at = Some((tu, tv));
             let c = tex.sample(tu, tv);
             albedo = hadamard([linear(c[0]), linear(c[1]), linear(c[2])], own.albedo);
         }
@@ -1359,6 +1745,27 @@ fn surface(w: &World, h: &Hit, o: V3, d: V3) -> Surface {
         out.pane = true;
         out.opacity = 1.0;
     }
+    // The windows of the facades of Make buildings: a bay and a storey to each repeat of the
+    // texture, and the glass where its picture has it.
+    if let (Some((tu, tv)), true) = (uv_at, w.lit_windows > 0.0) {
+        let rect = match mat.name.strip_prefix("facade ").and_then(|r| r.split_whitespace().next()) {
+            Some("house") => Some((0.3, 0.7, 0.9, 2.3)),
+            Some("office") => Some((0.02, 0.98, 0.8, 2.7)),
+            Some("civic") => Some((0.39, 0.61, 0.6, 2.3)),
+            _ => None,
+        };
+        let (along, high) = (tu - tu.floor(), (tv - tv.floor()) * 3.0);
+        if let Some((x0, x1, h0, h1)) = rect.filter(|r| (r.0..r.1).contains(&along) && (r.2..r.3).contains(&high)) {
+            let (cu, cv) = (tu.floor() as i32 as u32, tv.floor() as i32 as u32);
+            if hash01(t.object, cu, cv ^ 0x7E) < w.lit_windows {
+                out.glow = room_light();
+                out.pane = true;
+                if let Some(g) = advent_in(w, t.object, cu, cv, (along - x0) / (x1 - x0), (high - h0) / (h1 - h0)) {
+                    out.glow = g;
+                }
+            }
+        }
+    }
     // Windows on plain walls: in rows, a floor every 3 m from the bottom of the building.
     if w.windows && own.opacity >= 0.98 && mat.texture.is_none() && geo_n[2].abs() < 0.15 {
         let p = add(o, mul(d, h.t));
@@ -1379,14 +1786,43 @@ fn surface(w: &World, h: &Hit, o: V3, d: V3) -> Surface {
             if lit {
                 out.glow = room_light();
                 out.pane = true;
+                if let Some(g) = advent_in(w, t.object, cu as i32 as u32, cv as u32, (fu - 0.22) / 0.56, (fv - 0.3) / 0.52) {
+                    out.glow = g;
+                }
             }
         }
     }
     out
 }
 
+/// In December: candles on the sill or a star in some of the lit windows, the room behind
+/// dimmer so that they show. By the window and where in it, from 0 to 1 across and up.
+fn advent_in(w: &World, object: u32, cu: u32, cv: u32, wu: f32, wv: f32) -> Option<V3> {
+    if w.advent <= 0.0 || hash01(object, cu ^ 0x5A5A, cv) >= w.advent {
+        return None;
+    }
+    Some(more::advent(wu, wv, hash01(object, cu, cv ^ 0xADE)).unwrap_or_else(|| mul(room_light(), 0.4)))
+}
+
+/// Fog between the eye and what it sees: thick at its foot and thinner upwards, so that it
+/// fills the valleys and the tops stand out of it.
+fn fogged(w: &World, c: V3, o: V3, d: V3, t: f32) -> V3 {
+    let Some(f) = &w.fog else { return c };
+    let t = t.min(1e6);
+    let z0 = (o[2] - f.foot) / f.depth;
+    let dz = d[2] / f.depth;
+    // How much fog the ray goes through: the thickness, falling off upwards, along the way.
+    let tau = if dz.abs() < 1e-6 { f.thick * (-z0).exp() * t } else { f.thick / dz * ((-z0).exp() - (-(z0 + dz * t)).exp()) };
+    let k = (-tau.max(0.0)).exp();
+    if !k.is_finite() {
+        return f.colour;
+    }
+    add(mul(c, k), mul(f.colour, 1.0 - k))
+}
+
 /// Haze between the eye and what it sees: far things fade into the colour of the horizon.
-fn hazed(w: &World, c: V3, d: V3, t: f32, l: &Light) -> V3 {
+fn hazed(w: &World, c: V3, o: V3, d: V3, t: f32, l: &Light) -> V3 {
+    let c = fogged(w, c, o, d, t);
     match w.haze {
         Some(len) => {
             let k = (-t / len).exp();
@@ -1410,8 +1846,12 @@ fn trace(w: &World, o: V3, d: V3, s: &Settings, l: &Light, rng: &mut Rng, depth:
     let far = 1e7f32;
     let Some(met) = meet(w, o, d, far) else {
         // The room behind is seen lighter than it lights, as in a photo with a white wall.
-        let lift = if s.background == Background::Sky { 1.0 } else { 1.45 };
-        let bg = if depth == 0 { mul(w.sky.seen(d), lift) } else { mul(w.sky.seen(d), l.sky_k) };
+        let lift = match (s.background, w.look) {
+            (Background::Sky, _) => 1.0,
+            (_, Look::Sketch) => 1.75,
+            _ => 1.45,
+        };
+        let bg = if depth == 0 { fogged(w, mul(w.sky.seen(d), lift), o, d, far) } else { mul(w.sky.seen(d), l.sky_k) };
         return (bg, if depth == 0 { 0.0 } else { 1.0 });
     };
     if let Met::Water(t) = met {
@@ -1436,9 +1876,21 @@ fn trace(w: &World, o: V3, d: V3, s: &Settings, l: &Light, rng: &mut Rng, depth:
             l.sun_col,
             lit * dot(n, h).max(0.0).powf(900.0) * 60.0 * (1.0 - 0.8 * wa.waves.min(1.0)) + lit * dot(n, h).max(0.0).powf(120.0) * 1.5 * wa.waves,
         );
-        let body = hadamard(WATER_COLOUR, add(mul(l.sun_col, ls[2].max(0.0) * lit), mul(w.sky.light([0.0, 0.0, 1.0]), l.sky_k)));
+        let light_in = add(
+            mul(l.sun_col, ls[2].max(0.0) * lit * more::cloud_shadow(p, l.sun, w.cloud_shadows, w.cloud_offset)),
+            mul(w.sky.light([0.0, 0.0, 1.0]), l.sky_k),
+        );
+        if w.ice > 0.0 {
+            // Ice: lit as the ground is, and mirroring only a little, dully.
+            let (ice, shine) = more::ice(p, w.ice, w.snow_cover);
+            let k = fresnel.min(0.3) * shine * 4.0;
+            let c = add(mul(hadamard(ice, light_in), 1.0 - k), mul(mirrored, k));
+            let c = if depth == 0 { hazed(w, c, o, d, t, l) } else { c };
+            return (c, 1.0);
+        }
+        let body = hadamard(WATER_COLOUR, light_in);
         let c = add(add(mul(mirrored, fresnel), mul(body, 1.0 - fresnel)), glint);
-        let c = if depth == 0 { hazed(w, c, d, t, l) } else { c };
+        let c = if depth == 0 { hazed(w, c, o, d, t, l) } else { c };
         return (c, 1.0);
     }
     let on_floor = matches!(met, Met::Floor(_));
@@ -1446,7 +1898,13 @@ fn trace(w: &World, o: V3, d: V3, s: &Settings, l: &Light, rng: &mut Rng, depth:
         Met::Tri(h) => (h.t, surface(w, &h, o, d)),
         Met::Floor(t) => {
             // Under a sky the floor is a lawn; in the studio, a light floor.
-            let c = if s.background == Background::Sky { [0.16, 0.24, 0.09] } else { [0.78, 0.78, 0.78] };
+            let c = if w.look == Look::Sketch {
+                [0.80, 0.79, 0.76]
+            } else if s.background == Background::Sky {
+                [0.16, 0.24, 0.09]
+            } else {
+                [0.78, 0.78, 0.78]
+            };
             (
                 t,
                 Surface {
@@ -1465,6 +1923,29 @@ fn trace(w: &World, o: V3, d: V3, s: &Settings, l: &Light, rng: &mut Rng, depth:
         Met::Water(_) => unreachable!(),
     };
     let p = add(o, mul(d, t));
+    let mut surf = surf;
+    // Snow on what faces up, and wet ground, darker and with puddles that mirror.
+    let mut wet = 0.0f32;
+    if !surf.pane && surf.opacity >= 0.98 && surf.glow == [0.0; 3] {
+        let up = surf.normal[2];
+        let snow = snow_on(w.snow_cover, up, p);
+        if snow > 0.0 {
+            surf.albedo = add(mul(surf.albedo, 1.0 - snow), mul(SNOW, snow));
+            surf.mirror *= 1.0 - snow;
+            surf.gloss *= 1.0 - snow;
+            surf.specular = surf.specular * (1.0 - snow) + 0.08 * snow;
+            surf.shininess = surf.shininess * (1.0 - snow) + 40.0 * snow;
+        }
+        if w.frost > 0.0 {
+            let k = more::rime_on(w.frost, surf.normal, p) * (1.0 - snow);
+            more::rime(&mut surf, k, p, (s.samples as f32 / 16.0).min(1.0));
+        }
+        if w.wet > 0.0 && up > 0.6 && snow < 0.5 && w.frost < 0.3 {
+            let puddle = smooth(0.6, 0.68, fbm(p[0] * 0.3 + 1.7, p[1] * 0.3 - 4.1, 4));
+            surf.albedo = mul(surf.albedo, 1.0 - 0.45 * w.wet);
+            wet = w.wet * (0.18 + 0.7 * puddle) * (1.0 - snow * 2.0);
+        }
+    }
     let n = surf.normal;
     let lift = add(p, mul(n, 1e-3 + t * 2e-5));
     // A lit window: the warm room behind, and what is around mirrored a little in the glass.
@@ -1473,9 +1954,22 @@ fn trace(w: &World, o: V3, d: V3, s: &Settings, l: &Light, rng: &mut Rng, depth:
         let fresnel = 0.04 + 0.96 * (1.0 - cos_i).powi(5);
         let refl_dir = norm(sub(d, mul(n, 2.0 * dot(d, n))));
         let mirrored = mul(w.sky.light(refl_dir), l.sky_k);
-        let c = add(mul(surf.glow, 1.0 - fresnel), mul(mirrored, fresnel));
-        let c = if depth == 0 { hazed(w, c, d, t, l) } else { c };
+        // At night the picture is exposed longer, and a room is seen warm, not white.
+        let glow = if w.sky.night.is_some() { mul(surf.glow, 0.3) } else { surf.glow };
+        let mut c = add(mul(glow, 1.0 - fresnel), mul(mirrored, fresnel));
+        // Frost on the pane: ferns of ice that the room light shines through, paler.
+        let frosted = more::frosted_pane(w.frost, p, 0.5);
+        if frosted > 0.0 {
+            c = add(mul(c, 1.0 - frosted * 0.6), mul(hadamard(glow, [0.75, 0.82, 0.95]), frosted * 0.45));
+        }
+        let c = if depth == 0 { hazed(w, c, o, d, t, l) } else { c };
         return (c, 1.0);
+    }
+    // Frost on glass: white ferns of ice that hide what is behind.
+    if surf.opacity < 0.98 && w.frost > 0.0 {
+        let k = more::frosted_pane(w.frost, p, 0.5);
+        surf.opacity += (1.0 - surf.opacity) * k * 0.9;
+        surf.albedo = add(mul(surf.albedo, 1.0 - k), mul([0.78, 0.84, 0.9], k));
     }
     // Glass: some of what is behind shows through, and what is around mirrors in it.
     if surf.opacity < 0.98 && depth < 4 {
@@ -1488,10 +1982,21 @@ fn trace(w: &World, o: V3, d: V3, s: &Settings, l: &Light, rng: &mut Rng, depth:
         let own = shade(w, &surf, lift, d, s, l, spread, rng, &opacity);
         let a = surf.opacity;
         let c = add(add(mul(own, a), mul(behind, (1.0 - a) * (1.0 - fresnel))), mul(mirrored, fresnel * (1.0 - a * 0.5)));
-        let c = if depth == 0 { hazed(w, c, d, t, l) } else { c };
+        let c = if depth == 0 { hazed(w, c, o, d, t, l) } else { c };
         return (c, 1.0);
     }
     let mut c = add(shade(w, &surf, lift, d, s, l, spread, rng, &opacity), surf.glow);
+    // Wet ground mirrors what is around, most in the puddles and at a glancing angle.
+    if wet > 0.02 && depth < 2 {
+        let cos_i = (-dot(d, n)).clamp(0.0, 1.0);
+        // Not a mirror: even a puddle at a glancing angle shows the ground through it, and a
+        // wet field in low sun stays a field.
+        let k = (wet * (0.2 + 0.45 * (1.0 - cos_i).powi(3))).min(0.55);
+        let r = glossy(d, n, 0.97, rng);
+        let again = Spread::random(rng);
+        let seen = trace(w, lift, r, s, l, rng, depth + 1, again).0;
+        c = add(mul(c, 1.0 - k), mul(seen, k));
+    }
     // Smooth and metallic surfaces mirror what is around them, more at a glancing angle.
     if s.reflections && depth < 2 && surf.gloss > 0.0 {
         let cos_i = (-dot(d, n)).clamp(0.0, 1.0);
@@ -1513,7 +2018,7 @@ fn trace(w: &World, o: V3, d: V3, s: &Settings, l: &Light, rng: &mut Rng, depth:
         let room = mul(w.sky.light([d[0], d[1], 0.0]), 1.45);
         return (add(mul(c, 1.0 - k), mul(room, k)), 1.0);
     }
-    let c = if depth == 0 { hazed(w, c, d, t, l) } else { c };
+    let c = if depth == 0 { hazed(w, c, o, d, t, l) } else { c };
     (c, 1.0)
 }
 
@@ -1529,6 +2034,7 @@ fn shade(w: &World, surf: &Surface, p: V3, d: V3, s: &Settings, l: &Light, sprea
     if ndl > 0.0 && l.sun[2] > -0.05 {
         let light = w.bvh.through(p, ls, 1e7, opacity);
         let light = if light > 0.0 && w.floor.is_some_and(|z| p[2] < z && ls[2] < 0.0) { 0.0 } else { light };
+        let light = if light > 0.0 { light * more::cloud_shadow(p, l.sun, w.cloud_shadows, w.cloud_offset) } else { light };
         if light > 0.0 {
             let diffuse = mul(hadamard(surf.albedo, l.sun_col), ndl * light);
             let h = norm(sub(ls, d));
@@ -1556,6 +2062,20 @@ fn shade(w: &World, surf: &Surface, p: V3, d: V3, s: &Settings, l: &Light, sprea
             let seen = w.bvh.through(p, ldir, dist - 0.25, opacity);
             if seen > 0.0 {
                 c = add(c, mul(hadamard(surf.albedo, lamp.power), ndl * seen / d2));
+            }
+        }
+    }
+    // The flash of a bolt of lightning.
+    if let Some(f) = &w.flash {
+        let v = sub(f.at, p);
+        let d2 = dot(v, v).max(1.0);
+        let dist = d2.sqrt();
+        let ldir = mul(v, 1.0 / dist);
+        let ndl = dot(n, ldir);
+        if ndl > 0.0 {
+            let seen = w.bvh.through(p, ldir, dist, opacity);
+            if seen > 0.0 {
+                c = add(c, mul(hadamard(surf.albedo, f.power), ndl * seen / d2));
             }
         }
     }
@@ -1668,6 +2188,148 @@ mod tests {
     fn px(img: &RasterImage, x: usize, y: usize) -> [i32; 3] {
         let k = (y * img.width + x) * 4;
         [img.rgba[k] as i32, img.rgba[k + 1] as i32, img.rgba[k + 2] as i32]
+    }
+
+    #[test]
+    fn frost_ice_icicles_smoke_and_the_light_of_winter() {
+        // A house with a gable roof, so that it has eaves for icicles.
+        let mut m = cube();
+        let n = m.positions.len() as u32;
+        m.positions.extend_from_slice(&[[-0.3, -0.3, 3.0], [4.3, -0.3, 3.0], [4.3, 2.0, 4.5], [-0.3, 2.0, 4.5], [4.3, 4.3, 3.0], [-0.3, 4.3, 3.0]]);
+        for t in [[n, n + 1, n + 2], [n, n + 2, n + 3], [n + 3, n + 2, n + 4], [n + 3, n + 4, n + 5]] {
+            m.tris.push(Tri { v: t, n: [NONE; 3], t: [NONE; 3], material: 0, object: 0 });
+        }
+        let local = |p: [f64; 3]| [p[0] as f32, p[1] as f32, p[2] as f32];
+        assert!(more::icicles(&m, &local, 0.8).len() > 20, "icicles hang under both eaves");
+        assert_eq!(more::chimneys(&m, &local, 1.0).len(), 1, "smoke from the top of the house");
+        let mean = |img: &RasterImage| img.rgba.chunks(4).map(|p| p[0] as u64 + p[1] as u64 + p[2] as u64).sum::<u64>() / (img.width * img.height) as u64;
+        // Rime lightens the red house and the lawn.
+        let plain = shot(&m, |s| s.background = Background::Sky);
+        let frosty = shot(&m, |s| {
+            s.background = Background::Sky;
+            s.frost = 1.0;
+            s.icicles = 1.0;
+            s.smoke = 1.0;
+        });
+        assert!(mean(&frosty) > mean(&plain) + 20, "{} {}", mean(&frosty), mean(&plain));
+        // Water frozen is lighter than open water, and has no glitter.
+        let water = |s: &mut Settings| {
+            s.background = Background::Sky;
+            s.water = Some(Water { level: 0.5, areas: Vec::new(), waves: 0.3 });
+            s.elevation = 50.0;
+        };
+        let open = shot(&m, water);
+        let frozen = shot(&m, |s| {
+            water(s);
+            s.ice = 1.0;
+        });
+        assert!(mean(&frozen) > mean(&open) + 30, "{} {}", mean(&frozen), mean(&open));
+        // Every touch of light and lens renders, and changes the picture.
+        let base = shot(&m, |s| {
+            s.background = Background::Sky;
+            s.night = true;
+            s.lights = vec![PointLight { at: [8.0, 2.0, 5.0], colour: WARM_LIGHT, strength: 1.0 }];
+        });
+        for (what, f) in [
+            ("fireworks", Box::new(|s: &mut Settings| s.fireworks = 4) as Box<dyn Fn(&mut Settings)>),
+            ("light cones", Box::new(|s: &mut Settings| s.lamp_cones = 1.0)),
+            ("car light trails", Box::new(|s: &mut Settings| s.trails = vec![vec![[-10.0, -0.5, 0.0], [14.0, -0.5, 0.0]]])),
+            ("tilt-shift", Box::new(|s: &mut Settings| s.tilt_shift = 1.0)),
+        ] {
+            let img = shot(&m, |s| {
+                s.background = Background::Sky;
+                s.night = true;
+                s.lights = vec![PointLight { at: [8.0, 2.0, 5.0], colour: WARM_LIGHT, strength: 1.0 }];
+                f(s);
+            });
+            assert!(img.rgba != base.rgba, "{} should change the picture", what);
+        }
+        // A rainbow opposite a low sun, seen over the sky; none with a high sun.
+        let bow = |alt: f64, amount: f32| {
+            shot(&m, |s| {
+                s.background = Background::Sky;
+                s.azimuth = 200.0;
+                s.elevation = 2.0;
+                s.fov = 90.0;
+                s.zoom = 0.3;
+                s.sun_azimuth = 200.0;
+                s.sun_altitude = alt;
+                s.rainbow = amount;
+            })
+        };
+        assert!(bow(8.0, 1.0).rgba != bow(8.0, 0.0).rgba, "a rainbow with the sun low");
+        assert!(bow(60.0, 1.0).rgba == bow(60.0, 0.0).rgba, "no rainbow with the sun high");
+    }
+
+    #[test]
+    fn snow_night_lines_lightning_and_names() {
+        let m = cube();
+        let sky = |s: &mut Settings| {
+            s.background = Background::Sky;
+            s.elevation = 12.0;
+        };
+        let sum = |p: [i32; 3]| p.iter().sum::<i32>();
+        let mean = |img: &RasterImage| img.rgba.chunks(4).map(|p| p[0] as u64 + p[1] as u64 + p[2] as u64).sum::<u64>() / (img.width * img.height) as u64;
+        // Snow lies white on the lawn.
+        let (lawn, snow) = (
+            px(&shot(&m, sky), 10, 76),
+            px(
+                &shot(&m, |s| {
+                    sky(s);
+                    s.snow_cover = 1.0;
+                }),
+                10,
+                76,
+            ),
+        );
+        assert!(sum(snow) > sum(lawn) + 150 && (snow[0] - snow[1]).abs() < 25, "lawn {:?} snow {:?}", lawn, snow);
+        // The night is darker than the day.
+        let (day, night) = (
+            shot(&m, sky),
+            shot(&m, |s| {
+                sky(s);
+                s.night = true;
+                s.aurora = 1.0;
+            }),
+        );
+        assert!(mean(&night) * 2 < mean(&day), "day {} night {}", mean(&day), mean(&night));
+        // A drawing has dark lines along the edges.
+        let dark = |img: &RasterImage| img.rgba.chunks(4).filter(|p| (p[0] as u32 + p[1] as u32 + p[2] as u32) < 150).count();
+        let plain = shot(&m, |s| s.look = Look::Sketch);
+        let drawn = shot(&m, |s| {
+            s.look = Look::Sketch;
+            s.outlines = true;
+        });
+        assert!(dark(&drawn) > dark(&plain) + 15, "{} {}", dark(&drawn), dark(&plain));
+        // Falling snow changes many pixels, and a bolt of lightning is white hot.
+        let flakes = shot(&m, |s| {
+            sky(s);
+            s.snow_fall = 1.0;
+        });
+        let changed = day.rgba.chunks(4).zip(flakes.rgba.chunks(4)).filter(|(a, b)| (a[0] as i32 - b[0] as i32).abs() > 8).count();
+        assert!(changed > 15, "{changed}");
+        let white = |img: &RasterImage| img.rgba.chunks(4).filter(|p| p[0] > 240 && p[1] > 240 && p[2] > 240).count();
+        let storm = shot(&m, |s| {
+            sky(s);
+            s.lightning = 1;
+            s.clouds = 0.9;
+        });
+        assert!(
+            white(&storm)
+                > white(&shot(&m, |s| {
+                    sky(s);
+                    s.clouds = 0.9;
+                })),
+            "a bolt"
+        );
+        // A name floats over the box.
+        let named = shot(&m, |s| {
+            s.names = vec![([2.0, 2.0, 3.0], "Box".into())];
+            s.names_height = 1.0;
+        });
+        let plain = shot(&m, |_| {});
+        let differs = plain.rgba.chunks(4).zip(named.rgba.chunks(4)).filter(|(a, b)| a != b).count();
+        assert!(differs > 20, "{differs}");
     }
 
     #[test]

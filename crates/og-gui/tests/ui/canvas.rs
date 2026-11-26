@@ -48,7 +48,8 @@ fn box_selection_moves_duplicates_and_deletes_together() {
     h.run_steps(3);
     let ws = h.state().workspace();
     assert_eq!((ws.nodes.len(), ws.edges.len()), (22, 20));
-    assert_eq!(selected(&h), ["clipper_1", "lengthcalculator_1", "reader_1", "writer_1"]);
+    // Calculate length is Calculate area and length since 0.96.8, so its copy is named so.
+    assert_eq!(selected(&h), ["areacalculator_1", "clipper_1", "reader_1", "writer_1"]);
     shot(&mut h, "82-duplicated");
 
     // Delete removes the selected copies and nothing else.

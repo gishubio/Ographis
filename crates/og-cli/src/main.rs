@@ -15,6 +15,7 @@ const HELP: &str = "Ographis – spatial ETL from the command line
 
 Usage:
   og run <model.ographis | folder> [--var name=value] [--log file] [--inspect node[:port]] [--rows N] [--sample N]
+             [--recursive] [--quiet] [--report file]
       Runs a model, or every model in a folder by name, with a summary at the end.
       Paths in a model start from the folder the model is in.
       --var sets a variable of the model, used in its settings as $(name).
@@ -31,6 +32,11 @@ Usage:
       Exit code: 0 all went well, 3 finished with warnings, 1 a node failed,
       4 the model was running already, 2 the command is written wrong.
       For a folder, the worst of the models.
+      For a folder, the summary at the end says what went wrong in each model, node by node.
+      --recursive runs the models in the folders in it too, but not in folders of runs or out.
+      --quiet prints a line for each model as it is done, rather than its whole log.
+      --report file writes the summary to a file: .md, .html or .json by its extension.
+      Before a release, for example: og run examples --recursive --quiet --no-history --report check.html
   og mcp [--folder DIR]... [--allow-web] [--allow-databases] [--allow-overwrite]
       Ographis as a server of the Model Context Protocol over standard input and output,
       for an assistant such as Claude: it describes data, finds tools, builds a model while
@@ -254,12 +260,18 @@ struct RunArgs {
     lock_hours: f64,
     /// A trial run: every input reads at most this many features.
     sample: Option<usize>,
+    /// Only a line for each model, rather than its whole log.
+    quiet: bool,
+    /// The warnings and errors of the model running: how bad, the node, and what was said.
+    problems: Vec<(&'static str, String, String)>,
 }
 
 impl RunArgs {
     /// Prints a line of the log, and writes it with the date and time to the log file.
     fn say(&mut self, tag: &str, msg: &str) {
-        println!("{} {}", tag, msg);
+        if !self.quiet {
+            println!("{} {}", tag, msg);
+        }
         if let Some(f) = self.log.as_mut() {
             use std::io::Write;
             let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
@@ -281,9 +293,19 @@ fn cmd_run(args: &[String]) -> ExitCode {
     let mut log_path: Option<PathBuf> = None;
     let (mut history, mut keep_logs, mut lock, mut lock_hours) = (true, 30u32, true, 24.0f64);
     let mut sample: Option<usize> = None;
+    let (mut recursive, mut quiet, mut report_path) = (false, false, None::<PathBuf>);
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
+            "--recursive" | "-r" => recursive = true,
+            "--quiet" | "-q" => quiet = true,
+            "--report" => {
+                i += 1;
+                match args.get(i) {
+                    Some(v) => report_path = Some(PathBuf::from(v)),
+                    None => return usage("--report needs a file to write to: .md, .html or .json."),
+                }
+            }
             "--inspect" | "-i" => {
                 i += 1;
                 match args.get(i) {
@@ -360,17 +382,11 @@ fn cmd_run(args: &[String]) -> ExitCode {
         }
         None => None,
     };
-    let mut opts = RunArgs { inspect, rows, vars, log, run_log: None, history, keep_logs, lock, lock_hours, sample };
+    let mut opts = RunArgs { inspect, rows, vars, log, run_log: None, history, keep_logs, lock, lock_hours, sample, quiet, problems: Vec::new() };
     if file.is_dir() {
-        // Every model in the folder, in the order of their names.
-        let mut models: Vec<PathBuf> = std::fs::read_dir(&file)
-            .map(|d| {
-                d.flatten()
-                    .map(|e| e.path())
-                    .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("ographis") || e.eq_ignore_ascii_case("json")))
-                    .collect()
-            })
-            .unwrap_or_default();
+        // Every model in the folder, in the order of their names, and in its folders too
+        // when asked.
+        let mut models = models_in(&file, recursive);
         models.sort();
         if models.is_empty() {
             eprintln!("ERROR There are no models (.ographis or .json) in {}.", file.display());
@@ -379,22 +395,218 @@ fn cmd_run(args: &[String]) -> ExitCode {
         if !opts.inspect.is_empty() {
             return usage("--inspect works with one model, not a folder.");
         }
-        let mut summary = Vec::new();
-        for m in &models {
+        let started_all = chrono::Local::now();
+        // Said at once, so that it is clear that something is going on while the first
+        // model runs.
+        if opts.quiet {
+            println!("Running {} models in {}, a line as each is done:", models.len(), file.display());
+        }
+        let mut summary: Vec<Checked> = Vec::new();
+        for (k, m) in models.iter().enumerate() {
             let started = std::time::Instant::now();
+            opts.problems.clear();
             let outcome = run_model(m, &mut opts);
-            summary.push((m.clone(), outcome, started.elapsed().as_secs_f64() * 1000.0));
+            let ms = started.elapsed().as_secs_f64() * 1000.0;
+            let name = m.strip_prefix(&file).unwrap_or(m).to_string_lossy().replace('\\', "/");
+            if opts.quiet {
+                println!("{:>4}/{}  {:<8}  {:>8}  {}", k + 1, models.len(), outcome.word(), og_engine::model::fmt_duration(ms), name);
+            } else {
+                println!();
+            }
+            summary.push(Checked { name, outcome, ms, problems: std::mem::take(&mut opts.problems) });
+        }
+        let width = summary.iter().map(|s| s.name.chars().count()).max().unwrap_or(0);
+        if !opts.quiet {
             println!();
         }
-        let width = summary.iter().map(|s| s.0.file_name().map_or(0, |n| n.len())).max().unwrap_or(0);
         opts.say("INFO ", &format!("{} models in {}:", summary.len(), file.display()));
-        for (m, outcome, ms) in &summary {
-            let name = m.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            opts.say("INFO ", &format!("  {:<width$}  {:<8}  {}", name, outcome.word(), og_engine::model::fmt_duration(*ms), width = width));
+        for c in &summary {
+            opts.say("INFO ", &format!("  {:<width$}  {:<8}  {}", c.name, c.outcome.word(), og_engine::model::fmt_duration(c.ms), width = width));
         }
-        return summary.iter().map(|s| s.1).max().unwrap_or(Outcome::Ok).code();
+        // What went wrong, model by model, so that it can be read without the logs.
+        let troubled: Vec<&Checked> = summary.iter().filter(|c| !c.problems.is_empty()).collect();
+        if !troubled.is_empty() {
+            println!();
+            println!("What went wrong or was warned about:");
+            for c in &troubled {
+                println!("  {}", c.name);
+                for (tag, node, msg) in c.problems.iter().take(12) {
+                    if node.is_empty() {
+                        println!("    {} {}", tag, msg);
+                    } else {
+                        println!("    {} {}: {}", tag, node, msg);
+                    }
+                }
+                if c.problems.len() > 12 {
+                    println!("    … and {} more", c.problems.len() - 12);
+                }
+            }
+        }
+        let count = |o: Outcome| summary.iter().filter(|c| c.outcome == o).count();
+        let total_ms: f64 = summary.iter().map(|c| c.ms).sum();
+        println!();
+        println!(
+            "{} models: {} OK, {} with warnings, {} with errors{}, in {}",
+            summary.len(),
+            count(Outcome::Ok),
+            count(Outcome::Warnings),
+            count(Outcome::Errors),
+            if count(Outcome::Locked) > 0 { format!(", {} running already", count(Outcome::Locked)) } else { String::new() },
+            og_engine::model::fmt_duration(total_ms)
+        );
+        if let Some(path) = report_path {
+            match write_report(&path, &file, &summary, started_all) {
+                Ok(()) => println!("The report is in {}", path.display()),
+                Err(e) => {
+                    eprintln!("ERROR The report cannot be written to {}: {}", path.display(), e);
+                    return ExitCode::from(1);
+                }
+            }
+        }
+        return summary.iter().map(|s| s.outcome).max().unwrap_or(Outcome::Ok).code();
+    }
+    if report_path.is_some() || recursive {
+        return usage("--report and --recursive are for a folder of models.");
     }
     run_model(&file, &mut opts).code()
+}
+
+/// How one model of a folder went.
+struct Checked {
+    /// Its path from the folder.
+    name: String,
+    outcome: Outcome,
+    ms: f64,
+    /// How bad, the node, and what was said.
+    problems: Vec<(&'static str, String, String)>,
+}
+
+/// The models in a folder, and in the folders in it when `recursive`. The folders of runs
+/// and of results, and hidden ones, are passed by.
+fn models_in(dir: &Path, recursive: bool) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else { return out };
+    for e in entries.flatten() {
+        let p = e.path();
+        let name = e.file_name().to_string_lossy().into_owned();
+        if p.is_dir() {
+            let passed = name.starts_with('.') || name.ends_with(".runs") || matches!(name.as_str(), "out" | "target" | "http-cache");
+            if recursive && !passed {
+                out.extend(models_in(&p, true));
+            }
+        } else if p.extension().is_some_and(|e| e.eq_ignore_ascii_case("ographis"))
+            || (p.extension().is_some_and(|e| e.eq_ignore_ascii_case("json")) && is_model(&p))
+        {
+            out.push(p);
+        }
+    }
+    out
+}
+
+/// Whether a .json file is a model, with nodes, rather than data, such as GeoJSON or
+/// CityJSON beside the models.
+fn is_model(path: &Path) -> bool {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .is_some_and(|v| v.get("nodes").is_some_and(|n| n.is_array()))
+}
+
+/// The report of a folder of models: Markdown, HTML or JSON, by the extension of the file.
+fn write_report(path: &Path, folder: &Path, summary: &[Checked], started: chrono::DateTime<chrono::Local>) -> std::io::Result<()> {
+    let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let when = started.format("%Y-%m-%d %H:%M").to_string();
+    let count = |o: Outcome| summary.iter().filter(|c| c.outcome == o).count();
+    let head =
+        format!("{} models: {} OK, {} with warnings, {} with errors", summary.len(), count(Outcome::Ok), count(Outcome::Warnings), count(Outcome::Errors));
+    let version = env!("CARGO_PKG_VERSION");
+    let text = match ext.as_str() {
+        "json" => {
+            let models: Vec<serde_json::Value> = summary
+                .iter()
+                .map(|c| {
+                    serde_json::json!({
+                        "model": c.name,
+                        "outcome": c.outcome.word(),
+                        "ms": (c.ms * 10.0).round() / 10.0,
+                        "problems": c.problems.iter().map(|(t, n, m)| serde_json::json!({"level": t.trim(), "node": n, "message": m})).collect::<Vec<_>>(),
+                    })
+                })
+                .collect();
+            serde_json::to_string_pretty(&serde_json::json!({"folder": folder.display().to_string(), "started": when, "version": version, "models": models}))
+                .unwrap_or_default()
+        }
+        "html" | "htm" => {
+            let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+            let mut rows = String::new();
+            for c in summary {
+                let colour = match c.outcome {
+                    Outcome::Ok => "#1a7f37",
+                    Outcome::Warnings => "#9a6700",
+                    _ => "#cf222e",
+                };
+                let problems: String = c
+                    .problems
+                    .iter()
+                    .map(|(t, n, m)| {
+                        format!(
+                            "<div class=\"{}\">{}{}</div>",
+                            t.trim().to_lowercase(),
+                            if n.is_empty() { String::new() } else { format!("<b>{}</b>: ", esc(n)) },
+                            esc(m)
+                        )
+                    })
+                    .collect();
+                rows.push_str(&format!(
+                    "<tr><td>{}</td><td style=\"color:{}\"><b>{}</b></td><td class=\"num\">{}</td><td>{}</td></tr>\n",
+                    esc(&c.name),
+                    colour,
+                    c.outcome.word(),
+                    og_engine::model::fmt_duration(c.ms),
+                    problems
+                ));
+            }
+            format!(
+                "<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>Models in {folder}</title>\n<style>\nbody{{font-family:system-ui,sans-serif;margin:2rem;color:#1f2328}}\ntable{{border-collapse:collapse;width:100%}}\ntd,th{{border-bottom:1px solid #d0d7de;padding:.35rem .6rem;text-align:left;vertical-align:top}}\n.num{{text-align:right;white-space:nowrap}}\n.error{{color:#cf222e}}\n.warn{{color:#9a6700}}\n</style></head><body>\n<h1>Models in {folder}</h1>\n<p>{head}. Run {when} with Ographis {version}.</p>\n<table><tr><th>Model</th><th>Outcome</th><th class=\"num\">Time</th><th>Warnings and errors</th></tr>\n{rows}</table>\n</body></html>\n",
+                folder = esc(&folder.display().to_string()),
+                head = head,
+                when = when,
+                version = version,
+                rows = rows
+            )
+        }
+        _ => {
+            let mut md = format!(
+                "# Models in {}\n\n{}. Run {} with Ographis {}.\n\n| Model | Outcome | Time |\n|---|---|---:|\n",
+                folder.display(),
+                head,
+                when,
+                version
+            );
+            for c in summary {
+                md.push_str(&format!("| {} | {} | {} |\n", c.name.replace('|', "\\|"), c.outcome.word(), og_engine::model::fmt_duration(c.ms)));
+            }
+            let troubled: Vec<&Checked> = summary.iter().filter(|c| !c.problems.is_empty()).collect();
+            if !troubled.is_empty() {
+                md.push_str("\n## Warnings and errors\n");
+                for c in troubled {
+                    md.push_str(&format!("\n### {}\n\n", c.name));
+                    for (t, n, m) in &c.problems {
+                        if n.is_empty() {
+                            md.push_str(&format!("- **{}** {}\n", t.trim(), m));
+                        } else {
+                            md.push_str(&format!("- **{}** {}: {}\n", t.trim(), n, m));
+                        }
+                    }
+                }
+            }
+            md
+        }
+    };
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(path, og_engine::bugreport::scrub(&text))
 }
 
 /// Runs one model and prints its log, with a lock, a log of its own and a line in its
@@ -416,6 +628,7 @@ fn run_model(file: &Path, opts: &mut RunArgs) -> Outcome {
                         h.describe()
                     ),
                 );
+                opts.problems.push(("ERROR", String::new(), "It was running already, and was not started again.".into()));
                 return Outcome::Locked;
             }
         }
@@ -451,9 +664,12 @@ fn run_model_inner(file: &Path, opts: &mut RunArgs, started: chrono::NaiveDateTi
         Ok(w) => w,
         Err(e) => {
             opts.say("ERROR", &format!("{}: {}", file.display(), e));
+            opts.problems.push(("ERROR", String::new(), e.to_string()));
             return Outcome::Errors;
         }
     };
+    // The names of the nodes, for the summary of what went wrong.
+    let labels: std::collections::HashMap<String, String> = ws.nodes.iter().map(|n| (n.id.clone(), n.label().to_string())).collect();
     let base = file.parent().filter(|p| !p.as_os_str().is_empty()).map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
     for (name, value) in &opts.vars {
         ws.set_variable(name, value);
@@ -475,6 +691,13 @@ fn run_model_inner(file: &Path, opts: &mut RunArgs, started: chrono::NaiveDateTi
                 Level::Warn => "WARN ",
                 Level::Error => "ERROR",
             };
+            // What went wrong, by node; not the line at the end that counts it up, nor the
+            // nodes that were skipped because of it.
+            if tag != "INFO " && !entry.msg.starts_with("Run ended") && !entry.msg.ends_with("skipped because a node upstream failed") {
+                let node = entry.node.as_ref().map(|id| labels.get(id).cloned().unwrap_or_else(|| id.clone())).unwrap_or_default();
+                let msg = entry.msg.strip_prefix(&format!("{}: ", node)).unwrap_or(&entry.msg).to_string();
+                opts.problems.push((tag, node, msg));
+            }
             opts.say(tag, &entry.msg);
         }
     };

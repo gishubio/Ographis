@@ -6,7 +6,7 @@ use crate::geom;
 use crate::model::{crs_label, err, fmt_count, Feature, Field, FieldType, Result, Table, Value};
 use geo::Geometry;
 
-// ---------- Calculate area (AreaCalculator) and Calculate length (LengthCalculator) ----------
+// ---------- Calculate area and length (AreaCalculator) ----------
 
 pub(super) const AREA_UNITS: &[(&str, &str)] =
     &[("m2", "m²"), ("a", "ares (100 m²)"), ("ha", "hectares"), ("km2", "km²"), ("ft2", "square feet"), ("ac", "acres"), ("mi2", "square miles")];
@@ -48,25 +48,26 @@ pub(super) fn unit_size(unit: &str) -> Option<f64> {
     })
 }
 
+pub(super) const MEASURES: &[(&str, &str)] = &[("area", "The area"), ("length", "The length, or the perimeter of an area"), ("both", "Both")];
+
 pub(super) const AREA_PARAMS: &[ParamSpec] = &[
-    ParamSpec { key: "name", label: "Attribute", kind: ParamKind::Text, default: "_area", hint: "" },
-    ParamSpec { key: "unit", label: "Unit", kind: ParamKind::Choice(AREA_UNITS), default: "m2", hint: "" },
-    ParamSpec { key: "decimals", label: "Decimals", kind: ParamKind::Text, default: "", hint: "Rounds to this many decimals. Empty keeps them all" },
-];
-pub(super) const LENGTH_PARAMS: &[ParamSpec] = &[
-    ParamSpec { key: "name", label: "Attribute", kind: ParamKind::Text, default: "_length", hint: "" },
-    ParamSpec { key: "unit", label: "Unit", kind: ParamKind::Choice(LENGTH_UNITS), default: "m", hint: "" },
+    ParamSpec { key: "what", label: "Calculate", kind: ParamKind::Choice(MEASURES), default: "area", hint: "" },
+    ParamSpec { key: "name", label: "Area in", kind: ParamKind::Text, default: "_area", hint: "The attribute that gets the area" },
+    ParamSpec { key: "unit", label: "Unit of area", kind: ParamKind::Choice(AREA_UNITS), default: "m2", hint: "" },
+    ParamSpec {
+        key: "length_name",
+        label: "Length in",
+        kind: ParamKind::Text,
+        default: "_length",
+        hint: "The attribute that gets the length of a line, or the perimeter of an area",
+    },
+    ParamSpec { key: "length_unit", label: "Unit of length", kind: ParamKind::Choice(LENGTH_UNITS), default: "m", hint: "" },
     ParamSpec { key: "decimals", label: "Decimals", kind: ParamKind::Text, default: "", hint: "Rounds to this many decimals. Empty keeps them all" },
 ];
 
-pub(super) fn measure(p: &P, inp: &Inputs, ctx: &mut NodeCtx, area: bool) -> Result<Outputs> {
+pub(super) fn run_area(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let table = input(inp, "Input");
-    let name = p.get("name").unwrap_or_else(|| if area { "_area" } else { "_length" }.to_string());
-    let unit = p.get("unit").unwrap_or_default();
-    let units = if area { AREA_UNITS } else { LENGTH_UNITS };
-    let Some(div) = unit_size(&unit).filter(|_| units.iter().any(|u| u.0 == unit)) else {
-        return err(format!("Unknown unit: {}. It may be {}.", unit, units.iter().map(|u| u.0).collect::<Vec<_>>().join(", ")));
-    };
+    let what = p.get("what").unwrap_or_else(|| "area".into());
     // The value is rounded to a number of decimals, if one is given.
     let scale = match p.get("decimals") {
         None => None,
@@ -75,7 +76,6 @@ pub(super) fn measure(p: &P, inp: &Inputs, ctx: &mut NodeCtx, area: bool) -> Res
             None => return err(format!("The number of decimals must be a whole number from 0 to 15, not \"{}\". Leave it empty to keep them all.", text)),
         },
     };
-    let rounded = |v: f64| scale.map_or(v, |k| (v * k).round() / k);
     let geographic = match ctx.geographic(table.crs) {
         Some(g) => g,
         None if !table.has_geometry() => false,
@@ -84,6 +84,29 @@ pub(super) fn measure(p: &P, inp: &Inputs, ctx: &mut NodeCtx, area: bool) -> Res
     if geographic && table.has_geometry() {
         ctx.notes.info("calculated geodesically on the ellipsoid because the coordinates are in degrees");
     }
+    let mut out = table.clone();
+    if what != "length" {
+        let name = p.get("name").unwrap_or_else(|| "_area".into());
+        let unit = p.get("unit").unwrap_or_else(|| "m2".into());
+        out = measure(&out, &name, &unit, true, scale, geographic, what == "area", ctx)?;
+    }
+    if what != "area" {
+        let name = p.get("length_name").unwrap_or_else(|| "_length".into());
+        let unit = p.get("length_unit").unwrap_or_else(|| "m".into());
+        out = measure(&out, &name, &unit, false, scale, geographic, true, ctx)?;
+    }
+    Ok(vec![("Output".into(), out)])
+}
+
+/// The area or the length of each feature in an attribute, in a unit, rounded with `scale`.
+/// With `warn`, those that are not of the kind measured are counted in a warning.
+#[allow(clippy::too_many_arguments)]
+fn measure(table: &Table, name: &str, unit: &str, area: bool, scale: Option<f64>, geographic: bool, warn: bool, ctx: &mut NodeCtx) -> Result<Table> {
+    let units = if area { AREA_UNITS } else { LENGTH_UNITS };
+    let Some(div) = unit_size(unit).filter(|_| units.iter().any(|u| u.0 == unit)) else {
+        return err(format!("Unknown unit: {}. It may be {}.", unit, units.iter().map(|u| u.0).collect::<Vec<_>>().join(", ")));
+    };
+    let rounded = |v: f64| scale.map_or(v, |k| (v * k).round() / k);
     let mut wrong = 0usize;
     let values: Vec<Value> = table
         .features
@@ -99,22 +122,15 @@ pub(super) fn measure(p: &P, inp: &Inputs, ctx: &mut NodeCtx, area: bool) -> Res
             }
         })
         .collect();
-    if wrong > 0 {
+    if wrong > 0 && warn {
         ctx.notes.warn(format!("{} features are not {} and got the value 0.", fmt_count(wrong as u64), if area { "areas" } else { "lines or areas" }));
     }
-    let mut out = with_column(table, &name, values);
+    let mut out = with_column(table, name, values);
     // The column is a decimal number even when the stream is empty or holds only nulls.
-    if let Some(i) = out.field_index(&name) {
+    if let Some(i) = out.field_index(name) {
         out.fields[i].ty = FieldType::Real;
     }
-    Ok(vec![("Output".into(), out)])
-}
-
-pub(super) fn run_area(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    measure(p, inp, ctx, true)
-}
-pub(super) fn run_length(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    measure(p, inp, ctx, false)
+    Ok(out)
 }
 
 // ---------- Filter by geometry type (GeometryFilter) ----------
@@ -122,7 +138,26 @@ pub(super) fn run_length(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
 pub(super) fn run_geometry_filter(_p: &P, inp: &Inputs, _ctx: &mut NodeCtx) -> Result<Outputs> {
     let table = input(inp, "Input");
     let (mut point, mut line, mut area, mut raster, mut other) = (table.like(), table.like(), table.like(), table.like(), table.like());
-    for f in &table.features {
+    // The objects of a 3D model that have triangles go to Surface, with their model; the
+    // rest by the shape of their geometry.
+    let mut solid = vec![false; table.features.len()];
+    if let Some(m) = table.mesh.as_deref() {
+        for t in &m.tris {
+            if let Some(s) = solid.get_mut(t.object as usize) {
+                *s = true;
+            }
+        }
+    }
+    let mut surface = table.like();
+    let rows: Vec<usize> = (0..table.features.len()).filter(|r| solid[*r]).collect();
+    if let Some(m) = table.mesh.as_deref() {
+        surface.features = rows.iter().map(|r| table.features[*r].clone()).collect();
+        surface.mesh = Some(std::sync::Arc::new(m.pick(&rows)));
+    }
+    for (r, f) in table.features.iter().enumerate() {
+        if solid[r] {
+            continue;
+        }
         // The cells of a raster go together, whatever shape they were read as.
         if table.raster {
             raster.features.push(f.clone());
@@ -136,7 +171,14 @@ pub(super) fn run_geometry_filter(_p: &P, inp: &Inputs, _ctx: &mut NodeCtx) -> R
         };
         target.features.push(f.clone());
     }
-    Ok(vec![("Point".into(), point), ("Line".into(), line), ("Area".into(), area), ("Raster".into(), raster), ("Other".into(), other)])
+    Ok(vec![
+        ("Point".into(), point),
+        ("Line".into(), line),
+        ("Area".into(), area),
+        ("Surface".into(), surface),
+        ("Raster".into(), raster),
+        ("Other".into(), other),
+    ])
 }
 
 pub(super) fn run_dimension_filter(_p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
@@ -359,9 +401,9 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Geometry",
-        desc: "Sends points, lines and areas to an output each. The cells of a raster go to Raster, and features without geometry to Other. The points of a point cloud go to Point: to take its ground or buildings out, use Filter by value or Test on classification.",
+        desc: "Sends points, lines and areas to an output each. The objects of a 3D model, such as the meshes of a DWG, a TIN or buildings, go to Surface with their triangles. The cells of a raster go to Raster, and features without geometry to Other. The points of a point cloud go to Point: to take its ground or buildings out, use Filter by value or Test on classification.",
         inputs: &["Input"],
-        outputs: &["Point", "Line", "Area", "Raster", "Other"],
+        outputs: &["Point", "Line", "Area", "Surface", "Raster", "Other"],
         ports: None,
         params: &[],
         run: run_geometry_filter,
@@ -383,30 +425,24 @@ pub(super) const TYPES: &[NodeType] = &[
     },
     NodeType {
         name: "AreaCalculator",
-        title: "Calculate area",
+        title: "Calculate area and length",
         hidden: false,
         group: Group::Transformer,
         category: "Geometry",
-        desc: "Writes the area to an attribute. In metre-based systems the area is planar, in degrees it is geodesic on the ellipsoid.",
+        desc: "Writes the area, the length of a line or the perimeter of an area, or both, to attributes. In metre-based systems they are planar, in degrees geodesic on the ellipsoid. The length was Calculate length before 0.96.8.",
         inputs: &["Input"],
         outputs: &["Output"],
         ports: None,
         params: AREA_PARAMS,
         run: run_area,
-        summary: |p| format!("{} in {}", p.get("name").unwrap_or_default(), choice_label(AREA_UNITS, &p.get("unit").unwrap_or_default())),
-    },
-    NodeType {
-        name: "LengthCalculator",
-        title: "Calculate length",
-        hidden: false,
-        group: Group::Transformer,
-        category: "Geometry",
-        desc: "Writes the length of a line, or the perimeter of an area, to an attribute.",
-        inputs: &["Input"],
-        outputs: &["Output"],
-        ports: None,
-        params: LENGTH_PARAMS,
-        run: run_length,
-        summary: |p| format!("{} in {}", p.get("name").unwrap_or_default(), choice_label(LENGTH_UNITS, &p.get("unit").unwrap_or_default())),
+        summary: |p| {
+            let area = || format!("{} in {}", p.get("name").unwrap_or_default(), choice_label(AREA_UNITS, &p.get("unit").unwrap_or_default()));
+            let length = || format!("{} in {}", p.get("length_name").unwrap_or_default(), choice_label(LENGTH_UNITS, &p.get("length_unit").unwrap_or_default()));
+            match p.get("what").as_deref() {
+                Some("length") => length(),
+                Some("both") => format!("{}, {}", area(), length()),
+                _ => area(),
+            }
+        },
     },
 ];

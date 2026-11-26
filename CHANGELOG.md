@@ -3,6 +3,302 @@
 What changed in each version, the newest first. Models from earlier versions open and run
 in later ones; where a tool changed what it does, it says so here.
 
+## 0.96.8
+
+In short: a release of finish, for maps and for 3D.
+
+- **Maps as a mapmaker draws them**: lit contours, Swiss relief, hachures, texture shading
+  and depths in blues; names along rivers, coasts and long lakes, in small caps and spaced;
+  lines of borders, road signs, bridges and tunnels; a height profile, a globe and the grids
+  of UTM and map sheets; and a style drawn by hand.
+- **Maps for print**: CMYK and PDF/X-4, black printed over the colours, sheets to put
+  together and folds.
+- **The weather and the seasons in 3D**: snow, rain, fog, wind and lightning; frost, ice,
+  icicles and smoke; rays of sun, the shadows of clouds and rainbows.
+- **Evening and night in 3D**: the moon, stars and northern lights; lit windows with advent
+  lights, lamps with cones of light, the trails of cars and fireworks.
+- **The sea floor**: depths in blues with relief and the land as paper, depths in steps as on
+  an atlas or as layers of paper, a band of colours in the legend, and sea floors in 3D in
+  the colours of a sonar survey or in steps cut from card.
+- **New tools**: Make a cartogram, Generalize buildings and Move away from lines; and
+  pictures **one after another as a GIF**, for a day of sun or a map series.
+- **Fewer tools, each doing more**: ten tools are now choices in the tools they belong
+  with, Clip raster and Intersect in Clip among them, and Clip clips by each area on its
+  own, 3D models too. Models from earlier versions are read as they were meant.
+- **Every model in a folder checked in one go**, with a report of what went wrong, node by
+  node: for testing before a release.
+
+### Added
+
+- **Clip by each clip area on its own** (#65). *Clip areas: Each on its own, with its
+  attributes* in *Clip* cuts what lies in several clip areas, such as the squares of a
+  grid, into a piece for each, and gives each piece the attributes of its area, with a
+  prefix if you like. Points, lines, areas and 3D models alike: a mesh from a DWG is cut
+  into an object for each square, which can then be written to a file for each square
+  with `{square_cell_id}` in the name of the file. What lies in no area goes to Outside.
+- **Surface** in *Filter by geometry type*: the objects of a 3D model, such as the meshes
+  of a DWG, a TIN or buildings, go there with their triangles. Before, they went to Area
+  and lost their triangles on the way.
+- **Ographis starts maximized**, filling the screen.
+- **Every model in a folder checked in one go**, before a release for example:
+  `og run <folder> --recursive --quiet --no-history --report check.html`. At the end it
+  says what went wrong in each model, node by node, without the rest of the logs, and the
+  report is a web page, Markdown or JSON. `--recursive` takes the folders in it too,
+  `--quiet` prints a line for each model as it is done.
+- **Names that follow long areas.** *Curved along long areas* under the labels of a layer in
+  *Draw map* writes the name of a long lake, a valley or a fjord along a line through its
+  middle, bent as the area bends and spread out over it.
+- **Index contours.** *Index contours by* an attribute, such as the height, and *every* 50:
+  those contours are drawn heavier and only they are named, as on a topographic map.
+- **A band inside borders**, as wide as you say, in the colour of the line and pale, as
+  mapmakers draw the borders of countries and nature reserves.
+- **Waterlines**: thin lines along the shore outside areas of water, fainter further out, as
+  on old maps.
+- **Relief in Draw map**: a terrain read as a grid can be drawn as *soft grey relief* lit
+  from several sides, or as *heights in colours, with relief*: green lowland to brown and
+  white heights, lit the same way.
+- **An index of squares** across the map, with letters along the top and numbers down the
+  side in the frame, and a new output *Register* of every name and the square it is in, as
+  for a town map with a list of streets.
+- **Which labels first.** A *rank* for each layer: layers with a higher rank place their
+  labels first, so that the names of towns win over the names of lakes. *Corners first*
+  places the labels of points up to the right of them first, then the other corners, as
+  mapmakers do.
+- **The scale in figures**, such as 1:50 000, under the scale bar or instead of it.
+- **PDF for print**: the colours as CMYK, and with an ICC profile such as one of FOGRA or
+  ISO Coated, a PDF/X-4 with the profile as its output intent and a trim box.
+- **Weather in 3D.** *Render 3D scene* has **falling snow**, **snow on the ground**, the
+  roofs and the trees (on what is flat first, in drifts), **rain** with wet streets and
+  puddles that mirror the buildings, **lightning** whose flash lights the scene, or a whole
+  **thunderstorm**, and **valley fog** that lies in the low parts, so that hills and tall
+  buildings stand out of it.
+- **Night in 3D**: the moon where the sun would stand, stars, and **northern lights** over
+  the north, with lit windows and street lamps.
+- **Trees in four seasons**: light green and blossom in spring, yellow, orange and red in
+  autumn, and bare branches in winter, the conifers still green.
+- **A drawing.** The models *as a drawing*: paper white, with **lines along the edges** where
+  one thing stands in front of another and where a surface turns. The lines can be had on
+  their own look too.
+- **Names over places in 3D**, from the points on the new input *Names*, floating over each
+  place on a thin line down to it, larger the nearer they are, where the camera sees them.
+- **A map from Draw map on the terrain is as sharp as the map**: it is looked up where each
+  ray meets the terrain, not at the corners of its triangles, so that contours and names
+  draped over the terrain stay crisp.
+- The examples `relief_map.ographis` (relief in colours, index contours, an index of squares
+  with its register, and the map draped over the terrain with mist) and
+  `weather_3d.ographis` (a village in snow, on a night with northern lights, in a
+  thunderstorm, on an autumn morning with mist, and as a drawing).
+- More examples: `sea_chart.ographis`, an old sea chart of the islands with soundings;
+  `retro_64.ographis`, the terrain in 16 colours as on a home computer of the 1980s;
+  `village_through_the_year.ographis`, the village in five seasons and lights as a slide
+  deck; and `toy_island_night.ographis`, the toy island on a winter night under the
+  northern lights.
+- API examples for Bolagsverket (companies from the free high-value datasets, with OAuth2),
+  driving licence holders from the register of Transportstyrelsen (through Trafikanalys,
+  as charts), trains on time and deaths on the roads from Trafikanalys, and the power flows
+  over the borders from Svenska kraftnät.
+
+- **The finer craft**, in *Draw map*:
+  - **Lit contours** (Tanaka): the edges of the areas between contours light towards the
+    north-west and dark away from it, so that the land rises from the paper.
+  - **Swiss relief**: hazy, pale lowland and clear heights, warm light and blue-grey
+    shadows; and **hachures**, strokes down the slopes, thicker where it is steeper.
+  - **Rivers that widen downstream**, and lines **as wide as a value**, such as the order
+    of a stream or the traffic on a road; names **spread out along lines**.
+  - **Bridges, tunnels and one-way streets** by expressions: bridges with dark edges and
+    wings, tunnels dashed and pale, arrows along one-way streets.
+  - **Road signs** with the numbers of roads along them: E roads green, national roads
+    blue, others white.
+  - The symbols of **marsh, conifers, deciduous trees, orchards, rock and sand** as
+    patterns of areas.
+  - Labels **in capitals where** an expression is true, such as for the large towns, and
+    **as large as their area**, as the names of lakes; the names of **points that have no
+    room** are put further out with a line in to them.
+  - Areas **faint by a value** (value by alpha): the colour by one value and the
+    faintness by another, so that what concerns few is not as loud.
+  - The map **as the colour-blind see it** (deuteranopia, protanopia, tritanopia) or in
+    grey, and a **look at the labels** that warns of those that stand out too little from
+    what is under them.
+  - The inset gets **its own scale bar**.
+  - **Black printed over the colours** in a PDF in inks, so that black text and lines get
+    no white edges when the plates are a little out of register.
+  - A ramp **Heights: green to brown** for maps of heights.
+- **Make a cartogram** (`CartogramMaker`), a new tool: circles as large as a value pushed
+  apart from where the areas are (Dorling), or a square for each area on a grid (a tile map).
+- **GTOPO30**, SRTM30 and GMTED are read as their tiles come: a .dem or .bil with its .hdr.
+- The example `finer_cartography.ographis`, and marsh and forest symbols on the sea chart.
+
+- **Still finer cartography**, in *Draw map*:
+  - **Texture shading** of a terrain (*Texture: ridges and valleys*): every ridge and
+    valley at every size, large and small alike, as engraved, rather than lit from one side.
+  - **Depths in blues**: heights and depths together, the sea in blues that darken with the
+    depth and the land in greens and browns.
+  - **A height profile** of a line, such as a trail, from the grid of heights in the map,
+    drawn in a corner with its highest and lowest point and its length.
+  - **Contour numbers that read uphill**, the top of the figures towards the higher ground,
+    and no numbers on small rings and short pieces.
+  - **Names along the coast**: the names of islands and lakes written along the inside of
+    their shore, bending with it.
+  - **Letter spacing and small caps** for labels.
+  - **Lines of borders**: country (dash and dot), county (dash and two dots) and
+    municipality (short dashes), each fitted to its corners so that a dash runs through
+    each, and a border between two areas drawn once.
+  - **Drawn by hand**: a style of ink and watercolour, the lines a little unsteady.
+  - **The grid of UTM and MGRS**, its lines named as `33V VE 18`, and **the sheets** of a
+    10 km grid of SWEREF 99 TM with their names, such as `6470 410`, in each.
+  - **A frame along the degrees**: with a grid of degrees, the map cut along its outermost
+    lines of latitude and longitude, as maps of large areas are.
+  - **A globe in a corner** with the land of the world (Natural Earth, public domain) and
+    the place of the map on it in red.
+  - The lines of the grid end at the curved edge of a frame along the degrees, and are
+    named there; a height profile and its line on the map are marked A and B at their ends;
+    and the legend shows a border as its line.
+- **Maps of the sea floor**, as bathymetric posters are drawn:
+  - *Sea floor* for a raster: the depths in blues from pale turquoise to deep navy, lit so
+    that ridges, canyons and seamounts show, and the land as paper with a soft relief.
+    Relief over cells of kilometres is lifted so that its slopes show, and relief drawn
+    larger than its cells is blended between them rather than stepped.
+  - **A band of colours in the legend** with values under it, for depths, heights and ramps.
+  - **A described label**: *Lines after the first smaller* sets a line of description,
+    such as "summit 510 m below sea level", under a name in bold.
+  - **A richer height profile**: its own title, the places along the line written over it
+    (*Places along the profile*), heights at round steps with faint lines across, the
+    water in the blues of its depth, how much the heights are exaggerated, and its width.
+  - **A band along the bottom** of the map, with the sources on the left and the credit on
+    the right.
+  - A layer can be left out of the legend.
+  - **Steps of depth**: a colour from each value down to the next, as on an atlas map,
+    each with its name in the legend. Empty gives the depths of an atlas, at 200 m,
+    1 000 m and every 1 000 m down, from pale lilac through blues to black.
+  - **Steps as layers of paper**: the same, each step casting a soft shadow on the
+    deeper ones.
+  - **Land and sea in a colour each**, both with a strong relief, as a model seen from
+    above.
+  - **The sea alone** in blues with relief, the land see-through, over a land of grey
+    relief or anything else.
+  - Relief over cells of kilometres stands out also in *Soft grey relief*, *Heights in
+    colours* and *Land and sea*, and the floor of the sea in *Land and sea* has relief.
+- **Sea floors in 3D** in *Quick terrain view* and *Shade terrain*:
+  - The colours *Rainbow*, violet in the deep through blue, green and yellow to red on
+    the tops, as sonar surveys are shown, and *Sea*, navy through turquoise and green to
+    pale yellow. Both are also ramps for maps and blocks.
+  - **Steps every**: the heights in flat steps, as layers cut from card, whose sides on
+    the block show the layers in their colours.
+  - A background of one colour, on which the block casts a soft shadow.
+  - **Heights in degrees**, as GEBCO gives them, are seen with their cells in metres
+    where they lie, rather than as a thin needle with only a warning. A relief seen from
+    above keeps the coordinates in degrees.
+- **Blocks coloured by a value** in *Extrude*: *Colour by* a number, such as the population
+  of each square, gives each block its colour from a ramp, evenly from the smallest to the
+  largest or in quantiles, with its top a little lighter; a value such as `#4a7fb0` gives a
+  colour of its own.
+- **A GIF from Output**: a map series, or any picture, written as .gif shows its pages one
+  after another.
+- **Generalize buildings** (`BuildingGeneralizer`), a new tool: houses close together become
+  blocks, small corners are taken away and the smallest are left out, for a smaller scale.
+- **Move away from lines** (`FeatureDisplacer`), a new tool: houses and the like are moved
+  straight away from the nearest road until they are clear of it as it is drawn.
+- **PDF in sheets and with folds**: *Sheets* such as 2x2 cuts a map into pages to be put
+  together, each a little over its neighbours and with its neighbours named in its heading;
+  *Folds* such as 4x2 marks where a map is to be folded.
+- **Winter, light and lens in 3D.** *Render 3D scene* has, in sections of their own:
+  - **Frost and rime** on everything out in the cold, glinting, and **ferns of ice** on the
+    windows; **ice on the water** with cracks and snow blown over it; **icicles** under
+    the eaves; and **smoke from chimneys**, straight up in still air and laid down by wind.
+  - **Advent lights**: candlesticks on the sills and stars in some of the lit windows.
+  - **Rays of sun** through cloud and mist, **the shadows of clouds** over the land, and a
+    **rainbow** opposite a low sun, with its fainter second bow.
+  - **Light cones under the lamps**, stronger in fog and snow, and the **trails of car
+    lights** along roads at night: lines on *Lights* are roads.
+  - **Wind**, from where you say: it slants the rain and the snow, raises waves, lays down
+    the smoke, bends the trees and moves the shadows of the clouds.
+  - **Fireworks** over the scene, whose light colours what is below them.
+  - **Tilt-shift**, so that a town looks like a model of itself.
+  - **A whole day**: a picture every so many hours from sunrise to sunset of a date, as a
+    sheet, and the pictures of a day or a sun study **as a moving picture** (GIF).
+  - The windows of the buildings from *Make buildings* are lit too, not only plain walls.
+  - Rays of sun come from the glare of the sun, so that what stands in front of it casts
+    its ray of shade; rainbows and light cones are drawn on all the cores.
+  - The settings of *Render 3D scene* are in sections: the picture and the camera, the
+    background and the look, the sun, a series of pictures, materials, trees, water, rain,
+    wind and fog, light in the air, winter and cold, evening and night, the lens and names.
+- The example `inner_sea_floor.ographis`: the floor of a made-up inland sea as a
+  bathymetric poster, with seamounts, basins, a profile from A to B and a band of sources.
+- The example `sea_floor_styles.ographis`: the same sea in five manners of bathymetric
+  maps: steps as layers of paper, land and sea in two colours, an atlas map, the sea over
+  a grey land with a frame of coordinates, and heights and depths in colours.
+- The example `sea_floor_in_3d.ographis`: a made-up seamount in the colours of a sonar
+  survey, and a rough sea floor in steps on a block over a dark blue ground.
+- The examples `even_finer_cartography.ographis` (an archipelago in depth tints with names
+  along the coasts, a height profile and a globe; a valley in texture shading on a sheet
+  grid; districts drawn by hand with county borders; a village generalized and moved off
+  its road on a UTM grid; and the islands as PDF sheets and folded) and
+  `winter_village.ographis` (a frosty morning, sunrise in the mist, an advent evening, New
+  Year's Eve, a rainbow, an autumn gale, a model village and a December day as a GIF).
+
+### Changed
+
+- **Nine tools are now choices in others**, so that there is one place for each thing.
+  Models with them are read as the tool they are part of, with their settings and
+  connections, and a search for the old name finds the new place:
+  - *Intersect* is *Clip* with *Each on its own*, which also cuts 3D models and keeps the
+    heights of the pieces. Intersection is Inside.
+  - *Count points in polygons* is *Join by location*, *Counted only*. A line among the
+    polygons now counts the points that lie on it.
+  - *Classify by range* is *Classify values*, *Ranges of my own, each with its value*.
+    One that made equal intervals or as many in each writes the name of the class where
+    it did, and the number of the class beside it, in `<name>_number`.
+  - *Generalize raster* is *Resample raster*, *Or cells into one*. Resample raster also
+    takes the median, the smallest, the largest or the sum of the cells within.
+  - *Bounding box of all* is *Replace with bounding box*, *A box around: All together*.
+  - *Calculate length* is *Calculate area*, *Calculate: The length*, and the tool is
+    called *Calculate area and length*. It can write both at once.
+  - *Zonal statistics* is *Values from raster*, *Areas get: Statistics*.
+  - *Flatten JSON* is *Extract JSON values* without any path.
+  - *Split lines into segments* is *Split lines*, *Every corner*. Points and areas that
+    are not split go to Other.
+- **Clip raster is now part of Clip.** A raster, a grid or a picture, connected to
+  *Clippee* keeps the cells inside the areas on Inside, cut to the areas or as large as it
+  was, and the rest on Outside. Before, a raster connected to *Clip* was dropped without a
+  word. Models with *Clip raster* are read as *Clip*, with their connections; one that kept
+  the cells outside takes them from Outside. A search for "clip raster" finds *Clip*.
+
+### Fixed
+
+- **Every area in the 3D view.** A stream with more corners than the view draws at once,
+  such as the 290 municipalities of Sweden, lost every other area, so that the country
+  looked full of holes. Lines and areas are now drawn simpler instead, every one of them,
+  and the view says so; only points, as of a cloud, are still drawn every n-th.
+- **A label said twice** in *Draw map*: where two lines with the same name cross, such as
+  the equator and the prime meridian of Natural Earth's graticules, both named 0, the
+  second line's label was moved along it to a place of its own, far from the others. Now
+  a line whose place for its label already shows the same words is left without.
+- **Lantmäteriet's orthophotos** in *Fetch geodata*: the latest collection was taken even
+  when it did not cover the area, so that a place outside it gave "orto-h-2010 has nothing in
+  the area". Now every collection that matches is searched, and the newest picture that
+  covers the area is taken. The error lists the collections searched.
+- The dependency parquet is updated to 60.2.0 (RUSTSEC-2026-0595).
+- Labels spread out along a straight line at an angle were set as if at another angle.
+- **The photos of Lantmäteriet are fetched much faster**: a photo is read from the overview
+  of its file that is as fine as the cell size asks, rather than in full and made smaller
+  after, so that cells of 0.5 m from photos of 25 cm take a quarter of the data and cells
+  of 2 m a sixty-fourth. Files on the web are also read with fewer requests. The historical
+  black-and-white photos are no longer searched unless chosen under Collection, and the
+  log names the first 30 collections and how many more, not all of them.
+- **The whole log can be marked**: it is one text, so that Ctrl+A marks all of it, and
+  marking with the mouse past its top or bottom scrolls it along. A click on a line about
+  a node still goes to the node.
+- A rainbow is also seen in a studio, on the room behind the models, and stands out on a
+  light sky or wall.
+- The glow around lightning fades smoothly into the air, with no edges where it ended, and
+  the cloud lit by a bolt is no longer cut off at the horizon.
+- Small caps are set as small caps: capitals for the capitals, and smaller capitals for the
+  small letters.
+- Wet ground in a low sun mirrored so much that a field looked like a lake; rime glittered
+  as noise in a draft picture.
+- A grid of UTM or sheets no longer also draws the grid of the map's own coordinates.
+- The `image` dependency also reads and writes GIF, for the moving pictures.
+
 ## 0.96.7
 
 ### Added

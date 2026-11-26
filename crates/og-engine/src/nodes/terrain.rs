@@ -4,12 +4,19 @@
 use super::*;
 use crate::model::{crs_label, err, Grid, RasterImage, Result, Table};
 use crate::terrain::{self, Colours, Look, Shadows, View};
+use std::borrow::Cow;
 
 pub(super) const SHADOWS: &[(&str, &str)] = &[("soft", "Soft"), ("sharp", "Sharp"), ("none", "None")];
-pub(super) const COLOURS: &[(&str, &str)] =
-    &[("land", "Land: green to light brown"), ("mountains", "Mountains: green to brown to snow"), ("greys", "Grey to white"), ("white", "Light all over")];
+pub(super) const COLOURS: &[(&str, &str)] = &[
+    ("land", "Land: green to light brown"),
+    ("mountains", "Mountains: green to brown to snow"),
+    ("greys", "Grey to white"),
+    ("white", "Light all over"),
+    ("rainbow", "Rainbow: violet lowest, through blue, green and yellow, to red"),
+    ("sea", "Sea: navy lowest, through turquoise and green, to pale yellow"),
+];
 pub(super) const QUALITY: &[(&str, &str)] = &[("2", "Smooth"), ("3", "Smoothest, slower"), ("1", "Rough, fastest")];
-pub(super) const BACKGROUND: &[(&str, &str)] = &[("sky", "A sky"), ("none", "See-through")];
+pub(super) const BACKGROUND: &[(&str, &str)] = &[("sky", "A sky"), ("colour", "A colour, with the shadow of the block on it"), ("none", "See-through")];
 
 macro_rules! look_params {
     () => {
@@ -73,20 +80,27 @@ macro_rules! look_params {
                 default: "100",
                 hint: "How much the map connected to Map covers the colours of the terrain",
             },
+            ParamSpec {
+                key: "steps",
+                label: "Steps every",
+                kind: ParamKind::Text,
+                default: "",
+                hint: "In metres: the heights in flat steps, as layers cut from card. Empty: smooth",
+            },
         ]
     };
 }
 
-pub(super) const LOOK: [ParamSpec; 10] = look_params!();
+pub(super) const LOOK: [ParamSpec; 11] = look_params!();
 
 pub(super) const SHADE_PARAMS: &[ParamSpec] = &{
-    let mut all = [LOOK[0]; 11];
+    let mut all = [LOOK[0]; 12];
     let mut i = 0;
-    while i < 10 {
+    while i < 11 {
         all[i] = LOOK[i];
         i += 1;
     }
-    all[10] = ParamSpec {
+    all[11] = ParamSpec {
         key: "width",
         label: "Width in pixels",
         kind: ParamKind::Text,
@@ -97,7 +111,7 @@ pub(super) const SHADE_PARAMS: &[ParamSpec] = &{
 };
 
 pub(super) const VIEW_PARAMS: &[ParamSpec] = &{
-    const VIEW: [ParamSpec; 10] = [
+    const VIEW: [ParamSpec; 11] = [
         ParamSpec {
             key: "view_azimuth",
             label: "Looking from",
@@ -124,6 +138,7 @@ pub(super) const VIEW_PARAMS: &[ParamSpec] = &{
         ParamSpec { key: "height", label: "Height in pixels", kind: ParamKind::Text, default: "1000", hint: "" },
         ParamSpec { key: "fog", label: "Fog in %", kind: ParamKind::Text, default: "30", hint: "Grows with the distance, as air does far away" },
         ParamSpec { key: "background", label: "Background", kind: ParamKind::Choice(BACKGROUND), default: "sky", hint: "" },
+        ParamSpec { key: "background_colour", label: "Colour", kind: ParamKind::Text, default: "#0d1b3d", hint: "Such as #0d1b3d" },
         ParamSpec {
             key: "block",
             label: "As a block",
@@ -133,15 +148,15 @@ pub(super) const VIEW_PARAMS: &[ParamSpec] = &{
         },
         ParamSpec { key: "quality", label: "Edges", kind: ParamKind::Choice(QUALITY), default: "2", hint: "" },
     ];
-    let mut all = [LOOK[0]; 20];
+    let mut all = [LOOK[0]; 22];
     let mut i = 0;
-    while i < 10 {
+    while i < 11 {
         all[i] = LOOK[i];
         i += 1;
     }
     let mut k = 0;
-    while k < 10 {
-        all[10 + k] = VIEW[k];
+    while k < 11 {
+        all[11 + k] = VIEW[k];
         k += 1;
     }
     all
@@ -168,15 +183,27 @@ pub(super) fn look(p: &P) -> Result<Look> {
             Some("greys") => Colours::Greys,
             Some("white") => Colours::White,
             Some("mountains") => Colours::Mountains,
+            Some("rainbow") => Colours::Rainbow,
+            Some("sea") => Colours::Sea,
             _ => Colours::Land,
         },
         haze: percent(p, "haze", "The haze", 0.0)?,
         map_opacity: percent(p, "map_opacity", "The map opacity", 100.0)?,
+        steps: match number_param(p, "steps", "Steps every")? {
+            Some(s) if s < 0.0 => return err("Steps every must be more than 0 metres."),
+            Some(s) => s,
+            None => 0.0,
+        },
     })
 }
 
-/// The grid of heights on Heights, and the map on Map when there is one that fits.
-pub(super) fn inputs<'a>(inp: &'a Inputs, ctx: &mut NodeCtx) -> Result<(&'a Grid, Option<&'a RasterImage>)> {
+/// The heights, the map, and what degrees were multiplied by to give metres, across and down.
+type Terrain<'a> = (Cow<'a, Grid>, Option<Cow<'a, RasterImage>>, Option<(f64, f64)>);
+
+/// The grid of heights on Heights, and the map on Map when there is one that fits. Heights
+/// in degrees of latitude and longitude come back with their cells in metres, and the map
+/// with them, together with what the coordinates were multiplied by across and down.
+pub(super) fn inputs<'a>(inp: &'a Inputs, ctx: &mut NodeCtx) -> Result<Terrain<'a>> {
     let heights: &Table = input(inp, "Heights");
     let Some(grid) = heights.grid.as_deref() else {
         if heights.features.is_empty() {
@@ -203,16 +230,34 @@ pub(super) fn inputs<'a>(inp: &'a Inputs, ctx: &mut NodeCtx) -> Result<(&'a Grid
         None => None,
     };
     if ctx.geographic(grid.crs) == Some(true) {
-        ctx.notes.warn(format!(
-            "The heights are in {}, which is in degrees, while the heights are in metres. Reproject the terrain model with GDAL first, or the slopes will be wrong.",
-            crs_label(grid.crs)
+        // Degrees as metres where the terrain lies: a degree of latitude is about 110.6 km,
+        // one of longitude that times the cosine of the latitude.
+        let gt = grid.geotransform;
+        let mid = gt[3] + gt[5] * grid.height as f64 / 2.0;
+        let k = (111_320.0 * mid.to_radians().cos().max(0.01), 110_574.0);
+        let scale = |gt: [f64; 6]| [gt[0] * k.0, gt[1] * k.0, gt[2] * k.0, gt[3] * k.1, gt[4] * k.1, gt[5] * k.1];
+        let mut g = grid.clone();
+        g.geotransform = scale(gt);
+        let map = map.map(|m| {
+            let mut m = m.clone();
+            m.geotransform = scale(m.geotransform);
+            Cow::Owned(m)
+        });
+        ctx.notes.info(format!(
+            "The heights are in {}, in degrees: their cells were taken as {:.0} × {:.0} m, as they are around latitude {:.1}°",
+            crs_label(grid.crs),
+            gt[1].abs() * k.0,
+            gt[5].abs() * k.1,
+            mid
         ));
+        return Ok((Cow::Owned(g), map, Some(k)));
     }
-    Ok((grid, map))
+    Ok((Cow::Borrowed(grid), map.map(Cow::Borrowed), None))
 }
 
 pub(super) fn run_shade(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let (grid, map) = inputs(inp, ctx)?;
+    let (grid, map, scaled) = inputs(inp, ctx)?;
+    let (grid, map) = (grid.as_ref(), map.as_deref());
     let look = look(p)?;
     let width = number_param(p, "width", "The width")?.map(|w| w.round() as usize);
     let image = match width {
@@ -226,11 +271,18 @@ pub(super) fn run_shade(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
         }
     };
     ctx.notes.info(format!("{} × {} pixels", image.width, image.height));
+    let mut image = image;
+    if let Some((kx, ky)) = scaled {
+        // Back to degrees, so that the picture lies where the heights do.
+        let g = &mut image.geotransform;
+        *g = [g[0] / kx, g[1] / kx, g[2] / kx, g[3] / ky, g[4] / ky, g[5] / ky];
+    }
     Ok(vec![("Image".into(), image.into_table(grid.crs))])
 }
 
 pub(super) fn run_view(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let (grid, map) = inputs(inp, ctx)?;
+    let (grid, map, _) = inputs(inp, ctx)?;
+    let (grid, map) = (grid.as_ref(), map.as_deref());
     let look = look(p)?;
     let size = |key: &str, what: &str, default: f64| -> Result<usize> {
         let v = number_param(p, key, what)?.unwrap_or(default).round();
@@ -248,6 +300,13 @@ pub(super) fn run_view(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs
         height: size("height", "The height", 1000.0)?,
         fog: percent(p, "fog", "The fog", 30.0)?,
         sky: p.get("background").as_deref() != Some("none"),
+        background: match p.get("background").as_deref() {
+            Some("colour") => {
+                let c = super::solid::colour_param(p, "background_colour", [13.0 / 255.0, 27.0 / 255.0, 61.0 / 255.0])?;
+                Some([(c[0] * 255.0).round() as u8, (c[1] * 255.0).round() as u8, (c[2] * 255.0).round() as u8])
+            }
+            _ => None,
+        },
         block: p.get("block").as_deref() != Some("false"),
         quality: p.get("quality").and_then(|q| q.parse().ok()).unwrap_or(2),
     };
@@ -407,3 +466,38 @@ pub(super) const TYPES: &[NodeType] = &[
         summary: |p| format!("from {}°, {}° down", p.get("view_azimuth").unwrap_or_else(|| "200".into()), p.get("tilt").unwrap_or_else(|| "30".into())),
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::super::run_for_test;
+    use crate::model::Grid;
+
+    #[test]
+    fn heights_in_degrees_are_seen_as_metres_where_they_lie() {
+        // A hill 2000 m high, 2° across, in degrees around latitude 35°.
+        let n = 80;
+        let values: Vec<f32> = (0..n * n).map(|i| (2000.0 - (((i % n) as f32 - 40.0).hypot((i / n) as f32 - 40.0)) * 60.0).max(0.0)).collect();
+        let g = Grid {
+            width: n,
+            height: n,
+            values,
+            geotransform: [139.0, 0.025, 0.0, 36.0, 0.0, -0.025],
+            crs: Some(4326),
+            bands: Vec::new(),
+            meta: Default::default(),
+        };
+        let heights = crate::model::Table { grid: Some(std::sync::Arc::new(g)), crs: Some(4326), ..Default::default() };
+        let (out, notes) =
+            run_for_test("TerrainRenderer", &[("background", "none"), ("width", "200"), ("height", "120")], vec![("Heights", heights.clone())]).unwrap();
+        assert!(notes.warnings.is_empty(), "{:?}", notes.warnings);
+        let img = out[0].1.image.as_deref().unwrap();
+        // The terrain fills much of the picture, rather than standing as a thin needle.
+        let seen = img.rgba.chunks(4).filter(|p| p[3] > 0).count();
+        assert!(seen > img.width * img.height / 5, "{} of {}", seen, img.width * img.height);
+        // The relief seen from above keeps the coordinates of the heights, in degrees.
+        let (out, _) = run_for_test("TerrainShader", &[], vec![("Heights", heights)]).unwrap();
+        let img = out[0].1.image.as_deref().unwrap();
+        assert!((img.geotransform[0] - 139.0).abs() < 1e-9 && (img.geotransform[3] - 36.0).abs() < 1e-9);
+        assert!((img.geotransform[1] * img.width as f64 - 2.0).abs() < 1e-6);
+    }
+}

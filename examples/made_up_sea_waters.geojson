@@ -1,0 +1,77 @@
+{
+ "type": "FeatureCollection",
+ "name": "made_up_sea_waters",
+ "crs": {
+  "type": "name",
+  "properties": {
+   "name": "urn:ogc:def:crs:EPSG::3035"
+  }
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Westmere Basin"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3538750,
+     1898750
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Corvan Sea"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3926250,
+     2068750
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Midmere Basin"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     4076250,
+     1636250
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Eastmere Basin"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     4601250,
+     1643750
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Gulf of Thane"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     4351250,
+     1968750
+    ]
+   }
+  }
+ ]
+}

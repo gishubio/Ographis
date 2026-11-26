@@ -1,6 +1,6 @@
 {
   "program": "Ographis",
-  "version": "0.96.7",
+  "version": "0.96.8",
   "model": {
     "format": "ographis/1",
     "about": "A model is a JSON file (.ographis) with nodes and the connections between their ports. Each node has a type from node_types, an id that is unique in the model, a comment that says what it does in this model (keep the name of the tool, without a name of its own), x and y on the canvas, and params by the keys of its type. A connection goes from [node id, output port] to [node id, input port]. An input port may take several connections: their streams are put together, except on ports that keep them apart, such as Layers of Draw map. Settings that are not given take their default. $(name) in a setting is the value of the variable name. Check a model with og check.",
@@ -1190,7 +1190,7 @@
             }
           ],
           "default": "flatten",
-          "hint": "An address inside a record becomes adress.gata and adress.ort, or stays as JSON text for Flatten JSON"
+          "hint": "An address inside a record becomes adress.gata and adress.ort, or stays as JSON text for Extract JSON values"
         },
         {
           "key": "step",
@@ -1533,6 +1533,10 @@
             {
               "value": "webp",
               "label": "WebP image (.webp)"
+            },
+            {
+              "value": "gif",
+              "label": "Moving picture, GIF (.gif)"
             },
             {
               "value": "tif",
@@ -2610,6 +2614,36 @@
           "hint": "For a printer: the page reaches this far past where it is cut, often 3 mm"
         },
         {
+          "key": "pdf_colours",
+          "label": "Colours",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "rgb",
+              "label": "As on a screen (RGB)"
+            },
+            {
+              "value": "cmyk",
+              "label": "In inks for a printer (CMYK)"
+            },
+            {
+              "value": "cmyk_black",
+              "label": "In inks, with black printed over the colours"
+            }
+          ],
+          "default": "rgb",
+          "hint": "CMYK for a printer that asks for it: the colours are turned into cyan, magenta, yellow and black"
+        },
+        {
+          "key": "pdf_icc",
+          "label": "Printing profile (ICC)",
+          "kind": "path",
+          "shape": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model",
+          "default": "",
+          "hint": "The ICC profile the printer names, such as PSO Coated v3 or ISO Coated v2: with it the PDF is a PDF/X-4, in CMYK"
+        },
+        {
           "key": "pdf_marks",
           "label": "Crop marks",
           "kind": "choice",
@@ -2626,6 +2660,22 @@
           ],
           "default": "no",
           "hint": "Short lines outside the page that show the printer where to cut"
+        },
+        {
+          "key": "pdf_sheets",
+          "label": "Sheets",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "A map cut into pages that are put together after, such as 2x2: across and down, each a little over its neighbours, with its number and its neighbours in the heading. Empty: one page"
+        },
+        {
+          "key": "pdf_folds",
+          "label": "Folds",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Short grey lines at the edges where the page is to be folded, such as 4x2 for a folded map: columns and rows. Empty: none"
         },
         {
           "key": "pdf_title",
@@ -2786,6 +2836,10 @@
             {
               "value": "webp",
               "label": "WebP image (.webp)"
+            },
+            {
+              "value": "gif",
+              "label": "Moving picture, GIF (.gif)"
             },
             {
               "value": "tif",
@@ -3077,6 +3131,10 @@
             {
               "value": "webp",
               "label": "WebP image (.webp)"
+            },
+            {
+              "value": "gif",
+              "label": "Moving picture, GIF (.gif)"
             },
             {
               "value": "tif",
@@ -3608,6 +3666,10 @@
               "label": "WebP image (.webp)"
             },
             {
+              "value": "gif",
+              "label": "Moving picture, GIF (.gif)"
+            },
+            {
               "value": "tif",
               "label": "GeoTIFF image (.tif)"
             },
@@ -3897,6 +3959,10 @@
             {
               "value": "webp",
               "label": "WebP image (.webp)"
+            },
+            {
+              "value": "gif",
+              "label": "Moving picture, GIF (.gif)"
             },
             {
               "value": "tif",
@@ -4469,6 +4535,10 @@
             {
               "value": "webp",
               "label": "WebP image (.webp)"
+            },
+            {
+              "value": "gif",
+              "label": "Moving picture, GIF (.gif)"
             },
             {
               "value": "tif",
@@ -5210,93 +5280,6 @@
       ]
     },
     {
-      "type": "RangeMapper",
-      "title": "Classify by range",
-      "group": "tool",
-      "category": "Attributes",
-      "description": "Gives each feature a value by the range its number falls in: 1 to 100 gives A, 101 to 200 gives B, and so on. The ranges can be given, or made from the data as equal intervals or with as many features in each.",
-      "inputs": [
-        "Input"
-      ],
-      "outputs": [
-        "Output"
-      ],
-      "outputs_follow_settings": false,
-      "offered": true,
-      "params": [
-        {
-          "key": "attribute",
-          "label": "Attribute",
-          "kind": "attribute",
-          "shape": "the name of one attribute of the stream on the port",
-          "port": "Input",
-          "default": "",
-          "hint": "A number to look up in the ranges"
-        },
-        {
-          "key": "method",
-          "label": "Ranges",
-          "kind": "choice",
-          "shape": "one of the values in choices, as a string",
-          "choices": [
-            {
-              "value": "own",
-              "label": "Ranges you give"
-            },
-            {
-              "value": "equal",
-              "label": "Equal intervals"
-            },
-            {
-              "value": "quantile",
-              "label": "The same number in each"
-            }
-          ],
-          "default": "own"
-        },
-        {
-          "key": "ranges",
-          "label": "From, to and value",
-          "kind": "list",
-          "shape": "a list of [from, to, value]; an empty from or to has no end",
-          "port": "Input",
-          "default": "",
-          "hint": "From and to are both in the range: 1 to 100 and 101 to 200. An empty from or to has no end. The first range that fits is used"
-        },
-        {
-          "key": "classes",
-          "label": "Number of classes",
-          "kind": "text",
-          "shape": "a string",
-          "default": "5",
-          "hint": "Equal intervals split from the smallest to the largest value; the same number in each puts as many features in each"
-        },
-        {
-          "key": "decimals",
-          "label": "Decimals in the labels",
-          "kind": "text",
-          "shape": "a string",
-          "default": "0"
-        },
-        {
-          "key": "result",
-          "label": "Write to",
-          "kind": "text",
-          "shape": "a string",
-          "default": "class",
-          "hint": "The attribute that gets the value of the range"
-        },
-        {
-          "key": "otherwise",
-          "label": "Outside the ranges",
-          "kind": "text",
-          "shape": "a string",
-          "default": "",
-          "hint": "Written for a value that is in no range, and for an empty one. Empty leaves it empty"
-        }
-      ]
-    },
-    {
       "type": "ValueMapper",
       "title": "Map values",
       "group": "tool",
@@ -6007,42 +5990,6 @@
       ]
     },
     {
-      "type": "Intersector",
-      "title": "Intersect",
-      "group": "tool",
-      "category": "Geometry",
-      "description": "Cuts points, lines and areas by the areas of Overlay. Each part that lies in an area gets the attributes of both and goes to Intersection: a road cut where it crosses from one zone to the next. Where the areas overlap, a part comes for each. What lies outside them all goes to Outside.",
-      "inputs": [
-        "Input",
-        "Overlay"
-      ],
-      "outputs": [
-        "Intersection",
-        "Outside"
-      ],
-      "outputs_follow_settings": false,
-      "offered": true,
-      "params": [
-        {
-          "key": "attributes",
-          "label": "Attributes to fetch",
-          "kind": "attributes",
-          "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
-          "port": "Overlay",
-          "default": "",
-          "hint": "From the area of Overlay each part lies in. Empty fetches all"
-        },
-        {
-          "key": "prefix",
-          "label": "Prefix",
-          "kind": "text",
-          "shape": "a string",
-          "default": "",
-          "hint": "Put in front of the fetched names, for example zone_. Without it, a name the features already have is not fetched"
-        }
-      ]
-    },
-    {
       "type": "NeighborFinder",
       "title": "Find nearest",
       "group": "tool",
@@ -6099,7 +6046,7 @@
       "title": "Split lines",
       "group": "tool",
       "category": "Geometry",
-      "description": "Splits lines where points lie on them, where they cross or meet each other, or both. Each part keeps the attributes of its line.",
+      "description": "Splits lines where points lie on them, where they cross or meet each other, or both, or at every corner, so that each segment is a line of its own, which was Split lines into segments before 0.96.8; the outlines of areas can be split that way too. Each part keeps the attributes of its line.",
       "inputs": [
         "Lines",
         "Points"
@@ -6128,10 +6075,32 @@
             {
               "value": "crossings",
               "label": "Crossings only"
+            },
+            {
+              "value": "corners",
+              "label": "Every corner: a line for each segment"
             }
           ],
           "default": "both",
-          "hint": "The points connected to Points, the places where lines cross or meet each other, or both"
+          "hint": "The points connected to Points, the places where lines cross or meet each other, or both. Or every corner, so that each segment is a line of its own"
+        },
+        {
+          "key": "areas",
+          "label": "Areas",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "keep",
+              "label": "To Other, as they are"
+            },
+            {
+              "value": "outline",
+              "label": "Their outlines split too"
+            }
+          ],
+          "default": "keep",
+          "hint": "At every corner"
         },
         {
           "key": "tolerance",
@@ -6193,7 +6162,7 @@
       "title": "Clip",
       "group": "tool",
       "category": "Geometry",
-      "description": "Clips points, lines and areas against the clip areas. Lines and areas are split at the boundary. Points exactly on the boundary count as inside. All clip areas are merged into one before clipping. Heights are kept: a new corner gets its height from the edge or the plane it was cut from. 3D models, such as a TIN, a surface or buildings, are cut from above, each triangle in its own plane, and walls by upright planes along the boundary.",
+      "description": "Clips points, lines, areas, 3D models and rasters against the clip areas. Lines and areas are split at the boundary. Points exactly on the boundary count as inside. All clip areas are merged into one before clipping, or each clips on its own, as the squares of a grid, and gives its attributes to the pieces in it. Heights are kept: a new corner gets its height from the edge or the plane it was cut from. 3D models, such as a TIN, a surface or buildings, are cut from above, each triangle in its own plane, and walls by upright planes along the boundary. A raster, a grid or a picture, keeps the cells whose middles are inside, cut to the areas, and gives the rest on Outside. Called Clip raster for rasters before 0.96.8.",
       "inputs": [
         "Clipper",
         "Clippee"
@@ -6205,6 +6174,59 @@
       "outputs_follow_settings": false,
       "offered": true,
       "params": [
+        {
+          "key": "each",
+          "label": "Clip areas",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "together",
+              "label": "All as one"
+            },
+            {
+              "value": "each",
+              "label": "Each on its own, with its attributes"
+            }
+          ],
+          "default": "together",
+          "hint": "Each on its own: what lies in several clip areas, such as the squares of a grid, is cut into a piece for each, and each piece gets the attributes of its clip area"
+        },
+        {
+          "key": "attributes",
+          "label": "Attributes to fetch",
+          "kind": "attributes",
+          "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
+          "port": "Clipper",
+          "default": "",
+          "hint": "From the clip area each piece lies in. Empty fetches all"
+        },
+        {
+          "key": "prefix",
+          "label": "Prefix",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Put in front of the fetched names, for example square_. Without it, a name the features already have is not fetched"
+        },
+        {
+          "key": "crop",
+          "label": "A raster inside",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "yes",
+              "label": "Cut to the areas"
+            },
+            {
+              "value": "no",
+              "label": "As large as it was"
+            }
+          ],
+          "default": "yes",
+          "hint": "For a raster on Clippee: a cell is inside when its middle is. The cells outside are on Outside, in a raster as large as it was"
+        },
         {
           "key": "close",
           "label": "3D models along the edge",
@@ -6279,37 +6301,11 @@
       ]
     },
     {
-      "type": "PointCounter",
-      "title": "Count points in polygons",
-      "group": "tool",
-      "category": "Geometry",
-      "description": "Counts the points in each polygon and writes the number to an attribute of the polygon. A point on a boundary counts as inside.",
-      "inputs": [
-        "Polygons",
-        "Points"
-      ],
-      "outputs": [
-        "Polygons"
-      ],
-      "outputs_follow_settings": false,
-      "offered": true,
-      "params": [
-        {
-          "key": "name",
-          "label": "Count attribute",
-          "kind": "text",
-          "shape": "a string",
-          "default": "point_count",
-          "hint": "The number of points in each polygon. An attribute that already exists is overwritten"
-        }
-      ]
-    },
-    {
       "type": "SpatialJoiner",
       "title": "Join by location",
       "group": "tool",
       "category": "Geometry",
-      "description": "A spatial join, as Join attributes by location in QGIS: gives each feature the attributes of the features in Join it lies within, crosses, touches or is near: points, lines and areas in both. Each point the municipality it is in, each road the zones it crosses, each stop the nearest line. One, every one, or summarized. Features that find nothing go to Unjoined.",
+      "description": "A spatial join, as Join attributes by location in QGIS: gives each feature the attributes of the features in Join it lies within, crosses, touches or is near: points, lines and areas in both. Each point the municipality it is in, each road the zones it crosses, each stop the nearest line. One, every one, summarized, or only counted, such as the points in each area, which was Count points in polygons before 0.96.8. Features that find nothing go to Unjoined.",
       "inputs": [
         "Features",
         "Join"
@@ -6388,10 +6384,14 @@
             {
               "value": "summary",
               "label": "Summarized: count, and the values together"
+            },
+            {
+              "value": "count",
+              "label": "Counted only: how many, such as the points in each area"
             }
           ],
           "default": "first",
-          "hint": "Summarized keeps every feature in Joined, those that found nothing with the count 0"
+          "hint": "Summarized and counted keep every feature in Joined, those that found nothing with the count 0"
         },
         {
           "key": "numbers",
@@ -6429,7 +6429,7 @@
           "kind": "text",
           "shape": "a string",
           "default": "join_count",
-          "hint": "When summarized: how many were found"
+          "hint": "When summarized or counted: how many were found"
         },
         {
           "key": "attributes",
@@ -6455,7 +6455,7 @@
       "title": "Overlay points on areas",
       "group": "tool",
       "category": "Geometry",
-      "description": "Replaced by Join by location and Count points in polygons. Each point gets the attributes of the area it lies in, and each area the number of points in it.",
+      "description": "Replaced by Join by location, which gives each point the attributes of the area it lies in, and counts the points in each area.",
       "inputs": [
         "Point",
         "Area"
@@ -6852,48 +6852,6 @@
           ],
           "default": "true",
           "hint": "When the same stream comes to both, as for travel times between all stops"
-        }
-      ]
-    },
-    {
-      "type": "LineExploder",
-      "title": "Split lines into segments",
-      "group": "tool",
-      "category": "Geometry",
-      "description": "Explodes each line into its segments: a line from each corner to the next, with the attributes of the line and which segment it is. The outlines of areas can be split too; points pass as they are.",
-      "inputs": [
-        "Input"
-      ],
-      "outputs": [
-        "Output"
-      ],
-      "outputs_follow_settings": false,
-      "offered": true,
-      "params": [
-        {
-          "key": "areas",
-          "label": "Areas",
-          "kind": "choice",
-          "shape": "one of the values in choices, as a string",
-          "choices": [
-            {
-              "value": "keep",
-              "label": "Passed on as they are"
-            },
-            {
-              "value": "outline",
-              "label": "Their outlines split too"
-            }
-          ],
-          "default": "keep"
-        },
-        {
-          "key": "number",
-          "label": "Number attribute",
-          "kind": "text",
-          "shape": "a string",
-          "default": "segment",
-          "hint": "Which segment of its line each is, from 1. Empty leaves it out"
         }
       ]
     },
@@ -7365,7 +7323,7 @@
       "title": "Replace with bounding box",
       "group": "tool",
       "category": "Geometry",
-      "description": "Replaces each geometry with the smallest rectangle around it, along the axes. A box without width or height becomes a line or a point.",
+      "description": "Replaces each geometry with the smallest rectangle around it, along the axes, or makes one rectangle around all the features, or each group, with a count of the features in it, which was Bounding box of all before 0.96.8. A box without width or height becomes a line or a point.",
       "inputs": [
         "Input"
       ],
@@ -7376,39 +7334,22 @@
       "offered": true,
       "params": [
         {
-          "key": "corners",
-          "label": "Add the corners as attributes",
+          "key": "for",
+          "label": "A box around",
           "kind": "choice",
           "shape": "one of the values in choices, as a string",
           "choices": [
             {
-              "value": "false",
-              "label": "No"
+              "value": "each",
+              "label": "Each feature"
             },
             {
-              "value": "true",
-              "label": "Yes: xmin, ymin, xmax and ymax"
+              "value": "together",
+              "label": "All together, or each group"
             }
           ],
-          "default": "false"
-        }
-      ]
-    },
-    {
-      "type": "BoundingBoxAccumulator",
-      "title": "Bounding box of all",
-      "group": "tool",
-      "category": "Geometry",
-      "description": "One rectangle around all the features of the stream, or one for each group, with a count of the features in it.",
-      "inputs": [
-        "Input"
-      ],
-      "outputs": [
-        "Output"
-      ],
-      "outputs_follow_settings": false,
-      "offered": true,
-      "params": [
+          "default": "each"
+        },
         {
           "key": "group_by",
           "label": "Group by",
@@ -7416,7 +7357,7 @@
           "shape": "names of attributes of the stream on the port: a list of strings, or one string separated by commas",
           "port": "Input",
           "default": "",
-          "hint": "One box for each group of features with the same values. Empty gives one box around all"
+          "hint": "All together: one box for each group of features with the same values. Empty gives one box around all"
         },
         {
           "key": "count",
@@ -7424,7 +7365,7 @@
           "kind": "text",
           "shape": "a string",
           "default": "count",
-          "hint": "How many features are in each box. Empty leaves it out"
+          "hint": "All together: how many features are in each box. Empty leaves it out"
         },
         {
           "key": "corners",
@@ -8140,7 +8081,7 @@
       "title": "Filter by geometry type",
       "group": "tool",
       "category": "Geometry",
-      "description": "Sends points, lines and areas to an output each. The cells of a raster go to Raster, and features without geometry to Other. The points of a point cloud go to Point: to take its ground or buildings out, use Filter by value or Test on classification.",
+      "description": "Sends points, lines and areas to an output each. The objects of a 3D model, such as the meshes of a DWG, a TIN or buildings, go to Surface with their triangles. The cells of a raster go to Raster, and features without geometry to Other. The points of a point cloud go to Point: to take its ground or buildings out, use Filter by value or Test on classification.",
       "inputs": [
         "Input"
       ],
@@ -8148,6 +8089,7 @@
         "Point",
         "Line",
         "Area",
+        "Surface",
         "Raster",
         "Other"
       ],
@@ -8175,10 +8117,10 @@
     },
     {
       "type": "AreaCalculator",
-      "title": "Calculate area",
+      "title": "Calculate area and length",
       "group": "tool",
       "category": "Geometry",
-      "description": "Writes the area to an attribute. In metre-based systems the area is planar, in degrees it is geodesic on the ellipsoid.",
+      "description": "Writes the area, the length of a line or the perimeter of an area, or both, to attributes. In metre-based systems they are planar, in degrees geodesic on the ellipsoid. The length was Calculate length before 0.96.8.",
       "inputs": [
         "Input"
       ],
@@ -8189,15 +8131,37 @@
       "offered": true,
       "params": [
         {
+          "key": "what",
+          "label": "Calculate",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "area",
+              "label": "The area"
+            },
+            {
+              "value": "length",
+              "label": "The length, or the perimeter of an area"
+            },
+            {
+              "value": "both",
+              "label": "Both"
+            }
+          ],
+          "default": "area"
+        },
+        {
           "key": "name",
-          "label": "Attribute",
+          "label": "Area in",
           "kind": "text",
           "shape": "a string",
-          "default": "_area"
+          "default": "_area",
+          "hint": "The attribute that gets the area"
         },
         {
           "key": "unit",
-          "label": "Unit",
+          "label": "Unit of area",
           "kind": "choice",
           "shape": "one of the values in choices, as a string",
           "choices": [
@@ -8233,40 +8197,16 @@
           "default": "m2"
         },
         {
-          "key": "decimals",
-          "label": "Decimals",
+          "key": "length_name",
+          "label": "Length in",
           "kind": "text",
           "shape": "a string",
-          "default": "",
-          "hint": "Rounds to this many decimals. Empty keeps them all"
-        }
-      ]
-    },
-    {
-      "type": "LengthCalculator",
-      "title": "Calculate length",
-      "group": "tool",
-      "category": "Geometry",
-      "description": "Writes the length of a line, or the perimeter of an area, to an attribute.",
-      "inputs": [
-        "Input"
-      ],
-      "outputs": [
-        "Output"
-      ],
-      "outputs_follow_settings": false,
-      "offered": true,
-      "params": [
-        {
-          "key": "name",
-          "label": "Attribute",
-          "kind": "text",
-          "shape": "a string",
-          "default": "_length"
+          "default": "_length",
+          "hint": "The attribute that gets the length of a line, or the perimeter of an area"
         },
         {
-          "key": "unit",
-          "label": "Unit",
+          "key": "length_unit",
+          "label": "Unit of length",
           "kind": "choice",
           "shape": "one of the values in choices, as a string",
           "choices": [
@@ -8702,76 +8642,6 @@
       ]
     },
     {
-      "type": "JsonFlattener",
-      "title": "Flatten JSON",
-      "group": "tool",
-      "category": "JSON",
-      "description": "Makes the JSON in an attribute into attributes of their own, so that the stream is a plain table: {\"adress\": {\"ort\": \"Borås\"}} gives adress.ort. Lists are kept as JSON text, or get an attribute per element. Features whose attribute is not JSON go to Failed.",
-      "inputs": [
-        "Input"
-      ],
-      "outputs": [
-        "Output",
-        "Failed"
-      ],
-      "outputs_follow_settings": false,
-      "offered": true,
-      "params": [
-        {
-          "key": "attribute",
-          "label": "JSON in",
-          "kind": "attribute",
-          "shape": "the name of one attribute of the stream on the port",
-          "port": "Input",
-          "default": "",
-          "hint": "The attribute with JSON text, such as the answer from HTTP request or an object that an input kept as JSON"
-        },
-        {
-          "key": "lists",
-          "label": "Lists",
-          "kind": "choice",
-          "shape": "one of the values in choices, as a string",
-          "choices": [
-            {
-              "value": "text",
-              "label": "As JSON text in one attribute"
-            },
-            {
-              "value": "columns",
-              "label": "An attribute per element: name.0, name.1, …"
-            }
-          ],
-          "default": "text",
-          "hint": "For a feature per element, use Explode JSON list"
-        },
-        {
-          "key": "prefix",
-          "label": "Prefix",
-          "kind": "text",
-          "shape": "a string",
-          "default": "",
-          "hint": "Put before the new names, such as svar. Empty uses the names in the JSON, and a name the stream has already gets the name of the attribute in front"
-        },
-        {
-          "key": "keep",
-          "label": "Keep the JSON attribute",
-          "kind": "choice",
-          "shape": "one of the values in choices, as a string",
-          "choices": [
-            {
-              "value": "false",
-              "label": "No"
-            },
-            {
-              "value": "true",
-              "label": "Yes"
-            }
-          ],
-          "default": "false"
-        }
-      ]
-    },
-    {
       "type": "JsonExploder",
       "title": "Explode JSON list",
       "group": "tool",
@@ -8866,7 +8736,7 @@
       "title": "Extract JSON values",
       "group": "tool",
       "category": "JSON",
-      "description": "Takes chosen values out of the JSON in an attribute, each by its path, such as adress.ort or kontakter[0].telefon, into attributes. A value that is not there is left empty. Features whose attribute is not JSON go to Failed.",
+      "description": "Takes values out of the JSON in an attribute into attributes: those chosen, each by its path, such as adress.ort or kontakter[0].telefon, or all of them, so that the stream is a plain table, which was Flatten JSON before 0.96.8. A value that is not there is left empty. Features whose attribute is not JSON go to Failed.",
       "inputs": [
         "Input"
       ],
@@ -8893,7 +8763,51 @@
           "shape": "a list of [path in the JSON, attribute name]",
           "port": "Input",
           "default": "",
-          "hint": "A path and the attribute it goes to, such as adress.ort or kontakter[0].telefon. An empty name takes the last part of the path. An object or a list is taken as JSON text"
+          "hint": "A path and the attribute it goes to, such as adress.ort or kontakter[0].telefon. An empty name takes the last part of the path. An object or a list is taken as JSON text. None takes them all: {\"adress\": {\"ort\": \"Borås\"}} gives adress.ort"
+        },
+        {
+          "key": "lists",
+          "label": "Lists",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "text",
+              "label": "As JSON text in one attribute"
+            },
+            {
+              "value": "columns",
+              "label": "An attribute per element: name.0, name.1, …"
+            }
+          ],
+          "default": "text",
+          "hint": "When all are taken. For a feature per element, use Explode JSON list"
+        },
+        {
+          "key": "prefix",
+          "label": "Prefix",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "When all are taken: put before the new names, such as svar. Empty uses the names in the JSON, and a name the stream has already gets the name of the attribute in front"
+        },
+        {
+          "key": "keep",
+          "label": "Keep the JSON attribute",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "false",
+          "hint": "When all are taken"
         }
       ]
     },
@@ -9090,7 +9004,7 @@
             }
           ],
           "default": "true",
-          "hint": "adress.gata and adress.ort become \"adress\": {\"gata\": …, \"ort\": …}, as Flatten JSON took them apart"
+          "hint": "adress.gata and adress.ort become \"adress\": {\"gata\": …, \"ort\": …}, as Extract JSON values takes them apart"
         },
         {
           "key": "parse",
@@ -9163,9 +9077,10 @@
         "Overview"
       ],
       "outputs": [
-        "Map"
+        "Map",
+        "Register"
       ],
-      "outputs_follow_settings": false,
+      "outputs_follow_settings": true,
       "offered": true,
       "params": [
         {
@@ -9296,6 +9211,10 @@
             {
               "value": "bw",
               "label": "Print in black and white"
+            },
+            {
+              "value": "hand",
+              "label": "Drawn by hand, in ink and watercolour"
             }
           ],
           "default": "",
@@ -9607,6 +9526,27 @@
           "default": "auto"
         },
         {
+          "key": "scale_number",
+          "label": "Scale in figures",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "bar",
+              "label": "The bar alone"
+            },
+            {
+              "value": "both",
+              "label": "Under the bar, as 1:50 000"
+            },
+            {
+              "value": "number",
+              "label": "In place of the bar"
+            }
+          ],
+          "default": "bar"
+        },
+        {
           "key": "north_style",
           "label": "North arrow as",
           "kind": "choice",
@@ -9648,6 +9588,14 @@
             {
               "value": "degrees",
               "label": "Latitude and longitude, in degrees"
+            },
+            {
+              "value": "utm",
+              "label": "UTM, with the 100 km squares of MGRS"
+            },
+            {
+              "value": "sheets",
+              "label": "Map sheets of 10 km in SWEREF 99 TM, with their names"
             }
           ],
           "default": "none",
@@ -9660,6 +9608,62 @@
           "shape": "a string",
           "default": "",
           "hint": "In the units of the map, such as 1000 for every km in SWEREF 99 TM, or in degrees for a grid of degrees. Empty gives a round number by the size"
+        },
+        {
+          "key": "index_grid",
+          "label": "Index squares across",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Squares named A, B, C across and 1, 2, 3 down, as on a town map, this many across; Register then gives the square of each name. Empty: none"
+        },
+        {
+          "key": "vision",
+          "label": "Colours as seen by",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "",
+              "label": "Everyone: as they are"
+            },
+            {
+              "value": "deuteranopia",
+              "label": "Deuteranopia: green-blind, about 1 man in 20"
+            },
+            {
+              "value": "protanopia",
+              "label": "Protanopia: red-blind, about 1 man in 50"
+            },
+            {
+              "value": "tritanopia",
+              "label": "Tritanopia: blue-blind, rare"
+            },
+            {
+              "value": "grey",
+              "label": "Grey, as printed in black and white"
+            }
+          ],
+          "default": "",
+          "hint": "To try a map: the picture in the colours that someone with colour blindness sees, or in grey. A PDF of it is a picture"
+        },
+        {
+          "key": "check_contrast",
+          "label": "Look at the labels",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "false",
+          "hint": "Warns of labels without a halo that stand out too little from what is under them, less than 3 to 1 as WCAG counts contrast"
         },
         {
           "key": "map_frame",
@@ -9977,6 +9981,111 @@
           "default": "top-right"
         },
         {
+          "key": "grid_frame",
+          "label": "Frame along the degrees",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "false",
+          "hint": "With a grid of degrees: the map cut along its outermost lines of latitude and longitude, so that its edge curves with them, as on a map of a large area"
+        },
+        {
+          "key": "globe",
+          "label": "Globe in the corner",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "None"
+            },
+            {
+              "value": "bottom-left",
+              "label": "Lower left"
+            },
+            {
+              "value": "bottom-right",
+              "label": "Lower right"
+            },
+            {
+              "value": "top-left",
+              "label": "Upper left"
+            },
+            {
+              "value": "top-right",
+              "label": "Upper right"
+            }
+          ],
+          "default": "none",
+          "hint": "A small globe turned to the map, with its place marked in red"
+        },
+        {
+          "key": "profile_from",
+          "label": "Height profile of",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The name of a layer of lines, such as a trail: the heights along its first line, from the first grid of heights in the map, drawn as a profile in a corner. Empty: none"
+        },
+        {
+          "key": "profile_corner",
+          "label": "Profile in the corner",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "bottom-left",
+              "label": "Lower left"
+            },
+            {
+              "value": "bottom-right",
+              "label": "Lower right"
+            },
+            {
+              "value": "top-left",
+              "label": "Upper left"
+            },
+            {
+              "value": "top-right",
+              "label": "Upper right"
+            }
+          ],
+          "default": "bottom-left"
+        },
+        {
+          "key": "profile_title",
+          "label": "Title of the profile",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Such as Depth along the dashed line, A to B. Empty: the name of the layer"
+        },
+        {
+          "key": "profile_places",
+          "label": "Places along the profile",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "The name of a layer of points, such as basins and straits: those near the line are written over the profile where they are along it, by their attribute name or the first with text"
+        },
+        {
+          "key": "profile_size",
+          "label": "Profile width in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "34",
+          "hint": "Of the width of the map"
+        },
+        {
           "key": "inset_size",
           "label": "Inset width in %",
           "kind": "text",
@@ -10131,6 +10240,14 @@
           "shape": "a string",
           "default": "",
           "hint": "Written small in the lower right corner, such as © Lantmäteriet, after the credit of the background map"
+        },
+        {
+          "key": "footer",
+          "label": "Band along the bottom",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Written on the left of a band across the bottom of the map, such as Data: EMODnet Bathymetry · NOAA ETOPO, with the source on the right of it. Empty: no band"
         },
         {
           "key": "crs",
@@ -10705,7 +10822,8 @@
         "Map",
         "Water",
         "Lights",
-        "Trees"
+        "Trees",
+        "Names"
       ],
       "outputs": [
         "Image"
@@ -10828,6 +10946,10 @@
             {
               "value": "study",
               "label": "A sun study: a picture for each time of each date"
+            },
+            {
+              "value": "day",
+              "label": "A whole day: a picture every so many hours from sunrise to sunset of the date"
             }
           ],
           "default": "angles",
@@ -10904,6 +11026,14 @@
           "shape": "a string",
           "default": "",
           "hint": "A folder beside the model where each picture is written as PNG, named by date and time. Empty: only the sheet of them all"
+        },
+        {
+          "key": "gif",
+          "label": "Also as a moving picture",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "A file beside the model, such as out/the_day.gif, where the pictures of the sun study or the day are shown one after another. Empty: none"
         },
         {
           "key": "clock",
@@ -11081,6 +11211,10 @@
             {
               "value": "wood",
               "label": "Light wood, as a model of a city"
+            },
+            {
+              "value": "sketch",
+              "label": "A drawing: paper white, with lines along the edges"
             }
           ],
           "default": "materials",
@@ -11342,6 +11476,271 @@
           "hint": "For the terrain on Terrain, where no map from Map covers it"
         },
         {
+          "key": "night",
+          "label": "Day or night",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "day",
+              "label": "Day, as the sun gives"
+            },
+            {
+              "value": "moon",
+              "label": "Night, under the moon and the stars"
+            },
+            {
+              "value": "aurora",
+              "label": "Night with northern lights"
+            }
+          ],
+          "default": "day",
+          "hint": "At night the moon stands where the sun would, by Sun from and Sun height, with stars around it. Lit windows and lamps light the streets. The sky is used as background"
+        },
+        {
+          "key": "snow_fall",
+          "label": "Falling snow in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Flakes in the air in front of the camera: 20 is a few, 100 a snowstorm. The sky clouds over"
+        },
+        {
+          "key": "snow_cover",
+          "label": "Snow on the ground in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Snow lying on roofs, the ground and the trees, on what is flat first: 30 is a dusting, 100 white all over"
+        },
+        {
+          "key": "rain",
+          "label": "Rain in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Streaks of rain in the air, a grey sky, and the ground wet. 50 is a shower, 100 a downpour"
+        },
+        {
+          "key": "wet",
+          "label": "Wet ground in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Darker ground with puddles that mirror the buildings and the sky, as after rain. Empty: as wet as the rain makes it"
+        },
+        {
+          "key": "lightning",
+          "label": "Lightning",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "none",
+              "label": "None"
+            },
+            {
+              "value": "bolt",
+              "label": "A bolt of lightning"
+            },
+            {
+              "value": "storm",
+              "label": "A thunderstorm: a dark sky and three bolts"
+            }
+          ],
+          "default": "none",
+          "hint": "Bolts beyond the models, whose flash lights the scene from there"
+        },
+        {
+          "key": "fog",
+          "label": "Valley fog in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Fog lying in the low parts, so that the hills and the tall buildings stand out of it. 40 is a morning mist"
+        },
+        {
+          "key": "fog_height",
+          "label": "Fog, how deep",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "In metres: how high the fog reaches before it is thin. Empty: a quarter of the heights of the scene"
+        },
+        {
+          "key": "wind",
+          "label": "Wind in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Slants the rain and the snow, raises waves, lays down the smoke, bends the trees and moves the shadows of the clouds. 30 is a breeze, 100 a gale"
+        },
+        {
+          "key": "wind_from",
+          "label": "Wind from",
+          "kind": "text",
+          "shape": "a string",
+          "default": "225",
+          "hint": "Degrees clockwise from north: 225 is a south-west wind"
+        },
+        {
+          "key": "sun_rays",
+          "label": "Rays of sun in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Rays that fan out from the sun through gaps in clouds, haze and fog. Best with the sun low in the picture and some cloud"
+        },
+        {
+          "key": "cloud_shadows",
+          "label": "Shadows of clouds in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Large soft shadows of clouds over the land, as on a day of sun and cloud. Seen best over a large terrain"
+        },
+        {
+          "key": "rainbow",
+          "label": "Rainbow in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "A bow opposite the sun, 42° around the point straight away from it, with a fainter second one outside it. Seen when the sun is lower than 42° and behind the camera. The bow is wide: a Lens angle of 70 to 90 shows it, and a lower sun lifts it higher. In a studio it stands on the room behind the models"
+        },
+        {
+          "key": "frost",
+          "label": "Frost and rime in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "White rime on roofs, walls, trees and the ground, glinting, and ferns of ice on the windows. 30 is a frosty morning, 100 all white"
+        },
+        {
+          "key": "ice",
+          "label": "Ice on the water in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "The water frozen: grey-blue ice with cracks, and snow blown over it as there is snow on the ground. Needs Water"
+        },
+        {
+          "key": "icicles",
+          "label": "Icicles in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Icicles hanging under the eaves of the roofs: 30 a few, 100 a row along each"
+        },
+        {
+          "key": "smoke",
+          "label": "Smoke from chimneys in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "The share of the buildings with smoke or steam rising from their highest point, as on a cold still morning. The wind lays it down"
+        },
+        {
+          "key": "advent",
+          "label": "Advent lights in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "The share of the lit windows with an advent candlestick on the sill or a star hanging in it. Needs lit windows"
+        },
+        {
+          "key": "lamp_cones",
+          "label": "Light cones under lamps in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "The air lit under each lamp on Lights, as cones of light, stronger in fog, haze, snow and rain"
+        },
+        {
+          "key": "trails",
+          "label": "Car light trails in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Lines on Lights are roads: along them the lights of cars make streaks, white one way and red the other, as in a long exposure at night"
+        },
+        {
+          "key": "fireworks",
+          "label": "Fireworks",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "How many bursts in the sky over the scene, such as 5. Best at night"
+        },
+        {
+          "key": "tilt_shift",
+          "label": "Tilt-shift in %",
+          "kind": "text",
+          "shape": "a string",
+          "default": "0",
+          "hint": "Sharp in a band across the middle and blurred above and below it, with livelier colours, so that a town looks like a model of itself. Best from above"
+        },
+        {
+          "key": "season",
+          "label": "Trees, season",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "summer",
+              "label": "Summer: green"
+            },
+            {
+              "value": "spring",
+              "label": "Spring: light green, some in blossom"
+            },
+            {
+              "value": "autumn",
+              "label": "Autumn: yellow, orange and red"
+            },
+            {
+              "value": "winter",
+              "label": "Winter: bare branches, the conifers green"
+            }
+          ],
+          "default": "summer",
+          "hint": "For the trees on Trees"
+        },
+        {
+          "key": "outlines",
+          "label": "Lines along edges",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "false",
+              "label": "No"
+            },
+            {
+              "value": "true",
+              "label": "Yes"
+            }
+          ],
+          "default": "false",
+          "hint": "Dark lines where one thing stands in front of another and where a surface turns, as in a drawing. On with the look A drawing"
+        },
+        {
+          "key": "names_by",
+          "label": "Names from",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Names",
+          "default": "",
+          "hint": "The attribute with the names of the points on Names, written floating over their places, with a line down to each"
+        },
+        {
+          "key": "names_height",
+          "label": "Names, how high",
+          "kind": "text",
+          "shape": "a string",
+          "default": "30",
+          "hint": "In metres above the ground, or above the height of the point when it has one"
+        },
+        {
           "key": "quality",
           "label": "Quality",
           "kind": "choice",
@@ -11452,6 +11851,90 @@
           "kind": "text",
           "shape": "a string",
           "default": "#a39e96"
+        },
+        {
+          "key": "colour_by",
+          "label": "Colour by",
+          "kind": "expression",
+          "shape": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\"",
+          "port": "Input",
+          "default": "",
+          "hint": "A number, such as an attribute with the population, that colours each block from the ramp, its top a little lighter; or an attribute with a colour of its own, as #rrggbb. Empty: the colours above"
+        },
+        {
+          "key": "colour_ramp",
+          "label": "Colours from",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "viridis",
+              "label": "Yellow to blue"
+            },
+            {
+              "value": "heat",
+              "label": "Yellow to red"
+            },
+            {
+              "value": "blues",
+              "label": "Blues"
+            },
+            {
+              "value": "reds",
+              "label": "Reds"
+            },
+            {
+              "value": "greens",
+              "label": "Greens"
+            },
+            {
+              "value": "oranges",
+              "label": "Oranges"
+            },
+            {
+              "value": "purples",
+              "label": "Purples"
+            },
+            {
+              "value": "greys",
+              "label": "Greys"
+            },
+            {
+              "value": "diverging",
+              "label": "Blue to red"
+            },
+            {
+              "value": "terrain",
+              "label": "Heights: green to brown"
+            },
+            {
+              "value": "rainbow",
+              "label": "Depths: violet, blue, green, yellow to red"
+            },
+            {
+              "value": "sea",
+              "label": "Sea: navy, turquoise, green to pale yellow"
+            }
+          ],
+          "default": "viridis",
+          "hint": "From the smallest values to the largest"
+        },
+        {
+          "key": "colour_scale",
+          "label": "Spread over the values",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "linear",
+              "label": "Evenly from the smallest to the largest"
+            },
+            {
+              "value": "quantiles",
+              "label": "As many blocks in each colour: shows differences among the many small values too"
+            }
+          ],
+          "default": "linear"
         },
         {
           "key": "name",
@@ -11855,7 +12338,7 @@
       "title": "Extract bounds",
       "group": "tool",
       "category": "Geometry",
-      "description": "Puts the smallest and largest x and y of each feature, its bounding box, in attributes of their own: xmin, ymin, xmax and ymax, and zmin and zmax for features with heights. For the bounds of all the features together, use Bounding box of all.",
+      "description": "Puts the smallest and largest x and y of each feature, its bounding box, in attributes of their own: xmin, ymin, xmax and ymax, and zmin and zmax for features with heights. For the bounds of all the features together, use Replace with bounding box, all together.",
       "inputs": [
         "Input"
       ],
@@ -13397,7 +13880,7 @@
       "title": "Values from raster",
       "group": "tool",
       "category": "Raster",
-      "description": "Gives each feature the value of the raster where it lies: the height of the terrain at each address, the land cover under each tree, the noise at each school. The value of the cell, or between the four nearest cells for heights. A line or an area gets the value at a point on it; Zonal statistics gives the mean and more over each area.",
+      "description": "Gives each feature the value of the raster where it lies: the height of the terrain at each address, the land cover under each tree, the noise at each school. The value of the cell, or between the four nearest cells for heights. A line or an area gets the value at a point on it, or each area statistics of the cells whose middles lie in it, which was Zonal statistics before 0.96.8: how many, the mean, the smallest and largest, sum, median, spread and the most common value, and for classes, such as land cover, the share or area of each. The share of forest in each municipality, the mean height of each property, the people in each district from a population grid. A series of pictures over time, such as from Read satellite bands, gives each area a row for each time, with the time: the NDVI of each field through a summer.",
       "inputs": [
         "Features",
         "Raster"
@@ -13408,6 +13891,24 @@
       "outputs_follow_settings": false,
       "offered": true,
       "params": [
+        {
+          "key": "areas",
+          "label": "Areas get",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "point",
+              "label": "The value at a point on them"
+            },
+            {
+              "value": "stats",
+              "label": "Statistics of the cells in them: count, mean and more"
+            }
+          ],
+          "default": "point",
+          "hint": "Statistics: the cells whose middles lie in each area, as zonal statistics. Every feature is then taken as an area"
+        },
         {
           "key": "name",
           "label": "Attribute",
@@ -13433,25 +13934,7 @@
           ],
           "default": "cell",
           "hint": "The cell it lies in suits classes, such as land cover"
-        }
-      ]
-    },
-    {
-      "type": "ZonalStatistics",
-      "title": "Zonal statistics",
-      "group": "tool",
-      "category": "Raster",
-      "description": "Counts the cells of the raster within each area: how many, the mean, the smallest and largest, sum, median, spread and the most common value, and for classes, such as land cover, the share or area of each. A cell counts when its middle lies in the area. The share of forest in each municipality, the mean height of each property, the people in each district from a population grid. A series of pictures over time, such as from Read satellite bands, gives each area a row for each time, with the time: the NDVI of each field through a summer.",
-      "inputs": [
-        "Zones",
-        "Raster"
-      ],
-      "outputs": [
-        "Output"
-      ],
-      "outputs_follow_settings": false,
-      "offered": true,
-      "params": [
+        },
         {
           "key": "stats",
           "label": "Statistics",
@@ -13551,59 +14034,6 @@
           "shape": "a string",
           "default": "1",
           "hint": "When the heights are in other units than the coordinates, such as feet on metres: 0.3048"
-        }
-      ]
-    },
-    {
-      "type": "RasterClipper",
-      "title": "Clip raster",
-      "group": "tool",
-      "category": "Raster",
-      "description": "Keeps the cells of a raster inside the areas on Areas, or outside them, and cuts the raster to them. A grid of values or a picture. To reproject a raster, use Reproject.",
-      "inputs": [
-        "Raster",
-        "Areas"
-      ],
-      "outputs": [
-        "Raster"
-      ],
-      "outputs_follow_settings": false,
-      "offered": true,
-      "params": [
-        {
-          "key": "keep",
-          "label": "Keep the cells",
-          "kind": "choice",
-          "shape": "one of the values in choices, as a string",
-          "choices": [
-            {
-              "value": "inside",
-              "label": "Inside the areas"
-            },
-            {
-              "value": "outside",
-              "label": "Outside the areas"
-            }
-          ],
-          "default": "inside",
-          "hint": "A cell is inside when its middle is"
-        },
-        {
-          "key": "crop",
-          "label": "The raster",
-          "kind": "choice",
-          "shape": "one of the values in choices, as a string",
-          "choices": [
-            {
-              "value": "yes",
-              "label": "Cut it to the areas"
-            },
-            {
-              "value": "no",
-              "label": "Keep the size of the raster"
-            }
-          ],
-          "default": "yes"
         }
       ]
     },
@@ -14055,7 +14485,7 @@
       "title": "Resample raster",
       "group": "tool",
       "category": "Raster",
-      "description": "Gives a raster other cells: a cell size, or the cells of a raster on Like, so that two rasters line up cell by cell for Raster calculator. The cell under the middle for classes, between the nearest for heights, or the mean or most common value to make it coarser.",
+      "description": "Gives a raster other cells: a cell size, or the cells of a raster on Like, so that two rasters line up cell by cell for Raster calculator. The cell under the middle for classes, between the nearest for heights, or the mean, most common value, median, smallest, largest or sum of the cells within to make it coarser. Or a number of cells across and down into one, for grids and pictures, which was Generalize raster before 0.96.8.",
       "inputs": [
         "Raster",
         "Like"
@@ -14073,6 +14503,14 @@
           "shape": "a string",
           "default": "10",
           "hint": "The new size of the cells. A raster connected to Like gives its cells instead, so that the two line up cell by cell"
+        },
+        {
+          "key": "factor",
+          "label": "Or cells into one",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "Instead of a cell size: how many cells across and down become one, such as 4, which makes 1 m cells into 4 m cells. A picture is made coarser this way, by the mean colour"
         },
         {
           "key": "method",
@@ -14095,9 +14533,26 @@
             {
               "value": "majority",
               "label": "The most common value within: classes made coarser"
+            },
+            {
+              "value": "median",
+              "label": "The median of the cells within"
+            },
+            {
+              "value": "min",
+              "label": "The smallest within"
+            },
+            {
+              "value": "max",
+              "label": "The largest within"
+            },
+            {
+              "value": "sum",
+              "label": "The sum of the cells within: people in a population grid"
             }
           ],
-          "default": "nearest"
+          "default": "nearest",
+          "hint": "Empty cells are left out of those within; a new cell is empty when all its cells are"
         }
       ]
     },
@@ -15692,6 +16147,133 @@
       ]
     },
     {
+      "type": "CartogramMaker",
+      "title": "Make a cartogram",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "Draws areas by a value rather than by the land: as circles as large as the value, such as the people living there, pushed apart from where the areas are so that they do not overlap (a Dorling cartogram); or as a square for each area on a grid, as near its place as it can be, so that small areas are seen as well as large ones (a tile map). The attributes go with them. Works in metres.",
+      "inputs": [
+        "Areas"
+      ],
+      "outputs": [
+        "Cartogram"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "kind",
+          "label": "Kind",
+          "kind": "choice",
+          "shape": "one of the values in choices, as a string",
+          "choices": [
+            {
+              "value": "circles",
+              "label": "Circles by the value, pushed apart (Dorling)"
+            },
+            {
+              "value": "squares",
+              "label": "A square for each area, on a grid (a tile map)"
+            }
+          ],
+          "default": "circles",
+          "hint": "Circles show the value by their size; squares give each area as much room, so that small areas are seen"
+        },
+        {
+          "key": "value",
+          "label": "Value",
+          "kind": "attribute",
+          "shape": "the name of one attribute of the stream on the port",
+          "port": "Areas",
+          "default": "",
+          "hint": "The number each circle is as large as, such as the people living there. Not needed for squares"
+        },
+        {
+          "key": "share",
+          "label": "How much of the land",
+          "kind": "text",
+          "shape": "a string",
+          "default": "50",
+          "hint": "In percent: the circles together cover this much of the area of the land, or the squares are this large"
+        },
+        {
+          "key": "rounds",
+          "label": "Rounds",
+          "kind": "text",
+          "shape": "a string",
+          "default": "300",
+          "hint": "How many times the circles are pushed apart. More: fewer overlaps, further from their places"
+        }
+      ]
+    },
+    {
+      "type": "BuildingGeneralizer",
+      "title": "Generalize buildings",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "Buildings for a smaller scale: those closer to each other than a distance become one block, corners that stick out less than a distance are taken away, and the smallest blocks are left out. Each block keeps the attributes of its largest building and the number of buildings in it. In metres.",
+      "inputs": [
+        "Buildings"
+      ],
+      "outputs": [
+        "Generalized"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "join",
+          "label": "Join closer than",
+          "kind": "text",
+          "shape": "a string",
+          "default": "5",
+          "hint": "In metres: buildings closer to each other than this become one block"
+        },
+        {
+          "key": "simplify",
+          "label": "Simplify by",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "In metres: corners that stick out less than this are taken away. Empty: half of Join closer than"
+        },
+        {
+          "key": "least",
+          "label": "Smallest area",
+          "kind": "text",
+          "shape": "a string",
+          "default": "50",
+          "hint": "In square metres: blocks smaller than this are left out"
+        }
+      ]
+    },
+    {
+      "type": "FeatureDisplacer",
+      "title": "Move away from lines",
+      "group": "tool",
+      "category": "Geometry",
+      "description": "Moves features, such as houses, straight away from the nearest of the lines, such as roads, until they are at least a distance from them, so that both are seen when the roads are drawn wider than they are. The attribute moved says how far, in metres.",
+      "inputs": [
+        "Features",
+        "Lines"
+      ],
+      "outputs": [
+        "Moved"
+      ],
+      "outputs_follow_settings": false,
+      "offered": true,
+      "params": [
+        {
+          "key": "distance",
+          "label": "At least",
+          "kind": "text",
+          "shape": "a string",
+          "default": "15",
+          "hint": "In metres: how far from the lines each feature is to be, such as half the width of a road as drawn and a little more"
+        }
+      ]
+    },
+    {
       "type": "GeodataFetcher",
       "title": "Fetch geodata",
       "group": "input",
@@ -16502,7 +17084,7 @@
       "title": "Classify values",
       "group": "tool",
       "category": "Statistics",
-      "description": "Puts the features in classes by a number, for a map with a colour for each class: natural breaks (Jenks), where the classes differ as much as they can and the values within each as little; quantiles, with as many features in each; equal intervals; standard deviations from the mean; or breaks of your own. Each feature gets its class, 1 for the lowest, and its name, such as 10–50, for the legend; Classes lists them with how many are in each.",
+      "description": "Puts the features in classes by a number, for a map with a colour for each class: natural breaks (Jenks), where the classes differ as much as they can and the values within each as little; quantiles, with as many features in each; equal intervals; standard deviations from the mean; or breaks of your own. Each feature gets its class, 1 for the lowest, and its name, such as 10–50, for the legend; Classes lists them with how many are in each. Or ranges of your own, each with the value it gives, such as 1 to 100 gives A, which was Classify by range before 0.96.8.",
       "inputs": [
         "Input"
       ],
@@ -16547,6 +17129,10 @@
             {
               "value": "manual",
               "label": "Breaks of my own"
+            },
+            {
+              "value": "ranges",
+              "label": "Ranges of my own, each with its value"
             }
           ],
           "default": "jenks"
@@ -16568,12 +17154,29 @@
           "hint": "For breaks of your own: where one class ends and the next begins, such as 10, 50, 100"
         },
         {
+          "key": "ranges",
+          "label": "From, to and value",
+          "kind": "list",
+          "shape": "a list of [from, to, value]; an empty from or to has no end",
+          "port": "Input",
+          "default": "",
+          "hint": "For ranges of your own: from and to are both in the range, 1 to 100 and 101 to 200, and each feature gets the value of the first that fits, such as A or 1. An empty from or to has no end"
+        },
+        {
+          "key": "otherwise",
+          "label": "Outside the ranges",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "For ranges of your own: written for a value that is in no range, and for an empty one. Empty leaves it empty"
+        },
+        {
           "key": "name",
           "label": "Attribute with the class",
           "kind": "text",
           "shape": "a string",
           "default": "class",
-          "hint": "1 for the lowest values"
+          "hint": "1 for the lowest values; for ranges of your own, the value of the range"
         },
         {
           "key": "label_name",
@@ -18083,6 +18686,14 @@
             {
               "value": "white",
               "label": "Light all over"
+            },
+            {
+              "value": "rainbow",
+              "label": "Rainbow: violet lowest, through blue, green and yellow, to red"
+            },
+            {
+              "value": "sea",
+              "label": "Sea: navy lowest, through turquoise and green, to pale yellow"
             }
           ],
           "default": "land",
@@ -18103,6 +18714,14 @@
           "shape": "a string",
           "default": "100",
           "hint": "How much the map connected to Map covers the colours of the terrain"
+        },
+        {
+          "key": "steps",
+          "label": "Steps every",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "In metres: the heights in flat steps, as layers cut from card. Empty: smooth"
         },
         {
           "key": "width",
@@ -18240,6 +18859,14 @@
             {
               "value": "white",
               "label": "Light all over"
+            },
+            {
+              "value": "rainbow",
+              "label": "Rainbow: violet lowest, through blue, green and yellow, to red"
+            },
+            {
+              "value": "sea",
+              "label": "Sea: navy lowest, through turquoise and green, to pale yellow"
             }
           ],
           "default": "land",
@@ -18260,6 +18887,14 @@
           "shape": "a string",
           "default": "100",
           "hint": "How much the map connected to Map covers the colours of the terrain"
+        },
+        {
+          "key": "steps",
+          "label": "Steps every",
+          "kind": "text",
+          "shape": "a string",
+          "default": "",
+          "hint": "In metres: the heights in flat steps, as layers cut from card. Empty: smooth"
         },
         {
           "key": "view_azimuth",
@@ -18326,11 +18961,23 @@
               "label": "A sky"
             },
             {
+              "value": "colour",
+              "label": "A colour, with the shadow of the block on it"
+            },
+            {
               "value": "none",
               "label": "See-through"
             }
           ],
           "default": "sky"
+        },
+        {
+          "key": "background_colour",
+          "label": "Colour",
+          "kind": "text",
+          "shape": "a string",
+          "default": "#0d1b3d",
+          "hint": "Such as #0d1b3d"
         },
         {
           "key": "block",
@@ -18388,65 +19035,6 @@
       "outputs_follow_settings": false,
       "offered": true,
       "params": []
-    },
-    {
-      "type": "RasterGeneralizer",
-      "title": "Generalize raster",
-      "group": "tool",
-      "category": "Raster",
-      "description": "Makes a raster coarser: a number of cells across and down become one, with their mean, the most common value for classes such as land cover, the median, the smallest, the largest or the sum. Pictures get the mean colour.",
-      "inputs": [
-        "Raster"
-      ],
-      "outputs": [
-        "Raster"
-      ],
-      "outputs_follow_settings": false,
-      "offered": true,
-      "params": [
-        {
-          "key": "factor",
-          "label": "Cells into one",
-          "kind": "text",
-          "shape": "a string",
-          "default": "2",
-          "hint": "How many cells across and down become one: 4 makes 1 m cells into 4 m cells, sixteen into one"
-        },
-        {
-          "key": "method",
-          "label": "The new value",
-          "kind": "choice",
-          "shape": "one of the values in choices, as a string",
-          "choices": [
-            {
-              "value": "mean",
-              "label": "Mean"
-            },
-            {
-              "value": "majority",
-              "label": "Majority: the most common value, for classes"
-            },
-            {
-              "value": "median",
-              "label": "Median"
-            },
-            {
-              "value": "min",
-              "label": "Smallest"
-            },
-            {
-              "value": "max",
-              "label": "Largest"
-            },
-            {
-              "value": "sum",
-              "label": "Sum"
-            }
-          ],
-          "default": "mean",
-          "hint": "Empty cells are left out. A new cell is empty only when all its cells are"
-        }
-      ]
     },
     {
       "type": "RasterCalculator",

@@ -230,7 +230,16 @@ fn note_range(g: &Grid, ctx: &mut NodeCtx, what: &str) {
 const SAMPLE_METHODS: &[(&str, &str)] =
     &[("cell", "The cell it lies in"), ("bilinear", "Between the four nearest cells (bilinear), for heights and other smooth values")];
 
+const SAMPLE_AREAS: &[(&str, &str)] = &[("point", "The value at a point on them"), ("stats", "Statistics of the cells in them: count, mean and more")];
+
 const SAMPLE_PARAMS: &[ParamSpec] = &[
+    ParamSpec {
+        key: "areas",
+        label: "Areas get",
+        kind: ParamKind::Choice(SAMPLE_AREAS),
+        default: "point",
+        hint: "Statistics: the cells whose middles lie in each area, as zonal statistics. Every feature is then taken as an area",
+    },
     ParamSpec {
         key: "name",
         label: "Attribute",
@@ -245,10 +254,28 @@ const SAMPLE_PARAMS: &[ParamSpec] = &[
         default: "cell",
         hint: "The cell it lies in suits classes, such as land cover",
     },
+    ParamSpec {
+        key: "stats",
+        label: "Statistics",
+        kind: ParamKind::Text,
+        default: "count, mean, min, max",
+        hint: "Any of count, mean, min, max, sum, median, std, range, majority and area, separated by commas",
+    },
+    ParamSpec {
+        key: "classes",
+        label: "Each value apart",
+        kind: ParamKind::Choice(ZONAL_CLASSES),
+        default: "",
+        hint: "For classes, such as land cover: an attribute for each value, such as share_3 for the share of the cells with 3",
+    },
+    ParamSpec { key: "prefix", label: "Before the names", kind: ParamKind::Text, default: "", hint: "Such as dem_, to give dem_mean and dem_max" },
 ];
 
 fn run_sampler(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let t = input(inp, "Features");
+    if p.get("areas").as_deref() == Some("stats") {
+        return zonal(p, t, input(inp, "Raster"), ctx);
+    }
     let g = grid_on(input(inp, "Raster"), "Raster")?;
     let name = p.get("name").filter(|n| !n.is_empty()).unwrap_or_else(|| "value".into());
     let smooth = p.get("method").as_deref() == Some("bilinear");
@@ -294,40 +321,22 @@ fn run_sampler(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     }
     if not_points > 0 {
         ctx.notes.info(format!(
-            "{} lines or areas got the value at a point on them. Zonal statistics gives the mean and more over each area",
+            "{} lines or areas got the value at a point on them. Areas get: Statistics gives the mean and more over each area",
             fmt_count(not_points as u64)
         ));
     }
     Ok(vec![("Output".into(), out)])
 }
 
-// ---------- Zonal statistics (ZonalStatistics) ----------
+// ---------- Statistics of the cells in areas, for Values from raster (Zonal statistics before 0.96.8) ----------
 
 const ZONAL_CLASSES: &[(&str, &str)] = &[("", "No"), ("share", "The share of each value, in percent"), ("area", "The area of each value")];
 
-const ZONAL_PARAMS: &[ParamSpec] = &[
-    ParamSpec {
-        key: "stats",
-        label: "Statistics",
-        kind: ParamKind::Text,
-        default: "count, mean, min, max",
-        hint: "Any of count, mean, min, max, sum, median, std, range, majority and area, separated by commas",
-    },
-    ParamSpec {
-        key: "classes",
-        label: "Each value apart",
-        kind: ParamKind::Choice(ZONAL_CLASSES),
-        default: "",
-        hint: "For classes, such as land cover: an attribute for each value, such as share_3 for the share of the cells with 3",
-    },
-    ParamSpec { key: "prefix", label: "Before the names", kind: ParamKind::Text, default: "", hint: "Such as dem_, to give dem_mean and dem_max" },
-];
-
 const ZONAL_STATS: &[&str] = &["count", "mean", "min", "max", "sum", "median", "std", "range", "majority", "area"];
 
-fn run_zonal(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let t = input(inp, "Zones");
-    let raster = input(inp, "Raster");
+/// Statistics of the cells in each area, for Values from raster (Zonal statistics before
+/// 0.96.8).
+fn zonal(p: &P, t: &Table, raster: &Table, ctx: &mut NodeCtx) -> Result<Outputs> {
     let g = grid_on(raster, "Raster")?;
     let stats: Vec<String> = p.list("stats").into_iter().map(|s| s.to_lowercase()).collect();
     let stats = if stats.is_empty() { vec!["count".to_string(), "mean".into(), "min".into(), "max".into()] } else { stats };
@@ -631,31 +640,21 @@ fn run_terrain(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     Ok(vec![("Raster".into(), out.into_table())])
 }
 
-// ---------- Clip raster (RasterClipper) ----------
+// ---------- Clipping a raster, for Clip ----------
 
-const CLIP_KEEP: &[(&str, &str)] = &[("inside", "Inside the areas"), ("outside", "Outside the areas")];
-const CLIP_CROP: &[(&str, &str)] = &[("yes", "Cut it to the areas"), ("no", "Keep the size of the raster")];
-
-const CLIP_PARAMS: &[ParamSpec] = &[
-    ParamSpec { key: "keep", label: "Keep the cells", kind: ParamKind::Choice(CLIP_KEEP), default: "inside", hint: "A cell is inside when its middle is" },
-    ParamSpec { key: "crop", label: "The raster", kind: ParamKind::Choice(CLIP_CROP), default: "yes", hint: "" },
-];
-
-fn run_clip_raster(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let r = input(inp, "Raster");
-    let areas = input(inp, "Areas");
+/// The cells of a raster inside the areas, or outside them, the rest left empty. Cut to the
+/// rows and columns that keep anything when `crop`. None: no cell is kept. With the number
+/// of cells kept and of all.
+pub(super) fn clip_raster(r: &Table, areas: &Table, keep_inside: bool, crop: bool, ctx: &mut NodeCtx) -> Result<(Option<Table>, usize, usize)> {
     let (cells, crs) = match (r.grid.as_deref(), r.image.as_deref()) {
-        (Some(g), _) => (Cells::of(grid_on(r, "Raster").map(|_| g)?), g.crs),
+        (Some(g), _) => (Cells::of(grid_on(r, "Clippee").map(|_| g)?), g.crs),
         (None, Some(i)) => (Cells::of_image(i), r.crs),
-        _ => return err("The stream on Raster has no raster. Read a GeoTIFF, or connect a tool that makes one."),
+        _ => return err("The stream on Clippee has no raster."),
     };
     if r.image.as_deref().is_some_and(|i| i.geotransform[2] != 0.0 || i.geotransform[4] != 0.0) {
-        return err("The picture is turned, which Clip raster cannot work with yet.");
+        return err("The picture is turned, which Clip cannot work with yet.");
     }
     let geoms = geoms_in(areas, crs, ctx)?;
-    if !geoms.iter().flatten().any(|g| !geom::polygons_of(g).is_empty()) {
-        return err("No areas came in on Areas. Connect polygons to clip with.");
-    }
     let mut inside = vec![false; cells.width * cells.height];
     let mut idx = Vec::new();
     for g in geoms.iter().flatten() {
@@ -667,7 +666,6 @@ fn run_clip_raster(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             }
         }
     }
-    let keep_inside = p.get("keep").as_deref() != Some("outside");
     let keep = |i: usize| inside[i] == keep_inside;
     // The rows and columns that keep anything.
     let (mut c0, mut r0, mut c1, mut r1) = (usize::MAX, usize::MAX, 0usize, 0usize);
@@ -676,9 +674,9 @@ fn run_clip_raster(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         (c0, r0, c1, r1) = (c0.min(c), r0.min(rr), c1.max(c + 1), r1.max(rr + 1));
     }
     if c0 == usize::MAX {
-        return err("No cell of the raster is left: the areas do not cover the middle of any cell.");
+        return Ok((None, 0, inside.len()));
     }
-    if p.get("crop").as_deref() == Some("no") || !keep_inside {
+    if !crop {
         (c0, r0, c1, r1) = (0, 0, cells.width, cells.height);
     }
     let (w, h) = (c1 - c0, r1 - r0);
@@ -704,7 +702,6 @@ fn run_clip_raster(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         crs: g.crs,
     });
     let kept = (r0..r1).flat_map(|rr| (c0..c1).map(move |c| rr * cells.width + c)).filter(|i| keep(*i)).count();
-    ctx.notes.info(format!("{} of {} cells kept, in {} × {}", fmt_count(kept as u64), fmt_count(inside.len() as u64), w, h));
     let out = match r.image.as_deref() {
         Some(img) => {
             let mut rgba = Vec::with_capacity(w * h * 4);
@@ -722,7 +719,7 @@ fn run_clip_raster(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         }
         None => grid.expect("a grid").into_table(),
     };
-    Ok(vec![("Raster".into(), out)])
+    Ok((Some(out), kept, inside.len()))
 }
 
 // ---------- Raster to areas (RasterPolygonizer) ----------
@@ -1350,27 +1347,13 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Raster",
-        desc: "Gives each feature the value of the raster where it lies: the height of the terrain at each address, the land cover under each tree, the noise at each school. The value of the cell, or between the four nearest cells for heights. A line or an area gets the value at a point on it; Zonal statistics gives the mean and more over each area.",
+        desc: "Gives each feature the value of the raster where it lies: the height of the terrain at each address, the land cover under each tree, the noise at each school. The value of the cell, or between the four nearest cells for heights. A line or an area gets the value at a point on it, or each area statistics of the cells whose middles lie in it, which was Zonal statistics before 0.96.8: how many, the mean, the smallest and largest, sum, median, spread and the most common value, and for classes, such as land cover, the share or area of each. The share of forest in each municipality, the mean height of each property, the people in each district from a population grid. A series of pictures over time, such as from Read satellite bands, gives each area a row for each time, with the time: the NDVI of each field through a summer.",
         inputs: &["Features", "Raster"],
         outputs: &["Output"],
         ports: None,
         params: SAMPLE_PARAMS,
         run: run_sampler,
         summary: |p| p.get("name").unwrap_or_else(|| "value".into()),
-    },
-    NodeType {
-        name: "ZonalStatistics",
-        title: "Zonal statistics",
-        hidden: false,
-        group: Group::Transformer,
-        category: "Raster",
-        desc: "Counts the cells of the raster within each area: how many, the mean, the smallest and largest, sum, median, spread and the most common value, and for classes, such as land cover, the share or area of each. A cell counts when its middle lies in the area. The share of forest in each municipality, the mean height of each property, the people in each district from a population grid. A series of pictures over time, such as from Read satellite bands, gives each area a row for each time, with the time: the NDVI of each field through a summer.",
-        inputs: &["Zones", "Raster"],
-        outputs: &["Output"],
-        ports: None,
-        params: ZONAL_PARAMS,
-        run: run_zonal,
-        summary: |p| p.get("stats").unwrap_or_else(|| "count, mean, min, max".into()),
     },
     NodeType {
         name: "TerrainAnalyzer",
@@ -1388,20 +1371,6 @@ pub(super) const TYPES: &[NodeType] = &[
             let m = p.get("measure").unwrap_or_else(|| "slope".into());
             TERRAIN_MEASURES.iter().find(|x| x.0 == m).map_or(m.clone(), |x| x.1.split(':').next().unwrap_or(x.1).to_string())
         },
-    },
-    NodeType {
-        name: "RasterClipper",
-        title: "Clip raster",
-        hidden: false,
-        group: Group::Transformer,
-        category: "Raster",
-        desc: "Keeps the cells of a raster inside the areas on Areas, or outside them, and cuts the raster to them. A grid of values or a picture. To reproject a raster, use Reproject.",
-        inputs: &["Raster", "Areas"],
-        outputs: &["Raster"],
-        ports: None,
-        params: CLIP_PARAMS,
-        run: run_clip_raster,
-        summary: |p| if p.get("keep").as_deref() == Some("outside") { "outside".into() } else { "inside".into() },
     },
     NodeType {
         name: "RasterPolygonizer",
@@ -1553,7 +1522,7 @@ mod tests {
         july.meta.time = Some("2026-07-15".into());
         let series = crate::nodes::remote::series_table(vec![june, july], &[]);
         let zone = table_of(vec![Geometry::Polygon(polygon![(x: 1002.0, y: 2000.0), (x: 1005.0, y: 2000.0), (x: 1005.0, y: 2010.0), (x: 1002.0, y: 2010.0)])]);
-        let (out, _) = run_for_test("ZonalStatistics", &[("stats", "mean")], vec![("Zones", zone), ("Raster", series)]).unwrap();
+        let (out, _) = run_for_test("RasterSampler", &[("areas", "stats"), ("stats", "mean")], vec![("Features", zone), ("Raster", series)]).unwrap();
         let t = &out[0].1;
         let (m, time) = (t.field_index("mean").unwrap(), t.field_index("time").unwrap());
         let rows: Vec<(Value, Value)> = t.features.iter().map(|f| (f.attrs[time].clone(), f.attrs[m].clone())).collect();
@@ -1577,9 +1546,9 @@ mod tests {
         // A zone over columns 2 to 4 of the ramp, all ten rows.
         let zone = table_of(vec![Geometry::Polygon(polygon![(x: 1002.0, y: 2000.0), (x: 1005.0, y: 2000.0), (x: 1005.0, y: 2010.0), (x: 1002.0, y: 2010.0)])]);
         let (out, _) = run_for_test(
-            "ZonalStatistics",
-            &[("stats", "count, mean, min, max, sum, majority, area"), ("classes", "share")],
-            vec![("Zones", zone), ("Raster", ramp().into_table())],
+            "RasterSampler",
+            &[("areas", "stats"), ("stats", "count, mean, min, max, sum, majority, area"), ("classes", "share")],
+            vec![("Features", zone), ("Raster", ramp().into_table())],
         )
         .unwrap();
         let t = &out[0].1;
@@ -1612,12 +1581,20 @@ mod tests {
     fn a_raster_is_clipped_reclassified_made_and_measured() {
         // A triangle over the lower left half of the ramp.
         let tri = table_of(vec![Geometry::Polygon(polygon![(x: 1000.0, y: 2000.0), (x: 1010.0, y: 2000.0), (x: 1000.0, y: 2010.0)])]);
-        let (out, _) = run_for_test("RasterClipper", &[], vec![("Raster", ramp().into_table()), ("Areas", tri.clone())]).unwrap();
+        let (out, _) = run_for_test("Clipper", &[], vec![("Clippee", ramp().into_table()), ("Clipper", tri.clone())]).unwrap();
         let g = out[0].1.grid.clone().unwrap();
         let kept = g.values.iter().filter(|v| !v.is_nan()).count();
         assert_eq!(kept, 55, "the cells whose middles lie on or below the diagonal");
         assert_eq!(g.get(0, 9), Some(0.0));
         assert_eq!(g.get(9, 0), None);
+        // The rest on Outside, the raster as large as it was.
+        let rest = out[1].1.grid.clone().unwrap();
+        assert_eq!((rest.width, rest.height), (10, 10));
+        assert_eq!(rest.values.iter().filter(|v| !v.is_nan()).count(), 45);
+        assert!(rest.get(9, 0).is_some());
+        // Each on its own is for features: a stream has one raster.
+        let e = run_for_test("Clipper", &[("each", "each")], vec![("Clippee", ramp().into_table()), ("Clipper", tri.clone())]).unwrap_err();
+        assert!(e.0.contains("one raster"), "{}", e.0);
         // Reclassify: 0 to 4 is 1, 5 to 9 is 2.
         let mut params = serde_json::Map::new();
         params.insert("ranges".into(), serde_json::json!([["0", "4", "1"], ["5", "9", "2"]]));
@@ -1663,5 +1640,17 @@ mod tests {
         let v = out[0].1.grid.clone().unwrap();
         assert_eq!(v.get(30, 0), Some(1.0));
         assert_eq!(v.get(45, 0), None, "beyond the reach");
+    }
+
+    #[test]
+    fn a_raster_made_coarser_by_cells_into_one_or_by_a_cell_size() {
+        // The ramp: each cell its column, 10 × 10 cells of 1 m.
+        let (out, _) = run_for_test("RasterResampler", &[("factor", "5"), ("method", "sum")], vec![("Raster", ramp().into_table())]).unwrap();
+        let g = out[0].1.grid.clone().unwrap();
+        assert_eq!((g.width, g.height), (2, 2));
+        assert_eq!((g.get(0, 0), g.get(1, 0)), (Some(50.0), Some(175.0)), "0 + 1 + 2 + 3 + 4, five rows of them");
+        let (out, _) = run_for_test("RasterResampler", &[("cell", "5"), ("method", "max")], vec![("Raster", ramp().into_table())]).unwrap();
+        let g = out[0].1.grid.clone().unwrap();
+        assert_eq!((g.get(0, 0), g.get(1, 1)), (Some(4.0), Some(9.0)));
     }
 }

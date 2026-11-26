@@ -76,28 +76,10 @@ pub(super) fn add_columns(base: &Table, rows: Vec<(Feature, Vec<(String, Value)>
     Table { fields, features, ..base.like() }
 }
 
-// ---------- Flatten JSON ----------
+// ---------- All the values of JSON, for Extract JSON values (Flatten JSON before 0.96.8) ----------
 
-pub(super) const FLATTEN_PARAMS: &[ParamSpec] = &[
-    ParamSpec {
-        key: "attribute",
-        label: "JSON in",
-        kind: ParamKind::Attribute("Input"),
-        default: "",
-        hint: "The attribute with JSON text, such as the answer from HTTP request or an object that an input kept as JSON",
-    },
-    ParamSpec { key: "lists", label: "Lists", kind: ParamKind::Choice(LISTS), default: "text", hint: "For a feature per element, use Explode JSON list" },
-    ParamSpec {
-        key: "prefix",
-        label: "Prefix",
-        kind: ParamKind::Text,
-        default: "",
-        hint: "Put before the new names, such as svar. Empty uses the names in the JSON, and a name the stream has already gets the name of the attribute in front",
-    },
-    ParamSpec { key: "keep", label: "Keep the JSON attribute", kind: ParamKind::Choice(YES_NO), default: "false", hint: "" },
-];
-
-pub(super) fn run_flatten(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+/// Every value of the JSON in an attribute into attributes of their own.
+fn flatten_all(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let table = input(inp, "Input");
     let attr = p.need("attribute", "Choose the attribute that holds the JSON.")?;
     let at = table.need_field(&attr)?;
@@ -406,8 +388,23 @@ pub(super) const EXTRACT_PARAMS: &[ParamSpec] = &[
         label: "Values to take",
         kind: ParamKind::JsonPaths("Input", "attribute"),
         default: "",
-        hint: "A path and the attribute it goes to, such as adress.ort or kontakter[0].telefon. An empty name takes the last part of the path. An object or a list is taken as JSON text",
+        hint: "A path and the attribute it goes to, such as adress.ort or kontakter[0].telefon. An empty name takes the last part of the path. An object or a list is taken as JSON text. None takes them all: {\"adress\": {\"ort\": \"Borås\"}} gives adress.ort",
     },
+    ParamSpec {
+        key: "lists",
+        label: "Lists",
+        kind: ParamKind::Choice(LISTS),
+        default: "text",
+        hint: "When all are taken. For a feature per element, use Explode JSON list",
+    },
+    ParamSpec {
+        key: "prefix",
+        label: "Prefix",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "When all are taken: put before the new names, such as svar. Empty uses the names in the JSON, and a name the stream has already gets the name of the attribute in front",
+    },
+    ParamSpec { key: "keep", label: "Keep the JSON attribute", kind: ParamKind::Choice(YES_NO), default: "false", hint: "When all are taken" },
 ];
 
 pub(super) const XML_EXTRACT_PARAMS: &[ParamSpec] = &[
@@ -443,6 +440,9 @@ pub fn name_of_path(path: &str) -> String {
 }
 
 pub(super) fn run_extract(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
+    if json_paths_of(p.values, "paths").is_empty() {
+        return flatten_all(p, inp, ctx);
+    }
     let table = input(inp, "Input");
     let attr = p.need("attribute", "Choose the attribute that holds the JSON.")?;
     let at = table.need_field(&attr)?;
@@ -575,7 +575,7 @@ pub(super) const BUILD_PARAMS: &[ParamSpec] = &[
         label: "Names with a dot as objects",
         kind: ParamKind::Choice(YES_NO),
         default: "true",
-        hint: "adress.gata and adress.ort become \"adress\": {\"gata\": …, \"ort\": …}, as Flatten JSON took them apart",
+        hint: "adress.gata and adress.ort become \"adress\": {\"gata\": …, \"ort\": …}, as Extract JSON values takes them apart",
     },
     ParamSpec {
         key: "parse",
@@ -762,20 +762,6 @@ fn gather_build(p: &P, table: &crate::model::Table, gather: &str, ctx: &mut Node
 /// The tools of this module, for the registry in mod.rs.
 pub(super) const TYPES: &[NodeType] = &[
     NodeType {
-        name: "JsonFlattener",
-        title: "Flatten JSON",
-        hidden: false,
-        group: Group::Transformer,
-        category: "JSON",
-        desc: "Makes the JSON in an attribute into attributes of their own, so that the stream is a plain table: {\"adress\": {\"ort\": \"Borås\"}} gives adress.ort. Lists are kept as JSON text, or get an attribute per element. Features whose attribute is not JSON go to Failed.",
-        inputs: &["Input"],
-        outputs: &["Output", "Failed"],
-        ports: None,
-        params: FLATTEN_PARAMS,
-        run: run_flatten,
-        summary: |p| p.get("attribute").unwrap_or_else(|| "no attribute chosen".into()),
-    },
-    NodeType {
         name: "JsonExploder",
         title: "Explode JSON list",
         hidden: false,
@@ -799,7 +785,7 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "JSON",
-        desc: "Takes chosen values out of the JSON in an attribute, each by its path, such as adress.ort or kontakter[0].telefon, into attributes. A value that is not there is left empty. Features whose attribute is not JSON go to Failed.",
+        desc: "Takes values out of the JSON in an attribute into attributes: those chosen, each by its path, such as adress.ort or kontakter[0].telefon, or all of them, so that the stream is a plain table, which was Flatten JSON before 0.96.8. A value that is not there is left empty. Features whose attribute is not JSON go to Failed.",
         inputs: &["Input"],
         outputs: &["Output", "Failed"],
         ports: None,

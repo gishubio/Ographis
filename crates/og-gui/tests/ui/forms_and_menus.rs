@@ -97,7 +97,7 @@ fn palette_search_and_all_node_types() {
     }
     // The tool that was replaced is not offered.
     assert!(h.query_by_label("Overlay points on areas").is_none() && h.query_by_label("PointOnAreaOverlayer").is_none());
-    assert!(h.query_by_label("Count points in polygons").is_some() && h.query_by_label("Join by location").is_some());
+    assert!(h.query_by_label("Join by location").is_some());
 
     // Under each heading the names are in alphabetical order.
     let top = |h: &Harness<'_, App>, label: &str| h.get_by_label(label).rect().center().y;
@@ -453,7 +453,7 @@ fn the_tools_of_0_58_are_in_the_list() {
     let mut h = empty_app();
     unfold(&mut h, "Attributes");
     unfold(&mut h, "Geometry");
-    for tool in ["Count", "Replace with bounding box", "Bounding box of all", "Polygons to lines", "Lines to polygons", "Extend lines", "Thiessen polygons"] {
+    for tool in ["Count", "Replace with bounding box", "Polygons to lines", "Lines to polygons", "Extend lines", "Thiessen polygons"] {
         assert!(h.query_by_label(tool).is_some(), "{} should be in the list", tool);
     }
     h.state_mut().add_node("Counter");
@@ -561,7 +561,7 @@ fn the_forms_of_0_62() {
     unfold(&mut h, "Attributes");
     unfold(&mut h, "Geometry");
     unfold(&mut h, "Raster");
-    for tool in ["Draw chart", "Classify by range", "Snap", "Merge rasters"] {
+    for tool in ["Draw chart", "Snap", "Merge rasters"] {
         assert!(h.query_by_label(tool).is_some(), "{} should be in the list", tool);
     }
     h.state_mut().add_node("ChartDrawer");
@@ -574,7 +574,12 @@ fn the_forms_of_0_62() {
     assert!(h.query_by_label("Features with the same name").is_none(), "counting has nothing to put together");
     assert!(h.query_by_label("Second colour").is_none(), "no bars are pointed out");
     shot(&mut h, "223-chart-form");
-    h.state_mut().add_node("RangeMapper");
+    // Classify by range is Classify values with ranges of one's own since 0.96.8.
+    h.state_mut().add_node("Classifier");
+    h.run_steps(3);
+    let id = h.state().snarl.nodes().last().unwrap().id.clone();
+    let classify = graph_id(&h, &id);
+    h.state_mut().snarl[classify].params.insert("method".into(), serde_json::json!("ranges"));
     h.run_steps(3);
     assert!(h.query_by_label("From, to and value").is_some() && h.query_by_label("Number of classes").is_none());
     h.state_mut().add_node("Snapper");
@@ -586,7 +591,7 @@ fn the_forms_of_0_62() {
 fn the_tools_and_forms_of_0_63() {
     let mut h = empty_app();
     unfold(&mut h, "JSON");
-    for tool in ["Flatten JSON", "Explode JSON list", "Extract JSON values", "Build JSON"] {
+    for tool in ["Explode JSON list", "Extract JSON values", "Build JSON"] {
         assert!(h.query_by_label(tool).is_some(), "{} should be in the list", tool);
     }
     h.state_mut().add_node("JsonExtractor");

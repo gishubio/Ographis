@@ -89,6 +89,7 @@ pub const WRITER_FORMATS: &[(&str, &str)] = &[
     ("pdf", "PDF (.pdf)"),
     ("png", "PNG image (.png)"),
     ("webp", "WebP image (.webp)"),
+    ("gif", "Moving picture, GIF (.gif)"),
     ("pmtiles", "PMTiles vector tiles (.pmtiles)"),
     ("shp", "Shapefile (.shp)"),
     ("svg", "SVG drawing of a map (.svg)"),
@@ -123,6 +124,7 @@ pub const OUTPUT_FORMATS: &[(&str, &str)] = &[
     ("png", "PNG image (.png)"),
     ("jpg", "JPEG image (.jpg)"),
     ("webp", "WebP image (.webp)"),
+    ("gif", "Moving picture, GIF (.gif)"),
     ("tif", "GeoTIFF image (.tif)"),
     ("cog", "Cloud Optimized GeoTIFF (.tif)"),
     ("pdf", "PDF (.pdf)"),
@@ -221,6 +223,31 @@ fn image_opts(p: &P, table: &Table) -> Result<crate::io::ImageOpts> {
     Ok(crate::io::ImageOpts { dpi, quality, compress })
 }
 
+/// "3x2" and the like: columns and rows, each from 1 to 20.
+fn grid_of(p: &P, key: &str, what: &str) -> Result<(usize, usize)> {
+    match p.get(key).map(|v| v.trim().to_lowercase()).filter(|v| !v.is_empty()) {
+        None => Ok((1, 1)),
+        Some(v) => {
+            let (a, b) = v.split_once(['x', '×', '*']).unwrap_or((&v, "1"));
+            match (a.trim().parse::<usize>(), b.trim().parse::<usize>()) {
+                (Ok(a), Ok(b)) if (1..=20).contains(&a) && (1..=20).contains(&b) => Ok((a, b)),
+                _ => err(format!("{} is columns and rows, such as 2x2.", what)),
+            }
+        }
+    }
+}
+
+/// How the map is cut into sheets, across and down.
+fn sheets_of(p: &P) -> Result<(usize, usize)> {
+    grid_of(p, "pdf_sheets", "Sheets")
+}
+
+/// How a page is folded, across and down.
+fn folds_of(p: &P) -> Result<(u32, u32)> {
+    let (a, b) = grid_of(p, "pdf_folds", "Folds")?;
+    Ok((a as u32, b as u32))
+}
+
 pub(super) fn pdf_page(p: &P) -> Result<crate::io::PdfPage> {
     let d = crate::io::PdfPage::default();
     Ok(crate::io::PdfPage {
@@ -235,6 +262,9 @@ pub(super) fn pdf_page(p: &P) -> Result<crate::io::PdfPage> {
         title_align: p.get("pdf_title_align").unwrap_or_else(|| "left".into()),
         bleed_mm: number_param(p, "pdf_bleed", "The bleed")?.unwrap_or(0.0).clamp(0.0, 20.0),
         marks: p.get("pdf_marks").as_deref() == Some("yes"),
+        cmyk: matches!(p.get("pdf_colours").as_deref(), Some("cmyk" | "cmyk_black")),
+        overprint: p.get("pdf_colours").as_deref() == Some("cmyk_black"),
+        icc: p.get("pdf_icc").filter(|f| !f.trim().is_empty()).map(std::path::PathBuf::from),
     })
 }
 pub(super) const PDF_ORIENTATIONS: &[(&str, &str)] = &[("auto", "After the picture"), ("portrait", "Portrait"), ("landscape", "Landscape")];
@@ -637,11 +667,43 @@ pub(super) const WRITER_PARAMS: &[ParamSpec] = &[
         hint: "For a printer: the page reaches this far past where it is cut, often 3 mm",
     },
     ParamSpec {
+        key: "pdf_colours",
+        label: "Colours",
+        kind: ParamKind::Choice(&[
+            ("rgb", "As on a screen (RGB)"),
+            ("cmyk", "In inks for a printer (CMYK)"),
+            ("cmyk_black", "In inks, with black printed over the colours"),
+        ]),
+        default: "rgb",
+        hint: "CMYK for a printer that asks for it: the colours are turned into cyan, magenta, yellow and black",
+    },
+    ParamSpec {
+        key: "pdf_icc",
+        label: "Printing profile (ICC)",
+        kind: ParamKind::FileOpen,
+        default: "",
+        hint: "The ICC profile the printer names, such as PSO Coated v3 or ISO Coated v2: with it the PDF is a PDF/X-4, in CMYK",
+    },
+    ParamSpec {
         key: "pdf_marks",
         label: "Crop marks",
         kind: ParamKind::Choice(&[("no", "No"), ("yes", "Yes")]),
         default: "no",
         hint: "Short lines outside the page that show the printer where to cut",
+    },
+    ParamSpec {
+        key: "pdf_sheets",
+        label: "Sheets",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "A map cut into pages that are put together after, such as 2x2: across and down, each a little over its neighbours, with its number and its neighbours in the heading. Empty: one page",
+    },
+    ParamSpec {
+        key: "pdf_folds",
+        label: "Folds",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Short grey lines at the edges where the page is to be folded, such as 4x2 for a folded map: columns and rows. Empty: none",
     },
     ParamSpec { key: "pdf_title", label: "Title", kind: ParamKind::Text, default: "", hint: "Written above the picture. Empty gives none" },
     ParamSpec {
@@ -1324,6 +1386,21 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         if p.get("mode").as_deref() == Some("append") {
             ctx.notes.warn("A picture cannot be added to, so it was written over.".to_string());
         }
+        // A GIF: the picture, and the pages of a map series or the pictures over time after
+        // it, one after another.
+        if ext == "gif" {
+            let mut frames: Vec<(String, crate::model::RasterImage)> = Vec::new();
+            if let Some(img) = &table.image {
+                frames.push((String::new(), (**img).clone()));
+                if let Some(v) = &img.vector {
+                    frames.extend(v.pages.iter().map(|(name, i)| (name.clone(), (**i).clone())));
+                }
+            }
+            crate::nodes::scene::write_gif(&path, &frames, false)?;
+            ctx.notes.info(if frames.len() > 1 { format!("{} pictures one after another", frames.len()) } else { "one picture, as GIF".to_string() });
+            ctx.files.push(path.clone());
+            return Ok(Vec::new());
+        }
         // A map from Draw map as shapes: written here, without GDAL.
         let shapes = table.image.as_ref().and_then(|i| i.vector.clone());
         if ext == "svg" || (ext == "pdf" && shapes.is_some() && p.get("pdf_as").as_deref() != Some("picture")) {
@@ -1363,19 +1440,83 @@ fn run_writer_files(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
                         all.push((v.clone(), page.layout(v.width as usize, v.height as usize), g));
                     }
                 }
-                let pages: Vec<crate::vector::PdfPage> = all
+                // The profile of the printing, read once for every page.
+                let icc = match &page.icc {
+                    Some(f) => {
+                        let f = ctx.resolve(&f.to_string_lossy());
+                        Some(std::fs::read(&f).map_err(|e| GbError(format!("The ICC profile {} cannot be read: {}", f.display(), e)))?)
+                    }
+                    None => None,
+                };
+                let folds = folds_of(p)?;
+                // A map cut into sheets: each part of the picture on a page of its own, a
+                // little over its neighbours, with its place in the heading.
+                let (cols, rows) = sheets_of(p)?;
+                // Each sheet: the picture it is of, where it goes on the page, the part of the
+                // picture on it and its heading.
+                type Sheet = (usize, crate::io::PdfLayout, Option<[f64; 4]>, Option<String>);
+                let mut sheets: Vec<Sheet> = Vec::new();
+                for (k, (v, l, _)) in all.iter().enumerate() {
+                    if cols * rows <= 1 {
+                        sheets.push((k, *l, None, None));
+                        continue;
+                    }
+                    let (w, h) = (v.width as f64, v.height as f64);
+                    let (sw, sh) = (w / cols as f64, h / rows as f64);
+                    let over = 0.04;
+                    for r in 0..rows {
+                        for c in 0..cols {
+                            let x0 = (c as f64 * sw - sw * over).max(0.0);
+                            let y0 = (r as f64 * sh - sh * over).max(0.0);
+                            let x1 = ((c + 1) as f64 * sw + sw * over).min(w);
+                            let y1 = ((r + 1) as f64 * sh + sh * over).min(h);
+                            let layout = page.layout((x1 - x0).round() as usize, (y1 - y0).round() as usize);
+                            let n = r * cols + c + 1;
+                            let mut near = Vec::new();
+                            if r > 0 {
+                                near.push(format!("above {}", n - cols));
+                            }
+                            if c + 1 < cols {
+                                near.push(format!("right {}", n + 1));
+                            }
+                            if r + 1 < rows {
+                                near.push(format!("below {}", n + cols));
+                            }
+                            if c > 0 {
+                                near.push(format!("left {}", n - 1));
+                            }
+                            let title = page.title.as_deref().map(str::trim).filter(|t| !t.is_empty());
+                            let text =
+                                format!("{}Sheet {} of {}   ({})", title.map(|t| format!("{} · ", t)).unwrap_or_default(), n, cols * rows, near.join(", "));
+                            sheets.push((k, layout, Some([x0, y0, x1 - x0, y1 - y0]), Some(text)));
+                        }
+                    }
+                }
+                let pages: Vec<crate::vector::PdfPage> = sheets
                     .iter()
-                    .map(|(v, l, g)| crate::vector::PdfPage {
-                        pic: v,
-                        page_w: l.page_w,
-                        page_h: l.page_h,
-                        left: l.left,
-                        top: l.top,
-                        scale: l.scale,
-                        heading: heading_of(l),
-                        geo: g.as_ref(),
-                        bleed: page.bleed_mm * 72.0 / 25.4,
-                        marks: page.marks,
+                    .map(|(k, l, window, text)| {
+                        let (v, _, g) = &all[*k];
+                        crate::vector::PdfPage {
+                            pic: v,
+                            page_w: l.page_w,
+                            page_h: l.page_h,
+                            left: l.left,
+                            top: l.top,
+                            scale: l.scale,
+                            heading: match text {
+                                Some(t) => Some((t.as_str(), l.title_at.0, l.page_h - l.title_at.1)),
+                                None => heading_of(l),
+                            },
+                            // A sheet is not the whole map, so its corners are not given.
+                            geo: if window.is_some() { None } else { g.as_ref() },
+                            bleed: page.bleed_mm * 72.0 / 25.4,
+                            marks: page.marks,
+                            cmyk: page.cmyk,
+                            overprint: page.overprint,
+                            icc: icc.as_deref(),
+                            window: *window,
+                            folds,
+                        }
                     })
                     .collect();
                 if pages.len() > 1 {

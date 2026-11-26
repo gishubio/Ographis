@@ -235,7 +235,7 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Geometry",
-        desc: "Puts the smallest and largest x and y of each feature, its bounding box, in attributes of their own: xmin, ymin, xmax and ymax, and zmin and zmax for features with heights. For the bounds of all the features together, use Bounding box of all.",
+        desc: "Puts the smallest and largest x and y of each feature, its bounding box, in attributes of their own: xmin, ymin, xmax and ymax, and zmin and zmax for features with heights. For the bounds of all the features together, use Replace with bounding box, all together.",
         inputs: &["Input"],
         outputs: &["Output"],
         ports: None,

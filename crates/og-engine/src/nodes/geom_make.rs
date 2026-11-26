@@ -353,8 +353,24 @@ pub(super) fn grow(b: Option<geo::Rect<f64>>, r: geo::Rect<f64>) -> geo::Rect<f6
 
 pub(super) const BOX_CORNERS: &[(&str, &str)] = &[("false", "No"), ("true", "Yes: xmin, ymin, xmax and ymax")];
 
-pub(super) const BOX_REPLACER_PARAMS: &[ParamSpec] =
-    &[ParamSpec { key: "corners", label: "Add the corners as attributes", kind: ParamKind::Choice(BOX_CORNERS), default: "false", hint: "" }];
+pub(super) const BOX_REPLACER_PARAMS: &[ParamSpec] = &[
+    ParamSpec { key: "for", label: "A box around", kind: ParamKind::Choice(HULL_FOR), default: "each", hint: "" },
+    ParamSpec {
+        key: "group_by",
+        label: "Group by",
+        kind: ParamKind::Attributes("Input"),
+        default: "",
+        hint: "All together: one box for each group of features with the same values. Empty gives one box around all",
+    },
+    ParamSpec {
+        key: "count",
+        label: "Count attribute",
+        kind: ParamKind::Text,
+        default: "count",
+        hint: "All together: how many features are in each box. Empty leaves it out",
+    },
+    ParamSpec { key: "corners", label: "Add the corners as attributes", kind: ParamKind::Choice(BOX_CORNERS), default: "false", hint: "" },
+];
 
 /// Adds xmin, ymin, xmax and ymax with the corners of each box.
 pub(super) fn add_corners(mut out: Table, boxes: &[Option<geo::Rect<f64>>]) -> Table {
@@ -374,9 +390,13 @@ pub(super) fn add_corners(mut out: Table, boxes: &[Option<geo::Rect<f64>>]) -> T
     out
 }
 
-pub(super) fn run_box_replacer(p: &P, inp: &Inputs, _ctx: &mut NodeCtx) -> Result<Outputs> {
+pub(super) fn run_box_replacer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     use geo::BoundingRect;
     let table = input(inp, "Input");
+    // All together, or each group: one box around them (Bounding box of all before 0.96.8).
+    if p.get("for").as_deref() == Some("together") {
+        return run_box_accumulator(p, inp, ctx);
+    }
     let boxes: Vec<Option<geo::Rect<f64>>> = table.features.iter().map(|f| f.geom.as_ref().and_then(|g| g.bounding_rect())).collect();
     let mut out = table.clone();
     out.raster = false;
@@ -390,25 +410,8 @@ pub(super) fn run_box_replacer(p: &P, inp: &Inputs, _ctx: &mut NodeCtx) -> Resul
     Ok(vec![("Output".into(), out)])
 }
 
-pub(super) const BOX_ACCUMULATOR_PARAMS: &[ParamSpec] = &[
-    ParamSpec {
-        key: "group_by",
-        label: "Group by",
-        kind: ParamKind::Attributes("Input"),
-        default: "",
-        hint: "One box for each group of features with the same values. Empty gives one box around all",
-    },
-    ParamSpec {
-        key: "count",
-        label: "Count attribute",
-        kind: ParamKind::Text,
-        default: "count",
-        hint: "How many features are in each box. Empty leaves it out",
-    },
-    ParamSpec { key: "corners", label: "Add the corners as attributes", kind: ParamKind::Choice(BOX_CORNERS), default: "false", hint: "" },
-];
-
-pub(super) fn run_box_accumulator(p: &P, inp: &Inputs, _ctx: &mut NodeCtx) -> Result<Outputs> {
+/// One box around all the features, or each group.
+fn run_box_accumulator(p: &P, inp: &Inputs, _ctx: &mut NodeCtx) -> Result<Outputs> {
     use geo::BoundingRect;
     let table = input(inp, "Input");
     let by = p.list("group_by");
@@ -1068,24 +1071,7 @@ pub(super) fn run_points_to_lines(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Res
     Ok(vec![("Output".into(), out)])
 }
 
-// ---------- Split lines into segments (LineExploder) ----------
-
-pub(super) const EXPLODER_PARAMS: &[ParamSpec] = &[
-    ParamSpec {
-        key: "areas",
-        label: "Areas",
-        kind: ParamKind::Choice(&[("keep", "Passed on as they are"), ("outline", "Their outlines split too")]),
-        default: "keep",
-        hint: "",
-    },
-    ParamSpec {
-        key: "number",
-        label: "Number attribute",
-        kind: ParamKind::Text,
-        default: "segment",
-        hint: "Which segment of its line each is, from 1. Empty leaves it out",
-    },
-];
+// ---------- Split lines at every corner, for Split lines (Split lines into segments before 0.96.8) ----------
 
 /// The lines of a geometry, with whether there were any: for areas, their outlines when asked.
 fn line_parts(g: &Geometry<f64>, outlines: bool) -> Option<Vec<LineString<f64>>> {
@@ -1100,11 +1086,14 @@ fn line_parts(g: &Geometry<f64>, outlines: bool) -> Option<Vec<LineString<f64>>>
     })
 }
 
-pub(super) fn run_line_exploder(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let table = input(inp, "Input");
+/// Lines split at every corner, for Split lines (Split lines into segments before 0.96.8):
+/// a line for each segment, with the attributes of its line and, when `part` names one, the
+/// number of the segment. The outlines of areas too, when asked; the rest goes to Other.
+pub(super) fn split_at_corners(p: &P, table: &Table, ctx: &mut NodeCtx) -> Result<Outputs> {
     let outlines = p.get("areas").as_deref() == Some("outline");
-    let number = p.get("number").filter(|n| !n.trim().is_empty());
+    let number = p.get("part").filter(|n| !n.trim().is_empty());
     let mut out = table.like();
+    let mut other = table.like();
     if let Some(n) = &number {
         if table.field_index(n).is_some() {
             return err(format!("The stream already has an attribute {}. Choose another name for the number.", n));
@@ -1115,11 +1104,7 @@ pub(super) fn run_line_exploder(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Resul
     for f in &table.features {
         let Some(parts) = f.geom.as_ref().and_then(|g| line_parts(g, outlines)) else {
             passed += usize::from(f.geom.is_some());
-            let mut attrs = f.attrs.clone();
-            if number.is_some() {
-                attrs.push(Value::Null);
-            }
-            out.features.push(Feature { z: f.z.clone(), attrs, geom: f.geom.clone() });
+            other.features.push(f.clone());
             continue;
         };
         // Heights follow the corners, when there is one for each.
@@ -1144,9 +1129,9 @@ pub(super) fn run_line_exploder(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Resul
         }
     }
     if passed > 0 {
-        ctx.notes.info(format!("{} features that are not lines were passed on as they are", fmt_count(passed as u64)));
+        ctx.notes.info(format!("{} features that are not lines went to Other", fmt_count(passed as u64)));
     }
-    Ok(vec![("Output".into(), out)])
+    Ok(vec![("Lines".into(), out), ("Other".into(), other)])
 }
 
 // ---------- Convex hull (ConvexHuller) and Concave hull (ConcaveHuller) ----------
@@ -1482,20 +1467,6 @@ pub(super) const TYPES: &[NodeType] = &[
         },
     },
     NodeType {
-        name: "LineExploder",
-        title: "Split lines into segments",
-        hidden: false,
-        group: Group::Transformer,
-        category: "Geometry",
-        desc: "Explodes each line into its segments: a line from each corner to the next, with the attributes of the line and which segment it is. The outlines of areas can be split too; points pass as they are.",
-        inputs: &["Input"],
-        outputs: &["Output"],
-        ports: None,
-        params: EXPLODER_PARAMS,
-        run: run_line_exploder,
-        summary: |p| if p.get("areas").as_deref() == Some("outline") { "lines and outlines".into() } else { String::new() },
-    },
-    NodeType {
         name: "ConvexHuller",
         title: "Convex hull",
         hidden: false,
@@ -1639,30 +1610,13 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Geometry",
-        desc: "Replaces each geometry with the smallest rectangle around it, along the axes. A box without width or height becomes a line or a point.",
+        desc: "Replaces each geometry with the smallest rectangle around it, along the axes, or makes one rectangle around all the features, or each group, with a count of the features in it, which was Bounding box of all before 0.96.8. A box without width or height becomes a line or a point.",
         inputs: &["Input"],
         outputs: &["Output"],
         ports: None,
         params: BOX_REPLACER_PARAMS,
         run: run_box_replacer,
         summary: |_| String::new(),
-    },
-    NodeType {
-        name: "BoundingBoxAccumulator",
-        title: "Bounding box of all",
-        hidden: false,
-        group: Group::Transformer,
-        category: "Geometry",
-        desc: "One rectangle around all the features of the stream, or one for each group, with a count of the features in it.",
-        inputs: &["Input"],
-        outputs: &["Output"],
-        ports: None,
-        params: BOX_ACCUMULATOR_PARAMS,
-        run: run_box_accumulator,
-        summary: |p| {
-            let by = p.list("group_by");
-            if by.is_empty() { "around all".into() } else { format!("per {}", by.join(", ")) }
-        },
     },
     NodeType {
         name: "PolygonToLine",

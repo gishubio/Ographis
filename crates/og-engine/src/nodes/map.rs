@@ -175,6 +175,13 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
     ParamSpec { key: "scale_parts", label: "Fields of the scale bar", kind: ParamKind::Text, default: "4", hint: "From 1 to 10" },
     ParamSpec { key: "scale_unit", label: "Scale bar in", kind: ParamKind::Choice(&[("auto", "As fits"), ("km", "Kilometres"), ("m", "Metres")]), default: "auto", hint: "" },
     ParamSpec {
+        key: "scale_number",
+        label: "Scale in figures",
+        kind: ParamKind::Choice(&[("bar", "The bar alone"), ("both", "Under the bar, as 1:50 000"), ("number", "In place of the bar")]),
+        default: "bar",
+        hint: "",
+    },
+    ParamSpec {
         key: "north_style",
         label: "North arrow as",
         kind: ParamKind::Choice(&[("arrow", "An arrow, half dark"), ("simple", "A thin arrow"), ("star", "A compass star")]),
@@ -189,6 +196,8 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
             ("lines", "Lines across the map"),
             ("ticks", "Marks in the edge"),
             ("degrees", "Latitude and longitude, in degrees"),
+            ("utm", "UTM, with the 100 km squares of MGRS"),
+            ("sheets", "Map sheets of 10 km in SWEREF 99 TM, with their names"),
         ]),
         default: "none",
         hint: "With the coordinates in the edge: those of the map, such as SWEREF 99 TM, or degrees of WGS 84, whose lines curve on a map in metres",
@@ -199,6 +208,33 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Text,
         default: "",
         hint: "In the units of the map, such as 1000 for every km in SWEREF 99 TM, or in degrees for a grid of degrees. Empty gives a round number by the size",
+    },
+    ParamSpec {
+        key: "index_grid",
+        label: "Index squares across",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Squares named A, B, C across and 1, 2, 3 down, as on a town map, this many across; Register then gives the square of each name. Empty: none",
+    },
+    ParamSpec {
+        key: "vision",
+        label: "Colours as seen by",
+        kind: ParamKind::Choice(&[
+            ("", "Everyone: as they are"),
+            ("deuteranopia", "Deuteranopia: green-blind, about 1 man in 20"),
+            ("protanopia", "Protanopia: red-blind, about 1 man in 50"),
+            ("tritanopia", "Tritanopia: blue-blind, rare"),
+            ("grey", "Grey, as printed in black and white"),
+        ]),
+        default: "",
+        hint: "To try a map: the picture in the colours that someone with colour blindness sees, or in grey. A PDF of it is a picture",
+    },
+    ParamSpec {
+        key: "check_contrast",
+        label: "Look at the labels",
+        kind: ParamKind::Choice(YES_NO),
+        default: "false",
+        hint: "Warns of labels without a halo that stand out too little from what is under them, less than 3 to 1 as WCAG counts contrast",
     },
     ParamSpec {
         key: "map_frame",
@@ -266,6 +302,55 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
         hint: "An enlarged map in a corner of the features this expression picks out, such as kommunnamn = 'Göteborg', with a frame on the map where it is. Empty: none",
     },
     ParamSpec { key: "inset_corner", label: "Inset in the corner", kind: ParamKind::Choice(CORNERS), default: "top-right", hint: "" },
+    ParamSpec {
+        key: "grid_frame",
+        label: "Frame along the degrees",
+        kind: ParamKind::Choice(YES_NO),
+        default: "false",
+        hint: "With a grid of degrees: the map cut along its outermost lines of latitude and longitude, so that its edge curves with them, as on a map of a large area",
+    },
+    ParamSpec {
+        key: "globe",
+        label: "Globe in the corner",
+        kind: ParamKind::Choice(&[
+            ("none", "None"),
+            ("bottom-left", "Lower left"),
+            ("bottom-right", "Lower right"),
+            ("top-left", "Upper left"),
+            ("top-right", "Upper right"),
+        ]),
+        default: "none",
+        hint: "A small globe turned to the map, with its place marked in red",
+    },
+    ParamSpec {
+        key: "profile_from",
+        label: "Height profile of",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "The name of a layer of lines, such as a trail: the heights along its first line, from the first grid of heights in the map, drawn as a profile in a corner. Empty: none",
+    },
+    ParamSpec {
+        key: "profile_corner",
+        label: "Profile in the corner",
+        kind: ParamKind::Choice(&[("bottom-left", "Lower left"), ("bottom-right", "Lower right"), ("top-left", "Upper left"), ("top-right", "Upper right")]),
+        default: "bottom-left",
+        hint: "",
+    },
+    ParamSpec {
+        key: "profile_title",
+        label: "Title of the profile",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Such as Depth along the dashed line, A to B. Empty: the name of the layer",
+    },
+    ParamSpec {
+        key: "profile_places",
+        label: "Places along the profile",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "The name of a layer of points, such as basins and straits: those near the line are written over the profile where they are along it, by their attribute name or the first with text",
+    },
+    ParamSpec { key: "profile_size", label: "Profile width in %", kind: ParamKind::Text, default: "34", hint: "Of the width of the map" },
     ParamSpec { key: "inset_size", label: "Inset width in %", kind: ParamKind::Text, default: "30", hint: "Of the width of the map" },
     ParamSpec {
         key: "knockout",
@@ -345,6 +430,13 @@ pub(super) const MAP_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Text,
         default: "",
         hint: "Written small in the lower right corner, such as © Lantmäteriet, after the credit of the background map",
+    },
+    ParamSpec {
+        key: "footer",
+        label: "Band along the bottom",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Written on the left of a band across the bottom of the map, such as Data: EMODnet Bathymetry · NOAA ETOPO, with the source on the right of it. Empty: no band",
     },
     ParamSpec {
         key: "crs",
@@ -429,11 +521,30 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
                 style.blend = b.to_string();
             }
             style.smooth = r.get("smooth").and_then(|v| v.as_bool()).unwrap_or(false);
+            style.no_legend = r.get("legend").and_then(|v| v.as_bool()) == Some(false);
             if let Some(g) = r.get("glow").and_then(|v| v.as_str()) {
                 style.glow = g.to_string();
             }
             if let Some(c) = r.get("glow_colour").and_then(|v| v.as_str()) {
                 style.glow_colour = crate::mapdraw::parse_color(c).ok().flatten();
+            }
+            if let Some(a) = r.get("index_by").and_then(|v| v.as_str()) {
+                style.index_by = a.to_string();
+            }
+            style.index_every = r.get("index_every").and_then(|v| v.as_f64()).unwrap_or(0.0).max(0.0);
+            style.band = r.get("band").and_then(|v| v.as_f64()).unwrap_or(0.0).clamp(0.0, 60.0) as f32;
+            style.waterlines = r.get("waterlines").and_then(|v| v.as_bool()).unwrap_or(false);
+            style.tanaka = r.get("tanaka").and_then(|v| v.as_bool()).unwrap_or(false);
+            style.taper = r.get("taper").and_then(|v| v.as_bool()).unwrap_or(false);
+            let word = |k: &str| r.get(k).and_then(|v| v.as_str()).map(str::to_string).unwrap_or_default();
+            style.width_by = word("width_by");
+            style.alpha_by = word("alpha_by");
+            style.bridge_where = word("bridge_where");
+            style.tunnel_where = word("tunnel_where");
+            style.oneway_where = word("oneway_where");
+            style.shield = word("shield");
+            if let Some(w) = r.get("shield_every").and_then(|v| v.as_f64()) {
+                style.shield_every = w.clamp(60.0, 5000.0) as f32;
             }
             if let Some(Ok(c)) = color("pattern_colour") {
                 style.pattern_colour = c;
@@ -487,6 +598,7 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
                 priority_by: text("label_priority"),
                 bold: flag("label_bold"),
                 upper: flag("label_upper"),
+                upper_where: text("label_upper_where"),
                 colour: match color("label_colour") {
                     Some(Ok(Some(c))) => c,
                     _ => d.colour,
@@ -497,11 +609,19 @@ pub fn map_layers(params: &Params) -> Vec<MapLayer> {
                 },
                 halo_width: num("label_halo_width", d.halo_width as f64).clamp(0.0, 20.0) as f32,
                 spaced: flag("label_spaced"),
+                small_caps: flag("label_small_caps"),
+                uphill: flag("label_uphill"),
+                coast: flag("label_coast"),
+                detail: flag("label_detail"),
+                tracking: num("label_tracking", 0.0).clamp(0.0, 2.0) as f32,
                 italic: flag("label_italic"),
                 bold_where: text("label_bold_where"),
                 min_px: num("label_min_px", 0.0).clamp(0.0, 2000.0) as f32,
                 repeat: num("label_repeat", 0.0).clamp(0.0, 20000.0) as f32,
                 leaders: flag("label_leaders"),
+                curved: flag("label_curved"),
+                rank: num("label_rank", 0.0).clamp(-100.0, 100.0) as i32,
+                prefer: text("label_prefer"),
             };
             let icon = crate::mapdraw::IconSpec { name: text("icon"), by: text("icon_by"), style: text("icon_style") };
             let chart = crate::mapdraw::ChartSpec {
@@ -578,8 +698,42 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                 if !r.style.blend.is_empty() {
                     o["blend"] = serde_json::json!(r.style.blend);
                 }
+                if r.style.no_legend {
+                    o["legend"] = serde_json::Value::Bool(false);
+                }
                 if r.style.smooth {
                     o["smooth"] = serde_json::json!(true);
+                }
+                if !r.style.index_by.is_empty() {
+                    o["index_by"] = serde_json::json!(r.style.index_by);
+                    o["index_every"] = serde_json::json!(r.style.index_every);
+                }
+                if r.style.band > 0.0 {
+                    o["band"] = serde_json::json!(r.style.band);
+                }
+                if r.style.waterlines {
+                    o["waterlines"] = serde_json::json!(true);
+                }
+                if r.style.tanaka {
+                    o["tanaka"] = serde_json::json!(true);
+                }
+                if r.style.taper {
+                    o["taper"] = serde_json::json!(true);
+                }
+                for (k, v) in [
+                    ("width_by", &r.style.width_by),
+                    ("alpha_by", &r.style.alpha_by),
+                    ("bridge_where", &r.style.bridge_where),
+                    ("tunnel_where", &r.style.tunnel_where),
+                    ("oneway_where", &r.style.oneway_where),
+                    ("shield", &r.style.shield),
+                ] {
+                    if !v.trim().is_empty() {
+                        o[k] = serde_json::json!(v);
+                    }
+                }
+                if !r.style.shield.trim().is_empty() && r.style.shield_every != 260.0 {
+                    o["shield_every"] = serde_json::json!(r.style.shield_every);
                 }
                 if !r.style.glow.is_empty() {
                     o["glow"] = serde_json::json!(r.style.glow);
@@ -665,6 +819,7 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                         ("label_size_by", &l.size_by, &d.size_by),
                         ("label_priority", &l.priority_by, &d.priority_by),
                         ("label_bold_where", &l.bold_where, &d.bold_where),
+                        ("label_upper_where", &l.upper_where, &d.upper_where),
                     ] {
                         if v != dv {
                             put(k, serde_json::json!(v));
@@ -677,6 +832,11 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                         ("label_spaced", l.spaced, d.spaced),
                         ("label_italic", l.italic, d.italic),
                         ("label_leaders", l.leaders, d.leaders),
+                        ("label_curved", l.curved, d.curved),
+                        ("label_small_caps", l.small_caps, d.small_caps),
+                        ("label_uphill", l.uphill, d.uphill),
+                        ("label_coast", l.coast, d.coast),
+                        ("label_detail", l.detail, d.detail),
                     ] {
                         if v != dv {
                             put(k, serde_json::json!(v));
@@ -688,10 +848,17 @@ pub fn map_layers_json(rows: &[MapLayer]) -> serde_json::Value {
                         ("label_halo_width", l.halo_width, d.halo_width),
                         ("label_min_px", l.min_px, d.min_px),
                         ("label_repeat", l.repeat, d.repeat),
+                        ("label_tracking", l.tracking, d.tracking),
                     ] {
                         if v != dv {
                             put(k, serde_json::json!(v));
                         }
+                    }
+                    if l.rank != 0 {
+                        put("label_rank", serde_json::json!(l.rank));
+                    }
+                    if !l.prefer.is_empty() {
+                        put("label_prefer", serde_json::json!(l.prefer));
                     }
                     if l.colour != d.colour {
                         put("label_colour", serde_json::json!(crate::mapdraw::color_text(Some(l.colour))));
@@ -905,6 +1072,38 @@ fn draw_map_node(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         }
         rows_drawn.push((part, row));
     }
+    // Drawn by hand: long straight lines get points along them, so that they waver too.
+    if p.get("map_style").as_deref() == Some("hand") {
+        use geo::{BoundingRect, Densify, Euclidean};
+        for (t, _) in tables.iter_mut() {
+            if t.grid.is_some() || t.image.is_some() {
+                continue;
+            }
+            let Some(b) = t
+                .features
+                .iter()
+                .filter_map(|f| f.geom.as_ref()?.bounding_rect())
+                .reduce(|a, b| geo::Rect::new((a.min().x.min(b.min().x), a.min().y.min(b.min().y)), (a.max().x.max(b.max().x), a.max().y.max(b.max().y))))
+            else {
+                continue;
+            };
+            let step = b.width().max(b.height()) / 400.0;
+            if step <= 0.0 {
+                continue;
+            }
+            let mut owned = t.as_ref().clone();
+            for f in owned.features.iter_mut() {
+                f.geom = f.geom.take().map(|g| match g {
+                    geo::Geometry::LineString(l) => geo::Geometry::LineString(Euclidean.densify(&l, step)),
+                    geo::Geometry::MultiLineString(l) => geo::Geometry::MultiLineString(Euclidean.densify(&l, step)),
+                    geo::Geometry::Polygon(p) => geo::Geometry::Polygon(Euclidean.densify(&p, step)),
+                    geo::Geometry::MultiPolygon(p) => geo::Geometry::MultiPolygon(Euclidean.densify(&p, step)),
+                    g => g,
+                });
+            }
+            *t = std::borrow::Cow::Owned(owned);
+        }
+    }
     // Smooth layers have their corners rounded off, twice.
     for (t, style) in tables.iter_mut() {
         if style.smooth {
@@ -979,6 +1178,32 @@ fn draw_map_node(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             ));
         }
     }
+    // Bridges, tunnels and one-way streets, found by their expressions.
+    for ((t, style), (part, _)) in tables.iter_mut().zip(&rows_drawn) {
+        let wheres = [
+            (1u8, style.bridge_where.clone(), "Bridges where"),
+            (2, style.tunnel_where.clone(), "Tunnels where"),
+            (4, style.oneway_where.clone(), "One way where"),
+        ];
+        if wheres.iter().all(|w| w.1.trim().is_empty()) {
+            continue;
+        }
+        let names: Vec<String> = t.fields.iter().map(|f| f.name.clone()).collect();
+        let geographic = ctx.geographic(t.crs);
+        let mut marks = vec![0u8; t.features.len()];
+        for (bit, w, what) in wheres {
+            if w.trim().is_empty() {
+                continue;
+            }
+            let e = crate::expr::compile(w.trim(), &names).map_err(|e| GbError(format!("{}: {}: {}", part.label, what, e.0)))?;
+            for (i, f) in t.features.iter().enumerate() {
+                if e.test(&crate::expr::Row { feature: f, index: i, geographic }).unwrap_or(false) {
+                    marks[i] |= bit;
+                }
+            }
+        }
+        style.marks = std::sync::Arc::new(marks);
+    }
     // How the layers that carry a raster draw it.
     let mut rasters = Vec::new();
     for ((t, _), (part, row)) in tables.iter().zip(&rows_drawn) {
@@ -987,8 +1212,15 @@ fn draw_map_node(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     // The labels and the icons of each layer.
     let mut labels = Vec::new();
     let mut icons = Vec::new();
-    for ((t, _), (part, row)) in tables.iter().zip(&rows_drawn) {
-        labels.push(prepare_labels(t, &row.labels, ctx).map_err(|e| GbError(format!("{}: labels: {}", part.label, e.0)))?);
+    for ((t, style), (part, row)) in tables.iter().zip(&rows_drawn) {
+        let mut l = prepare_labels(t, &row.labels, ctx).map_err(|e| GbError(format!("{}: labels: {}", part.label, e.0)))?;
+        // Contours: only the index contours are named.
+        if let (Some(l), Some(k)) = (l.as_mut(), t.field_index(&style.index_by)) {
+            if style.index_every > 0.0 {
+                l.items.retain(|it| crate::mapdraw::is_index(&t.features[it.feature].attrs[k], style.index_every));
+            }
+        }
+        labels.push(l);
         let ic = prepare_icons(t, &row.icon);
         if let Some(ic) = &ic {
             let missing = t
@@ -1032,6 +1264,7 @@ fn draw_map_node(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
                 .zip(&themes)
                 .zip(&rasters)
                 .rev()
+                .filter(|((((_, style), _), _), _)| !style.no_legend)
                 .map(|((((t, style), (part, row)), th), ra)| crate::mapdraw::LegendItem {
                     name: if row.name.trim().is_empty() { part.label.clone() } else { row.name.trim().to_string() },
                     // A raster without keys, such as relief or a picture, gets a grey square.
@@ -1068,6 +1301,7 @@ fn draw_map_node(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
                         .dots
                         .as_ref()
                         .map(|_| (crate::thematic::Look { fill: Some(th.dot_colour), stroke: None, size: th.dot_size.max(3.0) }, th.dot_text.clone())),
+                    ramp: ra.as_ref().and_then(|r| crate::rasterlook::ramp_legend(&r.paint)),
                 })
                 .collect(),
             icon_styles: rows_drawn
@@ -1187,7 +1421,8 @@ fn draw_map_node(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             }
         }
     }
-    let furniture = crate::mapdraw::Furniture {
+    let mut furniture = crate::mapdraw::Furniture {
+        footer: p.get("footer").unwrap_or_default(),
         scale_bar: p.get("scale_bar").unwrap_or_default(),
         north: p.get("north_arrow").unwrap_or_default(),
         grid: p.get("grid").unwrap_or_default(),
@@ -1251,9 +1486,90 @@ fn draw_map_node(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         scale_parts: number_param(p, "scale_parts", "Fields of the scale bar")?.map_or(4, |n| n.clamp(1.0, 10.0) as usize),
         scale_unit: p.get("scale_unit").unwrap_or_default(),
         north_style: p.get("north_style").unwrap_or_default(),
+        scale_number: p.get("scale_number").unwrap_or_default(),
+        index_grid: number_param(p, "index_grid", "Index squares across")?.map_or(0, |n| n.clamp(0.0, 52.0) as usize),
+        vision: p.get("vision").unwrap_or_default(),
+        profile: None,
+        globe: None,
+        cell_names: Vec::new(),
+        check_contrast: p.flag("check_contrast"),
+        faint: Default::default(),
         coords_outside: false,
     };
-    let names = rows_drawn.iter().map(|(part, row)| if row.name.trim().is_empty() { part.label.clone() } else { row.name.trim().to_string() }).collect();
+    let names: Vec<String> =
+        rows_drawn.iter().map(|(part, row)| if row.name.trim().is_empty() { part.label.clone() } else { row.name.trim().to_string() }).collect();
+    {
+        // The frame of the map as it will be drawn, for the grids, the globe and the curved edge.
+        let layers: Vec<(&Table, crate::mapdraw::LayerStyle)> = tables.iter().map(|(t, s)| (t.as_ref(), s.clone())).collect();
+        let frame = crate::mapdraw::frame_in(&layers, width, margin, fixed)?;
+        match p.get("grid").as_deref() {
+            Some("utm") => furniture.graticule = utm_grid(&frame, crs, number_param(p, "grid_every", "Grid every")?, ctx)?,
+            Some("sheets") => {
+                let (lines, names) = sheet_grid(&frame, crs, ctx)?;
+                furniture.graticule = lines;
+                furniture.cell_names = names;
+            }
+            Some("degrees") if p.flag("grid_frame") && furniture.focus.is_empty() => {
+                // Within the features themselves, so that the curved edge cuts through them.
+                let inner = if fixed.is_some() { frame } else { crate::mapdraw::frame_in(&layers, width, 0.0, None)? };
+                if let Some(edge) = degree_frame(&inner, crs, ctx)? {
+                    // The lines of the grid end at the edge, where they are named.
+                    if let geo::Geometry::Polygon(poly) = &edge {
+                        use geo::BooleanOps;
+                        for g in furniture.graticule.iter_mut() {
+                            let line = geo::MultiLineString::new(vec![geo::LineString::from(g.points.clone())]);
+                            let inside = poly.clip(&line, false);
+                            g.points = inside.0.into_iter().max_by_key(|l| l.0.len()).map(|l| l.0.iter().map(|c| (c.x, c.y)).collect()).unwrap_or_default();
+                        }
+                        furniture.graticule.retain(|g| g.points.len() > 1);
+                    }
+                    furniture.focus = vec![edge];
+                    furniture.focus_only = true;
+                }
+            }
+            _ => {}
+        }
+        if let Some(corner) = p.get("globe").filter(|c| c != "none" && !c.is_empty()) {
+            furniture.globe = Some(globe_of(&frame, crs, &corner, ctx)?);
+        }
+        if let Some(from) = p.get("profile_from").filter(|f| !f.trim().is_empty()) {
+            let from = from.trim();
+            let line = tables.iter().zip(&names).find(|(_, n)| n.eq_ignore_ascii_case(from)).and_then(|((t, _), _)| {
+                t.features.iter().find_map(|f| match &f.geom {
+                    Some(geo::Geometry::LineString(l)) => Some(l.clone()),
+                    Some(geo::Geometry::MultiLineString(m)) => m.0.first().cloned(),
+                    _ => None,
+                })
+            });
+            let at = tables.iter().position(|(t, _)| t.grid.is_some());
+            let grid = at.and_then(|i| tables[i].0.grid.clone());
+            match (line, grid) {
+                (Some(l), Some(g)) => {
+                    let points = profile_of(&l, &g, ctx.geographic(Some(crs)).unwrap_or(false));
+                    let total = points.last().map_or(0.0, |p| p.0);
+                    // The places near the line, each where it is along it.
+                    let mut places = Vec::new();
+                    if let Some(of) = p.get("profile_places").filter(|v| !v.trim().is_empty()) {
+                        match tables.iter().zip(&names).find(|(_, n)| n.eq_ignore_ascii_case(of.trim())) {
+                            None => ctx.notes.warn(format!("No layer named {} for the places along the profile.", of.trim())),
+                            Some(((t, _), _)) => places = places_along(t, &l, total),
+                        }
+                    }
+                    furniture.profile = Some(crate::mapdraw::Profile {
+                        corner: p.get("profile_corner").unwrap_or_else(|| "bottom-left".into()),
+                        points,
+                        title: p.get("profile_title").map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).unwrap_or_else(|| from.to_string()),
+                        ends: [l.0.first(), l.0.last()].map(|c| c.map_or((0.0, 0.0), |c| (c.x, c.y))),
+                        places,
+                        colours: at.and_then(|i| rasters.get(i).cloned().flatten()).map(|r| r.paint),
+                        share: (number_param(p, "profile_size", "Profile width in %")?.unwrap_or(34.0) / 100.0) as f32,
+                    })
+                }
+                (None, _) => ctx.notes.warn(format!("No layer named {} with a line, so no height profile is drawn.", from)),
+                (_, None) => ctx.notes.warn("A height profile needs a grid of heights among the layers of the map (read as a grid), so none is drawn."),
+            }
+        }
+    }
     // The overview map: its own layer when one is connected, else the map seen from further.
     let overview = match p.get("overview").as_deref() {
         None | Some("none") | Some("") => None,
@@ -1446,6 +1762,19 @@ fn draw_map_node(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     } else {
         crate::mapdraw::draw(&req, &|| gate.going())?
     };
+    let faint = req.furniture.faint.lock().map(|f| f.clone()).unwrap_or_default();
+    if !faint.is_empty() {
+        let mut names: Vec<String> = faint.iter().take(6).map(|n| format!("“{}”", n)).collect();
+        if faint.len() > 6 {
+            names.push(format!("and {} more", faint.len() - 6));
+        }
+        ctx.notes.warn(format!(
+            "{} {} stand out too little from what is under them: {}. A halo, or a darker or lighter colour, makes them readable.",
+            fmt_count(faint.len() as u64),
+            if faint.len() == 1 { "label" } else { "labels" },
+            names.join(", ")
+        ));
+    }
     let layers = req.layers.len();
     if placed > 0 {
         ctx.notes.info(format!("{} labels to place", fmt_count(placed as u64)));
@@ -1466,7 +1795,12 @@ fn draw_map_node(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         out.features.iter_mut().for_each(|f| f.attrs.push(Value::Real(d)));
         ctx.notes.info(format!("{} mm wide at {} pixels to the inch", crate::model::fmt_real(width as f64 / d * 25.4), crate::model::fmt_real(d)));
     }
-    Ok(vec![("Map".into(), out)])
+    // The index of names: the square each label is in.
+    let mut out_all = vec![("Map".into(), out)];
+    if req.furniture.index_grid > 0 {
+        out_all.push(("Register".into(), register(&req)?));
+    }
+    Ok(out_all)
 }
 
 /// The labels of a layer: the text, size and priority of each feature that has a text.
@@ -1493,7 +1827,11 @@ pub(in crate::nodes) fn prepare_labels(t: &Table, spec: &crate::mapdraw::LabelSp
         }
         t.field_index(name.trim()).map(Some).ok_or_else(|| GbError(format!("there is no attribute {}", name.trim())))
     };
-    let (size_at, prio_at) = (attr(&spec.size_by)?, attr(&spec.priority_by)?);
+    // "@area": by the size of each area, as the names of lakes and seas are written larger the
+    // larger the water.
+    const BY_AREA: usize = usize::MAX;
+    let size_at = if spec.size_by.trim() == "@area" { Some(BY_AREA) } else { attr(&spec.size_by)? };
+    let prio_at = attr(&spec.priority_by)?;
     let xy = if spec.place == "xy" {
         match (attr(&spec.x_attr)?, attr(&spec.y_attr)?) {
             (Some(x), Some(y)) => Some((x, y)),
@@ -1502,7 +1840,13 @@ pub(in crate::nodes) fn prepare_labels(t: &Table, spec: &crate::mapdraw::LabelSp
     } else {
         None
     };
-    let number = |i: usize, k: usize| t.features[i].attrs[k].as_f64();
+    let number = |i: usize, k: usize| {
+        if k == BY_AREA {
+            use geo::Area;
+            return t.features[i].geom.as_ref().map(|g| g.unsigned_area().sqrt()).filter(|a| *a > 0.0);
+        }
+        t.features[i].attrs[k].as_f64()
+    };
     // The range of the values that set the size.
     let (lo, hi) = match size_at {
         Some(k) => (0..t.len()).filter_map(|i| number(i, k)).fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| (a.min(v), b.max(v))),
@@ -1512,6 +1856,10 @@ pub(in crate::nodes) fn prepare_labels(t: &Table, spec: &crate::mapdraw::LabelSp
     let bold_where = match spec.bold_where.trim() {
         "" => None,
         w => Some(crate::expr::compile(w, &names).map_err(|e| GbError(format!("Bold where: {}", e.0)))?),
+    };
+    let upper_where = match spec.upper_where.trim() {
+        "" => None,
+        w => Some(crate::expr::compile(w, &names).map_err(|e| GbError(format!("Capitals where: {}", e.0)))?),
     };
     let mut items = Vec::new();
     for (i, f) in t.features.iter().enumerate() {
@@ -1532,7 +1880,12 @@ pub(in crate::nodes) fn prepare_labels(t: &Table, spec: &crate::mapdraw::LabelSp
         if text.is_empty() {
             continue;
         }
-        if spec.upper {
+        let upper = match &upper_where {
+            Some(e) => e.test(&crate::expr::Row { feature: f, index: i, geographic }).map_err(|e| at_row(e, i))?,
+            None => spec.upper,
+        };
+        // Small capitals keep their small letters, which are set as smaller capitals.
+        if upper {
             text = text.to_uppercase();
         }
         let size = match (size_at.and_then(|k| number(i, k)), hi > lo) {
@@ -1623,6 +1976,301 @@ fn graticule(frame: &crate::mapdraw::Frame, crs: u32, every: Option<f64>, ctx: &
     Ok(lines)
 }
 
+/// The heights along a line, every so often: the distance from its start in metres, and the
+/// height of the grid there.
+/// The points of a layer near a line, each named and at its distance along the line, in
+/// the order they come: near is within a twentieth of the length of the line.
+fn places_along(t: &Table, l: &geo::LineString<f64>, total: f64) -> Vec<(f64, String)> {
+    use geo::{Euclidean, Length, LineLocatePoint};
+    let name_at = t.field_index("name").or_else(|| t.field_index("namn")).or_else(|| t.fields.iter().position(|f| f.ty == crate::model::FieldType::Text));
+    let planar = Euclidean.length(l).max(1e-9);
+    let mut out: Vec<(f64, String)> = t
+        .features
+        .iter()
+        .filter_map(|f| {
+            let p = match &f.geom {
+                Some(geo::Geometry::Point(p)) => *p,
+                _ => return None,
+            };
+            let name = name_at.map(|k| f.attrs[k].to_text()).filter(|n| !n.trim().is_empty())?;
+            let frac = l.line_locate_point(&p)?;
+            // How far the point is from the line, against its length.
+            let near = {
+                use geo::{Closest, ClosestPoint, Distance};
+                match l.closest_point(&p) {
+                    Closest::Intersection(c) | Closest::SinglePoint(c) => Euclidean.distance(c, p),
+                    Closest::Indeterminate => f64::INFINITY,
+                }
+            };
+            (near <= planar / 20.0).then(|| (frac * total, name.trim().to_string()))
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.total_cmp(&b.0));
+    out
+}
+
+fn profile_of(l: &geo::LineString<f64>, g: &crate::model::Grid, geographic: bool) -> Vec<(f64, f64)> {
+    let dist = |a: geo::Coord<f64>, b: geo::Coord<f64>| {
+        if geographic {
+            use geo::Distance;
+            geo::Haversine.distance(geo::Point::from(a), geo::Point::from(b))
+        } else {
+            (b.x - a.x).hypot(b.y - a.y)
+        }
+    };
+    let total: f64 = l.0.windows(2).map(|w| dist(w[0], w[1])).sum();
+    if total <= 0.0 {
+        return Vec::new();
+    }
+    let n = 300;
+    let mut out = Vec::with_capacity(n + 1);
+    let (mut seg, mut run) = (0usize, 0.0f64);
+    for i in 0..=n {
+        let want = total * i as f64 / n as f64;
+        while seg + 1 < l.0.len() - 1 && run + dist(l.0[seg], l.0[seg + 1]) < want {
+            run += dist(l.0[seg], l.0[seg + 1]);
+            seg += 1;
+        }
+        let (a, b) = (l.0[seg], l.0[(seg + 1).min(l.0.len() - 1)]);
+        let len = dist(a, b).max(1e-9);
+        let f = ((want - run) / len).clamp(0.0, 1.0);
+        let (x, y) = (a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f);
+        if let Some(z) = crate::terrain::height_at(g, x, y) {
+            out.push((want, z));
+        }
+    }
+    out
+}
+
+/// The edges of the picture of a map in another coordinate system, from points along them.
+fn edges_in(frame: &crate::mapdraw::Frame, crs: u32, to: u32, ctx: &mut NodeCtx) -> Result<(Vec<f64>, Vec<f64>)> {
+    let b = frame.b;
+    let (w, h) = (frame.width as f64 * frame.px, frame.height as f64 * frame.px);
+    let n = 24;
+    let (mut xs, mut ys) = (Vec::new(), Vec::new());
+    for i in 0..=n {
+        let f = i as f64 / n as f64;
+        for (x, y) in [(b[0] + f * w, b[1]), (b[0] + f * w, b[1] + h), (b[0], b[1] + f * h), (b[0] + w, b[1] + f * h)] {
+            xs.push(x);
+            ys.push(y);
+        }
+    }
+    if crs != to {
+        ctx.backend("A grid in another coordinate system")?.transform(crs, to, &mut xs, &mut ys)?;
+    }
+    Ok((xs, ys))
+}
+
+/// Lines of a grid in another coordinate system, `every` apart, drawn in the coordinates of
+/// the map, with a label for each from `label`.
+fn grid_lines(
+    frame: &crate::mapdraw::Frame,
+    crs: u32,
+    other: u32,
+    every: f64,
+    label: &dyn Fn(f64, bool) -> String,
+    ctx: &mut NodeCtx,
+) -> Result<Vec<crate::mapdraw::GratLine>> {
+    let (xs, ys) = edges_in(frame, crs, other, ctx)?;
+    let fold = |v: &[f64]| v.iter().filter(|x| x.is_finite()).fold((f64::MAX, f64::MIN), |a, x| (a.0.min(*x), a.1.max(*x)));
+    let ((x0, x1), (y0, y1)) = (fold(&xs), fold(&ys));
+    if x0 > x1 || (x1 - x0) / every > 200.0 || (y1 - y0) / every > 200.0 {
+        return Ok(Vec::new());
+    }
+    let backend = ctx.backend("A grid in another coordinate system")?;
+    let mut lines = Vec::new();
+    let samples = 40;
+    let mut add = |pts: Vec<(f64, f64)>, text: String, meridian: bool| -> Result<()> {
+        let (mut x, mut y): (Vec<f64>, Vec<f64>) = pts.into_iter().unzip();
+        if crs != other {
+            backend.transform(other, crs, &mut x, &mut y)?;
+        }
+        let points: Vec<(f64, f64)> = x.into_iter().zip(y).filter(|p| p.0.is_finite() && p.1.is_finite()).collect();
+        if points.len() > 1 {
+            lines.push(crate::mapdraw::GratLine { points, label: text, meridian });
+        }
+        Ok(())
+    };
+    let (ya, yb) = (y0 - every, y1 + every);
+    let mut v = (x0 / every).ceil() * every;
+    while v <= x1 {
+        add((0..=samples).map(|i| (v, ya + (yb - ya) * i as f64 / samples as f64)).collect(), label(v, true), true)?;
+        v += every;
+    }
+    let (xa, xb) = (x0 - every, x1 + every);
+    let mut v = (y0 / every).ceil() * every;
+    while v <= y1 {
+        add((0..=samples).map(|i| (xa + (xb - xa) * i as f64 / samples as f64, v)).collect(), label(v, false), false)?;
+        v += every;
+    }
+    Ok(lines)
+}
+
+/// The middle of the map in longitude and latitude.
+fn centre_degrees(frame: &crate::mapdraw::Frame, crs: u32, ctx: &mut NodeCtx) -> Result<(f64, f64)> {
+    let b = frame.b;
+    let (mut x, mut y) = (vec![b[0] + frame.width as f64 * frame.px / 2.0], vec![b[1] + frame.height as f64 * frame.px / 2.0]);
+    if crs != 4326 {
+        ctx.backend("A grid")?.transform(crs, 4326, &mut x, &mut y)?;
+    }
+    Ok((x[0], y[0]))
+}
+
+/// The letters of the 100 km square of MGRS at an easting and a northing in a UTM zone.
+pub fn mgrs_square(zone: u32, easting: f64, northing: f64) -> String {
+    const COLS: [&str; 3] = ["ABCDEFGH", "JKLMNPQR", "STUVWXYZ"];
+    const ROWS: &str = "ABCDEFGHJKLMNPQRSTUV";
+    let set = ((zone + 2) % 3) as usize;
+    let col = ((easting / 100_000.0).floor() as i64 - 1).clamp(0, 7) as usize;
+    let offset = if zone.is_multiple_of(2) { 5 } else { 0 };
+    let row = ((northing / 100_000.0).floor() as i64 + offset).rem_euclid(20) as usize;
+    format!("{}{}", &COLS[set][col..col + 1], &ROWS[row..row + 1])
+}
+
+/// The letter of the band of latitude of UTM and MGRS.
+fn utm_band(lat: f64) -> char {
+    const BANDS: &[u8] = b"CDEFGHJKLMNPQRSTUVWX";
+    BANDS[(((lat + 80.0) / 8.0).floor() as i64).clamp(0, 19) as usize] as char
+}
+
+/// A UTM grid in the zone of the middle of the map, `every` metres apart (1 km by the size
+/// when not given), each line named by its kilometres within its 100 km square, as on
+/// military maps, and the first ones with the zone, the band and the letters of the square.
+fn utm_grid(frame: &crate::mapdraw::Frame, crs: u32, every: Option<f64>, ctx: &mut NodeCtx) -> Result<Vec<crate::mapdraw::GratLine>> {
+    let (lon, lat) = centre_degrees(frame, crs, ctx)?;
+    let zone = (((lon + 180.0) / 6.0).floor() as u32 + 1).clamp(1, 60);
+    let utm = if lat >= 0.0 { 32600 + zone } else { 32700 + zone };
+    let (xs, ys) = edges_in(frame, crs, utm, ctx)?;
+    let span = xs.iter().chain(&ys).filter(|v| v.is_finite()).fold((f64::MAX, f64::MIN), |a, v| (a.0.min(*v), a.1.max(*v)));
+    let wide = xs.iter().filter(|v| v.is_finite()).fold((f64::MAX, f64::MIN), |a, v| (a.0.min(*v), a.1.max(*v)));
+    let _ = span;
+    let every = every.filter(|e| *e > 0.0).unwrap_or_else(|| crate::chart::nice_step((wide.1 - wide.0).max(1.0), 6.0).max(1000.0));
+    let mid_n = {
+        let (mut x, mut y) = (vec![lon], vec![lat]);
+        ctx.backend("A UTM grid")?.transform(4326, utm, &mut x, &mut y)?;
+        y[0]
+    };
+    let first = std::cell::Cell::new(true);
+    let label = |v: f64, east: bool| {
+        let km = ((v / 1000.0).round() as i64).rem_euclid(100);
+        let digits = format!("{:02}", km);
+        if east && first.replace(false) {
+            format!("{}{} {} {}", zone, utm_band(lat), mgrs_square(zone, v + 1.0, mid_n), digits)
+        } else {
+            digits
+        }
+    };
+    grid_lines(frame, crs, utm, every, &label, ctx)
+}
+
+/// Map sheets of 10 km in SWEREF 99 TM: the lines between them, and the name of each in its
+/// middle, the kilometres of its south-west corner north and east, as "6470 410".
+/// The lines of a grid, and the names of its cells, each at a place.
+type LinesAndNames = (Vec<crate::mapdraw::GratLine>, Vec<((f64, f64), String)>);
+
+fn sheet_grid(frame: &crate::mapdraw::Frame, crs: u32, ctx: &mut NodeCtx) -> Result<LinesAndNames> {
+    let every = 10_000.0;
+    let lines = grid_lines(frame, crs, 3006, every, &|v: f64, _| format!("{}", (v / 1000.0).round() as i64), ctx)?;
+    let (xs, ys) = edges_in(frame, crs, 3006, ctx)?;
+    let fold = |v: &[f64]| v.iter().filter(|x| x.is_finite()).fold((f64::MAX, f64::MIN), |a, x| (a.0.min(*x), a.1.max(*x)));
+    let ((x0, x1), (y0, y1)) = (fold(&xs), fold(&ys));
+    let mut names = Vec::new();
+    if (x1 - x0) / every <= 60.0 && (y1 - y0) / every <= 60.0 {
+        let (mut cx, mut cy, mut text) = (Vec::new(), Vec::new(), Vec::new());
+        let mut e = (x0 / every).floor() * every;
+        while e <= x1 {
+            let mut n = (y0 / every).floor() * every;
+            while n <= y1 {
+                // In the middle of the part of the sheet that is on the map, if enough of it is.
+                let (a0, a1, b0, b1) = (e.max(x0), (e + every).min(x1), n.max(y0), (n + every).min(y1));
+                if (a1 - a0) * (b1 - b0) < every * every * 0.12 {
+                    n += every;
+                    continue;
+                }
+                cx.push((a0 + a1) / 2.0);
+                cy.push((b0 + b1) / 2.0);
+                text.push(format!("{} {}", (n / 1000.0).round() as i64, (e / 1000.0).round() as i64));
+                n += every;
+            }
+            e += every;
+        }
+        if crs != 3006 {
+            ctx.backend("Map sheets")?.transform(3006, crs, &mut cx, &mut cy)?;
+        }
+        names = cx.into_iter().zip(cy).zip(text).filter(|((x, y), _)| x.is_finite() && y.is_finite()).collect();
+    }
+    Ok((lines, names))
+}
+
+/// The map cut along its outermost lines of latitude and longitude: the largest box of
+/// degrees within the picture, its edges curved as they are on the map.
+fn degree_frame(frame: &crate::mapdraw::Frame, crs: u32, ctx: &mut NodeCtx) -> Result<Option<geo::Geometry<f64>>> {
+    if crs == 4326 {
+        return Ok(None);
+    }
+    let (xs, ys) = edges_in(frame, crs, 4326, ctx)?;
+    // The points come four at a time: south, north, west and east edges.
+    let (mut west, mut east, mut south, mut north) = (f64::MIN, f64::MAX, f64::MIN, f64::MAX);
+    for k in 0..xs.len() / 4 {
+        let (sx, sy, nx, ny, wx, _wy, ex, _ey) =
+            (xs[4 * k], ys[4 * k], xs[4 * k + 1], ys[4 * k + 1], xs[4 * k + 2], ys[4 * k + 2], xs[4 * k + 3], ys[4 * k + 3]);
+        let _ = (sx, nx);
+        south = south.max(sy);
+        north = north.min(ny);
+        west = west.max(wx);
+        east = east.min(ex);
+    }
+    if !(west < east && south < north) {
+        return Ok(None);
+    }
+    let n = 40;
+    let mut ring: Vec<(f64, f64)> = Vec::new();
+    for i in 0..n {
+        ring.push((west + (east - west) * i as f64 / n as f64, south));
+    }
+    for i in 0..n {
+        ring.push((east, south + (north - south) * i as f64 / n as f64));
+    }
+    for i in 0..n {
+        ring.push((east - (east - west) * i as f64 / n as f64, north));
+    }
+    for i in 0..n {
+        ring.push((west, north - (north - south) * i as f64 / n as f64));
+    }
+    let (mut x, mut y): (Vec<f64>, Vec<f64>) = ring.into_iter().unzip();
+    ctx.backend("A frame along the degrees")?.transform(4326, crs, &mut x, &mut y)?;
+    let mut pts: Vec<(f64, f64)> = x.into_iter().zip(y).collect();
+    pts.push(pts[0]);
+    Ok(Some(geo::Geometry::Polygon(geo::Polygon::new(pts.into(), Vec::new()))))
+}
+
+/// The globe for a corner: the middle of the map and its outline, in degrees.
+fn globe_of(frame: &crate::mapdraw::Frame, crs: u32, corner: &str, ctx: &mut NodeCtx) -> Result<crate::mapdraw::Globe> {
+    let centre = centre_degrees(frame, crs, ctx)?;
+    let b = frame.b;
+    let (w, h) = (frame.width as f64 * frame.px, frame.height as f64 * frame.px);
+    let n = 10;
+    let mut ring: Vec<(f64, f64)> = Vec::new();
+    for i in 0..n {
+        ring.push((b[0] + w * i as f64 / n as f64, b[1]));
+    }
+    for i in 0..n {
+        ring.push((b[0] + w, b[1] + h * i as f64 / n as f64));
+    }
+    for i in 0..n {
+        ring.push((b[0] + w - w * i as f64 / n as f64, b[1] + h));
+    }
+    for i in 0..n {
+        ring.push((b[0], b[1] + h - h * i as f64 / n as f64));
+    }
+    let (mut x, mut y): (Vec<f64>, Vec<f64>) = ring.into_iter().unzip();
+    if crs != 4326 {
+        ctx.backend("A globe")?.transform(crs, 4326, &mut x, &mut y)?;
+    }
+    let area = x.into_iter().zip(y).filter(|p| p.0.is_finite() && p.1.is_finite()).collect();
+    Ok(crate::mapdraw::Globe { corner: corner.to_string(), centre, area })
+}
+
 /// A logo read from its file and made as wide as a share of the map.
 fn logo(path: &std::path::Path, map_width: u32, percent: f64, print: bool, ctx: &mut NodeCtx) -> Result<crate::model::RasterImage> {
     let img = image::open(path).map_err(|e| GbError(format!("Cannot read the logo {}: {}", path.display(), e)))?.to_rgba8();
@@ -1671,6 +2319,35 @@ fn notes_of(text: &str) -> Result<Vec<(f64, f64, String)>> {
         }
     }
     Ok(out)
+}
+
+/// The index of names of a map with index squares: each name that is labelled, its layer and
+/// its square, in the order of the alphabet.
+fn register(req: &crate::mapdraw::Request) -> Result<Table> {
+    use geo::InteriorPoint;
+    let b = crate::mapdraw::map_extent(req)?;
+    let mut rows: Vec<(String, String, String)> = Vec::new();
+    for (li, (t, _)) in req.layers.iter().enumerate() {
+        let Some(l) = req.labels.get(li).and_then(|l| l.as_ref()) else { continue };
+        let layer = req.names.get(li).cloned().unwrap_or_default();
+        for it in &l.items {
+            let at = it.at.or_else(|| t.features[it.feature].geom.as_ref().and_then(|g| g.interior_point()).map(|p| (p.x(), p.y())));
+            let Some((x, y)) = at else { continue };
+            if let Some(sq) = crate::mapdraw::index_square(b, req.furniture.index_grid, x, y) {
+                rows.push((it.text.replace('\n', " "), sq, layer.clone()));
+            }
+        }
+    }
+    rows.sort_by(|a, b| crate::nodes::alphabetical(&a.0).cmp(&crate::nodes::alphabetical(&b.0)).then(a.1.cmp(&b.1)));
+    rows.dedup();
+    let mut t = Table {
+        fields: vec![Field::new("name", FieldType::Text), Field::new("square", FieldType::Text), Field::new("layer", FieldType::Text)],
+        ..Default::default()
+    };
+    for (n, s, l) in rows {
+        t.features.push(Feature { geom: None, z: None, attrs: vec![Value::Text(n), Value::Text(s), Value::Text(l)] });
+    }
+    Ok(t)
 }
 
 /// A line or an area with its corners rounded off; anything else as it is.
@@ -1804,6 +2481,17 @@ fn icon_keys(t: &Table, spec: &crate::mapdraw::IconSpec) -> Vec<(String, &'stati
     out
 }
 
+/// The outputs of Draw map: the map, and the register of the names when it has an index of
+/// squares.
+fn map_ports(p: &P) -> Vec<String> {
+    let indexed = p.get("index_grid").and_then(|v| v.trim().parse::<usize>().ok()).is_some_and(|n| n > 0);
+    if indexed {
+        vec!["Map".into(), "Register".into()]
+    } else {
+        vec!["Map".into()]
+    }
+}
+
 /// The tools of this module, for the registry in mod.rs.
 pub(super) const TYPES: &[NodeType] = &[
     NodeType {
@@ -1814,8 +2502,8 @@ pub(super) const TYPES: &[NodeType] = &[
         category: "Maps",
         desc: "Draws the streams connected to Layers into a picture with coordinates: each stream a layer with its own colours, in the order you set, with values shown by colour and size, labels, icons for points, and a legend. Write the picture to PNG, JPG, GeoTIFF or PDF with an output.",
         inputs: &["Layers", "Overview"],
-        outputs: &["Map"],
-        ports: None,
+        outputs: &["Map", "Register"],
+        ports: Some(map_ports),
         params: MAP_PARAMS,
         run: run_map,
         summary: |p| {
@@ -1851,5 +2539,25 @@ mod template_tests {
         }
         let t = map_template(&p);
         assert_eq!(t.keys().cloned().collect::<Vec<_>>(), vec!["legend".to_string(), "legend_fill".to_string()]);
+    }
+
+    #[test]
+    fn places_near_a_line_in_the_order_they_come_along_it() {
+        let mut t = Table { fields: vec![crate::model::Field::new("name", crate::model::FieldType::Text)], ..Default::default() };
+        for (x, y, n) in [(80.0, 1.0, "Far"), (20.0, -2.0, "Near"), (50.0, 40.0, "Away")] {
+            t.features.push(crate::model::Feature::new(vec![Value::Text(n.into())], Some(geo::Geometry::Point(geo::Point::new(x, y)))));
+        }
+        let line: geo::LineString<f64> = vec![(0.0, 0.0), (100.0, 0.0)].into();
+        let places = places_along(&t, &line, 1000.0);
+        assert_eq!(places.iter().map(|p| p.1.as_str()).collect::<Vec<_>>(), vec!["Near", "Far"]);
+        assert!((places[0].0 - 200.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn squares_of_mgrs_and_bands_of_utm() {
+        // The Washington Monument is in 18S UJ, and the made-up village in 33V VE.
+        assert_eq!(mgrs_square(18, 323_487.0, 4_306_483.0), "UJ");
+        assert_eq!(mgrs_square(33, 418_200.0, 6_474_300.0), "VE");
+        assert_eq!((utm_band(38.9), utm_band(58.4), utm_band(-33.9)), ('S', 'V', 'H'));
     }
 }

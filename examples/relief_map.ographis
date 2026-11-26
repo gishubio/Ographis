@@ -1,0 +1,250 @@
+{
+  "format": "ographis/1",
+  "name": "A relief map with contours and an index of squares",
+  "nodes": [
+    {
+      "id": "dem",
+      "type": "Reader",
+      "x": 20,
+      "y": 40,
+      "comment": "Heights of the terrain, 10 m cells",
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "contours",
+      "type": "ContourGenerator",
+      "x": 260,
+      "y": 160,
+      "comment": "A contour every 10 m",
+      "params": {
+        "interval": "10"
+      }
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "x": 520,
+      "y": 60,
+      "comment": "Heights in colours lit from several sides, index contours every 50 m named, in a frame with index squares",
+      "params": {
+        "layers": [
+          {
+            "from": "contours:Contours",
+            "name": "Contours",
+            "stroke": "#7a5a3a",
+            "width": 0.6,
+            "index_by": "height",
+            "index_every": 50,
+            "label": "height",
+            "label_size": 10,
+            "label_colour": "#7a5a3a",
+            "label_repeat": 260
+          },
+          {
+            "from": "dem:Output",
+            "name": "Heights",
+            "raster": "relief"
+          }
+        ],
+        "title": "The heights around Skövde",
+        "subtitle": "Made-up example data",
+        "title_place": "top-left",
+        "title_fill": "#ffffffdd",
+        "title_line": "#999999",
+        "knockout": "yes",
+        "map_frame": "frame",
+        "index_grid": "6",
+        "legend": "top-right",
+        "scale_bar": "bottom-right",
+        "scale_number": "both",
+        "north_arrow": "top-right",
+        "north_style": "star",
+        "width": "1600",
+        "margin": "0"
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "x": 800,
+      "y": 20,
+      "comment": "The map",
+      "params": {
+        "path": "out/relief_map.png"
+      }
+    },
+    {
+      "id": "register",
+      "type": "Writer",
+      "x": 800,
+      "y": 140,
+      "comment": "Which square each name is in",
+      "params": {
+        "path": "out/relief_register.csv"
+      }
+    },
+    {
+      "id": "drape",
+      "type": "MapRenderer",
+      "x": 520,
+      "y": 320,
+      "comment": "The same map without title, legend or frame, to lay over the terrain in 3D",
+      "params": {
+        "layers": [
+          {
+            "from": "contours:Contours",
+            "name": "Contours",
+            "stroke": "#7a5a3a",
+            "width": 0.6,
+            "index_by": "height",
+            "index_every": 50,
+            "label": "height",
+            "label_size": 10,
+            "label_colour": "#7a5a3a",
+            "label_repeat": 260
+          },
+          {
+            "from": "dem:Output",
+            "name": "Heights",
+            "raster": "relief"
+          }
+        ],
+        "width": "2400",
+        "margin": "0"
+      }
+    },
+    {
+      "id": "scene",
+      "type": "SceneRenderer",
+      "x": 820,
+      "y": 320,
+      "comment": "The map draped over the terrain, with morning mist in the valleys",
+      "params": {
+        "width": "1600",
+        "height": "900",
+        "background": "sky",
+        "sun_azimuth": "120",
+        "sun_altitude": "14",
+        "fog": "35",
+        "elevation": "32",
+        "view_azimuth": "200",
+        "quality": "16",
+        "zoom": "190"
+      }
+    },
+    {
+      "id": "png3d",
+      "type": "Writer",
+      "x": 1120,
+      "y": 320,
+      "params": {
+        "path": "out/relief_3d.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "contours",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "contours",
+        "Contours"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Register"
+      ],
+      "to": [
+        "register",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "contours",
+        "Contours"
+      ],
+      "to": [
+        "drape",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "drape",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "scene",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "drape",
+        "Map"
+      ],
+      "to": [
+        "scene",
+        "Map"
+      ]
+    },
+    {
+      "from": [
+        "scene",
+        "Image"
+      ],
+      "to": [
+        "png3d",
+        "Input"
+      ]
+    }
+  ]
+}

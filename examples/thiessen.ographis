@@ -71,11 +71,12 @@
     },
     {
       "id": "box",
-      "type": "BoundingBoxAccumulator",
+      "type": "BoundingBoxReplacer",
       "x": 470,
       "y": 320,
       "params": {
-        "corners": "true"
+        "corners": "true",
+        "for": "together"
       },
       "comment": "Extent"
     },

@@ -17,6 +17,24 @@ const BASES: &[(&str, &str)] = &[
     ("terrain", "On the terrain model on Terrain, at its lowest point under the area"),
 ];
 
+const RAMP_CHOICES: &[(&str, &str)] = &[
+    ("viridis", "Yellow to blue"),
+    ("heat", "Yellow to red"),
+    ("blues", "Blues"),
+    ("reds", "Reds"),
+    ("greens", "Greens"),
+    ("oranges", "Oranges"),
+    ("purples", "Purples"),
+    ("greys", "Greys"),
+    ("diverging", "Blue to red"),
+    ("terrain", "Heights: green to brown"),
+    ("rainbow", "Depths: violet, blue, green, yellow to red"),
+    ("sea", "Sea: navy, turquoise, green to pale yellow"),
+];
+
+const COLOUR_SCALES: &[(&str, &str)] =
+    &[("linear", "Evenly from the smallest to the largest"), ("quantiles", "As many blocks in each colour: shows differences among the many small values too")];
+
 const TOPS: &[(&str, &str)] = &[("above", "Above the base, as a height"), ("absolute", "As the height of the top, above the sea")];
 
 const EXTRUDE_PARAMS: &[ParamSpec] = &[
@@ -38,6 +56,21 @@ const EXTRUDE_PARAMS: &[ParamSpec] = &[
     },
     ParamSpec { key: "wall_colour", label: "Colour of the walls", kind: ParamKind::Text, default: "#d9d4ca", hint: "As #rrggbb" },
     ParamSpec { key: "roof_colour", label: "Colour of the top", kind: ParamKind::Text, default: "#a39e96", hint: "" },
+    ParamSpec {
+        key: "colour_by",
+        label: "Colour by",
+        kind: ParamKind::Expression("Input"),
+        default: "",
+        hint: "A number, such as an attribute with the population, that colours each block from the ramp, its top a little lighter; or an attribute with a colour of its own, as #rrggbb. Empty: the colours above",
+    },
+    ParamSpec {
+        key: "colour_ramp",
+        label: "Colours from",
+        kind: ParamKind::Choice(RAMP_CHOICES),
+        default: "viridis",
+        hint: "From the smallest values to the largest",
+    },
+    ParamSpec { key: "colour_scale", label: "Spread over the values", kind: ParamKind::Choice(COLOUR_SCALES), default: "linear", hint: "" },
     ParamSpec {
         key: "name",
         label: "Names from",
@@ -158,6 +191,53 @@ fn run_extrude(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
         ],
         ..Default::default()
     };
+    // Colours by a value: a number from the ramp, or a colour of its own.
+    let colours: Option<Vec<Option<[f32; 3]>>> = match p.get("colour_by").filter(|v| !v.trim().is_empty()) {
+        None => None,
+        Some(text) => {
+            let by = expr::compile(&text, &names).map_err(|e| GbError(format!("Colour by: {}", e.0)))?;
+            let mut values: Vec<(Option<f64>, Option<[f32; 3]>)> = Vec::with_capacity(table.features.len());
+            for (i, f) in table.features.iter().enumerate() {
+                let v = by.eval(&Row { feature: f, index: i, geographic: ctx.geographic(table.crs) }).map_err(|e| at_row(e, i))?;
+                let own = match &v {
+                    Value::Text(t) if t.trim().starts_with('#') => {
+                        crate::mapdraw::parse_color(t).ok().flatten().map(|c| [c[0], c[1], c[2]].map(|x| x as f32 / 255.0))
+                    }
+                    _ => None,
+                };
+                values.push((if own.is_some() { None } else { v.as_f64().or_else(|| crate::model::parse_number(&v.to_text())) }, own));
+            }
+            let mut sorted: Vec<f64> = values.iter().filter_map(|v| v.0).filter(|v| v.is_finite()).collect();
+            sorted.sort_by(|a, b| a.total_cmp(b));
+            let ramp = p.get("colour_ramp").filter(|r| !r.trim().is_empty()).unwrap_or_else(|| "viridis".into());
+            let quantiles = p.get("colour_scale").as_deref() == Some("quantiles");
+            let at = |x: f64| -> f64 {
+                let (lo, hi) = (sorted[0], sorted[sorted.len() - 1]);
+                if quantiles {
+                    sorted.partition_point(|v| *v < x) as f64 / (sorted.len() - 1).max(1) as f64
+                } else if hi > lo {
+                    (x - lo) / (hi - lo)
+                } else {
+                    0.5
+                }
+            };
+            let colour_at = |t: f64| -> [f32; 3] {
+                // In 64 steps, more than the eye tells apart, so that blocks share materials.
+                let t = (t.clamp(0.0, 1.0) * 63.0).round() / 63.0;
+                let c = match crate::thematic::own_ramp(&ramp) {
+                    Some((a, b)) => [0, 1, 2].map(|k| (a[k] as f64 + (b[k] as f64 - a[k] as f64) * t.clamp(0.0, 1.0)).round() as u8),
+                    None => crate::thematic::ramp_at(&ramp, t),
+                };
+                c.map(|x| x as f32 / 255.0)
+            };
+            if sorted.is_empty() && values.iter().all(|v| v.1.is_none()) {
+                ctx.notes.warn("Colour by gives no number and no colour for any block: they have the colours above.");
+            }
+            Some(values.iter().map(|(v, own)| own.or_else(|| v.filter(|v| v.is_finite() && !sorted.is_empty()).map(|v| colour_at(at(v))))).collect())
+        }
+    };
+    // A material for each colour, shared by the blocks of the same colour.
+    let mut by_colour: std::collections::HashMap<[u8; 3], (u32, u32)> = std::collections::HashMap::new();
     let mut out = table.like();
     for n in ["z_base", "z_top", "height"] {
         if out.field_index(n).is_none() {
@@ -207,7 +287,21 @@ fn run_extrude(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             continue;
         }
         let object = out.features.len() as u32;
+        let first = mesh.tris.len();
         add_block(&mut mesh, &polys, z0, z1, object);
+        if let Some(c) = colours.as_ref().and_then(|c| c[i]) {
+            let key = c.map(|x| (x * 255.0).round() as u8);
+            let next = mesh.materials.len() as u32;
+            let (wall, top) = *by_colour.entry(key).or_insert((next, next + 1));
+            if wall == next {
+                let lighter = c.map(|x| (x + (1.0 - x) * 0.18).min(1.0));
+                mesh.materials.push(Material { name: format!("walls {:02x}{:02x}{:02x}", key[0], key[1], key[2]), diffuse: c, ..Default::default() });
+                mesh.materials.push(Material { name: format!("top {:02x}{:02x}{:02x}", key[0], key[1], key[2]), diffuse: lighter, ..Default::default() });
+            }
+            for t in &mut mesh.tris[first..] {
+                t.material = if t.material == 0 { wall } else { top };
+            }
+        }
         mesh.objects.push(match name_at.map(|k| &f.attrs[k]) {
             Some(v) if !matches!(v, Value::Null) => v.to_text(),
             _ => (i + 1).to_string(),
@@ -955,6 +1049,36 @@ mod tests {
         assert!((top - 2.0 * (100.0 - 16.0)).abs() < 1e-9);
         assert_eq!(m.bounds().unwrap().0[2], 10.0);
         assert_eq!(m.bounds().unwrap().1[2], 30.0);
+    }
+
+    #[test]
+    fn blocks_are_coloured_by_a_value_or_a_colour_of_their_own() {
+        let mut t = Table { fields: vec![Field::new("floors", FieldType::Int)], crs: Some(3006), ..Default::default() };
+        t.features = vec![square(0.0, 10.0, 1), square(20.0, 5.0, 10), square(40.0, 5.0, 100)];
+        let out = run("Extruder", &[("height", "floors"), ("colour_by", "floors"), ("colour_ramp", "heat")], vec![("Input", t.clone())]);
+        let m = out.mesh.as_ref().unwrap();
+        let colour_of = |object: u32, wall: bool| {
+            let t = m.tris.iter().find(|t| t.object == object && (m.materials[t.material as usize].name.starts_with("walls") == wall)).unwrap();
+            m.materials[t.material as usize].diffuse
+        };
+        // The smallest light yellow and the largest dark red, from the ramp; each top lighter.
+        let (low, high) = (colour_of(0, true), colour_of(2, true));
+        assert!(low[1] > high[1] + 0.3, "{:?} {:?}", low, high);
+        assert!(colour_of(2, false)[0] > high[0] || colour_of(2, false)[1] > high[1]);
+        // Linear, the middle value is near the small one; in quantiles, halfway.
+        let mid_linear = colour_of(1, true);
+        let q = run(
+            "Extruder",
+            &[("height", "floors"), ("colour_by", "floors"), ("colour_ramp", "heat"), ("colour_scale", "quantiles")],
+            vec![("Input", t.clone())],
+        );
+        let qm = q.mesh.as_ref().unwrap();
+        let tri = qm.tris.iter().find(|t| t.object == 1 && qm.materials[t.material as usize].name.starts_with("walls")).unwrap();
+        assert!(qm.materials[tri.material as usize].diffuse[1] < mid_linear[1], "the middle one darker as a quantile");
+        // A colour of its own, written in the data.
+        let own = run("Extruder", &[("height", "10"), ("colour_by", "'#ff0000'")], vec![("Input", t)]);
+        let om = own.mesh.as_ref().unwrap();
+        assert!(om.materials.iter().any(|x| x.diffuse == [1.0, 0.0, 0.0]));
     }
 
     fn hill(n: usize) -> Grid {

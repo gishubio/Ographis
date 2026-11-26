@@ -1,5 +1,5 @@
 //! Tools that make or change values: Create attribute, Round numbers, Count, Stamp date and
-//! time, Classify by range and Map values.
+//! time, ranges of one's own for Classify values, and Map values.
 
 use super::*;
 use crate::model::{err, fmt_count, fmt_real, Field, FieldType, Result, Table, Value};
@@ -270,37 +270,7 @@ pub(super) fn run_mapper(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
     Ok(vec![("Output".into(), out)])
 }
 
-// ---------- Classify by range ----------
-
-pub(super) const METHODS: &[(&str, &str)] = &[("own", "Ranges you give"), ("equal", "Equal intervals"), ("quantile", "The same number in each")];
-
-pub(super) const RANGE_PARAMS: &[ParamSpec] = &[
-    ParamSpec { key: "attribute", label: "Attribute", kind: ParamKind::Attribute("Input"), default: "", hint: "A number to look up in the ranges" },
-    ParamSpec { key: "method", label: "Ranges", kind: ParamKind::Choice(METHODS), default: "own", hint: "" },
-    ParamSpec {
-        key: "ranges",
-        label: "From, to and value",
-        kind: ParamKind::Ranges("Input"),
-        default: "",
-        hint: "From and to are both in the range: 1 to 100 and 101 to 200. An empty from or to has no end. The first range that fits is used",
-    },
-    ParamSpec {
-        key: "classes",
-        label: "Number of classes",
-        kind: ParamKind::Text,
-        default: "5",
-        hint: "Equal intervals split from the smallest to the largest value; the same number in each puts as many features in each",
-    },
-    ParamSpec { key: "decimals", label: "Decimals in the labels", kind: ParamKind::Text, default: "0", hint: "" },
-    ParamSpec { key: "result", label: "Write to", kind: ParamKind::Text, default: "class", hint: "The attribute that gets the value of the range" },
-    ParamSpec {
-        key: "otherwise",
-        label: "Outside the ranges",
-        kind: ParamKind::Text,
-        default: "",
-        hint: "Written for a value that is in no range, and for an empty one. Empty leaves it empty",
-    },
-];
+// ---------- Ranges of one's own, for Classify values ----------
 
 /// A range: from and to, either open, and the value it gives.
 #[derive(Debug, Clone, PartialEq)]
@@ -366,44 +336,37 @@ pub fn make_ranges(values: &[f64], classes: usize, quantile: bool, decimals: usi
     out
 }
 
-pub(super) fn run_ranges(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let table = input(inp, "Input");
+/// The ranges of one's own, each with its value, for Classify values: each feature gets
+/// the value of the first range its number is in, in the attribute `result`. With the
+/// ranges and how many features are in each. Was Classify by range before 0.96.8.
+pub(super) fn give_ranges(p: &P, table: &Table, result: &str, ctx: &mut NodeCtx) -> Result<(Table, Vec<Range>, Vec<usize>)> {
     let attr = p.need("attribute", "Choose the attribute whose values are to be put in ranges.")?;
     let at = table.need_field(&attr)?;
-    let result = p.get("result").filter(|r| !r.trim().is_empty()).unwrap_or_else(|| "class".into());
+    let result = result.to_string();
     let otherwise = p.exact("otherwise");
-    let decimals = number_param(p, "decimals", "The decimals")?.unwrap_or(0.0).clamp(0.0, 10.0) as usize;
     let number = |v: &Value| match v {
         Value::Int(i) => Some(*i as f64),
         Value::Real(r) => Some(*r),
         Value::Text(t) => crate::model::parse_number(t),
         _ => None,
     };
-    let ranges = match p.get("method").as_deref() {
-        Some(m @ ("equal" | "quantile")) => {
-            let n = number_param(p, "classes", "The number of classes")?.unwrap_or(5.0);
-            if !(1.0..=100.0).contains(&n) {
-                return err("The number of classes must be from 1 to 100.");
-            }
-            let values: Vec<f64> = table.features.iter().filter_map(|f| number(&f.attrs[at])).collect();
-            let r = make_ranges(&values, n as usize, m == "quantile", decimals);
-            ctx.notes.info(format!("ranges: {}", r.iter().map(|x| x.value.clone()).collect::<Vec<_>>().join(", ")));
-            r
-        }
-        _ => ranges_of(p.values, "ranges"),
-    };
+    let ranges = ranges_of(p.values, "ranges");
     if ranges.is_empty() {
         return err("Give at least one range, with a from or a to.");
     }
     let mut out = table.clone();
+    let mut counts = vec![0usize; ranges.len()];
     let texts: Vec<Option<String>> = table
         .features
         .iter()
         .map(|f| {
             let v = number(&f.attrs[at]);
-            let hit = v.and_then(|x| ranges.iter().find(|r| r.from.is_none_or(|a| x >= a) && r.to.is_none_or(|b| x <= b)));
+            let hit = v.and_then(|x| ranges.iter().position(|r| r.from.is_none_or(|a| x >= a) && r.to.is_none_or(|b| x <= b)));
             match hit {
-                Some(r) => Some(r.value.clone()),
+                Some(k) => {
+                    counts[k] += 1;
+                    Some(ranges[k].value.clone())
+                }
                 None if otherwise.is_empty() => None,
                 None => Some(otherwise.clone()),
             }
@@ -435,7 +398,7 @@ pub(super) fn run_ranges(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outpu
     for (f, v) in out.features.iter_mut().zip(values) {
         f.attrs[i] = v;
     }
-    Ok(vec![("Output".into(), out)])
+    Ok((out, ranges, counts))
 }
 
 /// The tools of this module, for the registry in mod.rs.
@@ -502,27 +465,6 @@ pub(super) const TYPES: &[NodeType] = &[
         params: NUMBER_PARAMS,
         run: run_counter,
         summary: |p| format!("{} from {}", p.get("name").unwrap_or_else(|| "number".into()), p.get("start").unwrap_or_else(|| "1".into())),
-    },
-    NodeType {
-        name: "RangeMapper",
-        title: "Classify by range",
-        hidden: false,
-        group: Group::Transformer,
-        category: "Attributes",
-        desc: "Gives each feature a value by the range its number falls in: 1 to 100 gives A, 101 to 200 gives B, and so on. The ranges can be given, or made from the data as equal intervals or with as many features in each.",
-        inputs: &["Input"],
-        outputs: &["Output"],
-        ports: None,
-        params: RANGE_PARAMS,
-        run: run_ranges,
-        summary: |p| {
-            let a = p.get("attribute").unwrap_or_default();
-            match p.get("method").as_deref() {
-                Some("equal") => format!("{} · {} equal intervals", a, p.get("classes").unwrap_or_else(|| "5".into())),
-                Some("quantile") => format!("{} · {} classes", a, p.get("classes").unwrap_or_else(|| "5".into())),
-                _ => format!("{} · {} ranges", a, ranges_of(p.values, "ranges").len()),
-            }
-        },
     },
     NodeType {
         name: "ValueMapper",

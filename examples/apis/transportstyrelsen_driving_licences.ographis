@@ -1,0 +1,370 @@
+{
+  "format": "ographis/1",
+  "name": "Driving licence holders",
+  "description": "Holders of driving licences, from the driving licence register of Transportstyrelsen. Transportstyrelsen has no open API for them (only Excel files on its pages), but the same statistics are published by Trafikanalys in its open API as the product t10012 (Körkort). Licence class B by men and women over the years as a chart, and the share of the population with a B licence in each county in the year chosen. A person with both A and B is counted in each class, so the classes are not to be added up.",
+  "variables": [
+    {
+      "name": "year",
+      "value": "2024"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "by_sex",
+      "type": "HttpCaller",
+      "x": 40,
+      "y": 40,
+      "comment": "Trafikanalys t10012: the number of licences (antalkorkort) by sex (kon) and year (ar), for class B (korkort:1). No key",
+      "params": {
+        "url": "'https://api.trafa.se/api/data?lang=sv&query=t10012|antalkorkort|kon|ar|korkort:1'",
+        "cache": "disk"
+      }
+    },
+    {
+      "id": "rows",
+      "type": "JsonExploder",
+      "x": 320,
+      "y": 40,
+      "comment": "A feature per row",
+      "params": {
+        "attribute": "_response",
+        "path": "Rows"
+      }
+    },
+    {
+      "id": "cells",
+      "type": "JsonExtractor",
+      "x": 600,
+      "y": 40,
+      "comment": "The year, the sex and the number",
+      "params": {
+        "attribute": "Cell",
+        "paths": [
+          [
+            "[Column=ar].Value",
+            "year"
+          ],
+          [
+            "[Column=kon].Value",
+            "sex"
+          ],
+          [
+            "[IsMeasure=true].Value",
+            "holders"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "people",
+      "type": "Tester",
+      "x": 880,
+      "y": 40,
+      "comment": "Men and women, not the total",
+      "params": {
+        "test": "sex <> 'Totalt'"
+      }
+    },
+    {
+      "id": "number",
+      "type": "AttributeCreator",
+      "x": 40,
+      "y": 210,
+      "comment": "As a number",
+      "params": {
+        "name": "holders",
+        "expression": "to_real(replace(to_string(holders), ' ', ''))"
+      }
+    },
+    {
+      "id": "chart",
+      "type": "ChartDrawer",
+      "x": 320,
+      "y": 210,
+      "comment": "Lines over the years",
+      "params": {
+        "kind": "lines",
+        "x": "year",
+        "value": "holders",
+        "series": "sex",
+        "markers": "yes",
+        "title": "Holders of a B licence",
+        "subtitle": "Men and women with a driving licence for cars, at the end of each year",
+        "note": "Source: Transportstyrelsen, via Trafikanalys (t10012)",
+        "width": "1200"
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "x": 600,
+      "y": 210,
+      "comment": "Chart",
+      "params": {
+        "path": "out/driving_licences_by_sex.png"
+      }
+    },
+    {
+      "id": "csv",
+      "type": "Writer",
+      "x": 880,
+      "y": 210,
+      "comment": "Table",
+      "params": {
+        "path": "out/driving_licences_by_sex.csv"
+      }
+    },
+    {
+      "id": "by_county",
+      "type": "HttpCaller",
+      "x": 40,
+      "y": 380,
+      "comment": "The share of the population (andelbefolk) with a B licence in each county (reglan), in $(year)",
+      "params": {
+        "url": "'https://api.trafa.se/api/data?lang=sv&query=t10012|andelbefolk|ar:$(year)|korkort:1|reglan'",
+        "cache": "disk"
+      }
+    },
+    {
+      "id": "c_rows",
+      "type": "JsonExploder",
+      "x": 320,
+      "y": 380,
+      "comment": "A feature per county",
+      "params": {
+        "attribute": "_response",
+        "path": "Rows"
+      }
+    },
+    {
+      "id": "c_cells",
+      "type": "JsonExtractor",
+      "x": 600,
+      "y": 380,
+      "comment": "County and share",
+      "params": {
+        "attribute": "Cell",
+        "paths": [
+          [
+            "[Column=reglan].Value",
+            "county"
+          ],
+          [
+            "[Column=reglan].Name",
+            "county_code"
+          ],
+          [
+            "[IsMeasure=true].Value",
+            "share"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "c_real",
+      "type": "AttributeCreator",
+      "x": 880,
+      "y": 380,
+      "comment": "As a number",
+      "params": {
+        "name": "share",
+        "expression": "to_real(replace(replace(to_string(share), ',', '.'), ' ', ''))"
+      }
+    },
+    {
+      "id": "counties",
+      "type": "Tester",
+      "x": 40,
+      "y": 550,
+      "comment": "Counties, not the whole country",
+      "params": {
+        "test": "county <> 'Totalt'"
+      }
+    },
+    {
+      "id": "bars",
+      "type": "ChartDrawer",
+      "x": 320,
+      "y": 550,
+      "comment": "Counties from the highest share",
+      "params": {
+        "kind": "bars",
+        "category": "county",
+        "value": "share",
+        "sort": "down",
+        "unit": "%",
+        "decimals": "1",
+        "title": "Who has a B licence?",
+        "subtitle": "Share of the population with a driving licence for cars, $(year)",
+        "note": "Source: Transportstyrelsen, via Trafikanalys (t10012)",
+        "width": "1100"
+      }
+    },
+    {
+      "id": "png2",
+      "type": "Writer",
+      "x": 600,
+      "y": 550,
+      "comment": "Chart",
+      "params": {
+        "path": "out/driving_licences_by_county_$(year).png"
+      }
+    },
+    {
+      "id": "csv_keep",
+      "type": "AttributeKeeper",
+      "x": 880,
+      "y": 300,
+      "comment": "The table, without the cells",
+      "params": {
+        "keep": [
+          "year",
+          "sex",
+          "holders"
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "by_sex",
+        "Output"
+      ],
+      "to": [
+        "rows",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "rows",
+        "Exploded"
+      ],
+      "to": [
+        "cells",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "cells",
+        "Output"
+      ],
+      "to": [
+        "people",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "people",
+        "Passed"
+      ],
+      "to": [
+        "number",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "number",
+        "Output"
+      ],
+      "to": [
+        "chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "chart",
+        "Chart"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "by_county",
+        "Output"
+      ],
+      "to": [
+        "c_rows",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "c_rows",
+        "Exploded"
+      ],
+      "to": [
+        "c_cells",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "c_cells",
+        "Output"
+      ],
+      "to": [
+        "c_real",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "c_real",
+        "Output"
+      ],
+      "to": [
+        "counties",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "counties",
+        "Passed"
+      ],
+      "to": [
+        "bars",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "bars",
+        "Chart"
+      ],
+      "to": [
+        "png2",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "number",
+        "Output"
+      ],
+      "to": [
+        "csv_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "csv_keep",
+        "Output"
+      ],
+      "to": [
+        "csv",
+        "Input"
+      ]
+    }
+  ]
+}

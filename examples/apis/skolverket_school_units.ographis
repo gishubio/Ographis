@@ -76,7 +76,7 @@
     },
     {
       "id": "flat",
-      "type": "JsonFlattener",
+      "type": "JsonExtractor",
       "name": "Flatten JSON",
       "x": 996.0,
       "y": 156.0,

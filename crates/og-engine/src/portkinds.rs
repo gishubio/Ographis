@@ -22,7 +22,7 @@ impl Data {
     }
 }
 
-const RASTER_FILES: &[&str] = &["tif", "tiff", "asc", "vrt", "img", "jp2", "nc", "png", "jpg", "jpeg", "webp"];
+const RASTER_FILES: &[&str] = &["tif", "tiff", "asc", "vrt", "img", "jp2", "nc", "png", "jpg", "jpeg", "webp", "dem", "bil", "hgt"];
 const CLOUD_FILES: &[&str] = &["las", "laz", "e57", "copc"];
 const FEATURE_FILES: &[&str] = &[
     "gpkg", "shp", "geojson", "json", "csv", "kml", "gml", "fgb", "parquet", "arrow", "feather", "duckdb", "ddb", "xlsx", "ods", "dxf", "dwg", "tab", "mif",

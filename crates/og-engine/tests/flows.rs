@@ -263,6 +263,34 @@ fn workspaces_from_before_the_rename_are_still_read() {
     // It is saved in the new format from then on.
     assert_eq!(ws.format, "ographis/1");
     assert!(ws.to_json().contains("\"ographis/1\""));
+    // Clip raster of before 0.96.8 is Clip, with its ports and what it kept.
+    let ws = Workspace::from_json(
+        r#"{"format": "ographis/1", "nodes": [{"id": "dem", "type": "Reader"}, {"id": "a", "type": "Reader"}, {"id": "c", "type": "RasterClipper", "name": "Clip raster", "params": {"keep": "outside", "crop": "yes"}}, {"id": "v", "type": "Viewer"}],
+            "edges": [{"from": ["dem", "Output"], "to": ["c", "Raster"]}, {"from": ["a", "Output"], "to": ["c", "Areas"]}, {"from": ["c", "Raster"], "to": ["v", "Input"]}]}"#,
+    )
+    .unwrap();
+    let c = ws.nodes.iter().find(|n| n.id == "c").unwrap();
+    assert_eq!((c.kind.as_str(), c.name.as_str()), ("Clipper", "Clip raster"));
+    assert!(!c.params.contains_key("keep"));
+    let ports: Vec<(&str, &str)> = ws.edges.iter().map(|e| (e.from.1.as_str(), e.to.1.as_str())).collect();
+    assert_eq!(ports, [("Output", "Clippee"), ("Output", "Clipper"), ("Outside", "Input")]);
+    // Tools that became choices in others in 0.96.8 are read as those, with their settings
+    // and connections. A node keeps its name, and one without gets the old title.
+    let ws = Workspace::from_json(
+        r#"{"format": "ographis/1", "nodes": [{"id": "in", "type": "Reader"}, {"id": "seg", "type": "LineExploder", "name": "Segments"}, {"id": "len", "type": "LengthCalculator", "params": {"name": "km", "unit": "km"}}, {"id": "v", "type": "Viewer"}],
+            "edges": [{"from": ["in", "Output"], "to": ["seg", "Input"]}, {"from": ["seg", "Output"], "to": ["len", "Input"]}, {"from": ["len", "Output"], "to": ["v", "Input"]}]}"#,
+    )
+    .unwrap();
+    let seg = ws.nodes.iter().find(|n| n.id == "seg").unwrap();
+    assert_eq!((seg.kind.as_str(), seg.name.as_str()), ("LineSplitter", "Segments"));
+    assert_eq!((seg.params["at"].as_str(), seg.params["part"].as_str()), (Some("corners"), Some("segment")));
+    let len = ws.nodes.iter().find(|n| n.id == "len").unwrap();
+    assert_eq!((len.kind.as_str(), len.name.as_str()), ("AreaCalculator", "Calculate length"));
+    assert_eq!((len.params["what"].as_str(), len.params["length_name"].as_str(), len.params["length_unit"].as_str()), (Some("length"), Some("km"), Some("km")));
+    // What went out of the segments now comes out of two ports, Lines and Other, and both
+    // go where it went.
+    let ports: Vec<(&str, &str, &str)> = ws.edges.iter().map(|e| (e.from.0.as_str(), e.from.1.as_str(), e.to.1.as_str())).collect();
+    assert_eq!(ports, [("in", "Output", "Lines"), ("seg", "Lines", "Input"), ("len", "Output", "Input"), ("seg", "Other", "Input")]);
     let e = Workspace::from_json(r#"{"format": "something/9", "nodes": []}"#).unwrap_err();
     assert!(e.0.contains("Unknown format: something/9"), "{}", e.0);
 }
@@ -960,18 +988,16 @@ fn points_are_counted_and_joined_by_location() {
     let r = run(&ws, None, &dir);
     show(&r);
 
-    // The polygons come out as they went in, with the number of points in each. The point
-    // on the shared edge is in both, and the line holds nothing.
-    let c = r.output("count", "Polygons").unwrap();
+    // Count points in polygons of before 0.96.8 is Join by location, counted only: the
+    // polygons come out as they went in, with the number of points in each. The point on
+    // the shared edge is in both, and the line counts the points that lie on it.
+    let c = r.output("count", "Joined").unwrap();
     assert_eq!(c.field_names(), ["code", "name", "point_count"]);
-    assert_eq!(col(c, "point_count"), ints(&[3, 2, 0, 0]));
+    assert_eq!(col(c, "point_count"), ints(&[3, 2, 0, 2]));
     assert_eq!(c.len(), 4);
-    let w = &r.nodes["count"].warnings;
-    assert!(w.contains(&"1 features in Polygons are not areas and hold nothing.".to_string()), "{:?}", w);
-    assert!(w.contains(&"1 points lie in more than one polygon and were counted in each of them.".to_string()), "{:?}", w);
-    // Lines are not points, so nothing is counted, under the name that was asked for.
-    assert_eq!(col(r.output("named", "Polygons").unwrap(), "stops"), ints(&[0, 0, 0, 0]));
-    assert!(r.nodes["named"].warnings.iter().any(|w| w.starts_with("3 features in Points are not single points")));
+    assert!(r.output("count", "Unjoined").unwrap().is_empty());
+    // Lines are counted too now where they cross, under the name that was asked for.
+    assert_eq!(col(r.output("named", "Joined").unwrap(), "stops"), ints(&[0, 1, 1, 1]));
 
     // Each point gets the attributes of its polygon, but keeps its own name.
     let j = r.output("join", "Joined").unwrap();
@@ -1124,12 +1150,14 @@ fn swap_explode_hulls_and_intersect() {
     // Swapped: the point at 20 20 stays, the line now starts at 50 50 and turns at 50 150.
     let sw = geoms(&r, "swap", "Output");
     assert_eq!(sw[0].coords_iter().nth(1).unwrap(), geo::coord! { x: 50.0, y: 150.0 });
-    // Two segments of the line, numbered; the points and the area pass as they are.
-    let seg = r.output("segments", "Output").unwrap();
-    assert_eq!(col(seg, "id"), ints(&[1, 1, 2, 3, 4]));
-    assert_eq!(col(seg, "segment"), vec![Value::Int(1), Value::Int(2), Value::Null, Value::Null, Value::Null]);
+    // Split lines into segments of before 0.96.8 is Split lines at every corner: two
+    // segments of the line, numbered; the points and the area go to Other.
+    let seg = r.output("segments", "Lines").unwrap();
+    assert_eq!(col(seg, "id"), ints(&[1, 1]));
+    assert_eq!(col(seg, "segment"), ints(&[1, 2]));
+    assert_eq!(col(r.output("segments", "Other").unwrap(), "id"), ints(&[2, 3, 4]));
     // Two squares give eight sides.
-    assert_eq!(r.output("outlines", "Output").unwrap().len(), 8);
+    assert_eq!(r.output("outlines", "Lines").unwrap().len(), 8);
     // The hulls around the U.
     let convex = geoms(&r, "convex", "Output");
     assert_eq!((convex.len(), convex[0].unsigned_area()), (1, 10_000.0));
@@ -1142,10 +1170,10 @@ fn swap_explode_hulls_and_intersect() {
     assert!(matches!(each[1], geo::Geometry::Point(_)));
     // Intersect: the line in two pieces, one per zone, the bit above both to Outside; the
     // point in West; the small square in two halves.
-    let cut = r.output("cut", "Intersection").unwrap();
+    let cut = r.output("cut", "Inside").unwrap();
     assert_eq!(col(cut, "id"), ints(&[1, 1, 2, 4, 4]));
     assert_eq!(col(cut, "zone"), texts(&["West", "East", "West", "West", "East"]));
-    let pieces = geoms(&r, "cut", "Intersection");
+    let pieces = geoms(&r, "cut", "Inside");
     assert!(
         (geo::Euclidean.length(match &pieces[0] {
             geo::Geometry::LineString(l) => l,
@@ -1379,6 +1407,79 @@ fn a_sun_study_and_water_in_a_scene() {
     assert_eq!(r.nodes["water"].status, Status::Ok, "{:?}", r.nodes["water"].error);
     assert!(r.log.iter().any(|l| l.msg.contains("water at")));
     assert!(r.nodes["nowater"].error.as_ref().unwrap().contains("Connect the lakes or the sea to Water"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_winter_day_as_a_moving_picture_with_car_lights_and_frost() {
+    let dir = tmp("winter_day");
+    let data = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+    for f in ["house.gltf", "house.bin"] {
+        std::fs::copy(data.join(f), dir.join(f)).unwrap();
+    }
+    // A road past the house, and a lamp by it.
+    std::fs::write(dir.join("lights.csv"), "name;wkt\nRoad;LINESTRING (-40 -12, 40 -12)\nLamp;POINT (5 -9)\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{
+      "nodes": [
+        {"id": "house", "type": "Reader", "params": {"path": "house.gltf"}},
+        {"id": "lights", "type": "Reader", "params": {"path": "lights.csv"}},
+        {"id": "day", "type": "SceneRenderer", "params": {"width": "48", "height": "30", "quality": "4", "sun": "day", "date": "2026-12-13",
+            "study_every": "2", "gif": "out/day.gif", "frost": "60", "icicles": "50", "smoke": "50", "wind": "60"}},
+        {"id": "night", "type": "SceneRenderer", "params": {"width": "48", "height": "30", "quality": "4", "night": "moon", "trails": "100",
+            "lamp_cones": "100", "fireworks": "3", "tilt_shift": "50", "advent": "50"}}
+      ],
+      "edges": [
+        {"from": ["house", "Output"], "to": ["day", "Models"]},
+        {"from": ["house", "Output"], "to": ["night", "Models"]},
+        {"from": ["lights", "Output"], "to": ["night", "Lights"]}
+      ]
+    }"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert!(r.nodes["day"].error.is_none(), "{:?}", r.nodes["day"].error);
+    assert!(r.nodes["night"].error.is_none(), "{:?}", r.nodes["night"].error);
+    // The short day of December, here over Göteborg as the model has no place: from about
+    // nine to three, every two hours, and the last light. A GIF of them all, one after another.
+    let gif = std::fs::read(dir.join("out/day.gif")).unwrap();
+    assert!(gif.starts_with(b"GIF89a"));
+    let frames = image::codecs::gif::GifDecoder::new(std::io::Cursor::new(&gif)).unwrap();
+    use image::AnimationDecoder;
+    let n = frames.into_frames().count();
+    assert!((3..=6).contains(&n), "{} pictures in the day", n);
+    // Advent lights need lit windows, and that is said.
+    assert!(r.log.iter().any(|l| l.msg.contains("Advent lights stand in lit windows")));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_map_series_as_a_moving_picture() {
+    let dir = tmp("series_gif");
+    std::fs::write(dir.join("towns.csv"), "name;x;y\nA;0;0\nB;100;0\nC;50;80\n").unwrap();
+    let ws = Workspace::from_json(
+        r#"{
+      "nodes": [
+        {"id": "towns", "type": "Reader", "params": {"path": "towns.csv"}},
+        {"id": "map", "type": "MapRenderer", "params": {"width": "120", "atlas_by": "name",
+            "layers": "[{\"from\": \"towns:Output\", \"size\": 6}]"}},
+        {"id": "gif", "type": "Writer", "params": {"path": "out/towns.gif"}}
+      ],
+      "edges": [
+        {"from": ["towns", "Output"], "to": ["map", "Layers"]},
+        {"from": ["map", "Map"], "to": ["gif", "Input"]}
+      ]
+    }"#,
+    )
+    .unwrap();
+    let r = run(&ws, None, &dir);
+    show(&r);
+    assert!(r.nodes["gif"].error.is_none(), "{:?}", r.nodes["gif"].error);
+    let gif = std::fs::read(dir.join("out/towns.gif")).unwrap();
+    use image::AnimationDecoder;
+    let n = image::codecs::gif::GifDecoder::new(std::io::Cursor::new(&gif)).unwrap().into_frames().count();
+    assert_eq!(n, 3, "a page for each town, one after another");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -2684,8 +2785,9 @@ fn ranges_snapping_and_charts() {
     let r = run(&ws, None, &dir);
     show(&r);
     // Classify by range: the first range that fits, both ends in it, and the empty value outside.
-    assert_eq!(col(r.output("own", "Output").unwrap(), "class"), texts(&["large", "large", "medium", "small", "small", "none"]));
-    let half = col(r.output("eq", "Output").unwrap(), "half");
+    // Classify by range of before 0.96.8 is Classify values, with ranges of one's own.
+    assert_eq!(col(r.output("own", "Classified").unwrap(), "class"), texts(&["large", "large", "medium", "small", "small", "none"]));
+    let half = col(r.output("eq", "Classified").unwrap(), "half");
     assert_eq!(half[0], half[1]);
     assert_ne!(half[0], half[4]);
     // Snap to vertices: only Borås lies within 1 of an end of the line.

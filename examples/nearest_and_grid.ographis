@@ -127,11 +127,13 @@
     },
     {
       "id": "count",
-      "type": "PointCounter",
+      "type": "SpatialJoiner",
       "x": 700,
       "y": 460,
       "params": {
-        "name": "towns"
+        "count": "towns",
+        "mode": "count",
+        "relation": "intersects"
       },
       "comment": "Towns per hexagon"
     },
@@ -312,7 +314,7 @@
       ],
       "to": [
         "count",
-        "Polygons"
+        "Features"
       ]
     },
     {
@@ -322,13 +324,13 @@
       ],
       "to": [
         "count",
-        "Points"
+        "Join"
       ]
     },
     {
       "from": [
         "count",
-        "Polygons"
+        "Joined"
       ],
       "to": [
         "out_grid",

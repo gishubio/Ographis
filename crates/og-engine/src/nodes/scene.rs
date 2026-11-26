@@ -9,6 +9,7 @@ pub(super) const SUN_MODES: &[(&str, &str)] = &[
     ("angles", "From where you say"),
     ("date", "From the date and time, at the place of the model"),
     ("study", "A sun study: a picture for each time of each date"),
+    ("day", "A whole day: a picture every so many hours from sunrise to sunset of the date"),
 ];
 pub(super) const CLOCKS: &[(&str, &str)] = &[("swedish", "Swedish time"), ("utc", "UTC"), ("computer", "As this computer's clock")];
 pub(super) const SOFTNESS: &[(&str, &str)] = &[("0.5", "Sharp, as on a clear day"), ("3", "Soft"), ("8", "Very soft, as through thin cloud")];
@@ -43,8 +44,21 @@ fn mood_of(m: &str) -> ([f32; 3], [f32; 3], f32, f64) {
         _ => ([1.0; 3], [1.0; 3], 0.0, 0.0),
     }
 }
-pub(super) const LOOKS: &[(&str, &str)] =
-    &[("materials", "Their own materials and textures"), ("white", "White, as an architect's model"), ("wood", "Light wood, as a model of a city")];
+pub(super) const LOOKS: &[(&str, &str)] = &[
+    ("materials", "Their own materials and textures"),
+    ("white", "White, as an architect's model"),
+    ("wood", "Light wood, as a model of a city"),
+    ("sketch", "A drawing: paper white, with lines along the edges"),
+];
+pub(super) const NIGHTS: &[(&str, &str)] =
+    &[("day", "Day, as the sun gives"), ("moon", "Night, under the moon and the stars"), ("aurora", "Night with northern lights")];
+pub(super) const LIGHTNINGS: &[(&str, &str)] = &[("none", "None"), ("bolt", "A bolt of lightning"), ("storm", "A thunderstorm: a dark sky and three bolts")];
+pub(super) const SEASONS: &[(&str, &str)] = &[
+    ("summer", "Summer: green"),
+    ("spring", "Spring: light green, some in blossom"),
+    ("autumn", "Autumn: yellow, orange and red"),
+    ("winter", "Winter: bare branches, the conifers green"),
+];
 pub(super) const BOUNCES: &[(&str, &str)] =
     &[("1", "Once: quick"), ("2", "Twice: lighter in courtyards and arcades, about 1.7 times the time"), ("3", "Three times: about 2.5 times the time")];
 pub(super) const WATERS: &[(&str, &str)] =
@@ -126,6 +140,13 @@ pub(super) const SCENE_PARAMS: &[ParamSpec] = &[
         kind: ParamKind::Text,
         default: "",
         hint: "A folder beside the model where each picture is written as PNG, named by date and time. Empty: only the sheet of them all",
+    },
+    ParamSpec {
+        key: "gif",
+        label: "Also as a moving picture",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "A file beside the model, such as out/the_day.gif, where the pictures of the sun study or the day are shown one after another. Empty: none",
     },
     ParamSpec { key: "clock", label: "Time zone", kind: ParamKind::Choice(CLOCKS), default: "swedish", hint: "Swedish time includes summer time" },
     ParamSpec { key: "softness", label: "Shadows", kind: ParamKind::Choice(SOFTNESS), default: "3", hint: "" },
@@ -292,6 +313,182 @@ pub(super) const SCENE_PARAMS: &[ParamSpec] = &[
         hint: "For the terrain on Terrain, where no map from Map covers it",
     },
     ParamSpec {
+        key: "night",
+        label: "Day or night",
+        kind: ParamKind::Choice(NIGHTS),
+        default: "day",
+        hint: "At night the moon stands where the sun would, by Sun from and Sun height, with stars around it. Lit windows and lamps light the streets. The sky is used as background",
+    },
+    ParamSpec {
+        key: "snow_fall",
+        label: "Falling snow in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "Flakes in the air in front of the camera: 20 is a few, 100 a snowstorm. The sky clouds over",
+    },
+    ParamSpec {
+        key: "snow_cover",
+        label: "Snow on the ground in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "Snow lying on roofs, the ground and the trees, on what is flat first: 30 is a dusting, 100 white all over",
+    },
+    ParamSpec {
+        key: "rain",
+        label: "Rain in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "Streaks of rain in the air, a grey sky, and the ground wet. 50 is a shower, 100 a downpour",
+    },
+    ParamSpec {
+        key: "wet",
+        label: "Wet ground in %",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Darker ground with puddles that mirror the buildings and the sky, as after rain. Empty: as wet as the rain makes it",
+    },
+    ParamSpec {
+        key: "lightning",
+        label: "Lightning",
+        kind: ParamKind::Choice(LIGHTNINGS),
+        default: "none",
+        hint: "Bolts beyond the models, whose flash lights the scene from there",
+    },
+    ParamSpec {
+        key: "fog",
+        label: "Valley fog in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "Fog lying in the low parts, so that the hills and the tall buildings stand out of it. 40 is a morning mist",
+    },
+    ParamSpec {
+        key: "fog_height",
+        label: "Fog, how deep",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "In metres: how high the fog reaches before it is thin. Empty: a quarter of the heights of the scene",
+    },
+    ParamSpec {
+        key: "wind",
+        label: "Wind in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "Slants the rain and the snow, raises waves, lays down the smoke, bends the trees and moves the shadows of the clouds. 30 is a breeze, 100 a gale",
+    },
+    ParamSpec { key: "wind_from", label: "Wind from", kind: ParamKind::Text, default: "225", hint: "Degrees clockwise from north: 225 is a south-west wind" },
+    ParamSpec {
+        key: "sun_rays",
+        label: "Rays of sun in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "Rays that fan out from the sun through gaps in clouds, haze and fog. Best with the sun low in the picture and some cloud",
+    },
+    ParamSpec {
+        key: "cloud_shadows",
+        label: "Shadows of clouds in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "Large soft shadows of clouds over the land, as on a day of sun and cloud. Seen best over a large terrain",
+    },
+    ParamSpec {
+        key: "rainbow",
+        label: "Rainbow in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "A bow opposite the sun, 42° around the point straight away from it, with a fainter second one outside it. Seen when the sun is lower than 42° and behind the camera. The bow is wide: a Lens angle of 70 to 90 shows it, and a lower sun lifts it higher. In a studio it stands on the room behind the models",
+    },
+    ParamSpec {
+        key: "frost",
+        label: "Frost and rime in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "White rime on roofs, walls, trees and the ground, glinting, and ferns of ice on the windows. 30 is a frosty morning, 100 all white",
+    },
+    ParamSpec {
+        key: "ice",
+        label: "Ice on the water in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "The water frozen: grey-blue ice with cracks, and snow blown over it as there is snow on the ground. Needs Water",
+    },
+    ParamSpec {
+        key: "icicles",
+        label: "Icicles in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "Icicles hanging under the eaves of the roofs: 30 a few, 100 a row along each",
+    },
+    ParamSpec {
+        key: "smoke",
+        label: "Smoke from chimneys in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "The share of the buildings with smoke or steam rising from their highest point, as on a cold still morning. The wind lays it down",
+    },
+    ParamSpec {
+        key: "advent",
+        label: "Advent lights in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "The share of the lit windows with an advent candlestick on the sill or a star hanging in it. Needs lit windows",
+    },
+    ParamSpec {
+        key: "lamp_cones",
+        label: "Light cones under lamps in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "The air lit under each lamp on Lights, as cones of light, stronger in fog, haze, snow and rain",
+    },
+    ParamSpec {
+        key: "trails",
+        label: "Car light trails in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "Lines on Lights are roads: along them the lights of cars make streaks, white one way and red the other, as in a long exposure at night",
+    },
+    ParamSpec {
+        key: "fireworks",
+        label: "Fireworks",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "How many bursts in the sky over the scene, such as 5. Best at night",
+    },
+    ParamSpec {
+        key: "tilt_shift",
+        label: "Tilt-shift in %",
+        kind: ParamKind::Text,
+        default: "0",
+        hint: "Sharp in a band across the middle and blurred above and below it, with livelier colours, so that a town looks like a model of itself. Best from above",
+    },
+    ParamSpec {
+        key: "season",
+        label: "Trees, season",
+        kind: ParamKind::Choice(SEASONS),
+        default: "summer",
+        hint: "For the trees on Trees",
+    },
+    ParamSpec {
+        key: "outlines",
+        label: "Lines along edges",
+        kind: ParamKind::Choice(YES_NO),
+        default: "false",
+        hint: "Dark lines where one thing stands in front of another and where a surface turns, as in a drawing. On with the look A drawing",
+    },
+    ParamSpec {
+        key: "names_by",
+        label: "Names from",
+        kind: ParamKind::Attribute("Names"),
+        default: "",
+        hint: "The attribute with the names of the points on Names, written floating over their places, with a line down to each",
+    },
+    ParamSpec {
+        key: "names_height",
+        label: "Names, how high",
+        kind: ParamKind::Text,
+        default: "30",
+        hint: "In metres above the ground, or above the height of the point when it has one",
+    },
+    ParamSpec {
         key: "quality",
         label: "Quality",
         kind: ParamKind::Choice(QUALITY),
@@ -362,7 +559,12 @@ pub(super) fn run_scene(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
             None
         } else {
             ctx.notes.info(format!("{} trees", fmt_count(pts.len() as u64)));
-            Some(super::scene096::trees(&pts, &ground))
+            let mut trees = super::scene096::trees(&pts, &ground, &p.get("season").unwrap_or_default());
+            let wind = number_param(p, "wind", "The wind")?.unwrap_or(0.0).clamp(0.0, 100.0) / 100.0;
+            if wind > 0.0 {
+                super::scene096::bend(&mut trees, number_param(p, "wind_from", "Wind from")?.unwrap_or(225.0), wind);
+            }
+            Some(trees)
         }
     };
     if let Some(t) = &tree_mesh {
@@ -380,6 +582,7 @@ pub(super) fn run_scene(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
         return err("Connect a 3D model, such as an input that reads an OBJ file, to Models, or a terrain model to Terrain.");
     }
     let num = |k: &str, what: &str, d: f64| number_param(p, k, what).map(|v| v.unwrap_or(d));
+    let pct = |k: &str, what: &str| -> Result<f32> { Ok((num(k, what, 0.0)?.clamp(0.0, 100.0) / 100.0) as f32) };
     let size = |k: &str, what: &str, d: f64| -> Result<usize> {
         let v = num(k, what, d)?.round();
         if !(16.0..=12000.0).contains(&v) {
@@ -430,6 +633,7 @@ pub(super) fn run_scene(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
         look: match p.get("look").as_deref() {
             Some("white") => Look::White,
             Some("wood") => Look::Wood,
+            Some("sketch") => Look::Sketch,
             _ => Look::Materials,
         },
         glass_names: p.get("glass_names").unwrap_or_default().split([',', ';']).map(|w| w.trim().to_lowercase()).filter(|w| !w.is_empty()).collect(),
@@ -447,7 +651,48 @@ pub(super) fn run_scene(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
         sun_tint: [1.0; 3],
         sky_tint: [1.0; 3],
         vivid: 0.0,
+        snow_fall: (num("snow_fall", "The falling snow", 0.0)?.clamp(0.0, 100.0) / 100.0) as f32,
+        rain: (num("rain", "The rain", 0.0)?.clamp(0.0, 100.0) / 100.0) as f32,
+        snow_cover: (num("snow_cover", "The snow on the ground", 0.0)?.clamp(0.0, 100.0) / 100.0) as f32,
+        wet: 0.0,
+        lightning: match p.get("lightning").as_deref() {
+            Some("bolt") => 1,
+            Some("storm") => 3,
+            _ => 0,
+        },
+        fog: (num("fog", "The valley fog", 0.0)?.clamp(0.0, 100.0) / 100.0) as f32,
+        fog_height: match number_param(p, "fog_height", "How deep the fog is")? {
+            Some(h) if h <= 0.0 => return err("How deep the fog is must be more than 0 metres, or empty."),
+            h => h,
+        },
+        night: matches!(p.get("night").as_deref(), Some("moon" | "aurora")),
+        aurora: if p.get("night").as_deref() == Some("aurora") { 1.0 } else { 0.0 },
+        outlines: p.flag("outlines") || p.get("look").as_deref() == Some("sketch"),
+        names: Vec::new(),
+        names_height: num("names_height", "How high the names are", 30.0)?,
+        frost: pct("frost", "The frost")?,
+        ice: pct("ice", "The ice")?,
+        icicles: pct("icicles", "The icicles")?,
+        smoke: pct("smoke", "The smoke")?,
+        advent: pct("advent", "The advent lights")?,
+        sun_rays: pct("sun_rays", "The rays of sun")?,
+        cloud_shadows: pct("cloud_shadows", "The shadows of clouds")?,
+        rainbow: pct("rainbow", "The rainbow")?,
+        lamp_cones: pct("lamp_cones", "The light cones")?,
+        lamp_height: number_param(p, "light_height", "The height of the lamps")?.unwrap_or(5.0) as f32,
+        wind: pct("wind", "The wind")?,
+        wind_from: num("wind_from", "Wind from", 225.0)?,
+        trails: Vec::new(),
+        trail_strength: pct("trails", "The car light trails")?,
+        fireworks: num("fireworks", "The fireworks", 0.0)?.clamp(0.0, 40.0).round() as u32,
+        tilt_shift: pct("tilt_shift", "The tilt-shift")?,
     };
+    if s.ice > 0.0 && p.get("water").is_none_or(|w| w == "none") {
+        ctx.notes.warn("Ice needs water: choose Water, a surface at a height or the areas on Water.");
+    }
+    if s.advent > 0.0 && s.lit_windows <= 0.0 {
+        ctx.notes.warn("Advent lights stand in lit windows: set Lit windows in % too.");
+    }
     if let Some((elevation, parallel, fov)) = super::scene096::camera_of(&p.get("camera").unwrap_or_default()) {
         s.elevation = elevation;
         s.parallel = parallel;
@@ -458,6 +703,32 @@ pub(super) fn run_scene(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
     s.sky_tint = sky_tint;
     s.vivid = vivid;
     s.sun_size += wider;
+    if s.look == Look::Sketch {
+        // A drawing: paper, and soft light from all round rather than hard shadows.
+        s.sky_strength *= 1.25;
+    }
+    s.wet = match number_param(p, "wet", "The wet ground")? {
+        Some(v) => (v.clamp(0.0, 100.0) / 100.0) as f32,
+        None => s.rain,
+    };
+    // Weather clouds the sky over, and a storm darkens it.
+    if s.rain > 0.0 {
+        s.clouds = s.clouds.max(0.7 + 0.3 * s.rain);
+        s.haze = s.haze.max(0.15 + 0.25 * s.rain);
+    }
+    if s.snow_fall > 0.0 {
+        s.clouds = s.clouds.max(0.65 + 0.35 * s.snow_fall);
+        s.haze = s.haze.max(0.1 + 0.4 * s.snow_fall);
+    }
+    if s.lightning >= 3 {
+        s.clouds = s.clouds.max(0.92);
+        s.sun_strength *= 0.3;
+        s.sky_strength *= 0.45;
+        s.sky_tint = [s.sky_tint[0] * 0.8, s.sky_tint[1] * 0.85, s.sky_tint[2] * 1.05];
+    }
+    if s.night && s.background == Background::Studio {
+        s.background = Background::Sky;
+    }
     let backdrop = if background == "colour" {
         match crate::mapdraw::parse_color(&p.get("background_colour").unwrap_or_else(|| "#ffd6e0".into())) {
             Ok(Some(c)) => Some([c[0], c[1], c[2]]),
@@ -469,7 +740,11 @@ pub(super) fn run_scene(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
     };
     let title = p.get("title");
     s.water = water_of(p, inp, &meshes, terrain, models.iter().find_map(|t| t.crs), ctx)?;
-    s.lights = lights_of(p, inp, &meshes, terrain, models.iter().find_map(|t| t.crs), ctx)?;
+    (s.lights, s.trails) = lights_of(p, inp, &meshes, terrain, models.iter().find_map(|t| t.crs), ctx)?;
+    if !s.trails.is_empty() && s.trail_strength <= 0.0 {
+        ctx.notes.warn("The lines on Lights are roads for car light trails: set Car light trails in % to see them.");
+    }
+    s.names = names_of(p, inp, &meshes, terrain, models.iter().find_map(|t| t.crs), ctx)?;
     if s.width * s.height > 40_000_000 {
         return err("The picture can have at most 40 million pixels.");
     }
@@ -542,6 +817,42 @@ pub(super) fn run_scene(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
             }
             if frames.len() > 60 {
                 return err(format!("That would be {} pictures. Take fewer dates, or more hours between them.", frames.len()));
+            }
+        }
+        Some("day") => {
+            // From sunrise to sunset of the date, every so many hours, with one picture just
+            // after the sun is up and one just before it sets.
+            let date = p.get("date").unwrap_or_else(|| "2026-03-20".into());
+            let (lat, lon) = place(ctx)?;
+            let every = match number_param(p, "study_every", "Every so many hours")? {
+                None => 60,
+                Some(h) if h > 0.0 => (h * 60.0).round().max(10.0) as i64,
+                Some(_) => return err("Every so many hours must be more than 0."),
+            };
+            let up = |m: i64| -> Result<bool> { Ok(sun_at(&date, &format!("{:02}:{:02}", m / 60, m % 60), lat, lon)?.1 > 0.5) };
+            let mut first = None;
+            let mut last = None;
+            let mut m = 0;
+            while m < 24 * 60 {
+                if up(m)? {
+                    first.get_or_insert(m);
+                    last = Some(m);
+                }
+                m += 10;
+            }
+            let (Some(a), Some(b)) = (first, last) else {
+                return err(format!("The sun does not rise on {} at the place of the model.", date));
+            };
+            let mut m = a;
+            while m <= b {
+                frames.push((date.clone(), format!("{:02}:{:02}", m / 60, m % 60)));
+                m += every;
+            }
+            if frames.last().is_some_and(|f| f.1 != format!("{:02}:{:02}", b / 60, b % 60)) {
+                frames.push((date.clone(), format!("{:02}:{:02}", b / 60, b % 60)));
+            }
+            if frames.len() > 60 {
+                return err(format!("That would be {} pictures. Take more hours between them.", frames.len()));
             }
         }
         _ => {}
@@ -630,11 +941,42 @@ pub(super) fn run_scene(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Output
             ctx.files.push(path);
         }
     }
+    // The pictures one after another, as a moving picture.
+    if let Some(gif) = p.get("gif").filter(|f| !f.trim().is_empty()) {
+        let path = ctx.resolve(&gif);
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| GbError(format!("Cannot create the folder {}: {}", dir.display(), e)))?;
+        }
+        write_gif(&path, &pictures, title.is_none())?;
+        ctx.notes.info(format!("{} pictures one after another in {}", pictures.len(), path.display()));
+        ctx.files.push(path);
+    }
     let dates_count = frames.iter().map(|f| &f.0).collect::<std::collections::BTreeSet<_>>().len().max(1);
-    let sheet = sun_sheet(&pictures, count.div_ceil(dates_count))?;
+    let columns = if p.get("sun").as_deref() == Some("day") { (count as f64).sqrt().ceil() as usize } else { count.div_ceil(dates_count) };
+    let sheet = sun_sheet(&pictures, columns)?;
     let mut table = sheet.into_table(None);
     table.crs = None;
     Ok(vec![("Image".into(), table)])
+}
+
+/// The pictures one after another in a GIF that runs round, each with its time written on
+/// it, a little longer on the last.
+pub(crate) fn write_gif(path: &std::path::Path, pictures: &[(String, crate::model::RasterImage)], labels: bool) -> Result<()> {
+    use image::codecs::gif::{GifEncoder, Repeat};
+    let file = std::fs::File::create(path).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))?;
+    let mut enc = GifEncoder::new_with_speed(std::io::BufWriter::new(file), 10);
+    enc.set_repeat(Repeat::Infinite).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))?;
+    for (k, (label, img)) in pictures.iter().enumerate() {
+        let mut img = img.clone();
+        if labels && !label.is_empty() {
+            write_title(&mut img, label)?;
+        }
+        let buf = image::RgbaImage::from_raw(img.width as u32, img.height as u32, img.rgba).ok_or_else(|| GbError("A picture of the wrong size.".into()))?;
+        let ms = if k + 1 == pictures.len() { 1600 } else { 700 };
+        let frame = image::Frame::from_parts(buf, 0, 0, image::Delay::from_numer_denom_ms(ms, 1));
+        enc.encode_frame(frame).map_err(|e| GbError(format!("Cannot write {}: {}", path.display(), e)))?;
+    }
+    Ok(())
 }
 
 /// A title at the top of a picture, in the middle, dark on a light picture and light on a
@@ -714,6 +1056,9 @@ fn sun_sheet(pictures: &[(String, crate::model::RasterImage)], columns: usize) -
 /// The water of a scene: none, a surface at a height, or the areas on Water.
 /// The lamps on Lights, in the coordinate system of the models, at their own height or
 /// some metres above the ground.
+/// The lamps on Lights, and its lines as roads, each a row of points on the ground.
+type LampsAndRoads = (Vec<crate::render3d::PointLight>, Vec<Vec<[f64; 3]>>);
+
 fn lights_of(
     p: &P,
     inp: &Inputs,
@@ -721,10 +1066,10 @@ fn lights_of(
     terrain: Option<&crate::model::Grid>,
     crs: Option<u32>,
     ctx: &mut NodeCtx,
-) -> Result<Vec<crate::render3d::PointLight>> {
+) -> Result<LampsAndRoads> {
     let t = input(inp, "Lights");
     if t.features.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let moved;
     let t = match (crs.or_else(|| terrain.and_then(|g| g.crs)), t.crs) {
@@ -774,11 +1119,26 @@ fn lights_of(
         None => foot,
     };
     let mut out = Vec::new();
+    let mut roads: Vec<Vec<[f64; 3]>> = Vec::new();
     let mut not_points = 0usize;
+    // A road on the ground, a point every 5 m or so, so that it follows the terrain.
+    let mut road = |l: &geo::LineString<f64>| {
+        use geo::Densify;
+        let l = geo::Euclidean.densify(l, 5.0);
+        roads.push(l.0.iter().map(|c| [c.x, c.y, ground(c.x, c.y)]).collect());
+    };
     for f in &t.features {
         let pts: Vec<geo::Coord<f64>> = match &f.geom {
             Some(geo::Geometry::Point(q)) => vec![q.0],
             Some(geo::Geometry::MultiPoint(m)) => m.0.iter().map(|q| q.0).collect(),
+            Some(geo::Geometry::LineString(l)) => {
+                road(l);
+                continue;
+            }
+            Some(geo::Geometry::MultiLineString(m)) => {
+                m.0.iter().for_each(&mut road);
+                continue;
+            }
             Some(_) => {
                 not_points += 1;
                 continue;
@@ -792,12 +1152,15 @@ fn lights_of(
         }
     }
     if not_points > 0 {
-        ctx.notes.warn(format!("{} features on Lights are not points and were left out.", fmt_count(not_points as u64)));
+        ctx.notes.warn(format!("{} features on Lights are neither points nor lines and were left out.", fmt_count(not_points as u64)));
+    }
+    if roads.iter().map(|r| r.len()).sum::<usize>() > 2_000_000 {
+        return err("The roads on Lights are too long for car light trails. Take a smaller area.");
     }
     if out.len() > 100_000 {
         return err(format!("{} lamps are too many. Take at most 100 000.", fmt_count(out.len() as u64)));
     }
-    Ok(out)
+    Ok((out, roads))
 }
 
 fn water_of(
@@ -859,6 +1222,57 @@ fn water_of(
     Ok(Some(Water { level, areas, waves }))
 }
 
+/// The names to float over the points on Names: each point on the ground, or at its own
+/// height, and its name.
+fn names_of(
+    p: &P,
+    inp: &Inputs,
+    meshes: &[&crate::mesh::Mesh],
+    terrain: Option<&crate::model::Grid>,
+    crs: Option<u32>,
+    ctx: &mut NodeCtx,
+) -> Result<Vec<([f64; 3], String)>> {
+    let t = input(inp, "Names");
+    if t.features.is_empty() {
+        return Ok(Vec::new());
+    }
+    let Some(by) = p.get("names_by").filter(|v| !v.trim().is_empty()) else {
+        ctx.notes.warn("Points came in on Names, but no attribute is chosen under Names from, so no names are written.");
+        return Ok(Vec::new());
+    };
+    let Some(k) = t.field_index(&by) else {
+        return err(format!("The points on Names have no attribute {}.", by));
+    };
+    let crs = crs.or_else(|| terrain.and_then(|g| g.crs));
+    let moved;
+    let t = match (crs, t.crs) {
+        (Some(a), Some(b)) if a != b => {
+            moved = reproject(t, a, ctx.backend)?;
+            &moved
+        }
+        _ => t,
+    };
+    let foot = meshes.iter().filter_map(|m| m.bounds()).map(|(lo, _)| lo[2]).fold(f64::INFINITY, f64::min);
+    let foot = if foot.is_finite() { foot } else { 0.0 };
+    let mut out = Vec::new();
+    for f in &t.features {
+        let name = f.attrs[k].to_text();
+        let Some(geo::Geometry::Point(pt)) = &f.geom else { continue };
+        if name.trim().is_empty() {
+            continue;
+        }
+        let z =
+            f.z.as_ref().and_then(|z| z.first().copied()).unwrap_or_else(|| terrain.and_then(|g| crate::terrain::height_at(g, pt.x(), pt.y())).unwrap_or(foot));
+        out.push(([pt.x(), pt.y(), z], name.trim().to_string()));
+    }
+    if out.is_empty() {
+        ctx.notes.warn("Names has no points with a name, so no names are written.");
+    } else {
+        ctx.notes.info(format!("{} names", fmt_count(out.len() as u64)));
+    }
+    Ok(out)
+}
+
 /// The tools of this module, for the registry in mod.rs.
 pub(super) const TYPES: &[NodeType] = &[
     NodeType {
@@ -868,7 +1282,7 @@ pub(super) const TYPES: &[NodeType] = &[
         group: Group::Transformer,
         category: "3D models and views",
         desc: "The picture of a 3D scene for presenting: models such as buildings read from OBJ, glTF, 3D Tiles or IFC, or made with Extrude or Generate TIN, rendered by following rays of light: lit by the sun, with soft shadows, and by the sky, which reaches into the shade and darkens corners, with their materials, textures and glass. On a light floor, under the sky as it is at that hour, or on the terrain connected to Terrain with the map on Map laid over it. Clouds, haze, water that mirrors, reflections and more bounces of the light, or the models white or in wood as a model. At dusk, lit windows, lamps at the points on Lights and materials that glow; depth of field blurs what is not in focus. The sun can stand where it does on a date and at a time, and a sun study gives a sheet of pictures through the day. A picture can take some minutes. For a quick look at terrain alone, use Quick terrain view.",
-        inputs: &["Models", "Terrain", "Map", "Water", "Lights", "Trees"],
+        inputs: &["Models", "Terrain", "Map", "Water", "Lights", "Trees", "Names"],
         outputs: &["Image"],
         ports: None,
         params: SCENE_PARAMS,

@@ -252,9 +252,16 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
                 param("connection").is_none_or(|c| c.is_empty())
                     && ["host", "database", "user", "password"].iter().any(|k| param(k).is_some_and(|v| !v.is_empty()))
             }
-            ("SceneRenderer", "sun_azimuth" | "sun_altitude") => !matches!(param("sun").as_deref(), Some("date" | "study")),
-            ("SceneRenderer", "study_dates" | "study_from" | "study_to" | "study_every" | "study_folder") => param("sun").as_deref() == Some("study"),
+            ("SceneRenderer", "sun_azimuth" | "sun_altitude") => !matches!(param("sun").as_deref(), Some("date" | "study" | "day")),
+            ("SceneRenderer", "study_dates" | "study_from" | "study_to") => param("sun").as_deref() == Some("study"),
+            ("SceneRenderer", "study_every" | "study_folder" | "gif") => matches!(param("sun").as_deref(), Some("study" | "day")),
+            ("Extruder", "colour_ramp" | "colour_scale") => param("colour_by").is_some_and(|v| !v.trim().is_empty()),
+            ("SceneRenderer", "wind_from") => param("wind").is_some_and(|v| v.trim().parse::<f64>().is_ok_and(|f| f > 0.0)),
             ("SceneRenderer", "background_colour") => param("background").as_deref() == Some("colour"),
+            ("Clipper", "attributes" | "prefix") => param("each").as_deref() == Some("each"),
+            ("TerrainRenderer", "background_colour") => param("background").as_deref() == Some("colour"),
+            ("SceneRenderer", "fog_height") => param("fog").is_some_and(|v| v.trim().parse::<f64>().is_ok_and(|f| f > 0.0)),
+            ("SceneRenderer", "names_height") => param("names_by").is_some_and(|v| !v.trim().is_empty()),
             ("SceneRenderer", "elevation" | "projection" | "fov") => param("camera").is_none_or(|c| c.is_empty()),
             ("MapRenderer", "width") => !matches!(param("size_as").as_deref(), Some("print" | "scale")),
             ("MapRenderer", "map_scale" | "paper") => param("size_as").as_deref() == Some("scale"),
@@ -266,11 +273,15 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("MapRenderer", "inset_corner" | "inset_size") => param("inset").is_some_and(|v| !v.trim().is_empty()),
             ("MapRenderer", "focus_fade") => ["focus", "atlas_by"].iter().any(|k| param(k).is_some_and(|v| !v.trim().is_empty())),
             ("MapRenderer", "legend_columns" | "legend_fill" | "legend_line") => param("legend").is_some_and(|v| v != "none"),
-            ("MapRenderer", "scale_style" | "scale_parts" | "scale_unit") => param("scale_bar").is_some_and(|v| !v.is_empty() && v != "none"),
+            ("MapRenderer", "scale_style" | "scale_parts" | "scale_unit" | "scale_number") => param("scale_bar").is_some_and(|v| !v.is_empty() && v != "none"),
             ("MapRenderer", "north_style") => param("north_arrow").is_some_and(|v| !v.is_empty() && v != "none"),
             ("MapRenderer", "focus_effect" | "focus_rest") => param("focus").is_some_and(|v| !v.trim().is_empty()),
             ("MapRenderer", "multiples_columns") => param("multiples_by").is_some_and(|v| !v.trim().is_empty()),
-            ("MapRenderer", "grid_every") => !matches!(param("grid").as_deref(), None | Some("none") | Some("")),
+            ("MapRenderer", "grid_every") => !matches!(param("grid").as_deref(), None | Some("none") | Some("") | Some("sheets")),
+            ("MapRenderer", "grid_frame") => param("grid").as_deref() == Some("degrees"),
+            ("MapRenderer", "profile_corner" | "profile_title" | "profile_places" | "profile_size") => {
+                param("profile_from").is_some_and(|v| !v.trim().is_empty())
+            }
             ("MapRenderer", "overview_size" | "overview_zoom" | "overview_fill" | "overview_line" | "overview_frame" | "overview_mark") => {
                 !matches!(param("overview").as_deref(), None | Some("none") | Some(""))
             }
@@ -298,7 +309,19 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             }
             ("HttpCaller", "folder") => param("answer_as").as_deref() == Some("file"),
             ("SpatialJoiner", "distance") => param("relation").as_deref() == Some("near"),
-            ("SpatialJoiner", "numbers" | "count") => param("mode").as_deref() == Some("summary"),
+            ("SpatialJoiner", "numbers") => param("mode").as_deref() == Some("summary"),
+            ("SpatialJoiner", "count") => matches!(param("mode").as_deref(), Some("summary" | "count")),
+            // Counted only takes no attributes.
+            ("SpatialJoiner", "attributes" | "prefix") => param("mode").as_deref() != Some("count"),
+            ("BoundingBoxReplacer", "group_by" | "count") => param("for").as_deref() == Some("together"),
+            ("AreaCalculator", "name" | "unit") => param("what").as_deref() != Some("length"),
+            ("AreaCalculator", "length_name" | "length_unit") => matches!(param("what").as_deref(), Some("length" | "both")),
+            ("RasterSampler", "name" | "method") => param("areas").as_deref() != Some("stats"),
+            ("RasterSampler", "stats" | "classes" | "prefix") => param("areas").as_deref() == Some("stats"),
+            ("LineSplitter", "areas") => param("at").as_deref() == Some("corners"),
+            ("LineSplitter", "tolerance") => param("at").as_deref() != Some("corners"),
+            // All the values are taken when no path is given.
+            ("JsonExtractor", "lists" | "prefix" | "keep") => node.params.get("paths").and_then(|v| v.as_array()).is_none_or(|a| a.is_empty()),
             ("ConvexHuller" | "ConcaveHuller", "group_by" | "count") => param("for").as_deref() != Some("each"),
             ("HttpCaller", "response" | "status" | "paging" | "parallel" | "body" | "content_type" | "per_second" | "as_features")
                 if param("answer_as").as_deref() == Some("file") =>
@@ -312,8 +335,9 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("HttpCaller", "start") => matches!(param("paging").as_deref(), Some("offset" | "page")),
             ("HttpCaller", "items_path") => matches!(param("paging").as_deref(), Some("offset" | "page")) || param("as_features").as_deref() == Some("yes"),
             ("HttpCaller", "max_pages") => matches!(param("paging").as_deref(), Some("next" | "offset" | "page" | "cursor")),
-            ("SceneRenderer", "date" | "time") => param("sun").as_deref() == Some("date"),
-            ("SceneRenderer", "clock") => matches!(param("sun").as_deref(), Some("date" | "study")),
+            ("SceneRenderer", "date") => matches!(param("sun").as_deref(), Some("date" | "day")),
+            ("SceneRenderer", "time") => param("sun").as_deref() == Some("date"),
+            ("SceneRenderer", "clock") => matches!(param("sun").as_deref(), Some("date" | "study" | "day")),
             ("Rotator", "x" | "y") => param("around").as_deref() == Some("point"),
             ("ZipWriter", "names") => param("outputs").as_deref() == Some("named"),
             // Each product of Fetch geodata has the settings of its kind.
@@ -323,8 +347,8 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
             ("GeodataFetcher", "layers") => param("product").is_some_and(|p| p == "lm_addresses" || p == "lm_divisions" || p.starts_with("lm_topo")),
             ("GeodataFetcher", "las_classes" | "las_every" | "las_spacing" | "max_points") => param("product").as_deref() == Some("lm_laser_forest"),
             ("HttpCaller", "body" | "content_type") => param("method").is_some_and(|m| matches!(m.as_str(), "POST" | "PUT" | "PATCH")),
-            ("RangeMapper", "ranges") => param("method").is_none_or(|m| m == "own"),
-            ("RangeMapper", "classes" | "decimals") => param("method").is_some_and(|m| m != "own"),
+            ("Classifier", "ranges" | "otherwise") => param("method").as_deref() == Some("ranges"),
+            ("Classifier", "label_name" | "decimals") => param("method").as_deref() != Some("ranges"),
             // A count has nothing to put together, and the second colour needs bars to colour.
             ("ChartDrawer", key) => {
                 let kind = param("kind").unwrap_or_else(|| "bars".into());
@@ -358,7 +382,7 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
                 }
             }
             ("Classifier", "breaks") => param("method").as_deref() == Some("manual"),
-            ("Classifier", "classes") => param("method").as_deref() != Some("manual"),
+            ("Classifier", "classes") => !matches!(param("method").as_deref(), Some("manual" | "ranges")),
             ("RunningStatistics", "window") => list_has("what", "moving"),
             ("StatisticsCalculator", "weight") => list_has("more", "weighted_mean"),
             ("ChangeOverTime", "base") => list_has("what", "index") || list_has("what", "growth"),
@@ -460,7 +484,7 @@ fn relevant(node: &GNode, spec: &ParamSpec, folder: Option<&Sources>, has_layers
         "key_name" => writer && ext == "gpkg" && node.params.get("key").and_then(|v| v.as_str()) != Some("attribute"),
         "key_attribute" => writer && ext == "gpkg" && node.params.get("key").and_then(|v| v.as_str()) == Some("attribute"),
         "pdf_title_align" => writer && ext == "pdf" && filled("pdf_title"),
-        "pdf_bleed" | "pdf_marks" => writer && ext == "pdf",
+        "pdf_bleed" | "pdf_marks" | "pdf_colours" | "pdf_icc" | "pdf_sheets" | "pdf_folds" => writer && ext == "pdf",
         "x" | "y" | "wkt" | "delimiter" | "decimal_comma" => text,
         "geometry" => text || sheets,
         "font" | "bold_header" | "freeze" | "colors" => writer && sheets,
@@ -1529,6 +1553,7 @@ fn sections_of(kind: &str) -> Option<&'static [(&'static str, &'static [&'static
                     "logo_corner",
                     "logo_size",
                     "source",
+                    "footer",
                 ],
             ),
             ("Template, font and notes", &["template", "map_font", "notes"]),
@@ -1544,11 +1569,13 @@ fn sections_of(kind: &str) -> Option<&'static [(&'static str, &'static [&'static
                     "scale_style",
                     "scale_parts",
                     "scale_unit",
+                    "scale_number",
                     "north_arrow",
                     "north_style",
                 ],
             ),
-            ("Grid and coordinates", &["grid", "grid_every", "map_frame"]),
+            ("Grid and coordinates", &["grid", "grid_every", "grid_frame", "index_grid", "map_frame"]),
+            ("Globe and height profile", &["globe", "profile_from", "profile_corner", "profile_title", "profile_places", "profile_size"]),
             (
                 "Overview map and inset",
                 &[
@@ -1566,7 +1593,30 @@ fn sections_of(kind: &str) -> Option<&'static [(&'static str, &'static [&'static
             ),
             ("What the map is about", &["focus", "focus_rest", "focus_fade", "focus_effect"]),
             ("Several maps or pages", &["multiples_by", "multiples_columns", "atlas_by"]),
-            ("Lines and labels", &["knockout", "simplify"]),
+            ("Lines and labels", &["knockout", "simplify", "check_contrast", "vision"]),
+        ]),
+        // From what is always needed to the touches of weather, season and light, each kind
+        // of setting together.
+        "SceneRenderer" => Some(&[
+            ("Picture and camera", &["width", "height", "quality", "camera", "view_azimuth", "elevation", "projection", "fov", "zoom", "distance", "title"]),
+            ("Background and look", &["background", "background_colour", "floor", "look", "mood", "outlines", "terrain_colours", "roof_by"]),
+            (
+                "Sun, sky and time",
+                &["sun", "sun_azimuth", "sun_altitude", "date", "time", "clock", "softness", "sun_strength", "sky_strength", "clouds", "haze"],
+            ),
+            ("A series of pictures", &["study_dates", "study_from", "study_to", "study_every", "study_folder", "gif"]),
+            ("Materials and light", &["glass_names", "glow_names", "reflections", "bounces"]),
+            ("Trees", &["tree_height", "tree_height_by", "tree_kind", "tree_kind_by", "season"]),
+            ("Water", &["water", "water_level", "waves"]),
+            ("Rain, wind and fog", &["rain", "wet", "wind", "wind_from", "fog", "fog_height", "lightning"]),
+            ("Light in the air", &["sun_rays", "cloud_shadows", "rainbow"]),
+            ("Winter and cold", &["snow_fall", "snow_cover", "frost", "ice", "icicles", "smoke"]),
+            (
+                "Evening and night",
+                &["night", "lit_windows", "windows", "advent", "light_strength", "light_colour", "light_height", "lamp_cones", "trails", "fireworks"],
+            ),
+            ("Lens", &["blur", "focus", "tilt_shift"]),
+            ("Names", &["names_by", "names_height"]),
         ]),
         _ => None,
     }

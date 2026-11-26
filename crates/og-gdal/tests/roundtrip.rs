@@ -1091,7 +1091,7 @@ fn a_geotiff_is_read_as_points_cells_or_its_outline() {
     let c = r.output("cells", "Output").unwrap();
     assert_eq!(c.len(), 11);
     assert!(matches!(&c.features[0].geom, Some(Geometry::Polygon(sq)) if geo::Area::unsigned_area(sq) == 10_000.0));
-    let counted = r.output("count", "Polygons").unwrap();
+    let counted = r.output("count", "Joined").unwrap();
     let visits: Vec<Value> = col(counted, "visits");
     assert_eq!((visits[0].clone(), visits[10].clone()), (Value::Int(2), Value::Int(1)));
     assert_eq!(visits.iter().filter_map(|v| v.as_f64()).sum::<f64>(), 3.0, "the visit outside the raster is in no cell");

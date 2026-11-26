@@ -1,0 +1,43 @@
+{
+ "type": "FeatureCollection",
+ "name": "village_road",
+ "crs": {
+  "type": "name",
+  "properties": {
+   "name": "urn:ogc:def:crs:EPSG::3006"
+  }
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Village Street"
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      418120,
+      6472517
+     ],
+     [
+      418197,
+      6472541
+     ],
+     [
+      418315,
+      6472582
+     ],
+     [
+      418380,
+      6472606
+     ],
+     [
+      418470,
+      6472645
+     ]
+    ]
+   }
+  }
+ ]
+}

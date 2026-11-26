@@ -1,0 +1,180 @@
+{
+  "format": "ographis/1",
+  "name": "Companies from Bolagsverket",
+  "description": "Basic facts on companies from the API for high-value datasets (värdefulla datamängder) of Bolagsverket: name, legal form, postal address and industry, for the organisation numbers in companies.csv. The API is free but needs a client id and a secret, sent by Bolagsverket after a customer registration (kundanmälan). Put them in an API connection named Bolagsverket of the kind OAuth2 client credentials, with the token address https://portal.api.bolagsverket.se/oauth2/token and the scope vardefulla-datamangder:read. At most 60 calls a minute.",
+  "variables": [],
+  "nodes": [
+    {
+      "id": "companies",
+      "type": "Reader",
+      "x": 40,
+      "y": 40,
+      "comment": "Organisation numbers to look up, ten digits without a dash",
+      "params": {
+        "path": "companies.csv"
+      }
+    },
+    {
+      "id": "bv",
+      "type": "HttpCaller",
+      "x": 320,
+      "y": 40,
+      "comment": "Bolagsverket, high-value datasets: one POST for each organisation number. The token is fetched by the API connection Bolagsverket (OAuth2 client credentials, scope vardefulla-datamangder:read)",
+      "params": {
+        "url": "https://gw.api.bolagsverket.se/vardefulla-datamangder/v1/organisationer",
+        "method": "POST",
+        "content_type": "application/json",
+        "connection": "Bolagsverket",
+        "body": "'{\"identitetsbeteckning\": \"' || replace(to_string(org_number), '-', '') || '\"}'",
+        "per_second": "1",
+        "cache": "disk"
+      }
+    },
+    {
+      "id": "facts",
+      "type": "JsonExtractor",
+      "x": 600,
+      "y": 40,
+      "comment": "The facts of each organisation. Each part says who gave it (Bolagsverket or SCB) and can have an error of its own",
+      "params": {
+        "attribute": "_response",
+        "paths": [
+          [
+            "organisationer[0].organisationsidentitet.identitetsbeteckning",
+            "org_id"
+          ],
+          [
+            "organisationer[0].organisationsnamn.organisationsnamnLista[0].namn",
+            "name"
+          ],
+          [
+            "organisationer[0].organisationsform.klartext",
+            "form"
+          ],
+          [
+            "organisationer[0].juridiskForm.klartext",
+            "legal_form"
+          ],
+          [
+            "organisationer[0].postadressOrganisation.postadress.utdelningsadress",
+            "street"
+          ],
+          [
+            "organisationer[0].postadressOrganisation.postadress.postnummer",
+            "postcode"
+          ],
+          [
+            "organisationer[0].postadressOrganisation.postadress.postort",
+            "town"
+          ],
+          [
+            "organisationer[0].naringsgrenOrganisation.sni[0].kod",
+            "sni"
+          ],
+          [
+            "organisationer[0].naringsgrenOrganisation.sni[0].klartext",
+            "industry"
+          ],
+          [
+            "organisationer[0].verksamOrganisation.kod",
+            "active"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "keep",
+      "type": "AttributeKeeper",
+      "x": 880,
+      "y": 40,
+      "comment": "The table",
+      "params": {
+        "keep": [
+          "org_number",
+          "note",
+          "name",
+          "form",
+          "legal_form",
+          "street",
+          "postcode",
+          "town",
+          "sni",
+          "industry",
+          "active"
+        ]
+      }
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "x": 40,
+      "y": 210,
+      "comment": "Companies",
+      "params": {
+        "path": "out/companies.csv"
+      }
+    },
+    {
+      "id": "failed",
+      "type": "Writer",
+      "x": 320,
+      "y": 210,
+      "comment": "Numbers the API did not answer, with the status",
+      "params": {
+        "path": "out/companies_failed.csv"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "companies",
+        "Output"
+      ],
+      "to": [
+        "bv",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "bv",
+        "Output"
+      ],
+      "to": [
+        "facts",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "facts",
+        "Output"
+      ],
+      "to": [
+        "keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "keep",
+        "Output"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "bv",
+        "Failed"
+      ],
+      "to": [
+        "failed",
+        "Input"
+      ]
+    }
+  ]
+}

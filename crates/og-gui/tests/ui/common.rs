@@ -499,6 +499,21 @@ pub(crate) fn open_more(h: &mut Harness<'_, App>) {
     }
 }
 
+/// Opens every folded section of the settings of the tool in focus, so that all its
+/// settings that apply can be found.
+pub(crate) fn open_sections(h: &mut Harness<'_, App>) {
+    for _ in 0..40 {
+        let Some(arrow) = h.query_all_by_label("▸").next() else { break };
+        arrow.scroll_to_me();
+        settle(h);
+        match h.query_all_by_label("▸").next() {
+            Some(a) => a.click(),
+            None => break,
+        }
+        settle(h);
+    }
+}
+
 /// Two clicks in the same moment, as a double click.
 pub(crate) fn double_click(h: &mut Harness<'_, App>, pos: egui::Pos2) {
     pointer(h, pos, None);

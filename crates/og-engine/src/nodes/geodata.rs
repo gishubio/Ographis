@@ -124,7 +124,9 @@ const PRODUCTS: &[Product] = &[
         key: "lm_photo",
         label: "Ortofoto: photo from above",
         catalogue: "https://api.lantmateriet.se/stac-bild/v1",
-        finds: &["ortofoto -ir", "orto -ir", "ortofoto", "orto"],
+        // Not the historical photos of the old grid, which are black and white: they are
+        // chosen by name under Collection.
+        finds: &["ortofoto -ir -historiska", "orto -ir -historiska", "ortofoto", "orto"],
         kind: Kind::Photo,
         cell: 0.5,
         crs: 3006,
@@ -303,6 +305,17 @@ const PARAMS: &[ParamSpec] = &[
         hint: "Another address of the STAC API of the product. Empty: the provider's",
     },
 ];
+
+/// A long list of names, as its first ones and how many more, so that a line of the log
+/// stays readable. Under Collection, any of them can be chosen by name.
+fn shortened(names: &[String]) -> String {
+    const SHOWN: usize = 30;
+    if names.len() <= SHOWN {
+        names.join(", ")
+    } else {
+        format!("{} and {} more", names[..SHOWN].join(", "), names.len() - SHOWN)
+    }
+}
 
 /// Does a collection match words such as "ortofoto -ir": all words in its id or title, and
 /// none of those after a minus?
@@ -568,6 +581,9 @@ fn fetch_area(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     // The collection: found by its words among those of the catalogue, or none for a
     // catalogue of one dataset, as those of the national geodata platform.
     let asked = p.get("collection").filter(|c| !c.trim().is_empty()).map(|c| c.trim().to_string());
+    // Every collection the words fit, as a catalogue with one collection for each year has:
+    // all are searched, and the latest file of a place is used.
+    let mut also: Vec<String> = Vec::new();
     let chosen: (String, String, String) = if product.finds.is_empty() && asked.is_none() {
         (String::new(), product.label.split(':').next().unwrap_or(product.label).to_string(), String::new())
     } else {
@@ -594,19 +610,38 @@ fn fetch_area(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
             })
             .collect();
         let list = collections.iter().map(|c| if c.1.is_empty() { c.0.clone() } else { format!("{} ({})", c.0, c.1) }).collect::<Vec<_>>().join(", ");
-        say(&format!("The catalogue {} has {} collections, in {}: {}", base, collections.len(), secs(t), list));
+        say(&format!(
+            "The catalogue {} has {} collections, in {}: {}",
+            base,
+            collections.len(),
+            secs(t),
+            shortened(&collections.iter().map(|c| c.0.clone()).collect::<Vec<_>>())
+        ));
         match &asked {
             Some(c) => {
                 collections.iter().find(|x| x.0 == *c).cloned().ok_or_else(|| GbError(format!("The catalogue has no collection {}. It has: {}.", c, list)))?
             }
-            None => product.finds.iter().find_map(|w| collections.iter().find(|c| matches(w, &c.0, &c.1))).cloned().ok_or_else(|| {
-                GbError(format!("No collection of {} was found in the catalogue. Choose one under Collection; it has: {}.", product.label, list))
-            })?,
+            None => {
+                let fit: Vec<&(String, String, String)> = product
+                    .finds
+                    .iter()
+                    .map(|w| collections.iter().filter(|c| matches(w, &c.0, &c.1)).collect::<Vec<_>>())
+                    .find(|f| !f.is_empty())
+                    .unwrap_or_default();
+                also = fit.iter().skip(1).map(|c| c.0.clone()).collect();
+                fit.first().map(|c| (*c).clone()).ok_or_else(|| {
+                    GbError(format!("No collection of {} was found in the catalogue. Choose one under Collection; it has: {}.", product.label, list))
+                })?
+            }
         }
     };
     if !chosen.0.is_empty() {
         say(&format!("Collection: {}{}", chosen.0, if chosen.1.is_empty() { String::new() } else { format!(", {}", chosen.1) }));
     }
+    if !also.is_empty() {
+        say(&format!("Also searched, {} more: {}. The latest file of each place is used", also.len(), shortened(&also)));
+    }
+    let searched: Vec<String> = std::iter::once(chosen.0.clone()).filter(|c| !c.is_empty()).chain(also.iter().cloned()).collect();
 
     // The items that reach into the area: asked for with GET, or with POST by a catalogue
     // that takes only that.
@@ -619,15 +654,15 @@ fn fetch_area(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let platform = product.key.starts_with("ngp_") || base.contains("/geodatakatalog/sokning/");
     let bbox = if platform && crs == 3006 { rect } else { degrees };
     let mut url = format!("{}/search?bbox={},{},{},{}&limit=100", base, bbox[0], bbox[1], bbox[2], bbox[3]);
-    if !chosen.0.is_empty() {
-        url.push_str(&format!("&collections={}", crate::web::encode(&chosen.0)));
+    if !searched.is_empty() {
+        url.push_str(&format!("&collections={}", searched.iter().map(|c| crate::web::encode(c)).collect::<Vec<_>>().join(",")));
     }
     if let Some(d) = &datetime {
         url.push_str(&format!("&datetime={}", crate::web::encode(d)));
     }
     let mut post = serde_json::json!({"bbox": bbox, "limit": 100});
-    if !chosen.0.is_empty() {
-        post["collections"] = serde_json::json!([chosen.0]);
+    if !searched.is_empty() {
+        post["collections"] = serde_json::json!(searched);
     }
     if let Some(d) = &datetime {
         post["datetime"] = serde_json::json!(d);
@@ -778,7 +813,7 @@ fn fetch_area(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     if items.is_empty() {
         return err(format!(
             "{} has nothing in the area{}. Is the area in Sweden, and in the coordinate system given?",
-            if chosen.0.is_empty() { product.label.split(':').next().unwrap_or(product.label) } else { &chosen.0 },
+            if searched.is_empty() { product.label.split(':').next().unwrap_or(product.label).to_string() } else { searched.join(", ") },
             p.get("year").filter(|y| !y.trim().is_empty()).map(|y| format!(" from {}", y)).unwrap_or_default()
         ));
     }
@@ -1305,6 +1340,10 @@ mod tests {
     fn collections_are_found_by_their_words() {
         assert!(matches("ortofoto -ir", "ortofoto-rgb", "Ortofoto färg"));
         assert!(!matches("ortofoto -ir", "ortofoto-ir", "Ortofoto IR"));
+        assert!(matches("orto -ir -historiska", "orto-h-2010", "Ortofoto H (2010)"));
+        assert!(!matches("orto -ir -historiska", "orto-historiska-2005-2009", "Ortofoto historiska RT90 (2005-2009)"));
+        let many: Vec<String> = (0..100).map(|i| format!("orto-{}", i)).collect();
+        assert!(shortened(&many).ends_with("and 70 more"));
         assert!(matches("topografi 10", "topografi-10", "Topografi 10"));
         assert!(!matches("topografi 10", "topografi-100", "Topografi 100"));
         // The collections of Lantmäteriet's stac-hojd: the heights of the ground, not of the

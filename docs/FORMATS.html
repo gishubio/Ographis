@@ -32,7 +32,7 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 <main>
 <h1>What Ographis reads and writes</h1>
 <p class="lead">Each format with what handles it: <span class="tag gdal">GDAL</span>, the geodata library installed with the program, or <span class="tag own">Ographis</span>, code of the program's own, with the library it uses in brackets.</p>
-<div class="sum"><div><b>47</b>read</div><div><b>44</b>written</div><div><b>34</b>by Ographis itself</div></div>
+<div class="sum"><div><b>47</b>read</div><div><b>45</b>written</div><div><b>35</b>by Ographis itself</div></div>
 <div class="wrap">
 <table>
 <thead><tr><th scope="col">Format</th><th scope="col">Reads</th><th scope="col">Writes</th><th scope="col">Notes</th></tr></thead>
@@ -70,9 +70,10 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 <tr><th scope="row">XML<div class="files">.xml</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">Read as records found in it, as JSON is; values picked by path with Extract XML values; written with an element for each feature and for each attribute</td></tr>
 <tr><th scope="row">LandXML<div class="files">.xml</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">Surfaces as a 3D model of triangles, points with their codes and heights, and alignments as lines with their arcs; written from a TIN and from points</td></tr>
 <tr><th scope="row">Google Sheets<div class="files">the address of a sheet</div></th><td><span class="tag own">Ographis</span></td><td><span class="tag own">Ographis</span></td><td class="note">A sheet shared with a link is read as it is; a private one is read and written with a Google service account that it is shared with</td></tr>
-<tr><th scope="row">GeoTIFF and other rasters, heights from SRTM and DTED<div class="files">.tif, .jp2, .asc, .hgt, .dt1 and others</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Cloud Optimized GeoTIFF read over the web and written; grids of values and pictures. Heights as ASCII grids (.asc), SRTM (.hgt) and DTED (.dt0, .dt1, .dt2)</td></tr>
+<tr><th scope="row">GeoTIFF and other rasters, heights from SRTM, DTED and GTOPO30<div class="files">.tif, .jp2, .asc, .hgt, .dt1, .dem, .bil and others</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Cloud Optimized GeoTIFF read over the web and written; grids of values and pictures. Heights as ASCII grids (.asc), SRTM (.hgt), DTED (.dt0, .dt1, .dt2), and GTOPO30, SRTM30 and GMTED as a .dem or .bil with its .hdr</td></tr>
 <tr><th scope="row">PNG and JPEG pictures<div class="files">.png, .jpg</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Maps, charts and 3D scenes, with a world file when they have coordinates</td></tr>
 <tr><th scope="row">WebP pictures<div class="files">.webp</div></th><td><span class="tag gdal">GDAL</span></td><td><span class="tag gdal">GDAL</span></td><td class="note">Smaller than PNG and JPEG, with see-through parts kept; at a quality, or every pixel kept at 100. A world file (.wpw) when they have coordinates, which Ographis also reads</td></tr>
+<tr><th scope="row">Moving pictures (GIF)<div class="files">.gif</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">The pages of a map series, or the pictures of a sun study or a day in 3D, one after another</td></tr>
 <tr><th scope="row">SVG drawings<div class="files">.svg</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">Maps and charts as shapes, sharp at any size</td></tr>
 <tr><th scope="row">QGIS projects<div class="files">.qgz, .qgs</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">The layers with their look, the features in a GeoPackage beside it and pictures as GeoTIFF</td></tr>
 <tr><th scope="row">Web maps<div class="files">index.html</div></th><td class="no">–</td><td><span class="tag own">Ographis</span></td><td class="note">A folder to open in a browser or put on a web server: Leaflet or MapLibre GL, the layers with their look, a legend and popups, the features as GeoJSON or PMTiles</td></tr>
@@ -98,7 +99,7 @@ footer { color: var(--muted); font-size: .85em; margin-top: 14px; }
 </tbody>
 </table>
 </div>
-<footer>Ographis 0.96.7 · GDAL 3.8.4. Which further formats GDAL reads depends on how it was built; <code>og info</code> tells whether a file can be read.</footer>
+<footer>Ographis 0.96.8 · GDAL 3.8.4. Which further formats GDAL reads depends on how it was built; <code>og info</code> tells whether a file can be read.</footer>
 </main>
 </body>
 </html>

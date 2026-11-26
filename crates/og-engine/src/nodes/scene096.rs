@@ -94,14 +94,63 @@ pub(super) fn colour_roofs(mesh: &Mesh, table: &Table, attr: &str) -> Option<(Me
 
 /// Simple trees on points, as one model: a trunk and a round crown, or a cone for a
 /// conifer, standing on `ground`.
-pub(super) fn trees(points: &[([f64; 2], f64, bool)], ground: &dyn Fn(f64, f64) -> f64) -> Mesh {
+/// Trees bent by the wind: each leans away from where the wind comes from, the more the
+/// higher up, as a tree sways. `wind` from 0 to 1.
+pub(super) fn bend(m: &mut Mesh, from: f64, wind: f64) {
+    let a = from.to_radians();
+    let (dx, dy) = (-a.sin(), -a.cos());
+    let n = m.objects.len().max(1);
+    let (mut low, mut high) = (vec![f64::INFINITY; n], vec![f64::NEG_INFINITY; n]);
+    let mut owner = vec![usize::MAX; m.positions.len()];
+    for t in &m.tris {
+        let k = (t.object as usize).min(n - 1);
+        for v in t.v {
+            let z = m.positions[v as usize][2];
+            low[k] = low[k].min(z);
+            high[k] = high[k].max(z);
+            owner[v as usize] = k;
+        }
+    }
+    for (i, p) in m.positions.iter_mut().enumerate() {
+        let k = owner[i];
+        if k == usize::MAX {
+            continue;
+        }
+        let h = (high[k] - low[k]).max(0.5);
+        let up = ((p[2] - low[k]) / h).clamp(0.0, 1.0);
+        let lean = up * up * h * 0.16 * wind;
+        p[0] += dx * lean;
+        p[1] += dy * lean;
+    }
+}
+
+pub(super) fn trees(points: &[([f64; 2], f64, bool)], ground: &dyn Fn(f64, f64) -> f64, season: &str) -> Mesh {
     let mut m = Mesh {
         materials: vec![
             Material { name: "trunk".into(), diffuse: [0.36, 0.26, 0.18], ..Material::default() },
             Material { name: "leaves".into(), diffuse: [0.30, 0.46, 0.21], ..Material::default() },
             Material { name: "needles".into(), diffuse: [0.16, 0.32, 0.19], ..Material::default() },
+            // The leaves of the seasons, from 3 on: spring green and blossom, and autumn.
+            Material { name: "leaves spring".into(), diffuse: [0.46, 0.66, 0.26], ..Material::default() },
+            Material { name: "blossom".into(), diffuse: [0.95, 0.80, 0.86], ..Material::default() },
+            Material { name: "leaves yellow".into(), diffuse: [0.86, 0.68, 0.16], ..Material::default() },
+            Material { name: "leaves orange".into(), diffuse: [0.85, 0.42, 0.10], ..Material::default() },
+            Material { name: "leaves red".into(), diffuse: [0.66, 0.16, 0.10], ..Material::default() },
+            Material { name: "branches".into(), diffuse: [0.30, 0.25, 0.21], ..Material::default() },
         ],
         ..Mesh::default()
+    };
+    // The leaves of each leafy tree, by the season, the same for the same tree every time.
+    let leaves_of = |k: usize| -> u32 {
+        let h = ((k as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 40) % 100;
+        match season {
+            "spring" if h < 22 => 4,
+            "spring" => 3,
+            "autumn" if h < 35 => 5,
+            "autumn" if h < 75 => 6,
+            "autumn" => 7,
+            _ => 1,
+        }
     };
     let sides = 8;
     for (k, (at, height, conifer)) in points.iter().enumerate() {
@@ -142,6 +191,37 @@ pub(super) fn trees(points: &[([f64; 2], f64, bool)], ground: &dyn Fn(f64, f64) 
                 m.tris.push(Tri { v: [b2 + s, b2 + n, tip], n: [NONE; 3], t: [NONE; 3], material: 2, object });
                 m.tris.push(Tri { v: [b2 + n, b2 + s, mid], n: [NONE; 3], t: [NONE; 3], material: 2, object });
             }
+        } else if season == "winter" {
+            // Bare branches: from the top of the trunk up and out, each with two twigs.
+            let mut pb = |from: [f64; 3], to: [f64; 3], r: f64| {
+                let b = m.positions.len() as u32;
+                let (dx, dy) = (to[0] - from[0], to[1] - from[1]);
+                let side = (dx * dx + dy * dy).sqrt().max(1e-6);
+                let (sx, sy) = (-dy / side * r, dx / side * r);
+                m.positions.extend([
+                    [from[0] - sx, from[1] - sy, from[2]],
+                    [from[0] + sx, from[1] + sy, from[2]],
+                    [to[0], to[1], to[2]],
+                    [from[0], from[1], from[2] + r * 2.0],
+                ]);
+                for t in [[0, 1, 2], [1, 3, 2], [3, 0, 2]] {
+                    m.tris.push(Tri { v: t.map(|i: u32| b + i), n: [NONE; 3], t: [NONE; 3], material: 8, object });
+                }
+            };
+            let cr = h * 0.3;
+            for b in 0..6 {
+                let a = (b as f64 + k as f64 * 0.37) / 6.0 * std::f64::consts::TAU;
+                let from = [x, y, top - h * 0.05 * (b % 2) as f64];
+                let end = [x + cr * a.cos(), y + cr * a.sin(), z0 + h * (0.85 + 0.1 * ((b * 7 + k) % 3) as f64 / 2.0)];
+                pb(from, end, r * 0.55);
+                for twig in [-0.5f64, 0.5] {
+                    let mid = [(from[0] + end[0]) / 2.0, (from[1] + end[1]) / 2.0, (from[2] + end[2]) / 2.0];
+                    let b2 = a + twig;
+                    pb(mid, [mid[0] + cr * 0.45 * b2.cos(), mid[1] + cr * 0.45 * b2.sin(), mid[2] + h * 0.18], r * 0.25);
+                }
+            }
+            // The trunk goes on up among the branches.
+            pb([x, y, top], [x, y, z0 + h * 0.95], r * 0.6);
         } else {
             // A round crown: a sphere of rings, a little flattened.
             let cr = h * 0.3;
@@ -157,13 +237,14 @@ pub(super) fn trees(points: &[([f64; 2], f64, bool)], ground: &dyn Fn(f64, f64) 
             }
             m.positions.push([x, y, cz - cr * 0.95]);
             let at = |i: usize, s: usize| b3 + 1 + ((i - 1) * sides + s % sides) as u32;
+            let material = leaves_of(k);
             let bottom = b3 + 1 + ((rings - 1) * sides) as u32;
             for s in 0..sides {
-                m.tris.push(Tri { v: [b3, at(1, s), at(1, s + 1)], n: [NONE; 3], t: [NONE; 3], material: 1, object });
-                m.tris.push(Tri { v: [bottom, at(rings - 1, s + 1), at(rings - 1, s)], n: [NONE; 3], t: [NONE; 3], material: 1, object });
+                m.tris.push(Tri { v: [b3, at(1, s), at(1, s + 1)], n: [NONE; 3], t: [NONE; 3], material, object });
+                m.tris.push(Tri { v: [bottom, at(rings - 1, s + 1), at(rings - 1, s)], n: [NONE; 3], t: [NONE; 3], material, object });
                 for i in 1..rings - 1 {
-                    m.tris.push(Tri { v: [at(i, s), at(i + 1, s), at(i + 1, s + 1)], n: [NONE; 3], t: [NONE; 3], material: 1, object });
-                    m.tris.push(Tri { v: [at(i, s), at(i + 1, s + 1), at(i, s + 1)], n: [NONE; 3], t: [NONE; 3], material: 1, object });
+                    m.tris.push(Tri { v: [at(i, s), at(i + 1, s), at(i + 1, s + 1)], n: [NONE; 3], t: [NONE; 3], material, object });
+                    m.tris.push(Tri { v: [at(i, s), at(i + 1, s + 1), at(i, s + 1)], n: [NONE; 3], t: [NONE; 3], material, object });
                 }
             }
         }
@@ -214,7 +295,7 @@ mod tests {
         assert_eq!(roof_colour("Sadeltak"), roof_colour("gable"));
         assert_ne!(roof_colour("flat"), roof_colour("hipped"));
         assert_eq!(roof_colour("#ff0000"), [1.0, 0.0, 0.0]);
-        let m = trees(&[([0.0, 0.0], 10.0, false), ([20.0, 0.0], 12.0, true)], &|_, _| 5.0);
+        let m = trees(&[([0.0, 0.0], 10.0, false), ([20.0, 0.0], 12.0, true)], &|_, _| 5.0, "summer");
         assert_eq!(m.objects.len(), 2);
         let (lo, hi) = m.bounds().unwrap();
         assert!((lo[2] - 5.0).abs() < 1e-9 && (hi[2] - 17.0).abs() < 1e-9, "{:?} {:?}", lo, hi);

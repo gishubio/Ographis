@@ -90,7 +90,8 @@ fn area_and_length_are_rounded_to_the_decimals_that_are_asked_for() {
     assert!(!before.is_empty() && before.iter().any(|v| !whole(v * 10.0)), "without a setting the decimals are kept: {:?}", before);
 
     // The form of both tools asks for the number of decimals.
-    assert!(h.query_all_by_label("Calculate area").count() >= 2, "the node and its form are headed by what the tool does");
+    assert!(h.query_all_by_label("Calculate area").count() >= 1, "the node is headed by what it does");
+    assert!(h.query_all_by_label("Calculate area and length").count() >= 1, "and its form by the tool");
     // The help is shown when the pointer rests on a setting, or under every setting when asked.
     assert!(h.query_by_label("Decimals").is_some() && h.query_by_label("Rounds to this many decimals. Empty keeps them all").is_none());
     h.state_mut().settings.other.insert("hints_always".into(), serde_json::json!(true));
@@ -154,10 +155,11 @@ fn points_are_counted_and_joined_by_location_on_the_canvas() {
     app.map.set_tile_source(NO_TILES);
     let mut h = harness_for(app, egui::Theme::Light);
     h.run_steps(6);
-    // The nodes are named by what the tools do, and say how they are set up.
+    // The nodes are named by what the tools do, and say how they are set up. Count points in
+    // polygons is Join by location, counted only, since 0.96.8, and keeps its name.
     let names: Vec<String> = h.state().snarl.nodes().map(|n| n.name.clone()).collect();
     assert!(names.contains(&"Count points in polygons".to_string()) && names.contains(&"Join by location".to_string()), "{:?}", names);
-    assert!(h.query_by_label("point_count").is_some() && h.query_by_label("all attributes, by a point").is_some());
+    assert!(h.query_by_label_contains("counted in point_count").is_some() && h.query_by_label("all attributes, by a point").is_some());
     assert!(!h.state().dirty);
 
     h.state_mut().run_blocking();
@@ -165,11 +167,11 @@ fn points_are_counted_and_joined_by_location_on_the_canvas() {
     settle(&mut h);
     let r = h.state().result.clone().unwrap();
     assert_eq!(r.errors, 0, "{:?}", r.log);
-    let counted = r.output("count", "Polygons").unwrap();
+    let counted = r.output("count", "Joined").unwrap();
     let i = counted.field_index("point_count").unwrap();
     assert_eq!(counted.features.iter().filter_map(|f| f.attrs[i].as_f64()).sum::<f64>(), 39.0, "every town is in one subregion");
     assert_eq!(counted.len(), 4);
-    for label in ["Count points in polygons", "Count attribute", "Polygons 4", "Points"] {
+    for label in ["Join by location", "Count attribute", "Joined 4", "Join"] {
         assert!(h.query_all_by_label(label).count() >= 1, "the window should say: {}", label);
     }
     shot(&mut h, "146-count-points");
@@ -284,7 +286,7 @@ fn the_grid_example_counts_towns_in_squares() {
     settle(&mut h);
     let r = h.state().result.clone().unwrap();
     assert_eq!((r.errors, r.warnings), (0, 0), "{:?}", r.log);
-    let c = r.output("count", "Polygons").unwrap();
+    let c = r.output("count", "Joined").unwrap();
     let i = c.field_index("towns").unwrap();
     assert_eq!(c.features.iter().filter_map(|f| f.attrs[i].as_f64()).sum::<f64>(), 39.0, "every town is on land in the raster");
     let with_towns = c.features.iter().filter(|f| f.attrs[i].as_f64().is_some_and(|n| n > 0.0)).count();
@@ -672,9 +674,11 @@ fn a_house_from_obj_is_seen_in_3d_and_rendered() {
     // The form asks for a date and a time only when the sun is to stand as it does then.
     h.state_mut().focus_node("studio");
     settle(&mut h);
+    open_sections(&mut h);
     assert!(h.query_by_label("Sun from").is_some() && h.query_by_label("Date").is_none());
     h.state_mut().focus_node("spring");
     settle(&mut h);
+    open_sections(&mut h);
     assert!(h.query_by_label("Date").is_some() && h.query_by_label("Time zone").is_some() && h.query_by_label("Sun from").is_none());
     shot(&mut h, "271-render-3d-scene");
 }
@@ -845,6 +849,7 @@ fn the_3d_scene_has_light_water_and_a_sun_study() {
     h.run_steps(4);
     h.state_mut().focus_node("evening");
     settle(&mut h);
+    open_sections(&mut h);
     for label in ["Cloud cover in %", "Haze in %", "The models as", "Reflections", "Light bounces", "Water", "Water height", "Waves"] {
         assert!(h.query_all_by_label(label).count() >= 1, "{label} should be in the form");
     }
@@ -853,6 +858,7 @@ fn the_3d_scene_has_light_water_and_a_sun_study() {
     shot(&mut h, "310-scene-evening-form");
     h.state_mut().focus_node("study");
     settle(&mut h);
+    open_sections(&mut h);
     for label in ["Dates", "From", "To", "Every so many hours", "Each picture also in"] {
         assert!(h.query_all_by_label(label).count() >= 1, "{label} should be in the form");
     }
@@ -890,6 +896,7 @@ fn blocks_and_a_tin_at_dusk_and_keys_and_print_settings() {
     shot(&mut h, "321-tin-form");
     h.state_mut().focus_node("dusk");
     settle(&mut h);
+    open_sections(&mut h);
     for label in [
         "Lit windows in %",
         "Windows on plain walls",

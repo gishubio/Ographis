@@ -1,0 +1,203 @@
+{
+  "format": "ographis/1",
+  "name": "Terrain in 16 colours",
+  "description": "The made-up terrain as on a home computer of the 1980s: coarse pixels, ten bands of height in the colours of a 16-colour palette, the lakes in blue, on a dark blue screen with a light blue border and a title as the start screen of the time.",
+  "variables": [],
+  "nodes": [
+    {
+      "id": "dem",
+      "type": "Reader",
+      "x": 40,
+      "y": 40,
+      "comment": "The made-up terrain, 20 m cells",
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "chunky",
+      "type": "RasterResampler",
+      "x": 310,
+      "y": 40,
+      "comment": "Coarse pixels: 100 m, 128 × 96 of them",
+      "params": {
+        "factor": "5",
+        "method": "mean"
+      }
+    },
+    {
+      "id": "bands",
+      "type": "RasterCalculator",
+      "x": 580,
+      "y": 40,
+      "comment": "Ten bands of height",
+      "params": {
+        "expression": "CASE WHEN A < 45 THEN 1 WHEN A < 55 THEN 2 WHEN A < 65 THEN 3 WHEN A < 80 THEN 4 WHEN A < 100 THEN 5 WHEN A < 125 THEN 6 WHEN A < 160 THEN 7 WHEN A < 200 THEN 8 WHEN A < 235 THEN 9 ELSE 10 END"
+      }
+    },
+    {
+      "id": "water",
+      "type": "Reader",
+      "x": 850,
+      "y": 40,
+      "comment": "Lakes and the river",
+      "params": {
+        "path": "water.geojson"
+      }
+    },
+    {
+      "id": "screen",
+      "type": "MapRenderer",
+      "x": 1120,
+      "y": 40,
+      "comment": "The screen",
+      "params": {
+        "width": "1600",
+        "margin": "5",
+        "background": "colour",
+        "background_colour": "#0088ff",
+        "map_frame": "none",
+        "title": "**** OGRAPHIS 64 BASIC V2 ****",
+        "subtitle": "64K RAM SYSTEM  38911 HEIGHT BYTES FREE.  READY.",
+        "title_place": "top-center",
+        "title_fill": "#0000aaff",
+        "title_line": "#0088ff",
+        "title_colour": "#0088ff",
+        "subtitle_colour": "#0088ff",
+        "legend": "bottom-right",
+        "legend_title": "HEIGHT",
+        "legend_fill": "#aaffeeee",
+        "legend_line": "#0000aa",
+        "layers": [
+          {
+            "from": "water:Output",
+            "name": "Water",
+            "fill": "#0000aa",
+            "stroke": "#0088ff",
+            "width": 3
+          },
+          {
+            "from": "bands:Raster",
+            "name": "Height",
+            "raster": "classes",
+            "raster_colors": [
+              [
+                "1",
+                "#0000aa",
+                "Deep water"
+              ],
+              [
+                "2",
+                "#0088ff",
+                "Shallows"
+              ],
+              [
+                "3",
+                "#aaffee",
+                "Shore"
+              ],
+              [
+                "4",
+                "#00cc55",
+                "Lowland"
+              ],
+              [
+                "5",
+                "#aaff66",
+                "Meadows"
+              ],
+              [
+                "6",
+                "#eeee77",
+                "Fields"
+              ],
+              [
+                "7",
+                "#dd8855",
+                "Hills"
+              ],
+              [
+                "8",
+                "#664400",
+                "Heights"
+              ],
+              [
+                "9",
+                "#bbbbbb",
+                "Rock"
+              ],
+              [
+                "10",
+                "#ffffff",
+                "Snow"
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "x": 40,
+      "y": 210,
+      "comment": "The picture",
+      "params": {
+        "path": "out/terrain_64.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "chunky",
+        "Raster"
+      ]
+    },
+    {
+      "from": [
+        "chunky",
+        "Raster"
+      ],
+      "to": [
+        "bands",
+        "Rasters"
+      ]
+    },
+    {
+      "from": [
+        "water",
+        "Output"
+      ],
+      "to": [
+        "screen",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "bands",
+        "Raster"
+      ],
+      "to": [
+        "screen",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "screen",
+        "Map"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    }
+  ]
+}

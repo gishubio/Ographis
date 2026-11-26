@@ -1,44 +1,41 @@
 {
   "format": "ographis/1",
   "name": "Detailed plans of Göteborg and Kungsbacka from the national geodata platform",
-  "variables": [
-    {
-      "name": "keep_files_in",
-      "value": ""
-    }
-  ],
   "nodes": [
     {
       "id": "areas",
       "type": "Reader",
-      "x": 20,
-      "y": 40,
+      "name": "Input",
+      "x": 20.0,
+      "y": 40.0,
       "params": {
+        "crs": "EPSG:3006",
         "path": "detailed_plan_areas.csv",
-        "wkt": "wkt",
-        "crs": "EPSG:3006"
+        "wkt": "wkt"
       },
       "comment": "A rectangle around each municipality, with its name and code. Add a row for another"
     },
     {
       "id": "plans",
       "type": "GeodataFetcher",
-      "x": 280,
-      "y": 40,
+      "name": "Fetch geodata",
+      "x": 280.0,
+      "y": 40.0,
       "params": {
-        "product": "ngp_detailed_plans",
         "areas": "each",
-        "max_km2": "1500",
         "connection": "Lantmäteriet",
-        "keep_in": "$(keep_files_in)"
+        "keep_in": "$(keep_files_in)",
+        "max_km2": "1500",
+        "product": "ngp_detailed_plans"
       },
       "comment": "One search for each municipality: every detailed plan within its rectangle, a feature for each provision. With a folder in the variable keep_files_in, every file of each plan is kept, the PDF documents too: thousands for a city. The login is the API connection Lantmäteriet: the Geotorget user that has access to the national geodata platform"
     },
     {
       "id": "producer",
       "type": "JsonExtractor",
-      "x": 540,
-      "y": 40,
+      "name": "Extract JSON values",
+      "x": 540.0,
+      "y": 40.0,
       "params": {
         "attribute": "providers",
         "paths": [
@@ -57,8 +54,9 @@
     {
       "id": "own",
       "type": "Tester",
-      "x": 800,
-      "y": 40,
+      "name": "Test",
+      "x": 800.0,
+      "y": 40.0,
       "params": {
         "test": "to_string(producer_code) = to_string(code)"
       },
@@ -67,8 +65,9 @@
     {
       "id": "out",
       "type": "Writer",
-      "x": 1060,
-      "y": 40,
+      "name": "Output",
+      "x": 1076.0,
+      "y": 41.0,
       "params": {
         "path": "out/detailed_plans.gpkg"
       },
@@ -77,8 +76,9 @@
     {
       "id": "files",
       "type": "Writer",
-      "x": 540,
-      "y": 240,
+      "name": "Output",
+      "x": 1076.0,
+      "y": 294.0,
       "params": {
         "path": "out/detailed_plan_files.csv"
       },
@@ -98,36 +98,6 @@
     },
     {
       "from": [
-        "plans",
-        "Files"
-      ],
-      "to": [
-        "files",
-        "Input"
-      ]
-    },
-    {
-      "from": [
-        "plans",
-        "Output"
-      ],
-      "to": [
-        "producer",
-        "Input"
-      ]
-    },
-    {
-      "from": [
-        "producer",
-        "Output"
-      ],
-      "to": [
-        "own",
-        "Input"
-      ]
-    },
-    {
-      "from": [
         "own",
         "Passed"
       ],
@@ -135,6 +105,85 @@
         "out",
         "Input"
       ]
+    },
+    {
+      "from": [
+        "plans",
+        "Files"
+      ],
+      "to": [
+        "files",
+        "Input"
+      ],
+      "points": [
+        [
+          528.0,
+          313.0
+        ]
+      ]
+    },
+    {
+      "from": [
+        "plans",
+        "Output"
+      ],
+      "to": [
+        "producer",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "producer",
+        "Output"
+      ],
+      "to": [
+        "own",
+        "Input"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "Input",
+      "x": 0.0,
+      "y": -89.0,
+      "w": 207.0,
+      "h": 236.0,
+      "locked": true
+    },
+    {
+      "name": "Fetch plans",
+      "x": 260.0,
+      "y": -126.0,
+      "w": 739.0,
+      "h": 305.0,
+      "color": "orange",
+      "locked": true
+    },
+    {
+      "name": "Output",
+      "x": 1050.0,
+      "y": -96.0,
+      "w": 201.0,
+      "h": 484.0,
+      "color": "pink",
+      "locked": true
+    }
+  ],
+  "notes": [
+    {
+      "text": "Task\nFetch detailed plans (\"detaljplaner\") for two municipalities in Sweden",
+      "x": 423.0,
+      "y": -241.0,
+      "w": 429.0,
+      "h": 16.0
+    }
+  ],
+  "variables": [
+    {
+      "name": "keep_files_in",
+      "value": ""
     }
   ]
 }

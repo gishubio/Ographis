@@ -27,6 +27,11 @@ pub enum Colours {
     Greys,
     /// The same light colour all over, so that only the light shows.
     White,
+    /// Violet at the lowest, through blue, turquoise, green and yellow, to red at the top,
+    /// as depths are often shown.
+    Rainbow,
+    /// Navy at the lowest, through blue, turquoise and green, to pale yellow at the top.
+    Sea,
 }
 
 /// How terrain is lit and coloured. Angles in degrees.
@@ -51,6 +56,8 @@ pub struct Look {
     pub haze: f64,
     /// How much a map laid over the terrain covers it, from 0 to 1.
     pub map_opacity: f64,
+    /// The heights in flat steps of this many metres, as layers cut from card. 0: smooth.
+    pub steps: f64,
 }
 
 impl Default for Look {
@@ -66,6 +73,7 @@ impl Default for Look {
             colours: Colours::Land,
             haze: 0.0,
             map_opacity: 1.0,
+            steps: 0.0,
         }
     }
 }
@@ -157,10 +165,31 @@ pub(crate) fn tint(colours: Colours, t: f64) -> [f64; 3] {
         (1.0, [248.0, 248.0, 248.0]),
     ];
     const GREYS: [(f64, [f64; 3]); 2] = [(0.0, [168.0, 172.0, 178.0]), (1.0, [250.0, 250.0, 250.0])];
+    const RAINBOW: [(f64, [f64; 3]); 8] = [
+        (0.0, [92.0, 40.0, 150.0]),
+        (0.16, [52.0, 70.0, 210.0]),
+        (0.32, [36.0, 150.0, 226.0]),
+        (0.46, [48.0, 202.0, 186.0]),
+        (0.6, [120.0, 214.0, 84.0]),
+        (0.74, [236.0, 224.0, 62.0]),
+        (0.87, [246.0, 150.0, 44.0]),
+        (1.0, [222.0, 46.0, 40.0]),
+    ];
+    const SEA: [(f64, [f64; 3]); 7] = [
+        (0.0, [14.0, 30.0, 98.0]),
+        (0.18, [22.0, 74.0, 176.0]),
+        (0.36, [30.0, 142.0, 214.0]),
+        (0.52, [46.0, 204.0, 214.0]),
+        (0.68, [72.0, 220.0, 138.0]),
+        (0.84, [182.0, 238.0, 80.0]),
+        (1.0, [246.0, 252.0, 186.0]),
+    ];
     let ramp: &[(f64, [f64; 3])] = match colours {
         Colours::Land => &LAND,
         Colours::Mountains => &MOUNTAINS,
         Colours::Greys => &GREYS,
+        Colours::Rainbow => &RAINBOW,
+        Colours::Sea => &SEA,
         Colours::White => return [242.0, 241.0, 236.0],
     };
     let t = t.clamp(0.0, 1.0);
@@ -396,8 +425,22 @@ fn lit_colour(c: [f64; 4], light: f32, look: &Look) -> [u8; 4] {
 /// Shaded relief seen from above, as a picture with the coordinates of the grid. Cells
 /// without a height are see-through.
 pub fn shade(g: &Grid, look: &Look, map: Option<&RasterImage>) -> RasterImage {
+    let stepped;
+    let g = if look.steps > 0.0 {
+        stepped = in_steps(g, look.steps);
+        &stepped
+    } else {
+        g
+    };
     let light = light(g, look);
     paint(g, &light, look, map)
+}
+
+/// The heights in flat steps: each height down to the step below it.
+pub fn in_steps(g: &Grid, step: f64) -> Grid {
+    let mut out = g.clone();
+    out.values = g.values.iter().map(|v| if v.is_nan() { *v } else { ((*v as f64 / step).floor() * step) as f32 }).collect();
+    out
 }
 
 /// Shaded relief of a given width, keeping the shape of the grid. A picture wider than the
@@ -405,6 +448,10 @@ pub fn shade(g: &Grid, look: &Look, map: Option<&RasterImage>) -> RasterImage {
 /// no more detail than that and the shadows take a long time to find.
 pub fn shade_width(g: &Grid, look: &Look, map: Option<&RasterImage>, width: usize) -> RasterImage {
     let out = of_width(g, width);
+    if look.steps > 0.0 {
+        // Steps have edges sharper than the cells: they are cut at the size of the picture.
+        return shade(&out, look, map);
+    }
     if out.width <= g.width {
         return shade(&out, look, map);
     }
@@ -463,6 +510,8 @@ pub struct View {
     pub fog: f64,
     /// The background: a sky, or see-through.
     pub sky: bool,
+    /// A background of one colour instead, on which a block casts a soft shadow.
+    pub background: Option<[u8; 3]>,
     /// The terrain stands on a block with sides, as in a block diagram.
     pub block: bool,
     /// Each pixel is computed as this many by this many, for smooth edges.
@@ -471,7 +520,7 @@ pub struct View {
 
 impl Default for View {
     fn default() -> Self {
-        View { azimuth: 200.0, tilt: 30.0, fov: 30.0, zoom: 1.0, width: 1600, height: 1000, fog: 0.3, sky: true, block: true, quality: 2 }
+        View { azimuth: 200.0, tilt: 30.0, fov: 30.0, zoom: 1.0, width: 1600, height: 1000, fog: 0.3, sky: true, background: None, block: true, quality: 2 }
     }
 }
 
@@ -516,9 +565,25 @@ pub fn render(g: &Grid, look: &Look, map: Option<&RasterImage>, view: &View) -> 
     } else {
         g
     };
-    let tex_grid = fit(g, 3000);
+    let mut tex_grid = fit(g, 3000);
+    let mut mesh = fit(g, 1000);
+    if look.steps > 0.0 {
+        // Steps have edges sharper than the cells: a small grid is made finer first, so
+        // that the edges of the steps are smooth curves rather than the squares of its cells.
+        let finer = |g: &Grid, most: usize| {
+            let k = most as f64 / g.width.max(g.height) as f64;
+            if k > 1.0 {
+                resample(g, (g.width as f64 * k).round() as usize, (g.height as f64 * k).round() as usize)
+            } else {
+                g.clone()
+            }
+        };
+        // The surface and its light from one grid, so that the edges of the steps fall on
+        // the same places in both.
+        tex_grid = in_steps(&finer(&fit(g, 1600), 1600), look.steps);
+        mesh = tex_grid.clone();
+    }
     let texture = shade(&tex_grid, look, map);
-    let mesh = fit(g, 1000);
     let e = look.exaggeration.max(0.01);
     let (lo, hi) = mesh.range().map_or((0.0, 1.0), |r| (r.0 as f64, r.1 as f64));
     let gt = mesh.geotransform;
@@ -668,8 +733,13 @@ pub fn render(g: &Grid, look: &Look, map: Option<&RasterImage>, view: &View) -> 
             let top0 = world(a.0 as f64 + 0.5, a.1 as f64 + 0.5, h0 as f64);
             let top1 = world(b.0 as f64 + 0.5, b.1 as f64 + 0.5, h1 as f64);
             let p = [top0, top1, [top1[0], top1[1], base], [top0[0], top0[1], base]];
-            let q: Option<Vec<Vert>> =
-                p.iter().enumerate().map(|(i, v)| project(*v).map(|(x, y, z)| Vert { x, y, z, u: -1.0, v: light * if i >= 2 { 0.8 } else { 1.0 } })).collect();
+            // The height on the side is carried in u, below -1, so that the side can show
+            // the colours of the heights as layers.
+            let q: Option<Vec<Vert>> = p
+                .iter()
+                .enumerate()
+                .map(|(i, v)| project(*v).map(|(x, y, z)| Vert { x, y, z, u: -1.0 - v[2] / relief.max(1e-9), v: light * if i >= 2 { 0.8 } else { 1.0 } }))
+                .collect();
             if let Some(q) = q {
                 draw(q[0], q[1], q[2]);
                 draw(q[0], q[2], q[3]);
@@ -701,11 +771,12 @@ pub fn render(g: &Grid, look: &Look, map: Option<&RasterImage>, view: &View) -> 
     let near = (dot(sub(target, eye), fwd) - radius).max(0.0);
     let fog_density = view.fog.clamp(0.0, 1.0) * 2.5;
     // The colour of one sample, worked out when the picture needs it rather than kept.
+    let layered_sides = look.steps > 0.0 || matches!(look.colours, Colours::Rainbow | Colours::Sea);
     let pixel = |k: usize| -> [f64; 4] {
         let (u, v) = what[k];
         let z = depth[k] as f64;
         if !z.is_finite() {
-            if !view.sky {
+            if !view.sky || view.background.is_some() {
                 return [0.0, 0.0, 0.0, 0.0];
             }
             let t = (k / w) as f64 / h as f64;
@@ -714,7 +785,18 @@ pub fn render(g: &Grid, look: &Look, map: Option<&RasterImage>, view: &View) -> 
         }
         let mut c = if u < 0.0 {
             let l = v as f64;
-            [150.0 * l, 132.0 * l, 112.0 * l]
+            if layered_sides {
+                // The colours of the heights, darker, in the steps of the surface.
+                let mut t = (-1.0 - u as f64).max(0.0);
+                if look.steps > 0.0 {
+                    let n = (relief / (look.steps * e)).max(1.0);
+                    t = ((t * n).floor() / n).min(1.0);
+                }
+                let c = tint(look.colours, t);
+                [c[0] * l * 0.62, c[1] * l * 0.62, c[2] * l * 0.62]
+            } else {
+                [150.0 * l, 132.0 * l, 112.0 * l]
+            }
         } else {
             let (tx, ty) = ((u as usize).min(texture.width - 1), (v as usize).min(texture.height - 1));
             let p = &texture.rgba[(ty * texture.width + tx) * 4..][..4];
@@ -751,7 +833,76 @@ pub fn render(g: &Grid, look: &Look, map: Option<&RasterImage>, view: &View) -> 
             })
         })
         .collect();
+    let rgba = match view.background {
+        Some(bg) => on_background(rgba, ow, oh, bg, look.sun_azimuth - view.azimuth),
+        None => rgba,
+    };
     RasterImage { vector: None, width: ow, height: oh, rgba, geotransform: [0.0, 1.0, 0.0, oh as f64, 0.0, -1.0] }
+}
+
+/// The picture laid on a background of one colour, with a soft shadow of the terrain on it,
+/// cast away from the sun. `sun` is where the sun is, in degrees clockwise from the
+/// direction the camera looks from.
+fn on_background(rgba: Vec<u8>, w: usize, h: usize, bg: [u8; 3], sun: f64) -> Vec<u8> {
+    let reach = (w.max(h) as f64 * 0.012).max(2.0);
+    // On the picture the camera looks from the bottom: a sun behind the camera casts the
+    // shadow up, a sun on the left casts it to the right.
+    let (dx, dy) = (-sun.to_radians().sin() * reach, (sun.to_radians().cos() * reach).max(reach * 0.4));
+    let cover: Vec<f32> = rgba.chunks(4).map(|p| p[3] as f32 / 255.0).collect();
+    let mut shadow = vec![0f32; w * h];
+    for r in 0..h {
+        for c in 0..w {
+            let (sc, sr) = (c as f64 - dx, r as f64 - dy);
+            if sc >= 0.0 && sr >= 0.0 && (sc as usize) < w && (sr as usize) < h {
+                shadow[r * w + c] = cover[sr as usize * w + sc as usize];
+            }
+        }
+    }
+    let radius = (reach * 1.3).round().max(1.0) as usize;
+    for _ in 0..3 {
+        shadow = blur_rows(&shadow, w, h, radius);
+        shadow = transpose(&blur_rows(&transpose(&shadow, w, h), h, w, radius), h, w);
+    }
+    let mut out = rgba;
+    for (k, p) in out.chunks_mut(4).enumerate() {
+        let a = cover[k] as f64;
+        let dark = 1.0 - 0.6 * shadow[k] as f64;
+        for i in 0..3 {
+            let under = bg[i] as f64 * dark;
+            p[i] = (p[i] as f64 * a + under * (1.0 - a)).round().clamp(0.0, 255.0) as u8;
+        }
+        p[3] = 255;
+    }
+    out
+}
+
+/// Each row blurred by a running mean `radius` cells to each side.
+fn blur_rows(v: &[f32], w: usize, h: usize, radius: usize) -> Vec<f32> {
+    let mut out = vec![0f32; w * h];
+    for r in 0..h {
+        let row = &v[r * w..(r + 1) * w];
+        let mut sum: f32 = row[..radius.min(w)].iter().sum();
+        for c in 0..w {
+            if c + radius < w {
+                sum += row[c + radius];
+            }
+            if c > radius {
+                sum -= row[c - radius - 1];
+            }
+            out[r * w + c] = sum / (2 * radius + 1) as f32;
+        }
+    }
+    out
+}
+
+fn transpose(v: &[f32], w: usize, h: usize) -> Vec<f32> {
+    let mut out = vec![0f32; w * h];
+    for r in 0..h {
+        for c in 0..w {
+            out[c * h + r] = v[r * w + c];
+        }
+    }
+    out
 }
 
 /// The largest part of the grid, cut from its sides, whose edge cells all have a height.
@@ -911,5 +1062,29 @@ mod tests {
         assert_ne!(px(100, 70), px(5, 0));
         let clear = render(&g, &Look::default(), None, &View { sky: false, ..view });
         assert_eq!(clear.rgba[3], 0, "without sky the corner is see-through");
+    }
+
+    #[test]
+    fn steps_make_flat_layers_coloured_by_their_height_with_layered_sides_on_a_background() {
+        let g = cone(60);
+        let stepped = in_steps(&g, 10.0);
+        assert!(stepped.values.iter().filter(|v| !v.is_nan()).all(|v| (*v as f64 / 10.0).fract().abs() < 1e-6));
+        // Few heights: one for each step.
+        let mut levels: Vec<i64> = stepped.values.iter().filter(|v| !v.is_nan()).map(|v| *v as i64).collect();
+        levels.sort();
+        levels.dedup();
+        let span = g.range().unwrap();
+        assert!(levels.len() as f32 <= (span.1 - span.0) / 10.0 + 2.0);
+        // The rainbow goes from violet at the bottom to red at the top.
+        let (low, high) = (tint(Colours::Rainbow, 0.0), tint(Colours::Rainbow, 1.0));
+        assert!(low[2] > low[0] && high[0] > high[2]);
+        let look = Look { colours: Colours::Sea, steps: 10.0, ..Default::default() };
+        let bg = [13, 27, 61];
+        let view = View { width: 160, height: 100, quality: 1, background: Some(bg), ..Default::default() };
+        let img = render(&g, &look, None, &view);
+        assert!(img.rgba.chunks(4).all(|p| p[3] == 255));
+        // The corner is the background, and somewhere near the block it lies in its shadow.
+        assert_eq!(&img.rgba[..3], &bg);
+        assert!(img.rgba.chunks(4).any(|p| p[2] < 61 && p[2] > 20 && p[0] < 13));
     }
 }

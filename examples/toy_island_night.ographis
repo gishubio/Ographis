@@ -1,0 +1,195 @@
+{
+  "format": "ographis/1",
+  "name": "A winter night on the toy island",
+  "description": "The made-up islands as a toy diorama on a winter night, seen from the south: snow on the land and the trees, lit windows in the houses, northern lights in the sky, and the names of the kinds of land floating over them.",
+  "variables": [],
+  "nodes": [
+    {
+      "id": "cover",
+      "type": "Reader",
+      "x": 40,
+      "y": 40,
+      "comment": "Land cover",
+      "params": {
+        "path": "islands.geojson"
+      }
+    },
+    {
+      "id": "heights",
+      "type": "Reader",
+      "x": 310,
+      "y": 40,
+      "comment": "Heights",
+      "params": {
+        "path": "islands_heights.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "diorama",
+      "type": "DioramaMaker",
+      "x": 580,
+      "y": 40,
+      "comment": "The islands as a toy landscape",
+      "params": {
+        "class": "kind",
+        "board": "round",
+        "trees": "60",
+        "houses": "70",
+        "boats": "3",
+        "steps": "4",
+        "animals": "sheep 6, horses 2, bears 1"
+      }
+    },
+    {
+      "id": "land",
+      "type": "Tester",
+      "x": 850,
+      "y": 40,
+      "comment": "Land and lakes",
+      "params": {
+        "test": "kind <> 'Hav'"
+      }
+    },
+    {
+      "id": "middles",
+      "type": "CenterPointReplacer",
+      "x": 1120,
+      "y": 40,
+      "comment": "A point in each",
+      "params": {}
+    },
+    {
+      "id": "names",
+      "type": "AttributeCreator",
+      "x": 40,
+      "y": 210,
+      "comment": "The names in English",
+      "params": {
+        "name": "name",
+        "expression": "CASE WHEN kind = 'Bebyggelse' THEN 'The village' WHEN kind = 'Åker' THEN 'The fields' WHEN kind = 'Sankmark' THEN 'The bog' WHEN kind = 'Kalfjäll' THEN 'The bare hill' WHEN kind = 'Barr- och blandskog' THEN 'The forest' WHEN kind = 'Sjö' THEN 'The lake' ELSE kind END"
+      }
+    },
+    {
+      "id": "scene",
+      "type": "SceneRenderer",
+      "x": 310,
+      "y": 210,
+      "comment": "At night, looking north, where the northern lights are",
+      "params": {
+        "width": "1600",
+        "height": "1100",
+        "view_azimuth": "195",
+        "elevation": "7",
+        "zoom": "150",
+        "fov": "36",
+        "night": "aurora",
+        "sun_strength": "250",
+        "sun_azimuth": "20",
+        "sun_altitude": "22",
+        "snow_cover": "75",
+        "season": "winter",
+        "lit_windows": "60",
+        "windows": "true",
+        "glow_names": "window",
+        "floor": "false",
+        "background": "sky",
+        "names_by": "name",
+        "names_height": "1200",
+        "quality": "16"
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "x": 580,
+      "y": 210,
+      "comment": "The picture",
+      "params": {
+        "path": "out/toy_island_night.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "cover",
+        "Output"
+      ],
+      "to": [
+        "diorama",
+        "Areas"
+      ]
+    },
+    {
+      "from": [
+        "heights",
+        "Output"
+      ],
+      "to": [
+        "diorama",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "cover",
+        "Output"
+      ],
+      "to": [
+        "land",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "land",
+        "Passed"
+      ],
+      "to": [
+        "middles",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "middles",
+        "Point"
+      ],
+      "to": [
+        "names",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "diorama",
+        "Diorama"
+      ],
+      "to": [
+        "scene",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "names",
+        "Output"
+      ],
+      "to": [
+        "scene",
+        "Names"
+      ]
+    },
+    {
+      "from": [
+        "scene",
+        "Image"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    }
+  ]
+}

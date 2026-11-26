@@ -1,0 +1,439 @@
+{
+  "format": "ographis/1",
+  "name": "Trains on time and deaths on the roads, from Trafikanalys",
+  "description": "Two products of the open API of Trafikanalys, without a key: the punctuality of passenger trains (t0604_rt_ar), the share that arrived at most 5 minutes late (RT5) for each kind of train over the years, and the people killed on the roads (t1004) each year. Punctuality from 2024 is not comparable with earlier years in all respects, as Trafikverket changed its planning system.",
+  "nodes": [
+    {
+      "id": "deaths",
+      "type": "HttpCaller",
+      "name": "HTTP request",
+      "x": -244.0,
+      "y": 525.0,
+      "params": {
+        "cache": "disk",
+        "url": "https://api.trafa.se/api/data?lang=sv&query=t1004|antpersd|ar"
+      },
+      "comment": "Trafikanalys t1004: people killed on the roads (antpersd) each year (ar)"
+    },
+    {
+      "id": "trains",
+      "type": "HttpCaller",
+      "name": "HTTP request",
+      "x": -235.0,
+      "y": 63.0,
+      "params": {
+        "cache": "disk",
+        "url": "https://api.trafa.se/api/data?lang=sv&query=t0604_rt_ar|rt5|ar|tagtyp"
+      },
+      "comment": "Trafikanalys t0604_rt_ar: the share of trains run that arrived at most 5 minutes late (rt5), by year (ar) and kind of train (tagtyp). No key"
+    },
+    {
+      "id": "t_rows",
+      "type": "JsonExploder",
+      "name": "Explode JSON list",
+      "x": 34.0,
+      "y": 64.0,
+      "params": {
+        "attribute": "_response",
+        "path": "Rows"
+      },
+      "comment": "A feature per row",
+      "comment_box": [
+        16.0,
+        -42.0,
+        114.0,
+        26.0
+      ]
+    },
+    {
+      "id": "d_rows",
+      "type": "JsonExploder",
+      "name": "Explode JSON list",
+      "x": 49.0,
+      "y": 556.0,
+      "params": {
+        "attribute": "_response",
+        "path": "Rows"
+      },
+      "comment": "A feature per year",
+      "comment_box": [
+        19.0,
+        -42.0,
+        111.0,
+        26.0
+      ]
+    },
+    {
+      "id": "t_cells",
+      "type": "JsonExtractor",
+      "name": "Extract JSON values",
+      "x": 256.0,
+      "y": 66.0,
+      "params": {
+        "attribute": "Cell",
+        "paths": [
+          [
+            "[Column=ar].Value",
+            "year"
+          ],
+          [
+            "[Column=tagtyp].Value",
+            "train"
+          ],
+          [
+            "[IsMeasure=true].Value",
+            "on_time"
+          ]
+        ]
+      },
+      "comment": "Year, kind of train and share"
+    },
+    {
+      "id": "d_cells",
+      "type": "JsonExtractor",
+      "name": "Extract JSON values",
+      "x": 335.0,
+      "y": 553.0,
+      "params": {
+        "attribute": "Cell",
+        "paths": [
+          [
+            "[Column=ar].Value",
+            "year"
+          ],
+          [
+            "[IsMeasure=true].Value",
+            "killed"
+          ]
+        ]
+      },
+      "comment": "Year and number",
+      "comment_box": [
+        25.0,
+        -44.0,
+        107.0,
+        26.0
+      ]
+    },
+    {
+      "id": "t_real",
+      "type": "AttributeCreator",
+      "name": "Create attribute",
+      "x": 501.0,
+      "y": 61.0,
+      "params": {
+        "expression": "to_real(replace(replace(to_string(on_time), ',', '.'), ' ', ''))",
+        "name": "on_time"
+      },
+      "comment": "As a number",
+      "comment_box": [
+        48.0,
+        -44.0,
+        84.0,
+        26.0
+      ]
+    },
+    {
+      "id": "d_real",
+      "type": "AttributeCreator",
+      "name": "Create attribute",
+      "x": 625.0,
+      "y": 551.0,
+      "params": {
+        "expression": "to_real(replace(to_string(killed), ' ', ''))",
+        "name": "killed"
+      },
+      "comment": "As a number",
+      "comment_box": [
+        48.0,
+        -42.0,
+        82.0,
+        26.0
+      ]
+    },
+    {
+      "id": "t_chart",
+      "type": "ChartDrawer",
+      "name": "Draw chart",
+      "x": 780.0,
+      "y": 64.0,
+      "params": {
+        "decimals": "1",
+        "kind": "lines",
+        "markers": "yes",
+        "note": "Source: Trafikanalys (t0604_rt_ar). From 2024 not wholly comparable with earlier years",
+        "series": "train",
+        "subtitle": "Share of passenger trains that arrived at most 5 minutes late (RT5)",
+        "title": "Trains on time",
+        "unit": "%",
+        "value": "on_time",
+        "width": "1200",
+        "x": "year"
+      },
+      "comment": "A line for each kind of train",
+      "comment_box": [
+        0.0,
+        -44.0,
+        163.0,
+        26.0
+      ]
+    },
+    {
+      "id": "t_csv_keep",
+      "type": "AttributeKeeper",
+      "name": "Keep attributes",
+      "x": 786.0,
+      "y": 238.0,
+      "params": {
+        "keep": [
+          "year",
+          "train",
+          "on_time"
+        ]
+      },
+      "comment": "The table, without the cells",
+      "comment_box": [
+        -12.0,
+        -41.0,
+        159.0,
+        26.0
+      ]
+    },
+    {
+      "id": "d_chart",
+      "type": "ChartDrawer",
+      "name": "Draw chart",
+      "x": 900.0,
+      "y": 553.0,
+      "params": {
+        "kind": "lines",
+        "markers": "yes",
+        "note": "Source: Trafikanalys (t1004)",
+        "subtitle": "People killed in road traffic accidents each year, with the trend",
+        "title": "Killed on the roads in Sweden",
+        "trend": "yes",
+        "value": "killed",
+        "width": "1200",
+        "x": "year"
+      },
+      "comment": "One line, with a trend",
+      "comment_box": [
+        17.0,
+        -43.0,
+        131.0,
+        26.0
+      ]
+    },
+    {
+      "id": "t_png",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1194.0,
+      "y": 96.0,
+      "params": {
+        "path": "out/trains_on_time.png"
+      },
+      "comment": "Chart\nPNG",
+      "comment_box": [
+        35.0,
+        -60.0,
+        45.0,
+        42.0
+      ]
+    },
+    {
+      "id": "t_csv",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1199.0,
+      "y": 304.0,
+      "params": {
+        "path": "out/trains_on_time.csv"
+      },
+      "comment": "Table\nCSV",
+      "comment_box": [
+        36.0,
+        -56.0,
+        45.0,
+        42.0
+      ]
+    },
+    {
+      "id": "d_png",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1207.0,
+      "y": 488.0,
+      "params": {
+        "path": "out/road_deaths.png"
+      },
+      "comment": "Chart\nPNG",
+      "comment_box": [
+        30.0,
+        -56.0,
+        45.0,
+        42.0
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "d_cells",
+        "Output"
+      ],
+      "to": [
+        "d_real",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "d_chart",
+        "Chart"
+      ],
+      "to": [
+        "d_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "d_real",
+        "Output"
+      ],
+      "to": [
+        "d_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "d_rows",
+        "Exploded"
+      ],
+      "to": [
+        "d_cells",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "deaths",
+        "Output"
+      ],
+      "to": [
+        "d_rows",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "t_cells",
+        "Output"
+      ],
+      "to": [
+        "t_real",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "t_chart",
+        "Chart"
+      ],
+      "to": [
+        "t_png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "t_csv_keep",
+        "Output"
+      ],
+      "to": [
+        "t_csv",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "t_real",
+        "Output"
+      ],
+      "to": [
+        "t_chart",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "t_real",
+        "Output"
+      ],
+      "to": [
+        "t_csv_keep",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "t_rows",
+        "Exploded"
+      ],
+      "to": [
+        "t_cells",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "trains",
+        "Output"
+      ],
+      "to": [
+        "t_rows",
+        "Input"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "Trains on time",
+      "x": -255.0,
+      "y": -98.0,
+      "w": 1234.0,
+      "h": 453.0,
+      "color": "orange",
+      "locked": true
+    },
+    {
+      "name": "Killed on the roads",
+      "x": -265.0,
+      "y": 399.0,
+      "w": 1358.0,
+      "h": 285.0,
+      "color": "purple",
+      "locked": true
+    },
+    {
+      "name": "Output",
+      "x": 1174.0,
+      "y": -15.0,
+      "w": 170.0,
+      "h": 596.0,
+      "color": "pink",
+      "locked": true
+    }
+  ],
+  "notes": [
+    {
+      "text": "Task\nGet data from Trafikanalys API, create charts",
+      "x": 270.0,
+      "y": -201.0,
+      "w": 292.0,
+      "h": 16.0
+    }
+  ]
+}

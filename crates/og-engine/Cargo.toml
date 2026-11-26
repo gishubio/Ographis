@@ -43,7 +43,7 @@ meshopt = { version = "0.7", default-features = false }
 las = { version = "0.11", features = ["laz"] }
 # regexp_replace, regexp_match and regexp_substr in expressions.
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 # CityGML, read as it streams.
 quick-xml = "0.42"
 # Passwords and keys of connections in the credential store of Windows (Credential Manager).

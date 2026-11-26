@@ -1,0 +1,503 @@
+{
+  "format": "ographis/1",
+  "name": "Weather and light in 3D",
+  "nodes": [
+    {
+      "id": "dem",
+      "type": "Reader",
+      "x": 40,
+      "y": 60,
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid",
+        "within": "rectangle",
+        "min_x": "418100",
+        "min_y": "6472350",
+        "max_x": "418500",
+        "max_y": "6472700"
+      }
+    },
+    {
+      "id": "town",
+      "type": "Reader",
+      "x": 40,
+      "y": 200,
+      "params": {
+        "path": "town.geojson"
+      }
+    },
+    {
+      "id": "make",
+      "type": "BuildingMaker",
+      "x": 300,
+      "y": 200,
+      "params": {}
+    },
+    {
+      "id": "names",
+      "type": "Reader",
+      "x": 40,
+      "y": 420,
+      "comment": "Places to name in the pictures",
+      "params": {
+        "path": "village_names.geojson"
+      }
+    },
+    {
+      "id": "trees",
+      "type": "Reader",
+      "x": 40,
+      "y": 520,
+      "comment": "Trees, with their kind",
+      "params": {
+        "path": "village_trees.geojson"
+      }
+    },
+    {
+      "id": "lamps",
+      "type": "Reader",
+      "x": 40,
+      "y": 620,
+      "comment": "Street lamps, for the night",
+      "params": {
+        "path": "lamps.geojson"
+      }
+    },
+    {
+      "id": "winter",
+      "type": "SceneRenderer",
+      "x": 560,
+      "y": 60,
+      "comment": "Falling snow, snow on the roofs and the ground, bare trees",
+      "params": {
+        "width": "1200",
+        "height": "750",
+        "quality": "16",
+        "background": "sky",
+        "tree_kind_by": "kind",
+        "tree_height": "9",
+        "elevation": "12",
+        "zoom": "170",
+        "names_by": "name",
+        "snow_fall": "35",
+        "snow_cover": "85",
+        "season": "winter"
+      }
+    },
+    {
+      "id": "png_winter",
+      "type": "Writer",
+      "x": 860,
+      "y": 60,
+      "params": {
+        "path": "out/weather_winter.png"
+      }
+    },
+    {
+      "id": "night",
+      "type": "SceneRenderer",
+      "x": 560,
+      "y": 200,
+      "comment": "A winter night with northern lights: lit windows and street lamps",
+      "params": {
+        "width": "1200",
+        "height": "750",
+        "quality": "16",
+        "background": "sky",
+        "tree_kind_by": "kind",
+        "tree_height": "9",
+        "elevation": "12",
+        "zoom": "170",
+        "names_by": "name",
+        "night": "aurora",
+        "snow_cover": "60",
+        "season": "winter",
+        "sun_azimuth": "160",
+        "sun_altitude": "20",
+        "lit_windows": "45",
+        "windows": "true",
+        "view_azimuth": "190"
+      }
+    },
+    {
+      "id": "png_night",
+      "type": "Writer",
+      "x": 860,
+      "y": 200,
+      "params": {
+        "path": "out/weather_night.png"
+      }
+    },
+    {
+      "id": "storm",
+      "type": "SceneRenderer",
+      "x": 560,
+      "y": 340,
+      "comment": "A thunderstorm: rain, wet streets and lightning",
+      "params": {
+        "width": "1200",
+        "height": "750",
+        "quality": "16",
+        "background": "sky",
+        "tree_kind_by": "kind",
+        "tree_height": "9",
+        "elevation": "12",
+        "zoom": "170",
+        "names_by": "name",
+        "lightning": "storm",
+        "rain": "60"
+      }
+    },
+    {
+      "id": "png_storm",
+      "type": "Writer",
+      "x": 860,
+      "y": 340,
+      "params": {
+        "path": "out/weather_storm.png"
+      }
+    },
+    {
+      "id": "autumn",
+      "type": "SceneRenderer",
+      "x": 560,
+      "y": 480,
+      "comment": "An autumn morning with mist in the low parts",
+      "params": {
+        "width": "1200",
+        "height": "750",
+        "quality": "16",
+        "background": "sky",
+        "tree_kind_by": "kind",
+        "tree_height": "9",
+        "elevation": "12",
+        "zoom": "170",
+        "names_by": "name",
+        "fog": "30",
+        "season": "autumn",
+        "sun_azimuth": "110",
+        "sun_altitude": "9"
+      }
+    },
+    {
+      "id": "png_autumn",
+      "type": "Writer",
+      "x": 860,
+      "y": 480,
+      "params": {
+        "path": "out/weather_autumn.png"
+      }
+    },
+    {
+      "id": "sketch",
+      "type": "SceneRenderer",
+      "x": 560,
+      "y": 620,
+      "comment": "As a drawing, for a sketch of a plan",
+      "params": {
+        "width": "1200",
+        "height": "750",
+        "quality": "16",
+        "background": "studio",
+        "tree_kind_by": "kind",
+        "tree_height": "9",
+        "elevation": "30",
+        "zoom": "150",
+        "names_by": "name",
+        "look": "sketch",
+        "season": "spring"
+      }
+    },
+    {
+      "id": "png_sketch",
+      "type": "Writer",
+      "x": 860,
+      "y": 620,
+      "params": {
+        "path": "out/weather_sketch.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "make",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "town",
+        "Output"
+      ],
+      "to": [
+        "make",
+        "Buildings"
+      ]
+    },
+    {
+      "from": [
+        "make",
+        "Buildings"
+      ],
+      "to": [
+        "winter",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "winter",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "trees",
+        "Output"
+      ],
+      "to": [
+        "winter",
+        "Trees"
+      ]
+    },
+    {
+      "from": [
+        "names",
+        "Output"
+      ],
+      "to": [
+        "winter",
+        "Names"
+      ]
+    },
+    {
+      "from": [
+        "winter",
+        "Image"
+      ],
+      "to": [
+        "png_winter",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "make",
+        "Buildings"
+      ],
+      "to": [
+        "night",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "night",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "trees",
+        "Output"
+      ],
+      "to": [
+        "night",
+        "Trees"
+      ]
+    },
+    {
+      "from": [
+        "names",
+        "Output"
+      ],
+      "to": [
+        "night",
+        "Names"
+      ]
+    },
+    {
+      "from": [
+        "night",
+        "Image"
+      ],
+      "to": [
+        "png_night",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "lamps",
+        "Output"
+      ],
+      "to": [
+        "night",
+        "Lights"
+      ]
+    },
+    {
+      "from": [
+        "make",
+        "Buildings"
+      ],
+      "to": [
+        "storm",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "storm",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "trees",
+        "Output"
+      ],
+      "to": [
+        "storm",
+        "Trees"
+      ]
+    },
+    {
+      "from": [
+        "names",
+        "Output"
+      ],
+      "to": [
+        "storm",
+        "Names"
+      ]
+    },
+    {
+      "from": [
+        "storm",
+        "Image"
+      ],
+      "to": [
+        "png_storm",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "make",
+        "Buildings"
+      ],
+      "to": [
+        "autumn",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "autumn",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "trees",
+        "Output"
+      ],
+      "to": [
+        "autumn",
+        "Trees"
+      ]
+    },
+    {
+      "from": [
+        "names",
+        "Output"
+      ],
+      "to": [
+        "autumn",
+        "Names"
+      ]
+    },
+    {
+      "from": [
+        "autumn",
+        "Image"
+      ],
+      "to": [
+        "png_autumn",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "make",
+        "Buildings"
+      ],
+      "to": [
+        "sketch",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "sketch",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "trees",
+        "Output"
+      ],
+      "to": [
+        "sketch",
+        "Trees"
+      ]
+    },
+    {
+      "from": [
+        "names",
+        "Output"
+      ],
+      "to": [
+        "sketch",
+        "Names"
+      ]
+    },
+    {
+      "from": [
+        "sketch",
+        "Image"
+      ],
+      "to": [
+        "png_sketch",
+        "Input"
+      ]
+    }
+  ]
+}

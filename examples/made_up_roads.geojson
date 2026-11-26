@@ -1,0 +1,208 @@
+{
+ "type": "FeatureCollection",
+ "crs": {
+  "type": "name",
+  "properties": {
+   "name": "urn:ogc:def:crs:EPSG::3006"
+  }
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "ref": "E20",
+    "kind": "motorway",
+    "bridge": 0,
+    "tunnel": 0,
+    "oneway": 0
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      412200,
+      6473900.0
+     ],
+     [
+      415900.0,
+      6474100.0
+     ],
+     [
+      418400.0,
+      6474500.0
+     ],
+     [
+      421000.0,
+      6475000.0
+     ],
+     [
+      424600,
+      6475300.0
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "ref": "49",
+    "kind": "main",
+    "bridge": 0,
+    "tunnel": 0,
+    "oneway": 0
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      417800.0,
+      6470200
+     ],
+     [
+      418069.0,
+      6471993.1
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "ref": "49",
+    "kind": "main",
+    "bridge": 1,
+    "tunnel": 0,
+    "oneway": 0
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      418069.0,
+      6471993.1
+     ],
+     [
+      418095.7,
+      6472171.1
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "ref": "49",
+    "kind": "main",
+    "bridge": 0,
+    "tunnel": 0,
+    "oneway": 0
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      418095.7,
+      6472171.1
+     ],
+     [
+      418100.0,
+      6472200.0
+     ],
+     [
+      418200.0,
+      6474500.0
+     ],
+     [
+      418700.0,
+      6477300.0
+     ],
+     [
+      419100.0,
+      6479400
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "ref": "2690",
+    "kind": "minor",
+    "bridge": 0,
+    "tunnel": 1,
+    "oneway": 0
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      421000.0,
+      6475000.0
+     ],
+     [
+      421800.0,
+      6473500.0
+     ],
+     [
+      422900.0,
+      6472200.0
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "ref": "",
+    "kind": "street",
+    "bridge": 0,
+    "tunnel": 0,
+    "oneway": 1
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      417200.0,
+      6475100.0
+     ],
+     [
+      417900.0,
+      6475500.0
+     ],
+     [
+      418600.0,
+      6475400.0
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "ref": "",
+    "kind": "street",
+    "bridge": 0,
+    "tunnel": 0,
+    "oneway": 1
+   },
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      418600.0,
+      6475400.0
+     ],
+     [
+      418500.0,
+      6476100.0
+     ],
+     [
+      417500.0,
+      6476000.0
+     ]
+    ]
+   }
+  }
+ ]
+}

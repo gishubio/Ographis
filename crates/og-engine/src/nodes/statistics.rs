@@ -51,6 +51,7 @@ const CLASS_METHODS: &[(&str, &str)] = &[
     ("equal", "Equal intervals"),
     ("stddev", "Standard deviations from the mean"),
     ("manual", "Breaks of my own"),
+    ("ranges", "Ranges of my own, each with its value"),
 ];
 
 const CLASS_PARAMS: &[ParamSpec] = &[
@@ -64,7 +65,27 @@ const CLASS_PARAMS: &[ParamSpec] = &[
         default: "",
         hint: "For breaks of your own: where one class ends and the next begins, such as 10, 50, 100",
     },
-    ParamSpec { key: "name", label: "Attribute with the class", kind: ParamKind::Text, default: "class", hint: "1 for the lowest values" },
+    ParamSpec {
+        key: "ranges",
+        label: "From, to and value",
+        kind: ParamKind::Ranges("Input"),
+        default: "",
+        hint: "For ranges of your own: from and to are both in the range, 1 to 100 and 101 to 200, and each feature gets the value of the first that fits, such as A or 1. An empty from or to has no end",
+    },
+    ParamSpec {
+        key: "otherwise",
+        label: "Outside the ranges",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "For ranges of your own: written for a value that is in no range, and for an empty one. Empty leaves it empty",
+    },
+    ParamSpec {
+        key: "name",
+        label: "Attribute with the class",
+        kind: ParamKind::Text,
+        default: "class",
+        hint: "1 for the lowest values; for ranges of your own, the value of the range",
+    },
     ParamSpec {
         key: "label_name",
         label: "Attribute with its name",
@@ -127,6 +148,27 @@ fn run_classify(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let t = input(inp, "Input");
     let ai = t.need_field(&p.need("attribute", "Choose the values to put in classes.")?)?;
     let method = p.get("method").unwrap_or_else(|| "jenks".into());
+    if method == "ranges" {
+        // Each feature the value of its range, and the ranges with how many in each.
+        let name = p.get("name").filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "class".into());
+        let (out, ranges, counts) = super::attr_values::give_ranges(p, t, &name, ctx)?;
+        let mut summary = Table {
+            fields: vec![
+                Field::new(name, FieldType::Text),
+                Field::new("from", FieldType::Real),
+                Field::new("to", FieldType::Real),
+                Field::new("count", FieldType::Int),
+            ],
+            ..Default::default()
+        };
+        for (r, n) in ranges.iter().zip(&counts) {
+            summary.features.push(Feature::new(
+                vec![Value::Text(r.value.clone()), r.from.map_or(Value::Null, Value::Real), r.to.map_or(Value::Null, Value::Real), Value::Int(*n as i64)],
+                None,
+            ));
+        }
+        return Ok(vec![("Classified".into(), out), ("Classes".into(), summary)]);
+    }
     let decimals = number_param(p, "decimals", "The decimals")?.unwrap_or(0.0).clamp(0.0, 6.0) as usize;
     let mut sorted: Vec<f64> = t.features.iter().filter_map(|f| num(&f.attrs[ai])).collect();
     if sorted.is_empty() {
@@ -880,7 +922,7 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Statistics",
-        desc: "Puts the features in classes by a number, for a map with a colour for each class: natural breaks (Jenks), where the classes differ as much as they can and the values within each as little; quantiles, with as many features in each; equal intervals; standard deviations from the mean; or breaks of your own. Each feature gets its class, 1 for the lowest, and its name, such as 10–50, for the legend; Classes lists them with how many are in each.",
+        desc: "Puts the features in classes by a number, for a map with a colour for each class: natural breaks (Jenks), where the classes differ as much as they can and the values within each as little; quantiles, with as many features in each; equal intervals; standard deviations from the mean; or breaks of your own. Each feature gets its class, 1 for the lowest, and its name, such as 10–50, for the legend; Classes lists them with how many are in each. Or ranges of your own, each with the value it gives, such as 1 to 100 gives A, which was Classify by range before 0.96.8.",
         inputs: &["Input"],
         outputs: &["Classified", "Classes"],
         ports: None,

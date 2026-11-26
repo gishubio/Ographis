@@ -313,6 +313,166 @@ impl Node {
     }
 }
 
+/// A tool that became a choice in another: its type and title then, the type it is now, the
+/// settings it gets, the settings that changed their names, and the ports that did: in and
+/// out. A port out that is two now sends what went out on it to both.
+struct Merged {
+    old: &'static str,
+    old_title: &'static str,
+    new: &'static str,
+    set: &'static [(&'static str, &'static str)],
+    rename: &'static [(&'static str, &'static str)],
+    ports_in: &'static [(&'static str, &'static str)],
+    ports_out: &'static [(&'static str, &'static [&'static str])],
+}
+
+/// The tools that became choices in others in 0.96.8.
+const MERGED: &[Merged] = &[
+    Merged {
+        old: "Intersector",
+        old_title: "Intersect",
+        new: "Clipper",
+        set: &[("each", "each")],
+        rename: &[],
+        ports_in: &[("Input", "Clippee"), ("Overlay", "Clipper")],
+        ports_out: &[("Intersection", &["Inside"])],
+    },
+    Merged {
+        old: "PointCounter",
+        old_title: "Count points in polygons",
+        new: "SpatialJoiner",
+        set: &[("mode", "count"), ("relation", "intersects")],
+        rename: &[("name", "count")],
+        ports_in: &[("Polygons", "Features"), ("Points", "Join")],
+        ports_out: &[("Polygons", &["Joined"])],
+    },
+    Merged { old: "RasterGeneralizer", old_title: "Generalize raster", new: "RasterResampler", set: &[], rename: &[], ports_in: &[], ports_out: &[] },
+    Merged {
+        old: "BoundingBoxAccumulator",
+        old_title: "Bounding box of all",
+        new: "BoundingBoxReplacer",
+        set: &[("for", "together")],
+        rename: &[],
+        ports_in: &[],
+        ports_out: &[],
+    },
+    Merged {
+        old: "LengthCalculator",
+        old_title: "Calculate length",
+        new: "AreaCalculator",
+        set: &[("what", "length")],
+        rename: &[("name", "length_name"), ("unit", "length_unit")],
+        ports_in: &[],
+        ports_out: &[],
+    },
+    Merged {
+        old: "ZonalStatistics",
+        old_title: "Zonal statistics",
+        new: "RasterSampler",
+        set: &[("areas", "stats")],
+        rename: &[],
+        ports_in: &[("Zones", "Features")],
+        ports_out: &[],
+    },
+    Merged { old: "JsonFlattener", old_title: "Flatten JSON", new: "JsonExtractor", set: &[], rename: &[], ports_in: &[], ports_out: &[] },
+    Merged {
+        old: "LineExploder",
+        old_title: "Split lines into segments",
+        new: "LineSplitter",
+        set: &[("at", "corners")],
+        rename: &[("number", "part")],
+        ports_in: &[("Input", "Lines")],
+        ports_out: &[("Output", &["Lines", "Other"])],
+    },
+    Merged {
+        old: "RangeMapper",
+        old_title: "Classify by range",
+        new: "Classifier",
+        set: &[],
+        rename: &[],
+        ports_in: &[],
+        ports_out: &[("Output", &["Classified"])],
+    },
+];
+
+/// The nodes of a tool that became a choice in another made into that one, with their
+/// settings and connections.
+fn absorb(ws: &mut Workspace, m: &Merged) {
+    let ids: Vec<String> = ws.nodes.iter().filter(|n| n.kind == m.old).map(|n| n.id.clone()).collect();
+    if ids.is_empty() {
+        return;
+    }
+    for n in ws.nodes.iter_mut().filter(|n| n.kind == m.old) {
+        let p = &mut n.params;
+        for (from, to) in m.rename {
+            if let Some(v) = p.remove(*from) {
+                p.insert(to.to_string(), v);
+            }
+        }
+        // What each had as its own default, where the tool it is now has another.
+        let has = |p: &serde_json::Map<String, serde_json::Value>, k: &str| p.get(k).and_then(|v| v.as_str()).is_some_and(|v| !v.trim().is_empty());
+        match m.old {
+            "PointCounter" if !has(p, "count") => {
+                p.insert("count".into(), serde_json::json!("point_count"));
+            }
+            "LineExploder" if !has(p, "part") => {
+                p.insert("part".into(), serde_json::json!("segment"));
+            }
+            "RasterGeneralizer" => {
+                if !has(p, "method") {
+                    p.insert("method".into(), serde_json::json!("mean"));
+                }
+                if !has(p, "factor") {
+                    p.insert("factor".into(), serde_json::json!("2"));
+                }
+            }
+            "RangeMapper" => {
+                let result = p.remove("result").and_then(|v| v.as_str().map(str::to_string)).filter(|r| !r.trim().is_empty()).unwrap_or_else(|| "class".into());
+                match p.get("method").and_then(|v| v.as_str()).unwrap_or("own") {
+                    // Equal intervals and as many in each wrote the name of the range; the
+                    // number of the class comes beside it now.
+                    "equal" | "quantile" => {
+                        p.insert("label_name".into(), serde_json::json!(result));
+                        p.insert("name".into(), serde_json::json!(format!("{}_number", result)));
+                    }
+                    _ => {
+                        p.insert("method".into(), serde_json::json!("ranges"));
+                        p.insert("name".into(), serde_json::json!(result));
+                    }
+                }
+            }
+            _ => {}
+        }
+        for (k, v) in m.set {
+            p.insert(k.to_string(), serde_json::json!(v));
+        }
+        n.kind = m.new.to_string();
+        // A node without a name of its own is named by the tool it was.
+        if n.name.is_empty() {
+            n.name = m.old_title.to_string();
+        }
+    }
+    let mut more = Vec::new();
+    for e in &mut ws.edges {
+        if ids.contains(&e.to.0) {
+            if let Some((_, to)) = m.ports_in.iter().find(|(from, _)| *from == e.to.1) {
+                e.to.1 = to.to_string();
+            }
+        }
+        if ids.contains(&e.from.0) {
+            if let Some((_, to)) = m.ports_out.iter().find(|(from, _)| *from == e.from.1) {
+                e.from.1 = to[0].to_string();
+                for other in &to[1..] {
+                    let mut copy = e.clone();
+                    copy.from.1 = other.to_string();
+                    more.push(copy);
+                }
+            }
+        }
+    }
+    ws.edges.extend(more);
+}
+
 /// The name a node was given by the program, in the words used today. Before the tools were
 /// named by what they do a new node was called "Sorter" or "Sorter_2", and now "Sort" or
 /// "Sort 2". Any other name is one the user chose, and gives None.
@@ -416,6 +576,41 @@ impl Workspace {
             if e.to.1 == "Polygons" && joiners.contains(&e.to.0) {
                 e.to.1 = "Join".into();
             }
+        }
+        // Before 0.96.8 a raster was clipped by a tool of its own, with the raster on Raster,
+        // the areas on Areas and what it kept, inside or outside, on Raster. Now Clip does it.
+        let raster_clips: Vec<(String, bool)> = ws
+            .nodes
+            .iter()
+            .filter(|n| n.kind == "RasterClipper")
+            .map(|n| (n.id.clone(), n.params.get("keep").and_then(|v| v.as_str()) == Some("outside")))
+            .collect();
+        for n in ws.nodes.iter_mut().filter(|n| n.kind == "RasterClipper") {
+            n.kind = "Clipper".into();
+            n.params.remove("keep");
+            // The name still says what it does.
+            if n.name.is_empty() {
+                n.name = "Clip raster".into();
+            }
+        }
+        for e in &mut ws.edges {
+            if raster_clips.iter().any(|(id, _)| *id == e.to.0) {
+                match e.to.1.as_str() {
+                    "Raster" => e.to.1 = "Clippee".into(),
+                    "Areas" => e.to.1 = "Clipper".into(),
+                    _ => {}
+                }
+            }
+            if let Some((_, outside)) = raster_clips.iter().find(|(id, _)| *id == e.from.0) {
+                if e.from.1 == "Raster" {
+                    e.from.1 = if *outside { "Outside" } else { "Inside" }.into();
+                }
+            }
+        }
+        // Before 0.96.8 these were tools of their own; now each is a choice in another. A
+        // node keeps its name, which still says what it does.
+        for m in MERGED {
+            absorb(&mut ws, m);
         }
         let mut seen = std::collections::HashSet::new();
         for n in &ws.nodes {

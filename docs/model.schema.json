@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/gishubio/Ographis/main/docs/model.schema.json",
   "title": "Ographis model",
-  "description": "A model of Ographis 0.96.7. Written by og schema.",
+  "description": "A model of Ographis 0.96.8. Written by og schema.",
   "type": "object",
   "required": [
     "nodes"
@@ -101,7 +101,6 @@
             "DateTimeStamper",
             "Rounder",
             "Counter",
-            "RangeMapper",
             "ValueMapper",
             "SubstringExtractor",
             "StringConcatenator",
@@ -113,13 +112,11 @@
             "Sorter",
             "StatisticsCalculator",
             "AttributeKeeper",
-            "Intersector",
             "NeighborFinder",
             "LineSplitter",
             "AreaOnAreaOverlayer",
             "Clipper",
             "Dissolver",
-            "PointCounter",
             "SpatialJoiner",
             "PointOnAreaOverlayer",
             "LineExtender",
@@ -130,7 +127,6 @@
             "CenterPointReplacer",
             "Generalizer",
             "PairMaker",
-            "LineExploder",
             "ConvexHuller",
             "ConcaveHuller",
             "Aggregator",
@@ -140,7 +136,6 @@
             "GeometryFromText",
             "PointsToLines",
             "BoundingBoxReplacer",
-            "BoundingBoxAccumulator",
             "PolygonToLine",
             "LineToPolygon",
             "VoronoiDiagrammer",
@@ -161,10 +156,8 @@
             "GeometryFilter",
             "DimensionFilter",
             "AreaCalculator",
-            "LengthCalculator",
             "StacSearch",
             "HttpCaller",
-            "JsonFlattener",
             "JsonExploder",
             "JsonExtractor",
             "XmlExtractor",
@@ -197,9 +190,7 @@
             "ModelLightener",
             "OvertureDownloader",
             "RasterSampler",
-            "ZonalStatistics",
             "TerrainAnalyzer",
-            "RasterClipper",
             "RasterPolygonizer",
             "Rasterizer",
             "RasterReclassifier",
@@ -232,6 +223,9 @@
             "GameEngineExporter",
             "SplatMaker",
             "PlaceFetcher",
+            "CartogramMaker",
+            "BuildingGeneralizer",
+            "FeatureDisplacer",
             "GeodataFetcher",
             "HotSpots",
             "SpatialAutocorrelation",
@@ -263,7 +257,6 @@
             "TerrainShader",
             "TerrainRenderer",
             "RasterMosaicker",
-            "RasterGeneralizer",
             "RasterCalculator",
             "ContourGenerator",
             "ShortestRoute",
@@ -801,7 +794,7 @@
                   },
                   "json_nested": {
                     "title": "Objects in a record (JSON, XML)",
-                    "description": "one of the values in choices, as a string. An address inside a record becomes adress.gata and adress.ort, or stays as JSON text for Flatten JSON",
+                    "description": "one of the values in choices, as a string. An address inside a record becomes adress.gata and adress.ort, or stays as JSON text for Extract JSON values",
                     "anyOf": [
                       {
                         "enum": [
@@ -1025,6 +1018,7 @@
                           "png",
                           "jpg",
                           "webp",
+                          "gif",
                           "tif",
                           "cog",
                           "pdf",
@@ -1745,6 +1739,28 @@
                     "description": "a string. For a printer: the page reaches this far past where it is cut, often 3 mm",
                     "default": "0"
                   },
+                  "pdf_colours": {
+                    "title": "Colours",
+                    "description": "one of the values in choices, as a string. CMYK for a printer that asks for it: the colours are turned into cyan, magenta, yellow and black",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "rgb",
+                          "cmyk",
+                          "cmyk_black"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "rgb"
+                  },
+                  "pdf_icc": {
+                    "title": "Printing profile (ICC)",
+                    "description": "a file, a folder, a pattern with * or a web address; relative paths start at the folder of the model. The ICC profile the printer names, such as PSO Coated v3 or ISO Coated v2: with it the PDF is a PDF/X-4, in CMYK"
+                  },
                   "pdf_marks": {
                     "title": "Crop marks",
                     "description": "one of the values in choices, as a string. Short lines outside the page that show the printer where to cut",
@@ -1761,6 +1777,14 @@
                       }
                     ],
                     "default": "no"
+                  },
+                  "pdf_sheets": {
+                    "title": "Sheets",
+                    "description": "a string. A map cut into pages that are put together after, such as 2x2: across and down, each a little over its neighbours, with its number and its neighbours in the heading. Empty: one page"
+                  },
+                  "pdf_folds": {
+                    "title": "Folds",
+                    "description": "a string. Short grey lines at the edges where the page is to be folded, such as 4x2 for a folded map: columns and rows. Empty: none"
                   },
                   "pdf_title": {
                     "title": "Title",
@@ -1839,6 +1863,7 @@
                           "png",
                           "jpg",
                           "webp",
+                          "gif",
                           "tif",
                           "cog",
                           "pdf",
@@ -1972,6 +1997,7 @@
                           "png",
                           "jpg",
                           "webp",
+                          "gif",
                           "tif",
                           "cog",
                           "pdf",
@@ -2267,6 +2293,7 @@
                           "png",
                           "jpg",
                           "webp",
+                          "gif",
                           "tif",
                           "cog",
                           "pdf",
@@ -2387,6 +2414,7 @@
                           "png",
                           "jpg",
                           "webp",
+                          "gif",
                           "tif",
                           "cog",
                           "pdf",
@@ -2713,6 +2741,7 @@
                           "png",
                           "jpg",
                           "webp",
+                          "gif",
                           "tif",
                           "cog",
                           "pdf",
@@ -3208,69 +3237,6 @@
                   "group_by": {
                     "title": "Start again for each",
                     "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. Features with the same values are counted on their own, each group from the start. Empty counts all in one"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "RangeMapper"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "params": {
-                "type": "object",
-                "properties": {
-                  "attribute": {
-                    "title": "Attribute",
-                    "description": "the name of one attribute of the stream on the port. A number to look up in the ranges"
-                  },
-                  "method": {
-                    "title": "Ranges",
-                    "description": "one of the values in choices, as a string.",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "own",
-                          "equal",
-                          "quantile"
-                        ]
-                      },
-                      {
-                        "type": "string",
-                        "pattern": "\\$\\("
-                      }
-                    ],
-                    "default": "own"
-                  },
-                  "ranges": {
-                    "title": "From, to and value",
-                    "description": "a list of [from, to, value]; an empty from or to has no end. From and to are both in the range: 1 to 100 and 101 to 200. An empty from or to has no end. The first range that fits is used"
-                  },
-                  "classes": {
-                    "title": "Number of classes",
-                    "description": "a string. Equal intervals split from the smallest to the largest value; the same number in each puts as many features in each",
-                    "default": "5"
-                  },
-                  "decimals": {
-                    "title": "Decimals in the labels",
-                    "description": "a string.",
-                    "default": "0"
-                  },
-                  "result": {
-                    "title": "Write to",
-                    "description": "a string. The attribute that gets the value of the range",
-                    "default": "class"
-                  },
-                  "otherwise": {
-                    "title": "Outside the ranges",
-                    "description": "a string. Written for a value that is in no range, and for an empty one. Empty leaves it empty"
                   }
                 }
               }
@@ -3821,32 +3787,6 @@
           "if": {
             "properties": {
               "type": {
-                "const": "Intersector"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "params": {
-                "type": "object",
-                "properties": {
-                  "attributes": {
-                    "title": "Attributes to fetch",
-                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. From the area of Overlay each part lies in. Empty fetches all"
-                  },
-                  "prefix": {
-                    "title": "Prefix",
-                    "description": "a string. Put in front of the fetched names, for example zone_. Without it, a name the features already have is not fetched"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
                 "const": "NeighborFinder"
               }
             }
@@ -3893,13 +3833,14 @@
                 "properties": {
                   "at": {
                     "title": "Split at",
-                    "description": "one of the values in choices, as a string. The points connected to Points, the places where lines cross or meet each other, or both",
+                    "description": "one of the values in choices, as a string. The points connected to Points, the places where lines cross or meet each other, or both. Or every corner, so that each segment is a line of its own",
                     "anyOf": [
                       {
                         "enum": [
                           "both",
                           "points",
-                          "crossings"
+                          "crossings",
+                          "corners"
                         ]
                       },
                       {
@@ -3908,6 +3849,23 @@
                       }
                     ],
                     "default": "both"
+                  },
+                  "areas": {
+                    "title": "Areas",
+                    "description": "one of the values in choices, as a string. At every corner",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "keep",
+                          "outline"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "keep"
                   },
                   "tolerance": {
                     "title": "Tolerance",
@@ -3962,6 +3920,48 @@
               "params": {
                 "type": "object",
                 "properties": {
+                  "each": {
+                    "title": "Clip areas",
+                    "description": "one of the values in choices, as a string. Each on its own: what lies in several clip areas, such as the squares of a grid, is cut into a piece for each, and each piece gets the attributes of its clip area",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "together",
+                          "each"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "together"
+                  },
+                  "attributes": {
+                    "title": "Attributes to fetch",
+                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. From the clip area each piece lies in. Empty fetches all"
+                  },
+                  "prefix": {
+                    "title": "Prefix",
+                    "description": "a string. Put in front of the fetched names, for example square_. Without it, a name the features already have is not fetched"
+                  },
+                  "crop": {
+                    "title": "A raster inside",
+                    "description": "one of the values in choices, as a string. For a raster on Clippee: a cell is inside when its middle is. The cells outside are on Outside, in a raster as large as it was",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "yes",
+                          "no"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "yes"
+                  },
                   "close": {
                     "title": "3D models along the edge",
                     "description": "one of the values in choices, as a string. A building or another solid cut by the edge is closed with a new wall there, on each side, so that it stands whole in a 3D print or a picture",
@@ -4032,29 +4032,6 @@
           "if": {
             "properties": {
               "type": {
-                "const": "PointCounter"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "params": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "title": "Count attribute",
-                    "description": "a string. The number of points in each polygon. An attribute that already exists is overwritten",
-                    "default": "point_count"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
                 "const": "SpatialJoiner"
               }
             }
@@ -4094,13 +4071,14 @@
                   },
                   "mode": {
                     "title": "When several are found",
-                    "description": "one of the values in choices, as a string. Summarized keeps every feature in Joined, those that found nothing with the count 0",
+                    "description": "one of the values in choices, as a string. Summarized and counted keep every feature in Joined, those that found nothing with the count 0",
                     "anyOf": [
                       {
                         "enum": [
                           "first",
                           "all",
-                          "summary"
+                          "summary",
+                          "count"
                         ]
                       },
                       {
@@ -4132,7 +4110,7 @@
                   },
                   "count": {
                     "title": "Count attribute",
-                    "description": "a string. When summarized: how many were found",
+                    "description": "a string. When summarized or counted: how many were found",
                     "default": "join_count"
                   },
                   "attributes": {
@@ -4496,46 +4474,6 @@
                       }
                     ],
                     "default": "true"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "LineExploder"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "params": {
-                "type": "object",
-                "properties": {
-                  "areas": {
-                    "title": "Areas",
-                    "description": "one of the values in choices, as a string.",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "keep",
-                          "outline"
-                        ]
-                      },
-                      {
-                        "type": "string",
-                        "pattern": "\\$\\("
-                      }
-                    ],
-                    "default": "keep"
-                  },
-                  "number": {
-                    "title": "Number attribute",
-                    "description": "a string. Which segment of its line each is, from 1. Empty leaves it out",
-                    "default": "segment"
                   }
                 }
               }
@@ -4921,14 +4859,14 @@
               "params": {
                 "type": "object",
                 "properties": {
-                  "corners": {
-                    "title": "Add the corners as attributes",
+                  "for": {
+                    "title": "A box around",
                     "description": "one of the values in choices, as a string.",
                     "anyOf": [
                       {
                         "enum": [
-                          "false",
-                          "true"
+                          "each",
+                          "together"
                         ]
                       },
                       {
@@ -4936,33 +4874,15 @@
                         "pattern": "\\$\\("
                       }
                     ],
-                    "default": "false"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "BoundingBoxAccumulator"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "params": {
-                "type": "object",
-                "properties": {
+                    "default": "each"
+                  },
                   "group_by": {
                     "title": "Group by",
-                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. One box for each group of features with the same values. Empty gives one box around all"
+                    "description": "names of attributes of the stream on the port: a list of strings, or one string separated by commas. All together: one box for each group of features with the same values. Empty gives one box around all"
                   },
                   "count": {
                     "title": "Count attribute",
-                    "description": "a string. How many features are in each box. Empty leaves it out",
+                    "description": "a string. All together: how many features are in each box. Empty leaves it out",
                     "default": "count"
                   },
                   "corners": {
@@ -5634,13 +5554,31 @@
               "params": {
                 "type": "object",
                 "properties": {
+                  "what": {
+                    "title": "Calculate",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "area",
+                          "length",
+                          "both"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "area"
+                  },
                   "name": {
-                    "title": "Attribute",
-                    "description": "a string.",
+                    "title": "Area in",
+                    "description": "a string. The attribute that gets the area",
                     "default": "_area"
                   },
                   "unit": {
-                    "title": "Unit",
+                    "title": "Unit of area",
                     "description": "one of the values in choices, as a string.",
                     "anyOf": [
                       {
@@ -5661,35 +5599,13 @@
                     ],
                     "default": "m2"
                   },
-                  "decimals": {
-                    "title": "Decimals",
-                    "description": "a string. Rounds to this many decimals. Empty keeps them all"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "LengthCalculator"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "params": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "title": "Attribute",
-                    "description": "a string.",
+                  "length_name": {
+                    "title": "Length in",
+                    "description": "a string. The attribute that gets the length of a line, or the perimeter of an area",
                     "default": "_length"
                   },
-                  "unit": {
-                    "title": "Unit",
+                  "length_unit": {
+                    "title": "Unit of length",
                     "description": "one of the values in choices, as a string.",
                     "anyOf": [
                       {
@@ -5976,66 +5892,6 @@
           "if": {
             "properties": {
               "type": {
-                "const": "JsonFlattener"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "params": {
-                "type": "object",
-                "properties": {
-                  "attribute": {
-                    "title": "JSON in",
-                    "description": "the name of one attribute of the stream on the port. The attribute with JSON text, such as the answer from HTTP request or an object that an input kept as JSON"
-                  },
-                  "lists": {
-                    "title": "Lists",
-                    "description": "one of the values in choices, as a string. For a feature per element, use Explode JSON list",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "text",
-                          "columns"
-                        ]
-                      },
-                      {
-                        "type": "string",
-                        "pattern": "\\$\\("
-                      }
-                    ],
-                    "default": "text"
-                  },
-                  "prefix": {
-                    "title": "Prefix",
-                    "description": "a string. Put before the new names, such as svar. Empty uses the names in the JSON, and a name the stream has already gets the name of the attribute in front"
-                  },
-                  "keep": {
-                    "title": "Keep the JSON attribute",
-                    "description": "one of the values in choices, as a string.",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "false",
-                          "true"
-                        ]
-                      },
-                      {
-                        "type": "string",
-                        "pattern": "\\$\\("
-                      }
-                    ],
-                    "default": "false"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
                 "const": "JsonExploder"
               }
             }
@@ -6120,7 +5976,45 @@
                   },
                   "paths": {
                     "title": "Values to take",
-                    "description": "a list of [path in the JSON, attribute name]. A path and the attribute it goes to, such as adress.ort or kontakter[0].telefon. An empty name takes the last part of the path. An object or a list is taken as JSON text"
+                    "description": "a list of [path in the JSON, attribute name]. A path and the attribute it goes to, such as adress.ort or kontakter[0].telefon. An empty name takes the last part of the path. An object or a list is taken as JSON text. None takes them all: {\"adress\": {\"ort\": \"Borås\"}} gives adress.ort"
+                  },
+                  "lists": {
+                    "title": "Lists",
+                    "description": "one of the values in choices, as a string. When all are taken. For a feature per element, use Explode JSON list",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "text",
+                          "columns"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "text"
+                  },
+                  "prefix": {
+                    "title": "Prefix",
+                    "description": "a string. When all are taken: put before the new names, such as svar. Empty uses the names in the JSON, and a name the stream has already gets the name of the attribute in front"
+                  },
+                  "keep": {
+                    "title": "Keep the JSON attribute",
+                    "description": "one of the values in choices, as a string. When all are taken",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "false"
                   }
                 }
               }
@@ -6263,7 +6157,7 @@
                   },
                   "nest": {
                     "title": "Names with a dot as objects",
-                    "description": "one of the values in choices, as a string. adress.gata and adress.ort become \"adress\": {\"gata\": …, \"ort\": …}, as Flatten JSON took them apart",
+                    "description": "one of the values in choices, as a string. adress.gata and adress.ort become \"adress\": {\"gata\": …, \"ort\": …}, as Extract JSON values takes them apart",
                     "anyOf": [
                       {
                         "enum": [
@@ -6423,7 +6317,8 @@
                           "light",
                           "dark",
                           "topo",
-                          "bw"
+                          "bw",
+                          "hand"
                         ]
                       },
                       {
@@ -6624,6 +6519,24 @@
                     ],
                     "default": "auto"
                   },
+                  "scale_number": {
+                    "title": "Scale in figures",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "bar",
+                          "both",
+                          "number"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "bar"
+                  },
                   "north_style": {
                     "title": "North arrow as",
                     "description": "one of the values in choices, as a string.",
@@ -6651,7 +6564,9 @@
                           "none",
                           "lines",
                           "ticks",
-                          "degrees"
+                          "degrees",
+                          "utm",
+                          "sheets"
                         ]
                       },
                       {
@@ -6664,6 +6579,46 @@
                   "grid_every": {
                     "title": "Grid every",
                     "description": "a string. In the units of the map, such as 1000 for every km in SWEREF 99 TM, or in degrees for a grid of degrees. Empty gives a round number by the size"
+                  },
+                  "index_grid": {
+                    "title": "Index squares across",
+                    "description": "a string. Squares named A, B, C across and 1, 2, 3 down, as on a town map, this many across; Register then gives the square of each name. Empty: none"
+                  },
+                  "vision": {
+                    "title": "Colours as seen by",
+                    "description": "one of the values in choices, as a string. To try a map: the picture in the colours that someone with colour blindness sees, or in grey. A PDF of it is a picture",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "",
+                          "deuteranopia",
+                          "protanopia",
+                          "tritanopia",
+                          "grey"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ]
+                  },
+                  "check_contrast": {
+                    "title": "Look at the labels",
+                    "description": "one of the values in choices, as a string. Warns of labels without a halo that stand out too little from what is under them, less than 3 to 1 as WCAG counts contrast",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "false"
                   },
                   "map_frame": {
                     "title": "Frame",
@@ -6865,6 +6820,79 @@
                     ],
                     "default": "top-right"
                   },
+                  "grid_frame": {
+                    "title": "Frame along the degrees",
+                    "description": "one of the values in choices, as a string. With a grid of degrees: the map cut along its outermost lines of latitude and longitude, so that its edge curves with them, as on a map of a large area",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "false"
+                  },
+                  "globe": {
+                    "title": "Globe in the corner",
+                    "description": "one of the values in choices, as a string. A small globe turned to the map, with its place marked in red",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "bottom-left",
+                          "bottom-right",
+                          "top-left",
+                          "top-right"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "none"
+                  },
+                  "profile_from": {
+                    "title": "Height profile of",
+                    "description": "a string. The name of a layer of lines, such as a trail: the heights along its first line, from the first grid of heights in the map, drawn as a profile in a corner. Empty: none"
+                  },
+                  "profile_corner": {
+                    "title": "Profile in the corner",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "bottom-left",
+                          "bottom-right",
+                          "top-left",
+                          "top-right"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "bottom-left"
+                  },
+                  "profile_title": {
+                    "title": "Title of the profile",
+                    "description": "a string. Such as Depth along the dashed line, A to B. Empty: the name of the layer"
+                  },
+                  "profile_places": {
+                    "title": "Places along the profile",
+                    "description": "a string. The name of a layer of points, such as basins and straits: those near the line are written over the profile where they are along it, by their attribute name or the first with text"
+                  },
+                  "profile_size": {
+                    "title": "Profile width in %",
+                    "description": "a string. Of the width of the map",
+                    "default": "34"
+                  },
                   "inset_size": {
                     "title": "Inset width in %",
                     "description": "a string. Of the width of the map",
@@ -6975,6 +7003,10 @@
                   "source": {
                     "title": "Source",
                     "description": "a string. Written small in the lower right corner, such as © Lantmäteriet, after the credit of the background map"
+                  },
+                  "footer": {
+                    "title": "Band along the bottom",
+                    "description": "a string. Written on the left of a band across the bottom of the map, such as Data: EMODnet Bathymetry · NOAA ETOPO, with the source on the right of it. Empty: no band"
                   },
                   "crs": {
                     "title": "Coordinate system",
@@ -7463,7 +7495,8 @@
                         "enum": [
                           "angles",
                           "date",
-                          "study"
+                          "study",
+                          "day"
                         ]
                       },
                       {
@@ -7516,6 +7549,10 @@
                   "study_folder": {
                     "title": "Each picture also in",
                     "description": "a string. A folder beside the model where each picture is written as PNG, named by date and time. Empty: only the sheet of them all"
+                  },
+                  "gif": {
+                    "title": "Also as a moving picture",
+                    "description": "a string. A file beside the model, such as out/the_day.gif, where the pictures of the sun study or the day are shown one after another. Empty: none"
                   },
                   "clock": {
                     "title": "Time zone",
@@ -7645,7 +7682,8 @@
                         "enum": [
                           "materials",
                           "white",
-                          "wood"
+                          "wood",
+                          "sketch"
                         ]
                       },
                       {
@@ -7838,6 +7876,185 @@
                     ],
                     "default": "grass"
                   },
+                  "night": {
+                    "title": "Day or night",
+                    "description": "one of the values in choices, as a string. At night the moon stands where the sun would, by Sun from and Sun height, with stars around it. Lit windows and lamps light the streets. The sky is used as background",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "day",
+                          "moon",
+                          "aurora"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "day"
+                  },
+                  "snow_fall": {
+                    "title": "Falling snow in %",
+                    "description": "a string. Flakes in the air in front of the camera: 20 is a few, 100 a snowstorm. The sky clouds over",
+                    "default": "0"
+                  },
+                  "snow_cover": {
+                    "title": "Snow on the ground in %",
+                    "description": "a string. Snow lying on roofs, the ground and the trees, on what is flat first: 30 is a dusting, 100 white all over",
+                    "default": "0"
+                  },
+                  "rain": {
+                    "title": "Rain in %",
+                    "description": "a string. Streaks of rain in the air, a grey sky, and the ground wet. 50 is a shower, 100 a downpour",
+                    "default": "0"
+                  },
+                  "wet": {
+                    "title": "Wet ground in %",
+                    "description": "a string. Darker ground with puddles that mirror the buildings and the sky, as after rain. Empty: as wet as the rain makes it"
+                  },
+                  "lightning": {
+                    "title": "Lightning",
+                    "description": "one of the values in choices, as a string. Bolts beyond the models, whose flash lights the scene from there",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "none",
+                          "bolt",
+                          "storm"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "none"
+                  },
+                  "fog": {
+                    "title": "Valley fog in %",
+                    "description": "a string. Fog lying in the low parts, so that the hills and the tall buildings stand out of it. 40 is a morning mist",
+                    "default": "0"
+                  },
+                  "fog_height": {
+                    "title": "Fog, how deep",
+                    "description": "a string. In metres: how high the fog reaches before it is thin. Empty: a quarter of the heights of the scene"
+                  },
+                  "wind": {
+                    "title": "Wind in %",
+                    "description": "a string. Slants the rain and the snow, raises waves, lays down the smoke, bends the trees and moves the shadows of the clouds. 30 is a breeze, 100 a gale",
+                    "default": "0"
+                  },
+                  "wind_from": {
+                    "title": "Wind from",
+                    "description": "a string. Degrees clockwise from north: 225 is a south-west wind",
+                    "default": "225"
+                  },
+                  "sun_rays": {
+                    "title": "Rays of sun in %",
+                    "description": "a string. Rays that fan out from the sun through gaps in clouds, haze and fog. Best with the sun low in the picture and some cloud",
+                    "default": "0"
+                  },
+                  "cloud_shadows": {
+                    "title": "Shadows of clouds in %",
+                    "description": "a string. Large soft shadows of clouds over the land, as on a day of sun and cloud. Seen best over a large terrain",
+                    "default": "0"
+                  },
+                  "rainbow": {
+                    "title": "Rainbow in %",
+                    "description": "a string. A bow opposite the sun, 42° around the point straight away from it, with a fainter second one outside it. Seen when the sun is lower than 42° and behind the camera. The bow is wide: a Lens angle of 70 to 90 shows it, and a lower sun lifts it higher. In a studio it stands on the room behind the models",
+                    "default": "0"
+                  },
+                  "frost": {
+                    "title": "Frost and rime in %",
+                    "description": "a string. White rime on roofs, walls, trees and the ground, glinting, and ferns of ice on the windows. 30 is a frosty morning, 100 all white",
+                    "default": "0"
+                  },
+                  "ice": {
+                    "title": "Ice on the water in %",
+                    "description": "a string. The water frozen: grey-blue ice with cracks, and snow blown over it as there is snow on the ground. Needs Water",
+                    "default": "0"
+                  },
+                  "icicles": {
+                    "title": "Icicles in %",
+                    "description": "a string. Icicles hanging under the eaves of the roofs: 30 a few, 100 a row along each",
+                    "default": "0"
+                  },
+                  "smoke": {
+                    "title": "Smoke from chimneys in %",
+                    "description": "a string. The share of the buildings with smoke or steam rising from their highest point, as on a cold still morning. The wind lays it down",
+                    "default": "0"
+                  },
+                  "advent": {
+                    "title": "Advent lights in %",
+                    "description": "a string. The share of the lit windows with an advent candlestick on the sill or a star hanging in it. Needs lit windows",
+                    "default": "0"
+                  },
+                  "lamp_cones": {
+                    "title": "Light cones under lamps in %",
+                    "description": "a string. The air lit under each lamp on Lights, as cones of light, stronger in fog, haze, snow and rain",
+                    "default": "0"
+                  },
+                  "trails": {
+                    "title": "Car light trails in %",
+                    "description": "a string. Lines on Lights are roads: along them the lights of cars make streaks, white one way and red the other, as in a long exposure at night",
+                    "default": "0"
+                  },
+                  "fireworks": {
+                    "title": "Fireworks",
+                    "description": "a string. How many bursts in the sky over the scene, such as 5. Best at night",
+                    "default": "0"
+                  },
+                  "tilt_shift": {
+                    "title": "Tilt-shift in %",
+                    "description": "a string. Sharp in a band across the middle and blurred above and below it, with livelier colours, so that a town looks like a model of itself. Best from above",
+                    "default": "0"
+                  },
+                  "season": {
+                    "title": "Trees, season",
+                    "description": "one of the values in choices, as a string. For the trees on Trees",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "summer",
+                          "spring",
+                          "autumn",
+                          "winter"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "summer"
+                  },
+                  "outlines": {
+                    "title": "Lines along edges",
+                    "description": "one of the values in choices, as a string. Dark lines where one thing stands in front of another and where a surface turns, as in a drawing. On with the look A drawing",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "false",
+                          "true"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "false"
+                  },
+                  "names_by": {
+                    "title": "Names from",
+                    "description": "the name of one attribute of the stream on the port. The attribute with the names of the points on Names, written floating over their places, with a line down to each"
+                  },
+                  "names_height": {
+                    "title": "Names, how high",
+                    "description": "a string. In metres above the ground, or above the height of the point when it has one",
+                    "default": "30"
+                  },
                   "quality": {
                     "title": "Quality",
                     "description": "one of the values in choices, as a string. Rays per pixel. More gives smoother shadows and edges, and takes longer: Best is four times Good. With reflections, more bounces, water and clouds, a picture can take some minutes",
@@ -7928,6 +8145,54 @@
                     "title": "Colour of the top",
                     "description": "a string.",
                     "default": "#a39e96"
+                  },
+                  "colour_by": {
+                    "title": "Colour by",
+                    "description": "an expression over the attributes of the stream on the port; text in 'single quotes', names with spaces in \"double quotes\". A number, such as an attribute with the population, that colours each block from the ramp, its top a little lighter; or an attribute with a colour of its own, as #rrggbb. Empty: the colours above"
+                  },
+                  "colour_ramp": {
+                    "title": "Colours from",
+                    "description": "one of the values in choices, as a string. From the smallest values to the largest",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "viridis",
+                          "heat",
+                          "blues",
+                          "reds",
+                          "greens",
+                          "oranges",
+                          "purples",
+                          "greys",
+                          "diverging",
+                          "terrain",
+                          "rainbow",
+                          "sea"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "viridis"
+                  },
+                  "colour_scale": {
+                    "title": "Spread over the values",
+                    "description": "one of the values in choices, as a string.",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "linear",
+                          "quantiles"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "linear"
                   },
                   "name": {
                     "title": "Names from",
@@ -9341,6 +9606,23 @@
               "params": {
                 "type": "object",
                 "properties": {
+                  "areas": {
+                    "title": "Areas get",
+                    "description": "one of the values in choices, as a string. Statistics: the cells whose middles lie in each area, as zonal statistics. Every feature is then taken as an area",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "point",
+                          "stats"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "point"
+                  },
                   "name": {
                     "title": "Attribute",
                     "description": "a string. Gets the value. A raster with several bands gives name_2, name_3 and so on too",
@@ -9362,25 +9644,7 @@
                       }
                     ],
                     "default": "cell"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "ZonalStatistics"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "params": {
-                "type": "object",
-                "properties": {
+                  },
                   "stats": {
                     "title": "Statistics",
                     "description": "a string. Any of count, mean, min, max, sum, median, std, range, majority and area, separated by commas",
@@ -9454,58 +9718,6 @@
                     "title": "Heights times",
                     "description": "a string. When the heights are in other units than the coordinates, such as feet on metres: 0.3048",
                     "default": "1"
-                  }
-                }
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "RasterClipper"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "params": {
-                "type": "object",
-                "properties": {
-                  "keep": {
-                    "title": "Keep the cells",
-                    "description": "one of the values in choices, as a string. A cell is inside when its middle is",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "inside",
-                          "outside"
-                        ]
-                      },
-                      {
-                        "type": "string",
-                        "pattern": "\\$\\("
-                      }
-                    ],
-                    "default": "inside"
-                  },
-                  "crop": {
-                    "title": "The raster",
-                    "description": "one of the values in choices, as a string.",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "yes",
-                          "no"
-                        ]
-                      },
-                      {
-                        "type": "string",
-                        "pattern": "\\$\\("
-                      }
-                    ],
-                    "default": "yes"
                   }
                 }
               }
@@ -9885,16 +10097,24 @@
                     "description": "a string. The new size of the cells. A raster connected to Like gives its cells instead, so that the two line up cell by cell",
                     "default": "10"
                   },
+                  "factor": {
+                    "title": "Or cells into one",
+                    "description": "a string. Instead of a cell size: how many cells across and down become one, such as 4, which makes 1 m cells into 4 m cells. A picture is made coarser this way, by the mean colour"
+                  },
                   "method": {
                     "title": "The new value",
-                    "description": "one of the values in choices, as a string.",
+                    "description": "one of the values in choices, as a string. Empty cells are left out of those within; a new cell is empty when all its cells are",
                     "anyOf": [
                       {
                         "enum": [
                           "nearest",
                           "bilinear",
                           "mean",
-                          "majority"
+                          "majority",
+                          "median",
+                          "min",
+                          "max",
+                          "sum"
                         ]
                       },
                       {
@@ -11075,6 +11295,110 @@
           "if": {
             "properties": {
               "type": {
+                "const": "CartogramMaker"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "title": "Kind",
+                    "description": "one of the values in choices, as a string. Circles show the value by their size; squares give each area as much room, so that small areas are seen",
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "circles",
+                          "squares"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "\\$\\("
+                      }
+                    ],
+                    "default": "circles"
+                  },
+                  "value": {
+                    "title": "Value",
+                    "description": "the name of one attribute of the stream on the port. The number each circle is as large as, such as the people living there. Not needed for squares"
+                  },
+                  "share": {
+                    "title": "How much of the land",
+                    "description": "a string. In percent: the circles together cover this much of the area of the land, or the squares are this large",
+                    "default": "50"
+                  },
+                  "rounds": {
+                    "title": "Rounds",
+                    "description": "a string. How many times the circles are pushed apart. More: fewer overlaps, further from their places",
+                    "default": "300"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "BuildingGeneralizer"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "join": {
+                    "title": "Join closer than",
+                    "description": "a string. In metres: buildings closer to each other than this become one block",
+                    "default": "5"
+                  },
+                  "simplify": {
+                    "title": "Simplify by",
+                    "description": "a string. In metres: corners that stick out less than this are taken away. Empty: half of Join closer than"
+                  },
+                  "least": {
+                    "title": "Smallest area",
+                    "description": "a string. In square metres: blocks smaller than this are left out",
+                    "default": "50"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "FeatureDisplacer"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {
+                  "distance": {
+                    "title": "At least",
+                    "description": "a string. In metres: how far from the lines each feature is to be, such as half the width of a road as drawn and a little more",
+                    "default": "15"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "GeodataFetcher"
               }
             }
@@ -11653,7 +11977,8 @@
                           "quantile",
                           "equal",
                           "stddev",
-                          "manual"
+                          "manual",
+                          "ranges"
                         ]
                       },
                       {
@@ -11672,9 +11997,17 @@
                     "title": "Breaks",
                     "description": "a string. For breaks of your own: where one class ends and the next begins, such as 10, 50, 100"
                   },
+                  "ranges": {
+                    "title": "From, to and value",
+                    "description": "a list of [from, to, value]; an empty from or to has no end. For ranges of your own: from and to are both in the range, 1 to 100 and 101 to 200, and each feature gets the value of the first that fits, such as A or 1. An empty from or to has no end"
+                  },
+                  "otherwise": {
+                    "title": "Outside the ranges",
+                    "description": "a string. For ranges of your own: written for a value that is in no range, and for an empty one. Empty leaves it empty"
+                  },
                   "name": {
                     "title": "Attribute with the class",
-                    "description": "a string. 1 for the lowest values",
+                    "description": "a string. 1 for the lowest values; for ranges of your own, the value of the range",
                     "default": "class"
                   },
                   "label_name": {
@@ -12716,7 +13049,9 @@
                           "land",
                           "mountains",
                           "greys",
-                          "white"
+                          "white",
+                          "rainbow",
+                          "sea"
                         ]
                       },
                       {
@@ -12735,6 +13070,10 @@
                     "title": "Map opacity in %",
                     "description": "a string. How much the map connected to Map covers the colours of the terrain",
                     "default": "100"
+                  },
+                  "steps": {
+                    "title": "Steps every",
+                    "description": "a string. In metres: the heights in flat steps, as layers cut from card. Empty: smooth"
                   },
                   "width": {
                     "title": "Width in pixels",
@@ -12839,7 +13178,9 @@
                           "land",
                           "mountains",
                           "greys",
-                          "white"
+                          "white",
+                          "rainbow",
+                          "sea"
                         ]
                       },
                       {
@@ -12858,6 +13199,10 @@
                     "title": "Map opacity in %",
                     "description": "a string. How much the map connected to Map covers the colours of the terrain",
                     "default": "100"
+                  },
+                  "steps": {
+                    "title": "Steps every",
+                    "description": "a string. In metres: the heights in flat steps, as layers cut from card. Empty: smooth"
                   },
                   "view_azimuth": {
                     "title": "Looking from",
@@ -12901,6 +13246,7 @@
                       {
                         "enum": [
                           "sky",
+                          "colour",
                           "none"
                         ]
                       },
@@ -12910,6 +13256,11 @@
                       }
                     ],
                     "default": "sky"
+                  },
+                  "background_colour": {
+                    "title": "Colour",
+                    "description": "a string. Such as #0d1b3d",
+                    "default": "#0d1b3d"
                   },
                   "block": {
                     "title": "As a block",
@@ -12964,50 +13315,6 @@
               "params": {
                 "type": "object",
                 "properties": {}
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "RasterGeneralizer"
-              }
-            }
-          },
-          "then": {
-            "properties": {
-              "params": {
-                "type": "object",
-                "properties": {
-                  "factor": {
-                    "title": "Cells into one",
-                    "description": "a string. How many cells across and down become one: 4 makes 1 m cells into 4 m cells, sixteen into one",
-                    "default": "2"
-                  },
-                  "method": {
-                    "title": "The new value",
-                    "description": "one of the values in choices, as a string. Empty cells are left out. A new cell is empty only when all its cells are",
-                    "anyOf": [
-                      {
-                        "enum": [
-                          "mean",
-                          "majority",
-                          "median",
-                          "min",
-                          "max",
-                          "sum"
-                        ]
-                      },
-                      {
-                        "type": "string",
-                        "pattern": "\\$\\("
-                      }
-                    ],
-                    "default": "mean"
-                  }
-                }
               }
             }
           }

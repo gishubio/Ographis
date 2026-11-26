@@ -1,0 +1,764 @@
+{
+  "format": "ographis/1",
+  "name": "Even finer cartography",
+  "description": "Depth tints and island names along the coasts; a height profile of a trail; a globe in the corner and a frame along the degrees; texture shading with contour numbers reading uphill on a sheet grid; a map drawn by hand with border lines; houses moved off a road and joined into blocks on a UTM grid; and a PDF cut into sheets and one with fold marks. All on made-up data.",
+  "nodes": [
+    {
+      "id": "sea",
+      "type": "Reader",
+      "x": 40,
+      "y": 40,
+      "comment": "Made-up heights and depths of an archipelago",
+      "params": {
+        "path": "made_up_archipelago.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "isles",
+      "type": "Reader",
+      "x": 40,
+      "y": 180,
+      "comment": "The islands, with their names",
+      "params": {
+        "path": "made_up_isles.geojson"
+      }
+    },
+    {
+      "id": "trail",
+      "type": "Reader",
+      "x": 40,
+      "y": 320,
+      "comment": "A trail along the ridge of the largest island",
+      "params": {
+        "path": "made_up_trail.geojson"
+      }
+    },
+    {
+      "id": "dem",
+      "type": "Reader",
+      "x": 40,
+      "y": 460,
+      "comment": "The made-up terrain of the valley",
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "contours",
+      "type": "ContourGenerator",
+      "x": 300,
+      "y": 460,
+      "comment": "Contour lines every 20 m",
+      "params": {
+        "interval": "20",
+        "kind": "lines"
+      }
+    },
+    {
+      "id": "districts",
+      "type": "Reader",
+      "x": 40,
+      "y": 600,
+      "comment": "Districts",
+      "params": {
+        "path": "made_up_districts.geojson"
+      }
+    },
+    {
+      "id": "roads",
+      "type": "Reader",
+      "x": 40,
+      "y": 740,
+      "comment": "Roads",
+      "params": {
+        "path": "made_up_roads.geojson"
+      }
+    },
+    {
+      "id": "rivers",
+      "type": "Reader",
+      "x": 40,
+      "y": 880,
+      "comment": "Rivers",
+      "params": {
+        "path": "made_up_rivers.geojson"
+      }
+    },
+    {
+      "id": "houses",
+      "type": "Reader",
+      "x": 40,
+      "y": 1020,
+      "comment": "Houses of a village along road 49, some of them close to the road",
+      "params": {
+        "path": "made_up_houses.geojson"
+      }
+    },
+    {
+      "id": "moved",
+      "type": "FeatureDisplacer",
+      "x": 300,
+      "y": 1020,
+      "comment": "The houses moved off the road, as it is drawn wide",
+      "params": {
+        "distance": "18"
+      }
+    },
+    {
+      "id": "blocks",
+      "type": "BuildingGeneralizer",
+      "x": 560,
+      "y": 1020,
+      "comment": "The houses as blocks for a smaller scale",
+      "params": {
+        "join": "8",
+        "simplify": "3",
+        "least": "120"
+      }
+    },
+    {
+      "id": "archipelago",
+      "type": "MapRenderer",
+      "x": 820,
+      "y": 40,
+      "comment": "Depth tints, island names along their coasts, a height profile and a globe",
+      "params": {
+        "width": "1800",
+        "title": "The Outer Isles",
+        "subtitle": "Depths in blues, heights in greens and browns; the names follow the coasts",
+        "title_place": "top-left",
+        "title_fill": "#ffffffdd",
+        "map_frame": "frame",
+        "scale_bar": "bottom-right",
+        "grid": "degrees",
+        "grid_frame": "true",
+        "globe": "top-right",
+        "profile_from": "Ridge Trail",
+        "profile_corner": "bottom-left",
+        "layers": [
+          {
+            "from": "trail:Output",
+            "name": "Ridge Trail",
+            "stroke": "#b0302a",
+            "width": 2.2,
+            "dash": "dash"
+          },
+          {
+            "from": "isles:Output",
+            "name": "Islands",
+            "fill": "none",
+            "stroke": "#4d6b7a",
+            "width": 0.8,
+            "label": "name",
+            "label_coast": true,
+            "label_small_caps": true,
+            "label_tracking": 0.25,
+            "label_italic": true,
+            "label_colour": "#2d4f66",
+            "label_size": 18
+          },
+          {
+            "from": "sea:Output",
+            "name": "Heights and depths",
+            "raster": "depths"
+          }
+        ]
+      }
+    },
+    {
+      "id": "valley",
+      "type": "MapRenderer",
+      "x": 820,
+      "y": 320,
+      "comment": "Texture shading, with contour labels that read uphill, on the sheets of a 10 km grid",
+      "params": {
+        "width": "1800",
+        "title": "The valley in texture",
+        "subtitle": "Ridges and valleys drawn by texture shading; contour numbers read uphill",
+        "title_place": "top-left",
+        "title_fill": "#ffffffdd",
+        "scale_bar": "bottom-right",
+        "grid": "sheets",
+        "layers": [
+          {
+            "from": "contours:Contours",
+            "name": "Contours",
+            "stroke": "#7a5a3a",
+            "width": 0.8,
+            "opacity": 80,
+            "label": "height",
+            "label_uphill": true,
+            "label_size": 13,
+            "label_colour": "#5a3e22",
+            "label_halo": "#ffffff"
+          },
+          {
+            "from": "dem:Output",
+            "name": "Texture",
+            "raster": "texture"
+          }
+        ]
+      }
+    },
+    {
+      "id": "drawn",
+      "type": "MapRenderer",
+      "x": 820,
+      "y": 600,
+      "comment": "Drawn by hand, with the lines of borders",
+      "params": {
+        "width": "1600",
+        "map_style": "hand",
+        "title": "The districts, drawn by hand",
+        "title_place": "top-left",
+        "scale_bar": "bottom-right",
+        "legend": "bottom-left",
+        "layers": [
+          {
+            "from": "roads:Output",
+            "name": "Roads",
+            "stroke": "#9a5b2c",
+            "width": 2.5
+          },
+          {
+            "from": "rivers:Output",
+            "name": "Rivers",
+            "stroke": "#4a7fb0",
+            "width": 2,
+            "width_by": "order",
+            "taper": true
+          },
+          {
+            "from": "districts:Output",
+            "name": "Districts",
+            "fill": "#efe4c8",
+            "stroke": "#7a4a6a",
+            "width": 1.6,
+            "dash": "border_region",
+            "label": "name",
+            "label_small_caps": true,
+            "label_tracking": 0.3,
+            "label_size": 18,
+            "label_colour": "#4a2a40"
+          }
+        ]
+      }
+    },
+    {
+      "id": "box",
+      "type": "BoundingBoxReplacer",
+      "x": 300,
+      "y": 1160,
+      "comment": "The box around the village",
+      "params": {
+        "for": "together"
+      }
+    },
+    {
+      "id": "around",
+      "type": "Bufferer",
+      "x": 560,
+      "y": 1160,
+      "comment": "A little more around it",
+      "params": {
+        "distance": "40",
+        "ends": "flat"
+      }
+    },
+    {
+      "id": "near",
+      "type": "Clipper",
+      "x": 560,
+      "y": 1300,
+      "comment": "The roads near the village, so that the maps show the village only",
+      "params": {}
+    },
+    {
+      "id": "village_before",
+      "type": "MapRenderer",
+      "x": 820,
+      "y": 880,
+      "comment": "The houses as they are: some are under the road as it is drawn",
+      "params": {
+        "width": "1000",
+        "title": "The village as it is",
+        "title_place": "top-left",
+        "title_fill": "#ffffffdd",
+        "scale_bar": "bottom-right",
+        "grid": "utm",
+        "layers": [
+          {
+            "from": "near:Inside",
+            "name": "Roads",
+            "stroke": "#f3b54a",
+            "width": 9,
+            "casing": "#8a6420",
+            "casing_width": 1.0
+          },
+          {
+            "from": "houses:Output",
+            "name": "Houses",
+            "fill": "#8a4b3c",
+            "stroke": "#5a2a20",
+            "width": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "id": "village_moved",
+      "type": "MapRenderer",
+      "x": 820,
+      "y": 1020,
+      "comment": "The same houses, moved off the road",
+      "params": {
+        "width": "1000",
+        "title": "The houses moved off the road",
+        "title_place": "top-left",
+        "title_fill": "#ffffffdd",
+        "scale_bar": "bottom-right",
+        "grid": "utm",
+        "layers": [
+          {
+            "from": "near:Inside",
+            "name": "Roads",
+            "stroke": "#f3b54a",
+            "width": 9,
+            "casing": "#8a6420",
+            "casing_width": 1.0
+          },
+          {
+            "from": "moved:Moved",
+            "name": "Houses",
+            "fill": "#8a4b3c",
+            "stroke": "#5a2a20",
+            "width": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "id": "village_blocks",
+      "type": "MapRenderer",
+      "x": 820,
+      "y": 1160,
+      "comment": "Houses joined into blocks for a smaller scale",
+      "params": {
+        "width": "1000",
+        "title": "The village as blocks",
+        "title_place": "top-left",
+        "title_fill": "#ffffffdd",
+        "scale_bar": "bottom-right",
+        "grid": "utm",
+        "layers": [
+          {
+            "from": "near:Inside",
+            "name": "Roads",
+            "stroke": "#f3b54a",
+            "width": 9,
+            "casing": "#8a6420",
+            "casing_width": 1.0
+          },
+          {
+            "from": "blocks:Generalized",
+            "name": "Houses",
+            "fill": "#8a4b3c",
+            "stroke": "#5a2a20",
+            "width": 0.6
+          }
+        ]
+      }
+    },
+    {
+      "id": "w0",
+      "type": "Writer",
+      "x": 1100,
+      "y": 40,
+      "comment": "",
+      "params": {
+        "path": "out/even_finer/outer_isles.png"
+      }
+    },
+    {
+      "id": "w1",
+      "type": "Writer",
+      "x": 1100,
+      "y": 160,
+      "comment": "Four A4 sheets to put together, each with its neighbours named",
+      "params": {
+        "path": "out/even_finer/outer_isles_sheets.pdf",
+        "pdf_size": "a4",
+        "pdf_sheets": "2x2",
+        "pdf_title": "The Outer Isles"
+      }
+    },
+    {
+      "id": "w2",
+      "type": "Writer",
+      "x": 1100,
+      "y": 280,
+      "comment": "One A2 page with marks where it is folded, four across and two down",
+      "params": {
+        "path": "out/even_finer/outer_isles_folded.pdf",
+        "pdf_size": "a2",
+        "pdf_orientation": "landscape",
+        "pdf_folds": "4x2",
+        "pdf_title": "The Outer Isles"
+      }
+    },
+    {
+      "id": "w3",
+      "type": "Writer",
+      "x": 1100,
+      "y": 400,
+      "comment": "",
+      "params": {
+        "path": "out/even_finer/valley_texture.png"
+      }
+    },
+    {
+      "id": "w4",
+      "type": "Writer",
+      "x": 1100,
+      "y": 520,
+      "comment": "",
+      "params": {
+        "path": "out/even_finer/drawn_by_hand.png"
+      }
+    },
+    {
+      "id": "w5",
+      "type": "Writer",
+      "x": 1100,
+      "y": 640,
+      "comment": "",
+      "params": {
+        "path": "out/even_finer/village_before.png"
+      }
+    },
+    {
+      "id": "w6",
+      "type": "Writer",
+      "x": 1100,
+      "y": 760,
+      "comment": "",
+      "params": {
+        "path": "out/even_finer/village_moved.png"
+      }
+    },
+    {
+      "id": "w7",
+      "type": "Writer",
+      "x": 1100,
+      "y": 880,
+      "comment": "",
+      "params": {
+        "path": "out/even_finer/village_blocks.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "houses",
+        "Output"
+      ],
+      "to": [
+        "box",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "box",
+        "Output"
+      ],
+      "to": [
+        "around",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "around",
+        "Buffered"
+      ],
+      "to": [
+        "near",
+        "Clipper"
+      ]
+    },
+    {
+      "from": [
+        "roads",
+        "Output"
+      ],
+      "to": [
+        "near",
+        "Clippee"
+      ]
+    },
+    {
+      "from": [
+        "sea",
+        "Output"
+      ],
+      "to": [
+        "archipelago",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "isles",
+        "Output"
+      ],
+      "to": [
+        "archipelago",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "trail",
+        "Output"
+      ],
+      "to": [
+        "archipelago",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "valley",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "contours",
+        "Contours"
+      ],
+      "to": [
+        "valley",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "districts",
+        "Output"
+      ],
+      "to": [
+        "drawn",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "roads",
+        "Output"
+      ],
+      "to": [
+        "drawn",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "rivers",
+        "Output"
+      ],
+      "to": [
+        "drawn",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "contours",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "houses",
+        "Output"
+      ],
+      "to": [
+        "moved",
+        "Features"
+      ]
+    },
+    {
+      "from": [
+        "roads",
+        "Output"
+      ],
+      "to": [
+        "moved",
+        "Lines"
+      ]
+    },
+    {
+      "from": [
+        "moved",
+        "Moved"
+      ],
+      "to": [
+        "blocks",
+        "Buildings"
+      ]
+    },
+    {
+      "from": [
+        "near",
+        "Inside"
+      ],
+      "to": [
+        "village_before",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "houses",
+        "Output"
+      ],
+      "to": [
+        "village_before",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "near",
+        "Inside"
+      ],
+      "to": [
+        "village_moved",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "moved",
+        "Moved"
+      ],
+      "to": [
+        "village_moved",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "near",
+        "Inside"
+      ],
+      "to": [
+        "village_blocks",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "blocks",
+        "Generalized"
+      ],
+      "to": [
+        "village_blocks",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "archipelago",
+        "Map"
+      ],
+      "to": [
+        "w0",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "archipelago",
+        "Map"
+      ],
+      "to": [
+        "w1",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "archipelago",
+        "Map"
+      ],
+      "to": [
+        "w2",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "valley",
+        "Map"
+      ],
+      "to": [
+        "w3",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "drawn",
+        "Map"
+      ],
+      "to": [
+        "w4",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "village_before",
+        "Map"
+      ],
+      "to": [
+        "w5",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "village_moved",
+        "Map"
+      ],
+      "to": [
+        "w6",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "village_blocks",
+        "Map"
+      ],
+      "to": [
+        "w7",
+        "Input"
+      ]
+    }
+  ]
+}

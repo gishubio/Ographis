@@ -16,7 +16,7 @@
     },
     {
       "id": "clip",
-      "type": "RasterClipper",
+      "type": "Clipper",
       "comment": "Around the town. Only the terrain around the town",
       "x": 280,
       "y": 20,
@@ -214,7 +214,7 @@
       ],
       "to": [
         "clip",
-        "Raster"
+        "Clippee"
       ]
     },
     {
@@ -234,13 +234,13 @@
       ],
       "to": [
         "clip",
-        "Areas"
+        "Clipper"
       ]
     },
     {
       "from": [
         "clip",
-        "Raster"
+        "Inside"
       ],
       "to": [
         "relief",

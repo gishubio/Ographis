@@ -55,20 +55,23 @@
     },
     {
       "id": "cut",
-      "type": "Intersector",
+      "type": "Clipper",
       "x": 500,
       "y": 20,
       "comment": "Routes cut by subregion. Each route in pieces, one in each subregion it runs through",
       "params": {
-        "attributes": "subregion"
+        "attributes": "subregion",
+        "each": "each"
       }
     },
     {
       "id": "length",
-      "type": "LengthCalculator",
+      "type": "AreaCalculator",
       "x": 740,
       "y": 20,
-      "params": {},
+      "params": {
+        "what": "length"
+      },
       "comment": "Length of each piece"
     },
     {
@@ -127,10 +130,13 @@
     },
     {
       "id": "segments",
-      "type": "LineExploder",
+      "type": "LineSplitter",
       "x": 260,
       "y": 140,
-      "params": {},
+      "params": {
+        "part": "segment",
+        "at": "corners"
+      },
       "comment": "Segments of the routes"
     },
     {
@@ -170,7 +176,7 @@
       ],
       "to": [
         "cut",
-        "Input"
+        "Clippee"
       ]
     },
     {
@@ -180,13 +186,13 @@
       ],
       "to": [
         "cut",
-        "Overlay"
+        "Clipper"
       ]
     },
     {
       "from": [
         "cut",
-        "Intersection"
+        "Inside"
       ],
       "to": [
         "length",
@@ -270,13 +276,13 @@
       ],
       "to": [
         "segments",
-        "Input"
+        "Lines"
       ]
     },
     {
       "from": [
         "cut",
-        "Intersection"
+        "Inside"
       ],
       "to": [
         "view",

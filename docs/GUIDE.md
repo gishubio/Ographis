@@ -80,7 +80,7 @@ five models.
 | Make points from coordinates in a table | *Create points from x and y*: choose the two attributes and the coordinate system |
 | See data | Click a node or an output port. Table and map appear at the bottom |
 | Shade terrain or see it in 3D | Read the terrain model with *Cells as* set to *Heights or other values on a grid*, and connect it to *Heights* of Shade terrain or Quick terrain view, or to *Terrain* of Render 3D scene. A map from Draw map in the same coordinate system goes to *Map*. A grid is shown on the map under the canvas as grey relief |
-| Measure the terrain | Read the terrain model as a grid and connect it to *Slope and aspect*, *Visible area*, *Values from raster* or *Zonal statistics*. *Reclassify raster* and *Raster to areas* make classes and areas of the result. See `examples/raster_tools.ographis` |
+| Measure the terrain | Read the terrain model as a grid and connect it to *Slope and aspect*, *Visible area*, *Values from raster*, which also gives statistics over areas. *Reclassify raster* and *Raster to areas* make classes and areas of the result. See `examples/raster_tools.ographis` |
 | Work with a point cloud | Read the LAS or LAZ file. *Classify ground points* finds the ground in a cloud without classes, *Filter point cloud* keeps classes, returns and areas, *Height above ground* measures trees and roofs, *Building heights from points* measures buildings and their roofs, and *Point cloud to raster* makes terrain and surface models. An output writes points with heights as .las or .laz again. See `examples/point_cloud.ographis` |
 | Draw a raster on a map | Connect it to *Layers* of *Draw map*. Its row then says *Draw as*: a colour ramp, a colour for each value, or grey relief. For each value tick whether it is drawn, choose its colour and give it a name for the legend, such as *Seen*; *Opacity* lets the map under it show |
 | Fetch open map data | *Overture Maps download* within a rectangle, or *OpenStreetMap download*. Both need the internet |
@@ -225,7 +225,7 @@ result of an earlier run is freed beside the window when a new run starts.
 
 ```
 og run <model.json | folder> [--var name=value] [--log file] [--inspect node[:port]] [--rows N] [--sample N]
-       [--keep-logs N] [--no-history] [--no-lock] [--lock-hours H]
+       [--keep-logs N] [--no-history] [--no-lock] [--lock-hours H] [--recursive] [--quiet] [--report file]
                                        runs a model, or every model in a folder, with the log as it goes
 og history <model> [--last N] [--unlock]
                                        the latest runs of a model, and its lock
@@ -259,8 +259,20 @@ puts the command for the open model on the clipboard, with its variables:
 - `--sample N` is a trial run: every input reads only its first N features.
 - `--log file` adds every line of the log, with the date and time, to the end of the file.
   The folder is made if it is not there.
-- A folder runs every model (`.json`) in it, in the order of their names, and ends with a
-  line for each: OK, WARNINGS or ERRORS, and the time it took.
+- A folder runs every model (`.ographis` or `.json`) in it, in the order of their names,
+  and ends with a line for each: OK, WARNINGS or ERRORS, and the time it took, and then
+  what went wrong in each, node by node: the errors and warnings, without the rest of the
+  logs, and without the nodes that were only skipped because of an error before them.
+- `--recursive` runs the models in the folders in it too, but not in the folders of runs
+  (`.runs`), of results (`out`) or hidden ones.
+- `--quiet` prints only a line for each model as it is done, with how far it has come.
+- `--report file` writes the summary to a file, by its extension: `.md` for Markdown,
+  `.html` for a web page, `.json` for a program. Before a release, every model in a folder
+  can so be checked in one go:
+
+  ```
+  og run examples --recursive --quiet --no-history --report check.html
+  ```
 - The exit code says how it went: 0 all went well, 3 the run finished with warnings, 1 a
   node failed or the model could not be read, 4 the model was running already, 2 the
   command is written wrong. For a folder it is the worst of the models. A script or a

@@ -235,7 +235,7 @@ pub(super) const READER_PARAMS: &[ParamSpec] = &[
         label: "Objects in a record (JSON, XML)",
         kind: ParamKind::Choice(JSON_NESTED),
         default: "flatten",
-        hint: "An address inside a record becomes adress.gata and adress.ort, or stays as JSON text for Flatten JSON",
+        hint: "An address inside a record becomes adress.gata and adress.ort, or stays as JSON text for Extract JSON values",
     },
     ParamSpec {
         key: "step",

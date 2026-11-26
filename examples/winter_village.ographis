@@ -1,0 +1,777 @@
+{
+  "format": "ographis/1",
+  "name": "Winter and light in the village",
+  "description": "The made-up village in 3D seven times: a frosty morning with rime, icicles, a frozen pond, smoke and rays of sun; an advent evening with candles and stars in the windows, light cones under the lamps and the trails of cars; fireworks on New Year's Eve; a rainbow with the shadows of clouds; an autumn gale; a tilt-shift model village; and a short December day from sunrise to sunset as a sheet and a moving picture.",
+  "nodes": [
+    {
+      "id": "dem",
+      "type": "Reader",
+      "x": 40,
+      "y": 40,
+      "comment": "The made-up terrain, all of it, so that the land reaches the horizon",
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "town",
+      "type": "Reader",
+      "x": 40,
+      "y": 180,
+      "comment": "The houses of the village",
+      "params": {
+        "path": "town.geojson"
+      }
+    },
+    {
+      "id": "make",
+      "type": "BuildingMaker",
+      "x": 300,
+      "y": 180,
+      "comment": "Houses with roofs, on the terrain",
+      "params": {}
+    },
+    {
+      "id": "trees",
+      "type": "Reader",
+      "x": 40,
+      "y": 320,
+      "comment": "Trees",
+      "params": {
+        "path": "village_trees.geojson"
+      }
+    },
+    {
+      "id": "lamps",
+      "type": "Reader",
+      "x": 40,
+      "y": 460,
+      "comment": "Street lamps",
+      "params": {
+        "path": "lamps.geojson"
+      }
+    },
+    {
+      "id": "road",
+      "type": "Reader",
+      "x": 40,
+      "y": 600,
+      "comment": "The village street, for the trails of car lights",
+      "params": {
+        "path": "village_road.geojson"
+      }
+    },
+    {
+      "id": "pond",
+      "type": "Reader",
+      "x": 40,
+      "y": 740,
+      "comment": "The pond",
+      "params": {
+        "path": "village_pond.geojson"
+      }
+    },
+    {
+      "id": "frost",
+      "type": "SceneRenderer",
+      "x": 600,
+      "y": 40,
+      "comment": "Rime on everything, icicles under the eaves, the pond frozen with cracks and snow blown over it, and smoke rising straight up in the still cold air",
+      "params": {
+        "width": "1280",
+        "height": "800",
+        "quality": "16",
+        "background": "sky",
+        "tree_kind_by": "kind",
+        "tree_height": "9",
+        "elevation": "12",
+        "zoom": "260",
+        "view_azimuth": "190",
+        "season": "winter",
+        "sun_azimuth": "118",
+        "sun_altitude": "7",
+        "clouds": "20",
+        "haze": "10",
+        "snow_cover": "35",
+        "frost": "75",
+        "icicles": "70",
+        "ice": "100",
+        "water": "areas",
+        "water_level": "78.8",
+        "smoke": "60",
+        "title": "A frosty morning"
+      }
+    },
+    {
+      "id": "w_frost",
+      "type": "Writer",
+      "x": 900,
+      "y": 40,
+      "comment": "",
+      "params": {
+        "path": "out/winter_village/frost.png"
+      }
+    },
+    {
+      "id": "sunrise",
+      "type": "SceneRenderer",
+      "x": 600,
+      "y": 180,
+      "comment": "Rays of the low sun through cloud and mist over the frosty village",
+      "params": {
+        "width": "1280",
+        "height": "800",
+        "quality": "16",
+        "background": "sky",
+        "tree_kind_by": "kind",
+        "tree_height": "9",
+        "elevation": "1",
+        "zoom": "420",
+        "view_azimuth": "330",
+        "season": "winter",
+        "sun_azimuth": "146",
+        "sun_altitude": "4",
+        "clouds": "55",
+        "haze": "10",
+        "fog": "15",
+        "snow_cover": "35",
+        "frost": "60",
+        "smoke": "40",
+        "sun_rays": "90",
+        "title": "Sunrise in the mist"
+      }
+    },
+    {
+      "id": "w_sunrise",
+      "type": "Writer",
+      "x": 900,
+      "y": 180,
+      "comment": "",
+      "params": {
+        "path": "out/winter_village/sunrise.png"
+      }
+    },
+    {
+      "id": "advent",
+      "type": "SceneRenderer",
+      "x": 600,
+      "y": 320,
+      "comment": "Candles and stars in the windows, cones of light under the lamps in falling snow, frost on the panes and the trails of cars",
+      "params": {
+        "width": "1280",
+        "height": "800",
+        "quality": "16",
+        "background": "sky",
+        "tree_kind_by": "kind",
+        "tree_height": "9",
+        "elevation": "9",
+        "zoom": "380",
+        "view_azimuth": "170",
+        "season": "winter",
+        "night": "moon",
+        "sun_azimuth": "150",
+        "sun_altitude": "20",
+        "lit_windows": "65",
+        "advent": "70",
+        "snow_cover": "70",
+        "snow_fall": "10",
+        "fog": "30",
+        "frost": "35",
+        "lamp_cones": "80",
+        "trails": "80",
+        "icicles": "40",
+        "smoke": "40",
+        "title": "Advent evening"
+      }
+    },
+    {
+      "id": "w_advent",
+      "type": "Writer",
+      "x": 900,
+      "y": 320,
+      "comment": "",
+      "params": {
+        "path": "out/winter_village/advent.png"
+      }
+    },
+    {
+      "id": "new_year",
+      "type": "SceneRenderer",
+      "x": 600,
+      "y": 460,
+      "comment": "Fireworks over the village on a snowy night",
+      "params": {
+        "width": "1280",
+        "height": "800",
+        "quality": "16",
+        "background": "sky",
+        "tree_kind_by": "kind",
+        "tree_height": "9",
+        "elevation": "10",
+        "zoom": "130",
+        "view_azimuth": "205",
+        "season": "winter",
+        "night": "moon",
+        "sun_azimuth": "40",
+        "sun_altitude": "-30",
+        "lit_windows": "50",
+        "windows": "true",
+        "snow_cover": "80",
+        "fireworks": "7",
+        "title": "New Year's Eve"
+      }
+    },
+    {
+      "id": "w_new_year",
+      "type": "Writer",
+      "x": 900,
+      "y": 460,
+      "comment": "",
+      "params": {
+        "path": "out/winter_village/new_year.png"
+      }
+    },
+    {
+      "id": "rainbow",
+      "type": "SceneRenderer",
+      "x": 600,
+      "y": 600,
+      "comment": "A rainbow opposite a low evening sun, the shadows of clouds drifting over the land, and the ground still wet",
+      "params": {
+        "width": "1280",
+        "height": "800",
+        "quality": "16",
+        "background": "sky",
+        "tree_kind_by": "kind",
+        "tree_height": "9",
+        "elevation": "4",
+        "zoom": "120",
+        "view_azimuth": "205",
+        "season": "summer",
+        "sun_azimuth": "205",
+        "sun_altitude": "4",
+        "fov": "80",
+        "clouds": "45",
+        "cloud_shadows": "70",
+        "rainbow": "90",
+        "wet": "25",
+        "mood": "golden",
+        "water": "areas",
+        "water_level": "78.8",
+        "waves": "0.35",
+        "title": "After the rain"
+      }
+    },
+    {
+      "id": "w_rainbow",
+      "type": "Writer",
+      "x": 900,
+      "y": 600,
+      "comment": "",
+      "params": {
+        "path": "out/winter_village/rainbow.png"
+      }
+    },
+    {
+      "id": "gale",
+      "type": "SceneRenderer",
+      "x": 600,
+      "y": 740,
+      "comment": "Rain slanting in the wind, trees bending, waves on the pond and smoke laid down",
+      "params": {
+        "width": "1280",
+        "height": "800",
+        "quality": "16",
+        "background": "sky",
+        "tree_kind_by": "kind",
+        "tree_height": "9",
+        "elevation": "14",
+        "zoom": "170",
+        "view_azimuth": "205",
+        "season": "autumn",
+        "sun_azimuth": "160",
+        "sun_altitude": "25",
+        "rain": "55",
+        "wind": "85",
+        "wind_from": "250",
+        "smoke": "50",
+        "water": "areas",
+        "water_level": "78.8",
+        "title": "An autumn gale"
+      }
+    },
+    {
+      "id": "w_gale",
+      "type": "Writer",
+      "x": 900,
+      "y": 740,
+      "comment": "",
+      "params": {
+        "path": "out/winter_village/gale.png"
+      }
+    },
+    {
+      "id": "model",
+      "type": "SceneRenderer",
+      "x": 600,
+      "y": 880,
+      "comment": "Tilt-shift: sharp in a band across the middle and blurred above and below, from high above",
+      "params": {
+        "width": "1280",
+        "height": "800",
+        "quality": "16",
+        "background": "sky",
+        "tree_kind_by": "kind",
+        "tree_height": "9",
+        "elevation": "38",
+        "zoom": "150",
+        "view_azimuth": "205",
+        "season": "summer",
+        "sun_azimuth": "150",
+        "sun_altitude": "45",
+        "tilt_shift": "80",
+        "mood": "warm",
+        "title": "A model village"
+      }
+    },
+    {
+      "id": "w_model",
+      "type": "Writer",
+      "x": 900,
+      "y": 880,
+      "comment": "",
+      "params": {
+        "path": "out/winter_village/model.png"
+      }
+    },
+    {
+      "id": "day",
+      "type": "SceneRenderer",
+      "x": 600,
+      "y": 1020,
+      "comment": "A short day in December, from sunrise to sunset every hour, as a sheet and as a moving picture",
+      "params": {
+        "width": "800",
+        "height": "500",
+        "quality": "16",
+        "background": "sky",
+        "tree_kind_by": "kind",
+        "tree_height": "9",
+        "elevation": "14",
+        "zoom": "170",
+        "view_azimuth": "205",
+        "season": "winter",
+        "snow_cover": "60",
+        "frost": "40",
+        "smoke": "40",
+        "sun": "day",
+        "date": "2026-12-13",
+        "study_every": "1",
+        "gif": "out/winter_village/the_day.gif"
+      }
+    },
+    {
+      "id": "w_day",
+      "type": "Writer",
+      "x": 900,
+      "y": 1020,
+      "comment": "",
+      "params": {
+        "path": "out/winter_village/the_day_sheet.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "make",
+        "Buildings"
+      ],
+      "to": [
+        "frost",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "frost",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "trees",
+        "Output"
+      ],
+      "to": [
+        "frost",
+        "Trees"
+      ]
+    },
+    {
+      "from": [
+        "pond",
+        "Output"
+      ],
+      "to": [
+        "frost",
+        "Water"
+      ]
+    },
+    {
+      "from": [
+        "frost",
+        "Image"
+      ],
+      "to": [
+        "w_frost",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "make",
+        "Buildings"
+      ],
+      "to": [
+        "sunrise",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "sunrise",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "trees",
+        "Output"
+      ],
+      "to": [
+        "sunrise",
+        "Trees"
+      ]
+    },
+    {
+      "from": [
+        "sunrise",
+        "Image"
+      ],
+      "to": [
+        "w_sunrise",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "make",
+        "Buildings"
+      ],
+      "to": [
+        "advent",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "advent",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "trees",
+        "Output"
+      ],
+      "to": [
+        "advent",
+        "Trees"
+      ]
+    },
+    {
+      "from": [
+        "lamps",
+        "Output"
+      ],
+      "to": [
+        "advent",
+        "Lights"
+      ]
+    },
+    {
+      "from": [
+        "road",
+        "Output"
+      ],
+      "to": [
+        "advent",
+        "Lights"
+      ]
+    },
+    {
+      "from": [
+        "advent",
+        "Image"
+      ],
+      "to": [
+        "w_advent",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "make",
+        "Buildings"
+      ],
+      "to": [
+        "new_year",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "new_year",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "trees",
+        "Output"
+      ],
+      "to": [
+        "new_year",
+        "Trees"
+      ]
+    },
+    {
+      "from": [
+        "new_year",
+        "Image"
+      ],
+      "to": [
+        "w_new_year",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "make",
+        "Buildings"
+      ],
+      "to": [
+        "rainbow",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "rainbow",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "trees",
+        "Output"
+      ],
+      "to": [
+        "rainbow",
+        "Trees"
+      ]
+    },
+    {
+      "from": [
+        "pond",
+        "Output"
+      ],
+      "to": [
+        "rainbow",
+        "Water"
+      ]
+    },
+    {
+      "from": [
+        "rainbow",
+        "Image"
+      ],
+      "to": [
+        "w_rainbow",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "make",
+        "Buildings"
+      ],
+      "to": [
+        "gale",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "gale",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "trees",
+        "Output"
+      ],
+      "to": [
+        "gale",
+        "Trees"
+      ]
+    },
+    {
+      "from": [
+        "pond",
+        "Output"
+      ],
+      "to": [
+        "gale",
+        "Water"
+      ]
+    },
+    {
+      "from": [
+        "gale",
+        "Image"
+      ],
+      "to": [
+        "w_gale",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "make",
+        "Buildings"
+      ],
+      "to": [
+        "model",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "model",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "trees",
+        "Output"
+      ],
+      "to": [
+        "model",
+        "Trees"
+      ]
+    },
+    {
+      "from": [
+        "model",
+        "Image"
+      ],
+      "to": [
+        "w_model",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "make",
+        "Buildings"
+      ],
+      "to": [
+        "day",
+        "Models"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "day",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "trees",
+        "Output"
+      ],
+      "to": [
+        "day",
+        "Trees"
+      ]
+    },
+    {
+      "from": [
+        "day",
+        "Image"
+      ],
+      "to": [
+        "w_day",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "make",
+        "Terrain"
+      ]
+    },
+    {
+      "from": [
+        "town",
+        "Output"
+      ],
+      "to": [
+        "make",
+        "Buildings"
+      ]
+    }
+  ]
+}

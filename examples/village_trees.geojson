@@ -1,0 +1,921 @@
+{
+ "type": "FeatureCollection",
+ "crs": {
+  "type": "name",
+  "properties": {
+   "name": "urn:ogc:def:crs:EPSG::3006"
+  }
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418434.4,
+     6472498.7
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418171.7,
+     6472534.0
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418324.8,
+     6472627.4
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418161.2,
+     6472508.4
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418222.2,
+     6472537.8
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418398.1,
+     6472431.0
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418339.2,
+     6472545.7
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418323.1,
+     6472499.2
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418164.0,
+     6472614.6
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418275.7,
+     6472535.2
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418318.1,
+     6472570.5
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418324.5,
+     6472559.7
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418179.2,
+     6472578.0
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418335.7,
+     6472524.1
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "pine"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418383.2,
+     6472516.4
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "pine"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418258.5,
+     6472462.1
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418359.7,
+     6472461.0
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418307.6,
+     6472618.8
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "pine"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418236.4,
+     6472645.0
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418303.6,
+     6472441.2
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418195.6,
+     6472522.2
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418438.6,
+     6472419.4
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418252.0,
+     6472487.5
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "pine"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418324.0,
+     6472514.1
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418433.4,
+     6472518.5
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418168.2,
+     6472575.4
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "pine"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418235.4,
+     6472496.4
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418156.8,
+     6472515.4
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418333.3,
+     6472523.4
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418380.5,
+     6472432.3
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418269.4,
+     6472629.2
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "pine"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418174.2,
+     6472512.3
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418415.0,
+     6472604.8
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418361.9,
+     6472646.6
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "pine"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418437.3,
+     6472437.7
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418195.4,
+     6472564.6
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418295.5,
+     6472547.3
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418234.6,
+     6472436.4
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418332.9,
+     6472479.7
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418357.1,
+     6472528.9
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418287.0,
+     6472617.7
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "pine"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418269.4,
+     6472498.5
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "pine"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418340.3,
+     6472415.6
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418445.4,
+     6472510.2
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418252.0,
+     6472413.1
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418320.0,
+     6472534.2
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418334.1,
+     6472417.6
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418334.2,
+     6472437.1
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418436.6,
+     6472550.6
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "pine"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418186.9,
+     6472612.2
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "pine"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418294.1,
+     6472478.0
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418180.7,
+     6472485.7
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418293.6,
+     6472573.0
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418211.6,
+     6472638.0
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418194.0,
+     6472535.8
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418377.4,
+     6472474.5
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418358.9,
+     6472465.3
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418422.5,
+     6472488.9
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418309.8,
+     6472594.8
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418340.9,
+     6472553.3
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418391.8,
+     6472604.6
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418210.0,
+     6472523.2
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418446.9,
+     6472597.5
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "pine"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418227.8,
+     6472573.1
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418284.2,
+     6472634.3
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418436.5,
+     6472491.2
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418180.6,
+     6472517.5
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "birch"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418211.3,
+     6472556.0
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418293.8,
+     6472563.2
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "kind": "oak"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418400.4,
+     6472430.0
+    ]
+   }
+  }
+ ]
+}

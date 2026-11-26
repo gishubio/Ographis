@@ -295,6 +295,20 @@ pub(super) fn map_layer_rows(
                         .on_hover_text("Multiply lets shading or an aerial photo under it show through the colours, as in a map of relief");
                     ui.checkbox(&mut row.style.smooth, RichText::new("smooth").small())
                         .on_hover_text("Corners rounded off, so that coarse lines and areas look smooth");
+                    let mut in_legend = !row.style.no_legend;
+                    if ui
+                        .checkbox(&mut in_legend, RichText::new("in legend").small())
+                        .on_hover_text("Shown in the legend. Off for a layer that explains itself, such as a line a profile is drawn along")
+                        .changed()
+                    {
+                        row.style.no_legend = !in_legend;
+                    }
+                    ui.checkbox(&mut row.style.waterlines, RichText::new("waterlines").small())
+                        .on_hover_text("Thin lines along the shores of the areas, fading outwards, as water is drawn on old maps");
+                    ui.label(RichText::new("band").small().color(pal.muted)).on_hover_text(
+                        "A band of this many pixels inside the edge of each area, in the colour of the edge, as along a border on a topographic map. 0: none",
+                    );
+                    ui.add(egui::DragValue::new(&mut row.style.band).range(0.0..=60.0).speed(0.2).max_decimals(1).suffix(" px"));
                 });
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
@@ -378,6 +392,24 @@ pub(super) fn map_layer_rows(
                 if !named {
                     icon_rows(ui, &mut row.icon, &row.from, &fields, pal);
                     chart_rows(ui, &mut row.chart, &row.from, &fields, pal);
+                    // Contours: index contours heavier and named, for layers with heights.
+                    let heights = fields.iter().any(|f| {
+                        let f = f.0.to_lowercase();
+                        ["height", "elevation", "elev", "z", "höjd", "hojd", "level", "contour"].contains(&f.as_str())
+                    });
+                    if heights || !row.style.index_by.is_empty() {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 4.0;
+                            ui.label(RichText::new("index contours by").small().color(pal.muted))
+                                .on_hover_text("Contours: the lines whose height is a whole number of the step are drawn heavier, and only they are named");
+                            attribute_pick(ui, ("index-by", &row.from), &mut row.style.index_by, &fields, true, 90.0);
+                            if !row.style.index_by.is_empty() {
+                                ui.label(RichText::new("every").small().color(pal.muted));
+                                ui.add(egui::DragValue::new(&mut row.style.index_every).range(0.0..=100000.0).speed(1.0).max_decimals(2));
+                            }
+                        });
+                    }
+                    finer_rows(ui, &mut row.style, &row.from, &fields, pal);
                 }
             }
         });
@@ -423,8 +455,23 @@ pub(super) fn map_layer_rows(
 pub(super) fn raster_rows(ui: &mut Ui, r: &mut og_engine::rasterlook::RasterSpec, info: &og_engine::rasterlook::RasterInfo, from: &str, pal: &Palette) {
     use og_engine::rasterlook::{class_colour, value_text};
     if !info.image {
-        const MODES: &[(&str, &str)] =
-            &[("", "By its values"), ("ramp", "Colour ramp"), ("classes", "A colour for each value"), ("shade", "Grey relief, as heights")];
+        const MODES: &[(&str, &str)] = &[
+            ("", "By its values"),
+            ("ramp", "Colour ramp"),
+            ("classes", "A colour for each value"),
+            ("shade", "Grey relief, as heights"),
+            ("soft", "Soft grey relief, lit from several sides"),
+            ("relief", "Heights in colours, with relief"),
+            ("swiss", "Swiss relief: hazy lowland, clear heights"),
+            ("hachures", "Hachures: strokes down the slopes"),
+            ("texture", "Texture shading: ridges and valleys as a web"),
+            ("depths", "Land and sea: heights above 0, depths in blues below"),
+            ("seafloor", "Sea floor: depths in blues with relief, land as paper"),
+            ("sea", "The sea alone: depths in blues with relief, land see-through"),
+            ("landsea", "Land and sea in a colour each, both with relief"),
+            ("bands", "Steps: a colour from each value to the next"),
+            ("paper", "Steps as layers of paper, with soft shadows"),
+        ];
         let auto = if info.classes.is_some() { "classes" } else { "ramp" };
         let shown = MODES.iter().find(|m| m.0 == r.mode).map_or("By its values", |m| m.1);
         ui.horizontal(|ui| {
@@ -482,6 +529,73 @@ pub(super) fn raster_rows(ui: &mut Ui, r: &mut og_engine::rasterlook::RasterSpec
                         }
                     }
                 }
+            }
+            "seafloor" | "landsea" => {
+                // The colours of the land, and of the sea for land and sea, kept in the ramp.
+                let defaults: &[[u8; 4]] = if mode == "landsea" { &[[0xec, 0xdc, 0xc6, 255], [0x8e, 0xd2, 0xd2, 255]] } else { &[[0xee, 0xe7, 0xd7, 255]] };
+                let mut own: Vec<[u8; 4]> = r.ramp.split([' ', ',', ';']).filter_map(|t| og_engine::mapdraw::parse_color(t.trim()).ok().flatten()).collect();
+                own.resize(defaults.len().max(own.len()), [0, 0, 0, 255]);
+                for (k, d) in defaults.iter().enumerate() {
+                    if r.ramp.split([' ', ',', ';']).filter(|t| !t.trim().is_empty()).count() <= k {
+                        own[k] = *d;
+                    }
+                }
+                let mut changed = false;
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.label(RichText::new("Land").small().color(pal.muted));
+                    changed |= colour_button(ui, &mut own[0]);
+                    if mode == "landsea" {
+                        ui.label(RichText::new("Sea").small().color(pal.muted));
+                        changed |= colour_button(ui, &mut own[1]);
+                    }
+                });
+                if changed {
+                    r.ramp = own[..defaults.len()].iter().map(|c| og_engine::mapdraw::color_text(Some(*c))).collect::<Vec<_>>().join(" ");
+                }
+            }
+            "bands" | "paper" => {
+                // Each step: from a value up to the next, its colour and its name in the legend.
+                if r.colors.is_empty() {
+                    ui.label(
+                        RichText::new("Empty: the depths of an atlas, at 200 m, 1 000 m and every 1 000 m down, from pale lilac through blues to black; or six even steps")
+                            .small()
+                            .color(pal.muted),
+                    );
+                }
+                let mut remove = None;
+                for (k, (v, c, name)) in r.colors.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        ui.label(RichText::new("from").small().color(pal.muted));
+                        ui.add(TextEdit::singleline(v).id_salt(("raster-step", from, k)).hint_text("-200").desired_width(60.0));
+                        let mut col = og_engine::mapdraw::parse_color(c).ok().flatten().unwrap_or([0xa9, 0xbd, 0xdc, 255]);
+                        if colour_button(ui, &mut col) {
+                            *c = og_engine::mapdraw::color_text(Some(col));
+                        }
+                        ui.add(TextEdit::singleline(name).id_salt(("raster-step-name", from, k)).hint_text("name in the legend").desired_width(110.0));
+                        if ui.small_button("×").on_hover_text("Remove this step").clicked() {
+                            remove = Some(k);
+                        }
+                    });
+                }
+                if let Some(k) = remove {
+                    r.colors.remove(k);
+                }
+                ui.horizontal(|ui| {
+                    if ui.small_button("Add a step").clicked() {
+                        r.colors.push((String::new(), "#a9bddc".into(), String::new()));
+                    }
+                    if r.colors.is_empty() && ui.small_button("Start from the depths of an atlas").clicked() {
+                        r.colors = og_engine::rasterlook::DEPTH_STEPS
+                            .iter()
+                            .map(|(v, c, n)| {
+                                let v = if v.is_finite() { value_text(*v) } else { "-1000000".into() };
+                                (v, og_engine::mapdraw::color_text(Some([c[0], c[1], c[2], 255])), n.to_string())
+                            })
+                            .collect();
+                    }
+                });
             }
             "ramp" => {
                 ui.horizontal(|ui| {
@@ -690,6 +804,58 @@ pub(super) fn theme_rows(ui: &mut Ui, t: &mut og_engine::thematic::ThemeSpec, fr
 }
 
 /// A list of the attributes of a layer to choose one from, or none.
+/// The finer craft of a layer, folded away: illuminated contours, widths by a value and
+/// widening lines, areas faint by a value, bridges, tunnels, one-way streets and road signs.
+fn finer_rows(ui: &mut Ui, st: &mut og_engine::mapdraw::LayerStyle, from: &str, fields: &[(String, bool)], pal: &Palette) {
+    let set = st.tanaka
+        || st.taper
+        || !st.width_by.is_empty()
+        || !st.alpha_by.is_empty()
+        || !st.bridge_where.is_empty()
+        || !st.tunnel_where.is_empty()
+        || !st.oneway_where.is_empty()
+        || !st.shield.is_empty();
+    egui::CollapsingHeader::new(RichText::new("Finer").small().color(pal.muted)).id_salt(("finer", from)).default_open(set).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.checkbox(&mut st.tanaka, RichText::new("lit contours").small()).on_hover_text(
+                "Areas between contours: their edges light towards the north-west and dark away from it, so that the land rises from the paper (Tanaka)",
+            );
+            ui.checkbox(&mut st.taper, RichText::new("widen along").small())
+                .on_hover_text("Lines widen from where they begin to where they end, as rivers downstream");
+        });
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.label(RichText::new("width by").small().color(pal.muted))
+                .on_hover_text("Lines as wide as a value, such as the order of a stream or the traffic on a road");
+            attribute_pick(ui, ("width-by", from), &mut st.width_by, fields, true, 90.0);
+            ui.label(RichText::new("faint by").small().color(pal.muted))
+                .on_hover_text("Areas see-through by a value, faint where it is small, such as how many live there (value by alpha)");
+            attribute_pick(ui, ("alpha-by", from), &mut st.alpha_by, fields, true, 90.0);
+        });
+        for (label, value, hint, salt) in [
+            ("bridges where", &mut st.bridge_where, "An expression, such as bridge = 1: drawn with dark edges and wings over the rest", "bridge-where"),
+            ("tunnels where", &mut st.tunnel_where, "An expression, such as tunnel = 1: drawn dashed and pale", "tunnel-where"),
+            ("one way where", &mut st.oneway_where, "An expression, such as oneway = 'yes': arrows along the line, the way it is drawn", "oneway-where"),
+        ] {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(label).small().color(pal.muted)).on_hover_text(hint);
+                ui.add(TextEdit::singleline(value).id_salt((salt, from)).hint_text("an expression").desired_width(ui.available_width()));
+            });
+        }
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.label(RichText::new("road signs from").small().color(pal.muted))
+                .on_hover_text("The number of the road in a sign along it: E roads in green, national roads in blue, others in white");
+            attribute_pick(ui, ("shield", from), &mut st.shield, fields, false, 90.0);
+            if !st.shield.is_empty() {
+                ui.label(RichText::new("every").small().color(pal.muted));
+                ui.add(egui::DragValue::new(&mut st.shield_every).range(60.0..=5000.0).speed(2.0).max_decimals(0).suffix(" px"));
+            }
+        });
+    });
+}
+
 pub(super) fn attribute_pick(ui: &mut Ui, id: (&str, &str), value: &mut String, fields: &[(String, bool)], numbers_only: bool, width: f32) {
     let shown = if value.is_empty() { "None".to_string() } else { value.clone() };
     egui::ComboBox::from_id_salt(id).selected_text(shown).width(width).show_ui(ui, |ui| {
@@ -773,11 +939,32 @@ pub(super) fn label_rows(ui: &mut Ui, l: &mut og_engine::mapdraw::LabelSpec, fro
                 ui.add(TextEdit::singleline(&mut l.bold_where).id_salt(("label-bold-where", from)).hint_text("an expression").desired_width(ui.available_width()));
             });
             ui.horizontal(|ui| {
+                ui.label(RichText::new("Capitals where").small().color(pal.muted))
+                    .on_hover_text("An expression: the labels of the features where it is true are in capitals, such as population > 100000. Empty: as Capitals says, for all");
+                ui.add(TextEdit::singleline(&mut l.upper_where).id_salt(("label-upper-where", from)).hint_text("an expression").desired_width(ui.available_width()));
+            });
+            ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.label(RichText::new("areas from").small().color(pal.muted))
                     .on_hover_text("Areas fewer pixels across than this get no label, or one beside them with a line, if that is ticked. 0: every area");
                 ui.add(egui::DragValue::new(&mut l.min_px).range(0.0..=2000.0).speed(0.5).max_decimals(0).suffix(" px"));
                 ui.checkbox(&mut l.leaders, "beside, with a line").on_hover_text("A label that does not fit in its area is put beside it, with a thin line in to it");
+            });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.checkbox(&mut l.curved, "curved along long areas")
+                    .on_hover_text("The names of long areas, such as lakes and valleys, along a gentle curve through the middle of the area");
+                let classic = l.prefer == "classic";
+                let mut c = classic;
+                if ui.checkbox(&mut c, "corners first").on_hover_text("Labels of points tried first above to the right, then below to the right, above and below to the left, then beside").changed() {
+                    l.prefer = if c { "classic".into() } else { String::new() };
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(RichText::new("rank").small().color(pal.muted))
+                    .on_hover_text("Labels of layers with a higher rank get their places first, whatever layer is on top. 0: by the order of the layers");
+                ui.add(egui::DragValue::new(&mut l.rank).range(-100..=100).speed(0.1));
             });
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
@@ -795,7 +982,15 @@ pub(super) fn label_rows(ui: &mut Ui, l: &mut og_engine::mapdraw::LabelSpec, fro
                 ui.label(RichText::new("size").small().color(pal.muted));
                 ui.add(egui::DragValue::new(&mut l.size).range(4.0..=200.0).speed(0.2).max_decimals(1)).on_hover_text("The height of the letters, in pixels");
                 ui.label(RichText::new("by").small().color(pal.muted));
-                attribute_pick(ui, ("label-size-by", from), &mut l.size_by, fields, true, 100.0);
+                let mut by_area = l.size_by == "@area";
+                if by_area {
+                    ui.label(RichText::new("the size of the area").small());
+                } else {
+                    attribute_pick(ui, ("label-size-by", from), &mut l.size_by, fields, true, 100.0);
+                }
+                if ui.checkbox(&mut by_area, RichText::new("area").small()).on_hover_text("Larger the larger the area, as the names of lakes and seas").changed() {
+                    l.size_by = if by_area { "@area".into() } else { String::new() };
+                }
                 if !l.size_by.is_empty() {
                     ui.label(RichText::new("to").small().color(pal.muted));
                     ui.add(egui::DragValue::new(&mut l.size_max).range(4.0..=300.0).speed(0.2).max_decimals(1)).on_hover_text("The size of the largest value");
@@ -807,6 +1002,14 @@ pub(super) fn label_rows(ui: &mut Ui, l: &mut og_engine::mapdraw::LabelSpec, fro
                 ui.checkbox(&mut l.italic, "Italic").on_hover_text("Leaning letters, as the names of lakes, rivers and the sea are written");
                 ui.checkbox(&mut l.upper, "CAPITALS");
                 ui.checkbox(&mut l.spaced, "Spread out").on_hover_text("The letters spread out over an area, as the name of a lake or a district");
+                ui.checkbox(&mut l.small_caps, "Small caps").on_hover_text("In capitals a little smaller than the size, as the names of regions and islands are often written");
+                ui.label(RichText::new("Spacing").small().color(pal.muted));
+                ui.add(egui::DragValue::new(&mut l.tracking).range(0.0..=2.0).speed(0.01).max_decimals(2))
+                    .on_hover_text("Room between the letters, in parts of the size: 0.2 is a little, 1 is a whole letter");
+                ui.checkbox(&mut l.uphill, "Reads uphill").on_hover_text("Along lines, the top of the letters towards the higher ground, as contour numbers are written. Needs a grid of heights among the layers");
+                ui.checkbox(&mut l.detail, "Lines after the first smaller")
+                    .on_hover_text("A description under the name, smaller and not bold, such as the depth under the name of a seamount: write the name and the description on lines of their own under Labels");
+                ui.checkbox(&mut l.coast, "Along the coast").on_hover_text("The names of islands and lakes written along the inside of their shore, bending with it");
                 let mut c = Some(l.colour);
                 optional_colour(ui, &mut c, "Colour", "The colour of the letters", [0x22, 0x22, 0x22, 255]);
                 if let Some(c) = c {

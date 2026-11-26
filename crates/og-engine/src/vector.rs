@@ -169,6 +169,11 @@ impl Canvas {
         }
     }
 
+    /// The shape that what is drawn is clipped to now, if any.
+    pub fn clip(&self) -> Option<(Path, bool)> {
+        self.clip.clone()
+    }
+
     /// How what is drawn from here on is laid on what is under it, as Op::Blend names it.
     pub fn set_blend(&mut self, mode: &str) {
         use tiny_skia::BlendMode as B;
@@ -438,6 +443,46 @@ fn dash_of(d: &tiny_skia::StrokeDash) -> Vec<f32> {
     text[start + 1..start + end].split(',').filter_map(|v| v.trim().parse::<f32>().ok()).collect()
 }
 
+/// A colour of a screen as inks of a printer: cyan, magenta, yellow and black, with the grey
+/// taken by black.
+fn cmyk_of(r: u8, g: u8, b: u8) -> [u8; 4] {
+    let (r, g, b) = (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0);
+    let k = 1.0 - r.max(g).max(b);
+    if k >= 0.999 {
+        return [0, 0, 0, 255];
+    }
+    let c = |v: f32| (((1.0 - v - k) / (1.0 - k)).clamp(0.0, 1.0) * 255.0).round() as u8;
+    [c(r), c(g), c(b), (k * 255.0).round() as u8]
+}
+
+/// A page drawn in the colours of a screen, in inks: each "r g b rg" and "r g b RG" as
+/// "c m y k k" and "c m y k K".
+#[cfg(test)]
+fn as_cmyk(content: &str) -> String {
+    as_inks(content, false)
+}
+
+/// As `as_cmyk`, and with `overprint` black is printed over the colours under it, so that
+/// black text and lines get no white edges when the plates are a little out of register.
+fn as_inks(content: &str, overprint: bool) -> String {
+    use std::sync::OnceLock;
+    static RGB: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RGB.get_or_init(|| regex::Regex::new(r"(-?[0-9.]+) (-?[0-9.]+) (-?[0-9.]+) (rg|RG)\b").expect("a valid pattern"));
+    re.replace_all(content, |c: &regex::Captures| {
+        let v = |i: usize| (c[i].parse::<f32>().unwrap_or(0.0).clamp(0.0, 1.0) * 255.0).round() as u8;
+        let k = cmyk_of(v(1), v(2), v(3));
+        let n = |x: u8| num(x as f32 / 255.0);
+        let op = if &c[4] == "rg" { "k" } else { "K" };
+        let ink = format!("{} {} {} {} {}", n(k[0]), n(k[1]), n(k[2]), n(k[3]), op);
+        if !overprint {
+            return ink;
+        }
+        let black = k[0] == 0 && k[1] == 0 && k[2] == 0 && k[3] >= 230;
+        format!("{} {}", if black { "/OPon gs" } else { "/OPoff gs" }, ink)
+    })
+    .into_owned()
+}
+
 /// The name PDF has for a way of laying on.
 fn pdf_blend(mode: &str) -> &'static str {
     match mode {
@@ -488,7 +533,23 @@ pub struct Geo {
 /// (as in ISO 32000-2), so that GIS programs place it on the map.
 #[allow(clippy::too_many_arguments)]
 pub fn pdf(pic: &Picture, page_w: f64, page_h: f64, left: f64, top: f64, scale: f64, heading: Option<(&str, f64, f64)>, geo: Option<&Geo>) -> Vec<u8> {
-    pdf_book(&[PdfPage { pic, page_w, page_h, left, top, scale, heading, geo, bleed: 0.0, marks: false }])
+    pdf_book(&[PdfPage {
+        pic,
+        page_w,
+        page_h,
+        left,
+        top,
+        scale,
+        heading,
+        geo,
+        bleed: 0.0,
+        marks: false,
+        cmyk: false,
+        overprint: false,
+        icc: None,
+        window: None,
+        folds: (1, 1),
+    }])
 }
 
 /// A page of a PDF: the picture, the size of the page in points, where the picture goes and
@@ -506,6 +567,18 @@ pub struct PdfPage<'a> {
     /// outside it where it is cut.
     pub bleed: f64,
     pub marks: bool,
+    /// Colours as cyan, magenta, yellow and black for a printer, rather than as on a screen.
+    pub cmyk: bool,
+    /// Black printed over the colours, not cut out of them.
+    pub overprint: bool,
+    /// The colour profile of the printing, an ICC file: with it the PDF is a PDF/X-4.
+    pub icc: Option<&'a [u8]>,
+    /// Only this part of the picture, in its pixels: left, top, width and height, as one
+    /// sheet of a map cut into several. None: all of it.
+    pub window: Option<[f64; 4]>,
+    /// Where the page is to be folded: across into this many columns and rows, marked with
+    /// short lines at its edges. (1, 1): no folds.
+    pub folds: (u32, u32),
 }
 
 /// What one page holds: the drawing, its pictures and the opacities it uses.
@@ -518,7 +591,7 @@ struct PageContent {
 /// A PDF of one page for each picture, such as the pages of a map series. The layers of the
 /// first picture are the layers of all of them.
 pub fn pdf_book(pages: &[PdfPage]) -> Vec<u8> {
-    let parts: Vec<PageContent> = pages.iter().map(|p| page_content(p.pic, p.page_h, p.left, p.top, p.scale, p.heading)).collect();
+    let parts: Vec<PageContent> = pages.iter().map(|p| page_content(p.pic, p.page_h, p.left, p.top, p.scale, p.heading, p.window)).collect();
     let layers: &[String] = pages.first().map_or(&[], |p| &p.pic.layers);
     // The objects: catalogue, pages, then for each page the page, its contents and its
     // pictures, and last the layers.
@@ -530,13 +603,26 @@ pub fn pdf_book(pages: &[PdfPage]) -> Vec<u8> {
     }
     let first_layer = next;
     let refs: Vec<String> = (0..layers.len()).map(|k| format!("{} 0 R", first_layer + k)).collect();
+    // For PDF/X-4: the profile of the printing, what is said of the file, after the layers.
+    let icc = pages.first().and_then(|p| p.icc);
+    let cmyk = pages.first().is_some_and(|p| p.cmyk) || icc.is_some();
+    let (icc_id, meta_id) = (first_layer + layers.len(), first_layer + layers.len() + 1);
     let mut objects: Vec<Vec<u8>> = Vec::new();
+    let x4 = if icc.is_some() {
+        format!(
+            " /OutputIntents [<< /Type /OutputIntent /S /GTS_PDFX /OutputConditionIdentifier (Custom) /Info (Printing) /DestOutputProfile {} 0 R >>] /Metadata {} 0 R",
+            icc_id, meta_id
+        )
+    } else {
+        String::new()
+    };
     let catalog = if refs.is_empty() {
-        "<< /Type /Catalog /Pages 2 0 R >>".to_string()
+        format!("<< /Type /Catalog /Pages 2 0 R{} >>", x4)
     } else {
         format!(
-            "<< /Type /Catalog /Pages 2 0 R /PageMode /UseOC /OCProperties << /OCGs [{0}] /D << /Name (Layers) /Order [{0}] /ON [{0}] >> >> >>",
-            refs.join(" ")
+            "<< /Type /Catalog /Pages 2 0 R /PageMode /UseOC /OCProperties << /OCGs [{0}] /D << /Name (Layers) /Order [{0}] /ON [{0}] >> >>{1} >>",
+            refs.join(" "),
+            x4
         )
     };
     objects.push(catalog.into_bytes());
@@ -561,6 +647,9 @@ pub fn pdf_book(pages: &[PdfPage]) -> Vec<u8> {
         // The ways of laying on, by name.
         for b in ["Multiply", "Screen", "Darken", "Lighten", "Overlay"] {
             states.push_str(&format!("/BM{0} << /Type /ExtGState /BM /{0} >> ", b));
+        }
+        if page.overprint {
+            states.push_str("/OPon << /Type /ExtGState /OP true /op true /OPM 1 >> /OPoff << /Type /ExtGState /OP false /op false >> ");
         }
         let (pic, left, top, scale, page_h) = (page.pic, page.left, page.top, page.scale, page.page_h);
         // The page as cut, moved in by the bleed and the room for the marks.
@@ -602,6 +691,9 @@ pub fn pdf_book(pages: &[PdfPage]) -> Vec<u8> {
                         num((room + w + page.bleed) as f32),
                         num((room + h + page.bleed) as f32)
                     )
+                } else if icc.is_some() {
+                    // A PDF/X names where the page is cut, also without bleed.
+                    format!(" /TrimBox [0 0 {} {}]", num(page.page_w as f32), num(page_h as f32))
                 } else {
                     String::new()
                 },
@@ -645,6 +737,25 @@ pub fn pdf_book(pages: &[PdfPage]) -> Vec<u8> {
         } else {
             part.content.clone()
         };
+        // Folds: short grey lines at the edges where the page is to be folded.
+        let content = if page.folds.0 > 1 || page.folds.1 > 1 {
+            let (w, h) = (page.page_w, page_h);
+            let mut m = format!("{}q 0.6 0.6 0.6 RG 0.5 w\n", content);
+            m.push_str(&format!("1 0 0 1 {} {} cm\n", num(room as f32), num(room as f32)));
+            for k in 1..page.folds.0 {
+                let x = w * k as f64 / page.folds.0 as f64;
+                m.push_str(&format!("{0} 0 m {0} 12 l S {0} {1} m {0} {2} l S\n", num(x as f32), num((h - 12.0) as f32), num(h as f32)));
+            }
+            for k in 1..page.folds.1 {
+                let y = h * k as f64 / page.folds.1 as f64;
+                m.push_str(&format!("0 {0} m 12 {0} l S {1} {0} m {2} {0} l S\n", num(y as f32), num((w - 12.0) as f32), num(w as f32)));
+            }
+            m.push_str("Q\n");
+            m
+        } else {
+            content
+        };
+        let content = if cmyk { as_inks(&content, page.overprint) } else { content };
         let packed = deflate(content.as_bytes());
         let mut c = format!("<< /Length {} /Filter /FlateDecode >>\nstream\n", packed.len()).into_bytes();
         c.extend_from_slice(&packed);
@@ -652,11 +763,16 @@ pub fn pdf_book(pages: &[PdfPage]) -> Vec<u8> {
         objects.push(c);
         for (i, (w, h, rgb, a)) in part.images.iter().enumerate() {
             let mask_id = first_image + i * 2 + 1;
-            let data = deflate(rgb);
+            let (data, space) = if cmyk {
+                (deflate(&rgb.chunks_exact(3).flat_map(|p| cmyk_of(p[0], p[1], p[2])).collect::<Vec<u8>>()), "DeviceCMYK")
+            } else {
+                (deflate(rgb), "DeviceRGB")
+            };
             let mut o = format!(
-                "<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /SMask {} 0 R /Length {} >>\nstream\n",
+                "<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /{} /BitsPerComponent 8 /Filter /FlateDecode /SMask {} 0 R /Length {} >>\nstream\n",
                 w,
                 h,
+                space,
                 mask_id,
                 data.len()
             )
@@ -680,7 +796,25 @@ pub fn pdf_book(pages: &[PdfPage]) -> Vec<u8> {
     for name in layers {
         objects.push(format!("<< /Type /OCG /Name ({}) >>", pdf_string(name)).into_bytes());
     }
-    let mut out = b"%PDF-1.5\n%\xe2\xe3\xcf\xd3\n".to_vec();
+    let stamp = chrono::Utc::now();
+    let id = format!("{:032x}", (stamp.timestamp_nanos_opt().unwrap_or(0) as u128) ^ (objects.len() as u128 * 0x9e37_79b9_7f4a_7c15));
+    if let Some(profile) = icc {
+        let data = deflate(profile);
+        let mut o = format!("<< /N 4 /Filter /FlateDecode /Length {} >>\nstream\n", data.len()).into_bytes();
+        o.extend_from_slice(&data);
+        o.extend_from_slice(b"\nendstream");
+        objects.push(o);
+        let xmp = format!(
+            r#"<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:pdfxid="http://www.npes.org/pdfx/ns/id/" xmlns:pdf="http://ns.adobe.com/pdf/1.3/" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/" xmlns:dc="http://purl.org/dc/elements/1.1/"><pdfxid:GTS_PDFXVersion>PDF/X-4</pdfxid:GTS_PDFXVersion><pdf:Producer>Ographis</pdf:Producer><pdf:Trapped>False</pdf:Trapped><xmp:CreateDate>{0}</xmp:CreateDate><xmp:ModifyDate>{0}</xmp:ModifyDate><xmp:CreatorTool>Ographis</xmp:CreatorTool><xmpMM:DocumentID>uuid:{1}</xmpMM:DocumentID><xmpMM:InstanceID>uuid:{1}</xmpMM:InstanceID><dc:title><rdf:Alt><rdf:li xml:lang="x-default">Map</rdf:li></rdf:Alt></dc:title></rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end="w"?>"#,
+            stamp.format("%Y-%m-%dT%H:%M:%SZ"),
+            id
+        );
+        let mut m = format!("<< /Type /Metadata /Subtype /XML /Length {} >>\nstream\n", xmp.len()).into_bytes();
+        m.extend_from_slice(xmp.as_bytes());
+        m.extend_from_slice(b"\nendstream");
+        objects.push(m);
+    }
+    let mut out = if icc.is_some() { b"%PDF-1.6\n%\xe2\xe3\xcf\xd3\n".to_vec() } else { b"%PDF-1.5\n%\xe2\xe3\xcf\xd3\n".to_vec() };
     let mut offsets = Vec::with_capacity(objects.len());
     for (i, o) in objects.iter().enumerate() {
         offsets.push(out.len());
@@ -694,20 +828,36 @@ pub fn pdf_book(pages: &[PdfPage]) -> Vec<u8> {
         out.extend_from_slice(format!("{:010} 00000 n \n", o).as_bytes());
     }
     out.extend_from_slice(
-        format!("trailer\n<< /Size {} /Root 1 0 R /Info << /Producer (Ographis) >> >>\nstartxref\n{}\n%%EOF\n", objects.len() + 1, xref).as_bytes(),
+        if icc.is_some() {
+            let d = stamp.format("D:%Y%m%d%H%M%SZ");
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R /Info << /Producer (Ographis) /Creator (Ographis) /Title (Map) /CreationDate ({d}) /ModDate ({d}) /Trapped /False /GTS_PDFXVersion (PDF/X-4) >> /ID [<{id}> <{id}>] >>\nstartxref\n{}\n%%EOF\n",
+                objects.len() + 1,
+                xref
+            )
+        } else {
+            format!("trailer\n<< /Size {} /Root 1 0 R /Info << /Producer (Ographis) >> >>\nstartxref\n{}\n%%EOF\n", objects.len() + 1, xref)
+        }
+        .as_bytes(),
     );
     out
 }
 
 /// The drawing of one page of a PDF, in its own coordinates.
-fn page_content(pic: &Picture, page_h: f64, left: f64, top: f64, scale: f64, heading: Option<(&str, f64, f64)>) -> PageContent {
+fn page_content(pic: &Picture, page_h: f64, left: f64, top: f64, scale: f64, heading: Option<(&str, f64, f64)>, window: Option<[f64; 4]>) -> PageContent {
     let mut content = String::new();
     let mut images: Vec<(u32, u32, Vec<u8>, Vec<u8>)> = Vec::new();
     let mut alphas: Vec<u8> = Vec::new();
     // From the pixels of the picture, y down, to points of the page, y up.
     content.push_str(&format!("q {} 0 0 {} {} {} cm\n", num(scale as f32), num(-scale as f32), num(left as f32), num((page_h - top) as f32)));
-    // The picture is clipped to its own rectangle.
-    content.push_str(&format!("0 0 {} {} re W n\n", num(pic.width), num(pic.height)));
+    // The picture is clipped to its own rectangle, or to the part of it on this sheet.
+    match window {
+        Some([x, y, w, h]) => {
+            content.push_str(&format!("1 0 0 1 {} {} cm\n", num(-x as f32), num(-y as f32)));
+            content.push_str(&format!("{} {} {} {} re W n\n", num(x as f32), num(y as f32), num(w as f32), num(h as f32)));
+        }
+        None => content.push_str(&format!("0 0 {} {} re W n\n", num(pic.width), num(pic.height))),
+    }
     let gs_of = |a: u8, alphas: &mut Vec<u8>| -> usize {
         match alphas.iter().position(|x| *x == a) {
             Some(i) => i,
@@ -1067,6 +1217,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn screen_colours_become_inks() {
+        assert_eq!(as_cmyk("1 0 0 rg 0 0 0 RG"), "0 1 1 0 k 0 0 0 1 K");
+        assert_eq!(as_cmyk("q 10 20 m"), "q 10 20 m");
+        assert_eq!(as_inks("0 0 0 rg 1 0 0 RG", true), "/OPon gs 0 0 0 1 k /OPoff gs 0 1 1 0 K");
+    }
+
+    #[test]
     fn what_is_drawn_is_kept_and_written_as_shapes() {
         let mut c = Canvas::new(100, 50, true).unwrap();
         c.fill(tiny_skia::Color::WHITE);
@@ -1089,5 +1246,35 @@ mod tests {
         assert!(svg.contains("stroke-dasharray=\"6 3\"") && svg.contains("stroke=\"#c80000\""));
         // A picture that keeps nothing keeps nothing.
         assert!(Canvas::new(10, 10, false).unwrap().picture().is_none());
+    }
+
+    #[test]
+    fn a_map_cut_into_sheets_and_folded() {
+        let mut c = Canvas::new(200, 100, true).unwrap();
+        c.fill(tiny_skia::Color::WHITE);
+        let pic = c.picture().unwrap();
+        let page = |window: Option<[f64; 4]>, folds: (u32, u32)| PdfPage {
+            pic: &pic,
+            page_w: 300.0,
+            page_h: 200.0,
+            left: 20.0,
+            top: 20.0,
+            scale: 1.0,
+            heading: None,
+            geo: None,
+            bleed: 0.0,
+            marks: false,
+            cmyk: false,
+            overprint: false,
+            icc: None,
+            window,
+            folds,
+        };
+        let whole = pdf_book(&[page(None, (1, 1))]);
+        let sheets = pdf_book(&[page(Some([0.0, 0.0, 110.0, 100.0]), (1, 1)), page(Some([90.0, 0.0, 110.0, 100.0]), (1, 1))]);
+        let text = String::from_utf8_lossy(&sheets);
+        assert!(text.contains("/Count 2"), "two sheets, two pages");
+        let folded = pdf_book(&[page(None, (3, 2))]);
+        assert_ne!(whole, folded, "fold marks are drawn");
     }
 }

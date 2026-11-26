@@ -79,6 +79,8 @@ struct Prepared {
     z: [f32; 2],
     with_heights: usize,
     left_out: usize,
+    /// Lines and areas drawn simpler, to keep it quick.
+    simpler: bool,
     /// The smallest triangles of a model left out, when it has more than MOST_MODEL.
     tris_left_out: usize,
     /// The triangles of a 3D model, such as one read from OBJ: corners, colour (0 to 255)
@@ -393,12 +395,47 @@ fn prepare(table: &Table, key: usize, skip: Option<usize>, splat_sources: &[Spla
         }
         with_heights = table.len();
     }
-    // More coordinates than are drawn: every n-th feature, spread over all of them, and not
-    // only the first, which in a point cloud may lie in one corner.
-    let step = {
-        use geo::CoordsIter;
-        let total: usize = table.features.iter().skip(skip.unwrap_or(0)).filter_map(|f| f.geom.as_ref()).map(|g| g.coords_count()).sum();
-        total.div_ceil(MOST_COORDS).max(1)
+    // More coordinates than are drawn. Lines and areas without heights are made simpler, so
+    // that every one of them is there, as the municipalities of a country; what is left, such
+    // as the points of a cloud, is drawn every n-th, spread over all of them, and not only
+    // the first, which in a point cloud may lie in one corner.
+    let (simpler, step) = {
+        use geo::{CoordsIter, Simplify};
+        let first = skip.unwrap_or(0);
+        let total: usize = table.features.iter().skip(first).filter_map(|f| f.geom.as_ref()).map(|g| g.coords_count()).sum();
+        let mut simpler: Vec<Option<geo::Geometry<f64>>> = Vec::new();
+        let mut rest = total;
+        if total > MOST_COORDS && table.mesh.is_none() && table.grid.is_none() {
+            let flat = |f: &og_engine::Feature| f.heights().is_none() && !matches!(f.geom, Some(geo::Geometry::Point(_) | geo::Geometry::MultiPoint(_)) | None);
+            let simplify = |g: &geo::Geometry<f64>, eps: f64| -> geo::Geometry<f64> {
+                match g {
+                    geo::Geometry::Polygon(p) => geo::Geometry::Polygon(p.simplify(eps)),
+                    geo::Geometry::MultiPolygon(p) => geo::Geometry::MultiPolygon(p.simplify(eps)),
+                    geo::Geometry::LineString(l) => geo::Geometry::LineString(l.simplify(eps)),
+                    geo::Geometry::MultiLineString(l) => geo::Geometry::MultiLineString(l.simplify(eps)),
+                    other => other.clone(),
+                }
+            };
+            let fixed: usize = table.features.iter().skip(first).filter(|f| !flat(f)).filter_map(|f| f.geom.as_ref()).map(|g| g.coords_count()).sum();
+            let diag = (b.width().powi(2) + b.height().powi(2)).sqrt().max(1e-9);
+            // From a fine tolerance up, until the lines and areas fit beside the rest.
+            let mut eps = diag / 50_000.0;
+            for _ in 0..12 {
+                simpler = table
+                    .features
+                    .iter()
+                    .enumerate()
+                    .map(|(i, f)| if i >= first && flat(f) { f.geom.as_ref().map(|g| simplify(g, eps)) } else { None })
+                    .collect();
+                let drawn: usize = simpler.iter().flatten().map(|g| g.coords_count()).sum();
+                rest = fixed + drawn;
+                if drawn + fixed.min(MOST_COORDS / 2) <= MOST_COORDS {
+                    break;
+                }
+                eps *= 2.0;
+            }
+        }
+        (simpler, rest.div_ceil(MOST_COORDS).max(1))
     };
     // The colour, class and intensity of points, as a point cloud has them.
     let at = |name: &str| table.field_index(name);
@@ -423,10 +460,12 @@ fn prepare(table: &Table, key: usize, skip: Option<usize>, splat_sources: &[Spla
             None if table.mesh.is_some() || table.grid.is_some() => break,
             None => {}
         }
-        if step > 1 && fi % step != 0 {
+        let simplified = simpler.get(fi).and_then(|s| s.as_ref());
+        if step > 1 && fi % step != 0 && simplified.is_none() {
             left_out += 1;
             continue;
         }
+        let g = simplified.unwrap_or(g);
         let all = og_engine::geom::coords(g);
         if coords + all.len() > MOST_COORDS {
             left_out += 1;
@@ -601,6 +640,7 @@ fn prepare(table: &Table, key: usize, skip: Option<usize>, splat_sources: &[Spla
         z: [zlo, zhi],
         with_heights,
         left_out,
+        simpler: simpler.iter().any(|g| g.is_some()),
         tris_left_out,
         model,
         mid: [mid.x, mid.y],
@@ -976,6 +1016,9 @@ impl View3d {
             let clean = |v: f32| fmt_real(v.to_string().parse::<f64>().unwrap_or(v as f64));
             lines.push(format!("Heights {} to {} · drawn × {}", clean(prep.z[0]), clean(prep.z[1]), clean(ex)));
         }
+        if prep.simpler {
+            lines.push("The lines and outlines are drawn simpler, to keep it quick".to_string());
+        }
         if prep.left_out > 0 {
             lines.push(format!("{} features are left out, to keep it quick", fmt_count(prep.left_out as u64)));
         }
@@ -1054,6 +1097,27 @@ impl View3d {
 mod point_colour_tests {
     use super::*;
     use og_engine::{Feature, Field, FieldType, Value};
+
+    #[test]
+    fn every_area_is_drawn_when_there_are_many_corners_only_simpler() {
+        // 300 municipalities of 2 000 corners each, more than are drawn: every one is there.
+        let mut t = Table { crs: Some(3006), ..Default::default() };
+        for k in 0..300 {
+            let (cx, cy) = (400_000.0 + (k % 20) as f64 * 10_000.0, 6_400_000.0 + (k / 20) as f64 * 10_000.0);
+            let ring: Vec<(f64, f64)> = (0..2000)
+                .map(|i| {
+                    let a = i as f64 / 2000.0 * std::f64::consts::TAU;
+                    let r = 4_000.0 + 300.0 * (a * 17.0).sin();
+                    (cx + r * a.cos(), cy + r * a.sin())
+                })
+                .collect();
+            t.features.push(Feature::new(Vec::new(), Some(geo::Geometry::Polygon(geo::Polygon::new(geo::LineString::from(ring), Vec::new())))));
+        }
+        let p = prepare(&t, 1, None, &[]);
+        assert_eq!((p.items.len(), p.left_out), (300, 0));
+        assert!(p.simpler);
+        assert!(p.items.iter().all(|it| it.pts.len() >= 4 && !it.tris.is_empty()));
+    }
 
     #[test]
     fn points_keep_their_colours_classes_and_intensity() {

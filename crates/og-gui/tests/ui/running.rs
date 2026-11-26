@@ -43,6 +43,10 @@ fn load_run_and_inspect() {
     h.get_by_label("Log").click();
     h.run_steps(3);
     assert!(h.query_by_label_contains("Run finished: 18 nodes").is_some());
+    // The log is one text, from its first line to its last, so that Ctrl+A marks all of it.
+    let first = h.state().result.as_ref().unwrap().log[0].msg.clone();
+    let (last_at, first_at) = (h.get_by_label_contains("Run finished: 18 nodes").rect(), h.get_by_label_contains(&first).rect());
+    assert_eq!(last_at, first_at, "the first line and the last are in the same text");
     shot(&mut h, "04-log");
 }
 
@@ -51,13 +55,13 @@ fn add_node_from_palette_and_rerun() {
     let mut h = harness(egui::Theme::Light, NO_TILES);
     h.state_mut().run_blocking();
     h.run_steps(3);
-    // "Calculate area" is both a node in the workspace and an entry in the palette.
+    // "Calculate area" is a node in the workspace, and the tool Calculate area and length is in the palette.
     assert!(h.state().snarl.nodes().any(|n| n.id == "area" && n.name == "Calculate area"));
-    add_from_palette(&mut h, "Geometry", "Calculate area");
+    add_from_palette(&mut h, "Geometry", "Calculate area and length");
     let app = h.state();
     assert_eq!(app.snarl.nodes().count(), 19);
     assert!(app.dirty && app.stale);
-    assert!(app.snarl.nodes().any(|n| n.id == "areacalculator_1" && n.kind == "AreaCalculator" && n.name == "Calculate area 2"));
+    assert!(app.snarl.nodes().any(|n| n.id == "areacalculator_1" && n.kind == "AreaCalculator" && n.name.starts_with("Calculate area and length")));
     assert_eq!(selected(&h), ["areacalculator_1"]);
     shot(&mut h, "20-new-node");
 
@@ -86,7 +90,7 @@ fn the_overlay_example_runs_with_the_newer_tools() {
     assert_eq!(r.output("dissolve", "Dissolved").unwrap().len(), 2);
     // Every town falls in exactly one subregion, so the counts add up to all towns.
     let overlaps: i64 = {
-        let t = r.output("count", "Polygons").unwrap();
+        let t = r.output("count", "Joined").unwrap();
         let i = t.field_index("towns").unwrap();
         t.features.iter().filter_map(|f| f.attrs[i].as_f64()).sum::<f64>() as i64
     };

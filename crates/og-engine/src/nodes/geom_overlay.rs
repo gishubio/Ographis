@@ -1,5 +1,5 @@
-//! Tools where two streams of geometry meet: Clip, Dissolve, Join by location, Count points
-//! in areas, Overlay points and areas, Overlay areas, Intersect, Find nearest and Split lines.
+//! Tools where two streams of geometry meet: Clip, Dissolve, Join by location, Overlay
+//! points and areas, Overlay areas, Find nearest and Split lines.
 
 use super::*;
 use crate::model::{crs_label, err, fmt_count, Feature, Field, FieldType, Result, Table, Value};
@@ -10,16 +10,80 @@ use std::collections::HashMap;
 
 // ---------- Clip (Clipper) ----------
 
-pub(super) const CLIPPER_PARAMS: &[ParamSpec] = &[ParamSpec {
-    key: "close",
-    label: "3D models along the edge",
-    kind: ParamKind::Choice(&[("false", "Left open"), ("true", "Closed with a wall")]),
-    default: "false",
-    hint: "A building or another solid cut by the edge is closed with a new wall there, on each side, so that it stands whole in a 3D print or a picture",
-}];
+pub(super) const CLIPPER_PARAMS: &[ParamSpec] = &[
+    ParamSpec {
+        key: "each",
+        label: "Clip areas",
+        kind: ParamKind::Choice(&[("together", "All as one"), ("each", "Each on its own, with its attributes")]),
+        default: "together",
+        hint: "Each on its own: what lies in several clip areas, such as the squares of a grid, is cut into a piece for each, and each piece gets the attributes of its clip area",
+    },
+    ParamSpec {
+        key: "attributes",
+        label: "Attributes to fetch",
+        kind: ParamKind::Attributes("Clipper"),
+        default: "",
+        hint: "From the clip area each piece lies in. Empty fetches all",
+    },
+    ParamSpec {
+        key: "prefix",
+        label: "Prefix",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Put in front of the fetched names, for example square_. Without it, a name the features already have is not fetched",
+    },
+    ParamSpec {
+        key: "crop",
+        label: "A raster inside",
+        kind: ParamKind::Choice(&[("yes", "Cut to the areas"), ("no", "As large as it was")]),
+        default: "yes",
+        hint: "For a raster on Clippee: a cell is inside when its middle is. The cells outside are on Outside, in a raster as large as it was",
+    },
+    ParamSpec {
+        key: "close",
+        label: "3D models along the edge",
+        kind: ParamKind::Choice(&[("false", "Left open"), ("true", "Closed with a wall")]),
+        default: "false",
+        hint: "A building or another solid cut by the edge is closed with a new wall there, on each side, so that it stands whole in a 3D print or a picture",
+    },
+];
+
+/// A raster clipped: the cells inside the areas on Inside, those outside on Outside.
+fn clip_a_raster(p: &P, raster: &Table, areas: &Table, ctx: &mut NodeCtx) -> Result<Outputs> {
+    if p.get("each").as_deref() == Some("each") {
+        return err("A stream carries one raster, so the clip areas cannot each cut a raster of their own. Choose All as one, or clip the raster in a Loop over the areas.");
+    }
+    if !areas.features.iter().any(|f| f.geom.as_ref().is_some_and(|g| !geom::polygons_of(g).is_empty())) {
+        return err("No areas came in on Clipper. Connect polygons to clip the raster with.");
+    }
+    let crop = p.get("crop").as_deref() != Some("no");
+    let (inside, kept, all) = super::raster089::clip_raster(raster, areas, true, crop, ctx)?;
+    let (outside, rest, _) = super::raster089::clip_raster(raster, areas, false, false, ctx)?;
+    if inside.is_none() {
+        ctx.notes.warn("No cell of the raster is inside the areas: they do not cover the middle of any cell.");
+    }
+    ctx.notes.info(format!("{} of {} cells inside, {} outside", fmt_count(kept as u64), fmt_count(all as u64), fmt_count(rest as u64)));
+    Ok(vec![("Inside".into(), inside.unwrap_or_else(|| raster.like())), ("Outside".into(), outside.unwrap_or_else(|| raster.like()))])
+}
+
+/// The clip areas one by one, each with its row in Clipper, for clipping by each on its own.
+fn each_area(clip_table: &Table) -> Vec<(usize, Clipper)> {
+    clip_table
+        .features
+        .iter()
+        .enumerate()
+        .filter_map(|(k, f)| {
+            let g = f.geom.as_ref().filter(|g| geom::family(g) == geom::Family::Area)?;
+            Clipper::new(std::iter::once(g)).map(|c| (k, c))
+        })
+        .collect()
+}
 
 pub(super) fn run_clipper(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
     let clippee = input(inp, "Clippee");
+    if clippee.grid.is_some() || clippee.image.is_some() {
+        return clip_a_raster(p, clippee, input(inp, "Clipper"), ctx);
+    }
     let mut clip_table = input(inp, "Clipper").clone();
     if let (Some(a), Some(b)) = (clippee.crs, clip_table.crs) {
         if a != b {
@@ -41,6 +105,67 @@ pub(super) fn run_clipper(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
             return Ok(vec![("Inside".into(), inside), ("Outside".into(), clippee.clone())]);
         }
     };
+    let each = p.get("each").as_deref() == Some("each");
+    if each {
+        let fetched = fetched_fields(p, clippee, &clip_table, "Clipper", ctx)?;
+        inside.fields.extend(fetched.iter().map(|(i, n)| Field::new(n.clone(), clip_table.fields[*i].ty)));
+        let with_area = |attrs: &[Value], k: usize| -> Vec<Value> {
+            let mut a = attrs.to_vec();
+            a.extend(fetched.iter().map(|(i, _)| clip_table.features[k].attrs[*i].clone()));
+            a
+        };
+        if let Some(mesh) = clippee.mesh.as_deref() {
+            let areas = each_area(&clip_table);
+            let close = p.flag("close");
+            // What lies in none of the areas, as when they are clipped by as one.
+            let (_, mut rest) = crate::clip3d::clip_mesh(mesh, &clipper);
+            let mut walls = 0;
+            if close {
+                walls += crate::clip3d::close_cut(&mut rest, &clipper);
+            }
+            let outside = model_side(clippee, &rest, &clipper, false);
+            let mut models = Vec::new();
+            let mut pieces = 0usize;
+            for (k, c) in &areas {
+                if !ctx.gate.going() {
+                    return err(crate::model::STOPPED);
+                }
+                let (mut m, _) = crate::clip3d::clip_mesh(mesh, c);
+                if m.tris.is_empty() {
+                    continue;
+                }
+                if close {
+                    walls += crate::clip3d::close_cut(&mut m, c);
+                }
+                pieces += m.tris.len();
+                let side = model_side(clippee, &m, c, true);
+                inside.features.extend(side.features.iter().map(|f| Feature { attrs: with_area(&f.attrs, *k), ..f.clone() }));
+                models.push(side.mesh.expect("a model on each side"));
+            }
+            let parts: Vec<&crate::mesh::Mesh> = models.iter().map(|m| m.as_ref()).collect();
+            inside.mesh = Some(std::sync::Arc::new(crate::mesh::Mesh::merge(&parts)));
+            ctx.notes.info(format!(
+                "{} pieces in {} clip areas, {} triangles inside and {} outside, from {}",
+                fmt_count(inside.features.len() as u64),
+                fmt_count(areas.len() as u64),
+                fmt_count(pieces as u64),
+                fmt_count(rest.tris.len() as u64),
+                fmt_count(mesh.tris.len() as u64)
+            ));
+            if close {
+                ctx.notes.info(if walls > 0 {
+                    format!("{} walls close what was cut", fmt_count(walls as u64))
+                } else {
+                    "nothing was cut open that could be closed".to_string()
+                });
+            }
+            return Ok(vec![("Inside".into(), inside), ("Outside".into(), outside)]);
+        }
+        let (cut, rest) = cut_by_each(clippee, &clip_table, &clipper, &fetched, ctx)?;
+        inside.features = cut.features;
+        outside.features = rest.features;
+        return Ok(vec![("Inside".into(), inside), ("Outside".into(), outside)]);
+    }
     if let Some(mesh) = clippee.mesh.as_deref() {
         return clip_model(clippee, mesh, &clipper, p.flag("close"), ctx);
     }
@@ -93,41 +218,7 @@ fn clip_model(clippee: &Table, mesh: &crate::mesh::Mesh, clipper: &geom::Clipper
             "nothing was cut open that could be closed: the models are not closed solids, or the edge does not cross them".to_string()
         });
     }
-    let rows_with = |m: &crate::mesh::Mesh| -> Vec<usize> {
-        let mut has = vec![false; clippee.features.len().max(m.objects.len())];
-        for t in &m.tris {
-            if let Some(h) = has.get_mut(t.object as usize) {
-                *h = true;
-            }
-        }
-        (0..clippee.features.len()).filter(|r| has[*r]).collect()
-    };
-    let side = |m: &crate::mesh::Mesh, inside: bool| -> Table {
-        let rows = rows_with(m);
-        let mut out = clippee.like();
-        for r in &rows {
-            let f = &clippee.features[*r];
-            let geom_part = f.geom.as_ref().map(|g| (g, clipper.clip(g)));
-            let feature = match geom_part {
-                Some((g, c)) => {
-                    let part = if inside { c.inside } else { c.outside };
-                    match part {
-                        Some(part) => {
-                            let z = f.heights().map(|z| if &part == g { f.z.clone().unwrap() } else { std::sync::Arc::from(geom::lift_heights(g, z, &part)) });
-                            Feature { attrs: f.attrs.clone(), geom: Some(part), z }
-                        }
-                        // The model reaches over, but its outline does not: the outline is kept.
-                        None => f.clone(),
-                    }
-                }
-                None => f.clone(),
-            };
-            out.features.push(feature);
-        }
-        out.mesh = Some(std::sync::Arc::new(m.pick(&rows)));
-        out
-    };
-    let (inside, outside) = (side(&mesh_in, true), side(&mesh_out, false));
+    let (inside, outside) = (model_side(clippee, &mesh_in, clipper, true), model_side(clippee, &mesh_out, clipper, false));
     ctx.notes.info(format!(
         "{} triangles inside and {} outside, from {}",
         fmt_count(mesh_in.tris.len() as u64),
@@ -135,6 +226,40 @@ fn clip_model(clippee: &Table, mesh: &crate::mesh::Mesh, clipper: &geom::Clipper
         fmt_count(mesh.tris.len() as u64)
     ));
     Ok(vec![("Inside".into(), inside), ("Outside".into(), outside)])
+}
+
+/// One side of a clipped 3D model: the features that have triangles in it, their outlines
+/// clipped with it, and the model of those features.
+fn model_side(clippee: &Table, m: &crate::mesh::Mesh, clipper: &Clipper, inside: bool) -> Table {
+    let mut has = vec![false; clippee.features.len().max(m.objects.len())];
+    for t in &m.tris {
+        if let Some(h) = has.get_mut(t.object as usize) {
+            *h = true;
+        }
+    }
+    let rows: Vec<usize> = (0..clippee.features.len()).filter(|r| has[*r]).collect();
+    let mut out = clippee.like();
+    for r in &rows {
+        let f = &clippee.features[*r];
+        let geom_part = f.geom.as_ref().map(|g| (g, clipper.clip(g)));
+        let feature = match geom_part {
+            Some((g, c)) => {
+                let part = if inside { c.inside } else { c.outside };
+                match part {
+                    Some(part) => {
+                        let z = f.heights().map(|z| if &part == g { f.z.clone().unwrap() } else { std::sync::Arc::from(geom::lift_heights(g, z, &part)) });
+                        Feature { attrs: f.attrs.clone(), geom: Some(part), z }
+                    }
+                    // The model reaches over, but its outline does not: the outline is kept.
+                    None => f.clone(),
+                }
+            }
+            None => f.clone(),
+        };
+        out.features.push(feature);
+    }
+    out.mesh = Some(std::sync::Arc::new(m.pick(&rows)));
+    out
 }
 
 // ---------- Dissolve (Dissolver) ----------
@@ -338,7 +463,7 @@ pub(super) fn run_overlayer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Ou
     Ok(vec![("Point".into(), out_points), ("Area".into(), out_areas)])
 }
 
-// ---------- Count points in polygons (PointCounter) and Join by location (SpatialJoiner) ----------
+// ---------- Join by location (SpatialJoiner), which also counts points in areas ----------
 
 /// An index of the areas of a table, for finding the ones a point lies in. The areas
 /// are reprojected to the coordinate system of what they are compared with, and those
@@ -367,42 +492,6 @@ pub(super) fn single_point(f: &Feature) -> Option<geo::Coord<f64>> {
     }
 }
 
-pub(super) const COUNTER_PARAMS: &[ParamSpec] = &[ParamSpec {
-    key: "name",
-    label: "Count attribute",
-    kind: ParamKind::Text,
-    default: "point_count",
-    hint: "The number of points in each polygon. An attribute that already exists is overwritten",
-}];
-
-pub(super) fn run_point_counter(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let (areas, points) = (input(inp, "Polygons"), input(inp, "Points"));
-    let name = p.get("name").unwrap_or_else(|| "point_count".to_string());
-    let index = area_lookup(areas, "Polygons", points.crs, ctx)?;
-    let mut counts = vec![0i64; areas.len()];
-    let (mut not_point, mut several) = (0usize, 0usize);
-    for f in &points.features {
-        let Some(c) = single_point(f) else {
-            not_point += usize::from(f.geom.is_some());
-            continue;
-        };
-        let hits = index.containing(c);
-        several += usize::from(hits.len() > 1);
-        hits.iter().for_each(|h| counts[*h] += 1);
-    }
-    if not_point > 0 {
-        ctx.notes.warn(format!("{} features in Points are not single points and were not counted.", fmt_count(not_point as u64)));
-    }
-    if several > 0 {
-        ctx.notes.warn(format!("{} points lie in more than one polygon and were counted in each of them.", fmt_count(several as u64)));
-    }
-    let mut out = with_column(areas, &name, counts.into_iter().map(Value::Int).collect());
-    if let Some(i) = out.field_index(&name) {
-        out.fields[i].ty = FieldType::Int;
-    }
-    Ok(vec![("Polygons".into(), out)])
-}
-
 pub(super) const RELATIONS: &[(&str, &str)] = &[
     ("intersects", "Touch or overlap in any way"),
     ("within", "Lie within"),
@@ -413,8 +502,12 @@ pub(super) const RELATIONS: &[(&str, &str)] = &[
     ("near", "Lie within a distance"),
     ("point", "Have their point inside (one per feature)"),
 ];
-pub(super) const JOIN_MODES: &[(&str, &str)] =
-    &[("first", "The first one found"), ("all", "Every one: a feature for each"), ("summary", "Summarized: count, and the values together")];
+pub(super) const JOIN_MODES: &[(&str, &str)] = &[
+    ("first", "The first one found"),
+    ("all", "Every one: a feature for each"),
+    ("summary", "Summarized: count, and the values together"),
+    ("count", "Counted only: how many, such as the points in each area"),
+];
 pub(super) const JOIN_NUMBERS: &[(&str, &str)] = &[("sum", "Sum"), ("mean", "Mean"), ("min", "Smallest"), ("max", "Largest"), ("list", "Listed, like text")];
 
 pub(super) const JOINER_PARAMS: &[ParamSpec] = &[
@@ -437,7 +530,7 @@ pub(super) const JOINER_PARAMS: &[ParamSpec] = &[
         label: "When several are found",
         kind: ParamKind::Choice(JOIN_MODES),
         default: "first",
-        hint: "Summarized keeps every feature in Joined, those that found nothing with the count 0",
+        hint: "Summarized and counted keep every feature in Joined, those that found nothing with the count 0",
     },
     ParamSpec {
         key: "numbers",
@@ -451,7 +544,7 @@ pub(super) const JOINER_PARAMS: &[ParamSpec] = &[
         label: "Count attribute",
         kind: ParamKind::Text,
         default: "join_count",
-        hint: "When summarized: how many were found",
+        hint: "When summarized or counted: how many were found",
     },
     ParamSpec {
         key: "attributes",
@@ -499,7 +592,8 @@ pub(super) fn run_spatial_joiner(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Resu
     if relation == "near" && ctx.geographic(features.crs) == Some(true) {
         ctx.notes.warn(format!("The distance is in degrees, since Features are in {}. Reproject first to count in metres.", crs_label(features.crs)));
     }
-    let fetched = fetched_fields(p, features, join, "Join", ctx)?;
+    // Counted only: how many, and no attributes.
+    let fetched = if mode == "count" { Vec::new() } else { fetched_fields(p, features, join, "Join", ctx)? };
     // For each feature, the features of Join it stands in the relation to, in order.
     let mut hits: Vec<Vec<usize>> = vec![Vec::new(); features.len()];
     if relation == "point" {
@@ -547,7 +641,7 @@ pub(super) fn run_spatial_joiner(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Resu
     }
     let mut joined = features.like();
     let mut unjoined = features.like();
-    if mode == "summary" {
+    if mode == "summary" || mode == "count" {
         let count_name = p.get("count").filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "join_count".into());
         let numbers = p.get("numbers").unwrap_or_else(|| "sum".into());
         let numeric = |i: usize| matches!(join.fields[i].ty, FieldType::Int | FieldType::Real) && numbers != "list";
@@ -765,7 +859,8 @@ pub(super) fn run_nearest(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
 
 // ---------- Split lines ----------
 
-pub(super) const SPLIT_AT: &[(&str, &str)] = &[("both", "Points and crossings"), ("points", "Points only"), ("crossings", "Crossings only")];
+pub(super) const SPLIT_AT: &[(&str, &str)] =
+    &[("both", "Points and crossings"), ("points", "Points only"), ("crossings", "Crossings only"), ("corners", "Every corner: a line for each segment")];
 
 pub(super) const SPLITTER_PARAMS: &[ParamSpec] = &[
     ParamSpec {
@@ -773,7 +868,14 @@ pub(super) const SPLITTER_PARAMS: &[ParamSpec] = &[
         label: "Split at",
         kind: ParamKind::Choice(SPLIT_AT),
         default: "both",
-        hint: "The points connected to Points, the places where lines cross or meet each other, or both",
+        hint: "The points connected to Points, the places where lines cross or meet each other, or both. Or every corner, so that each segment is a line of its own",
+    },
+    ParamSpec {
+        key: "areas",
+        label: "Areas",
+        kind: ParamKind::Choice(&[("keep", "To Other, as they are"), ("outline", "Their outlines split too")]),
+        default: "keep",
+        hint: "At every corner",
     },
     ParamSpec {
         key: "tolerance",
@@ -856,6 +958,9 @@ pub(super) fn run_splitter(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Out
     use geo::line_intersection::{line_intersection, LineIntersection};
     let (lines, points) = (input(inp, "Lines"), input(inp, "Points"));
     let how = p.get("at").unwrap_or_else(|| "both".into());
+    if how == "corners" {
+        return super::geom_make::split_at_corners(p, lines, ctx);
+    }
     let tol = number_param(p, "tolerance", "The tolerance")?.unwrap_or(0.01).max(0.0);
     let part_name = p.get("part").filter(|n| !n.trim().is_empty());
     let moved = same_crs(points, "Points", lines.crs, ctx)?;
@@ -1090,39 +1195,18 @@ pub(super) fn run_overlay(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outp
     Ok(vec![("Both".into(), both), ("Areas only".into(), a_only), ("Overlay only".into(), b_only)])
 }
 
-// ---------- Intersect (Intersector) ----------
+// ---------- Clip by each area on its own (Intersect before 0.96.8) ----------
 
-pub(super) const INTERSECTOR_PARAMS: &[ParamSpec] = &[
-    ParamSpec {
-        key: "attributes",
-        label: "Attributes to fetch",
-        kind: ParamKind::Attributes("Overlay"),
-        default: "",
-        hint: "From the area of Overlay each part lies in. Empty fetches all",
-    },
-    ParamSpec {
-        key: "prefix",
-        label: "Prefix",
-        kind: ParamKind::Text,
-        default: "",
-        hint: "Put in front of the fetched names, for example zone_. Without it, a name the features already have is not fetched",
-    },
-];
-
-pub(super) fn run_intersector(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let (features, overlay) = (input(inp, "Input"), input(inp, "Overlay"));
-    let moved = same_crs(overlay, "Overlay", features.crs, ctx)?;
-    let over = moved.as_ref().unwrap_or(overlay);
-    let not_area = over.features.iter().filter(|f| f.geom.is_some() && !is_area(f)).count();
-    if not_area > 0 {
-        ctx.notes.warn(format!("{} features in Overlay are not areas and were left out.", fmt_count(not_area as u64)));
-    }
-    let fetched = fetched_fields(p, features, overlay, "Overlay", ctx)?;
+/// Features cut by each area of `over` on its own: a piece for each area a feature reaches,
+/// with the attributes `fetched` from it, and what lies in none of them. `over` is in the
+/// coordinate system of the features. Called Intersect before 0.96.8.
+fn cut_by_each(features: &Table, over: &Table, all: &Clipper, fetched: &[(usize, String)], ctx: &mut NodeCtx) -> Result<(Table, Table)> {
+    let overlay = over;
     let index = box_index(over.features.iter().map(|f| f.geom.as_ref().filter(|g| geom::family(g) == geom::Family::Area)));
     // One clipper for each area, made when it is first needed (by whichever core needs it),
     // and one for all of them to find what lies outside.
     let clippers: Vec<std::sync::OnceLock<Option<geom::Clipper>>> = (0..over.len()).map(|_| std::sync::OnceLock::new()).collect();
-    let everything = geom::Clipper::new(over.features.iter().filter_map(|f| f.geom.as_ref()));
+    let everything = Some(all);
     let mut cut = features.like();
     cut.raster = false;
     cut.fields.extend(fetched.iter().map(|(i, n)| Field::new(n.clone(), overlay.fields[*i].ty)));
@@ -1149,8 +1233,9 @@ pub(super) fn run_intersector(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<
                 break;
             }
             if let Some(piece) = clipped.inside {
-                // A feature wholly inside keeps its heights; a piece of one loses them.
-                let z = if clipped.outside.is_none() { f.z.clone() } else { None };
+                // Heights go with the pieces: from the corners there were, along the edges
+                // and in the plane of each area.
+                let z = if clipped.outside.is_none() { f.z.clone() } else { f.heights().map(|z| std::sync::Arc::from(geom::lift_heights(g, z, &piece))) };
                 let mut attrs = f.attrs.clone();
                 attrs.extend(fetched.iter().map(|(i, _)| over.features[j].attrs[*i].clone()));
                 pieces.push(Feature { z, attrs, geom: Some(piece) });
@@ -1161,7 +1246,7 @@ pub(super) fn run_intersector(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<
             Some(c) => c.clip(g).outside,
         };
         let rest = rest.map(|rest| {
-            let z = if &rest == g { f.z.clone() } else { None };
+            let z = if &rest == g { f.z.clone() } else { f.heights().map(|z| std::sync::Arc::from(geom::lift_heights(g, z, &rest))) };
             Feature { z, attrs: f.attrs.clone(), geom: Some(rest) }
         });
         Ok((pieces, rest, fine))
@@ -1174,34 +1259,14 @@ pub(super) fn run_intersector(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<
         outside.features.extend(rest);
     }
     if unsupported > 0 {
-        ctx.notes.warn(format!("{} features have a kind of geometry that cannot be cut, and are left out of Intersection.", fmt_count(unsupported as u64)));
+        ctx.notes.warn(format!("{} features have a kind of geometry that cannot be cut, and are left out of Inside.", fmt_count(unsupported as u64)));
     }
-    Ok(vec![("Intersection".into(), cut), ("Outside".into(), outside)])
+    Ok((cut, outside))
 }
 
 /// The tools of this module, for the registry in mod.rs.
 pub(super) const TYPES: &[NodeType] = &[
     NodeType {
-        name: "Intersector",
-        title: "Intersect",
-        hidden: false,
-        group: Group::Transformer,
-        category: "Geometry",
-        desc: "Cuts points, lines and areas by the areas of Overlay. Each part that lies in an area gets the attributes of both and goes to Intersection: a road cut where it crosses from one zone to the next. Where the areas overlap, a part comes for each. What lies outside them all goes to Outside.",
-        inputs: &["Input", "Overlay"],
-        outputs: &["Intersection", "Outside"],
-        ports: None,
-        params: INTERSECTOR_PARAMS,
-        run: run_intersector,
-        summary: |p| {
-            let attrs = p.list("attributes");
-            if attrs.is_empty() {
-                String::new()
-            } else {
-                attrs.join(", ")
-            }
-        },
-    },    NodeType {
         name: "NeighborFinder",
         title: "Find nearest",
         hidden: false,
@@ -1224,7 +1289,7 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Geometry",
-        desc: "Splits lines where points lie on them, where they cross or meet each other, or both. Each part keeps the attributes of its line.",
+        desc: "Splits lines where points lie on them, where they cross or meet each other, or both, or at every corner, so that each segment is a line of its own, which was Split lines into segments before 0.96.8; the outlines of areas can be split that way too. Each part keeps the attributes of its line.",
         inputs: &["Lines", "Points"],
         outputs: &["Lines", "Other"],
         ports: None,
@@ -1233,6 +1298,7 @@ pub(super) const TYPES: &[NodeType] = &[
         summary: |p| match p.get("at").as_deref() {
             Some("points") => "at points".into(),
             Some("crossings") => "at crossings".into(),
+            Some("corners") => "at every corner".into(),
             _ => "at points and crossings".into(),
         },
     },
@@ -1256,7 +1322,7 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Geometry",
-        desc: "Clips points, lines and areas against the clip areas. Lines and areas are split at the boundary. Points exactly on the boundary count as inside. All clip areas are merged into one before clipping. Heights are kept: a new corner gets its height from the edge or the plane it was cut from. 3D models, such as a TIN, a surface or buildings, are cut from above, each triangle in its own plane, and walls by upright planes along the boundary.",
+        desc: "Clips points, lines, areas, 3D models and rasters against the clip areas. Lines and areas are split at the boundary. Points exactly on the boundary count as inside. All clip areas are merged into one before clipping, or each clips on its own, as the squares of a grid, and gives its attributes to the pieces in it. Heights are kept: a new corner gets its height from the edge or the plane it was cut from. 3D models, such as a TIN, a surface or buildings, are cut from above, each triangle in its own plane, and walls by upright planes along the boundary. A raster, a grid or a picture, keeps the cells whose middles are inside, cut to the areas, and gives the rest on Outside. Called Clip raster for rasters before 0.96.8.",
         inputs: &["Clipper", "Clippee"],
         outputs: &["Inside", "Outside"],
         ports: None,
@@ -1288,26 +1354,12 @@ pub(super) const TYPES: &[NodeType] = &[
         },
     },
     NodeType {
-        name: "PointCounter",
-        title: "Count points in polygons",
-        hidden: false,
-        group: Group::Transformer,
-        category: "Geometry",
-        desc: "Counts the points in each polygon and writes the number to an attribute of the polygon. A point on a boundary counts as inside.",
-        inputs: &["Polygons", "Points"],
-        outputs: &["Polygons"],
-        ports: None,
-        params: COUNTER_PARAMS,
-        run: run_point_counter,
-        summary: |p| p.get("name").unwrap_or_default(),
-    },
-    NodeType {
         name: "SpatialJoiner",
         title: "Join by location",
         hidden: false,
         group: Group::Transformer,
         category: "Geometry",
-        desc: "A spatial join, as Join attributes by location in QGIS: gives each feature the attributes of the features in Join it lies within, crosses, touches or is near: points, lines and areas in both. Each point the municipality it is in, each road the zones it crosses, each stop the nearest line. One, every one, or summarized. Features that find nothing go to Unjoined.",
+        desc: "A spatial join, as Join attributes by location in QGIS: gives each feature the attributes of the features in Join it lies within, crosses, touches or is near: points, lines and areas in both. Each point the municipality it is in, each road the zones it crosses, each stop the nearest line. One, every one, summarized, or only counted, such as the points in each area, which was Count points in polygons before 0.96.8. Features that find nothing go to Unjoined.",
         inputs: &["Features", "Join"],
         outputs: &["Joined", "Unjoined"],
         ports: None,
@@ -1320,6 +1372,8 @@ pub(super) const TYPES: &[NodeType] = &[
                 Some(prefix) => format!("{} as {}…", what, prefix),
                 None => what,
             };
+            // Counted only: the attribute with the count.
+            let what = if p.get("mode").as_deref() == Some("count") { format!("counted in {}", p.get("count").unwrap_or_else(|| "join_count".into())) } else { what };
             let how = match p.get("relation").as_deref().unwrap_or("intersects") {
                 "within" => "within".to_string(),
                 "contains" => "containing".to_string(),
@@ -1344,7 +1398,7 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: true,
         group: Group::Transformer,
         category: "Geometry",
-        desc: "Replaced by Join by location and Count points in polygons. Each point gets the attributes of the area it lies in, and each area the number of points in it.",
+        desc: "Replaced by Join by location, which gives each point the attributes of the area it lies in, and counts the points in each area.",
         inputs: &["Point", "Area"],
         outputs: &["Point", "Area"],
         ports: None,
@@ -1353,3 +1407,119 @@ pub(super) const TYPES: &[NodeType] = &[
         summary: |_| String::new(),
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::super::run_for_test;
+    use crate::mesh::{Material, Mesh, Tri, NONE};
+    use crate::model::{Feature, Field, FieldType, Table, Value};
+    use geo::{polygon, Geometry, Length, LineString};
+
+    /// Two squares side by side, a and b, as the clip areas of a grid.
+    fn squares() -> Table {
+        let sq = |x0: f64, name: &str| Feature {
+            attrs: vec![Value::Text(name.into()), Value::Text("from the grid".into())],
+            geom: Some(Geometry::Polygon(polygon![(x: x0, y: 0.0), (x: x0 + 10.0, y: 0.0), (x: x0 + 10.0, y: 10.0), (x: x0, y: 10.0)])),
+            z: None,
+        };
+        Table {
+            fields: vec![Field::new("square", FieldType::Text), Field::new("name", FieldType::Text)],
+            features: vec![sq(0.0, "a"), sq(10.0, "b")],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn each_clip_area_cuts_its_own_piece_and_gives_it_its_attributes() {
+        // A line across both squares and on out of them, and a point in b.
+        let lines = Table {
+            fields: vec![Field::new("name", FieldType::Text)],
+            features: vec![
+                Feature { attrs: vec![Value::Text("road".into())], geom: Some(Geometry::LineString(LineString::from(vec![(2.0, 5.0), (25.0, 5.0)]))), z: None },
+                Feature { attrs: vec![Value::Text("well".into())], geom: Some(Geometry::Point((15.0, 3.0).into())), z: None },
+            ],
+            ..Default::default()
+        };
+        let (out, _) = run_for_test("Clipper", &[("each", "each")], vec![("Clipper", squares()), ("Clippee", lines.clone())]).unwrap();
+        let inside = &out.iter().find(|o| o.0 == "Inside").unwrap().1;
+        let outside = &out.iter().find(|o| o.0 == "Outside").unwrap().1;
+        // The name of the features is theirs: the grid's name is not fetched without a prefix.
+        assert_eq!(inside.fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["name", "square"]);
+        let got: Vec<(String, String, f64)> = inside
+            .features
+            .iter()
+            .map(|f| {
+                let len = match f.geom.as_ref().unwrap() {
+                    Geometry::LineString(l) => geo::Euclidean.length(l),
+                    _ => 0.0,
+                };
+                (f.attrs[0].to_text(), f.attrs[1].to_text(), (len * 1000.0).round() / 1000.0)
+            })
+            .collect();
+        assert_eq!(got, [("road".into(), "a".into(), 8.0), ("road".into(), "b".into(), 10.0), ("well".into(), "b".into(), 0.0)]);
+        // What lies in no square goes to Outside, as when they clip as one.
+        assert_eq!(outside.features.len(), 1);
+        assert!(matches!(outside.features[0].geom, Some(Geometry::LineString(ref l)) if (l.0[0].x - 20.0).abs() < 1e-9));
+        // With a prefix, the grid's name comes too.
+        let (out, _) = run_for_test("Clipper", &[("each", "each"), ("prefix", "grid_")], vec![("Clipper", squares()), ("Clippee", lines)]).unwrap();
+        let names: Vec<String> = out[0].1.fields.iter().map(|f| f.name.clone()).collect();
+        assert_eq!(names, ["name", "grid_square", "grid_name"]);
+    }
+
+    #[test]
+    fn a_3d_model_is_cut_into_a_piece_for_each_clip_area() {
+        // A flat plate 5 m up from x 0 to 20, over both squares, as a mesh from a DWG.
+        let mesh = Mesh {
+            positions: vec![[0.0, 2.0, 5.0], [20.0, 2.0, 5.0], [20.0, 8.0, 5.0], [0.0, 8.0, 5.0]],
+            tris: vec![
+                Tri { v: [0, 1, 2], n: [NONE; 3], t: [NONE; 3], material: 0, object: 0 },
+                Tri { v: [0, 2, 3], n: [NONE; 3], t: [NONE; 3], material: 0, object: 0 },
+            ],
+            materials: vec![Material::default()],
+            objects: vec!["plate".into()],
+            ..Default::default()
+        };
+        let model = Table {
+            fields: vec![Field::new("layer", FieldType::Text)],
+            features: vec![Feature {
+                attrs: vec![Value::Text("decks".into())],
+                geom: Some(Geometry::Polygon(polygon![(x: 0.0, y: 2.0), (x: 20.0, y: 2.0), (x: 20.0, y: 8.0), (x: 0.0, y: 8.0)])),
+                z: None,
+            }],
+            mesh: Some(std::sync::Arc::new(mesh)),
+            ..Default::default()
+        };
+        let (out, _) = run_for_test("Clipper", &[("each", "each")], vec![("Clipper", squares()), ("Clippee", model.clone())]).unwrap();
+        let inside = &out[0].1;
+        let m = inside.mesh.as_deref().unwrap();
+        // Two pieces, one for each square, each its own object with the square's name.
+        assert_eq!(inside.features.len(), 2);
+        assert_eq!(m.objects.len(), 2);
+        let squares_of: Vec<String> = inside.features.iter().map(|f| f.attrs[1].to_text()).collect();
+        assert_eq!(squares_of, ["a", "b"]);
+        for k in 0..2u32 {
+            let xs: Vec<f64> = m.tris.iter().filter(|t| t.object == k).flat_map(|t| t.v.map(|i| m.positions[i as usize][0])).collect();
+            assert!(!xs.is_empty());
+            let (lo, hi) = (xs.iter().cloned().fold(f64::MAX, f64::min), xs.iter().cloned().fold(f64::MIN, f64::max));
+            assert!((lo - k as f64 * 10.0).abs() < 1e-6 && (hi - (k as f64 + 1.0) * 10.0).abs() < 1e-6, "{} {}", lo, hi);
+        }
+        // Nothing lies outside the squares.
+        assert!(out[1].1.features.is_empty());
+        // Filter by geometry type sends the model to Surface, with its triangles.
+        let (out, _) = run_for_test("GeometryFilter", &[], vec![("Input", model)]).unwrap();
+        let surface = &out.iter().find(|o| o.0 == "Surface").unwrap().1;
+        assert_eq!(surface.features.len(), 1);
+        assert_eq!(surface.mesh.as_deref().map(|m| m.tris.len()), Some(2));
+        assert!(out.iter().find(|o| o.0 == "Area").unwrap().1.features.is_empty());
+    }
+
+    #[test]
+    fn area_and_length_at_once() {
+        let mut t = squares();
+        t.crs = Some(3006);
+        let (out, _) = run_for_test("AreaCalculator", &[("what", "both"), ("length_unit", "km")], vec![("Input", t)]).unwrap();
+        let o = &out[0].1;
+        let at = |n: &str| o.features[0].attrs[o.field_index(n).unwrap()].clone();
+        assert_eq!((at("_area"), at("_length")), (Value::Real(100.0), Value::Real(0.04)));
+    }
+}

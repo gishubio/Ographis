@@ -118,6 +118,21 @@ impl GdalBackend {
         // GML, KML or XML at that moment can then crash, as a double free. Ographis uses none
         // of the SQL functions of SpatiaLite: GDAL reads its files without the library.
         let _ = gdal::config::set_config_option("SPATIALITE_LOAD", "FALSE");
+        // Files read where they are on the web, such as the photos of Lantmäteriet: parts
+        // next to each other fetched together, several at once over one connection, and what
+        // has been fetched kept for a while. Each only when not set already, so that it can
+        // still be changed from outside.
+        for (key, value) in [
+            ("GDAL_HTTP_MERGE_CONSECUTIVE_RANGES", "YES"),
+            ("GDAL_HTTP_MULTIPLEX", "YES"),
+            ("VSI_CACHE", "TRUE"),
+            ("VSI_CACHE_SIZE", "100000000"),
+            ("CPL_VSIL_CURL_CACHE_SIZE", "200000000"),
+        ] {
+            if std::env::var_os(key).is_none() && gdal::config::get_config_option(key, "").unwrap_or_default().is_empty() {
+                let _ = gdal::config::set_config_option(key, value);
+            }
+        }
         gdal::config::set_error_handler(|class, _num, msg| {
             if matches!(class, CplErrType::Warning | CplErrType::Failure) {
                 GDAL_MESSAGES.with(|m| {

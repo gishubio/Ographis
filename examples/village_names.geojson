@@ -1,0 +1,50 @@
+{
+ "type": "FeatureCollection",
+ "crs": {
+  "type": "name",
+  "properties": {
+   "name": "urn:ogc:def:crs:EPSG::3006"
+  }
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "The church"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418300,
+     6472560
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "The square"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418250,
+     6472480
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "The school"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     418380,
+     6472620
+    ]
+   }
+  }
+ ]
+}

@@ -91,10 +91,34 @@ pub enum RasterMode {
     Grid,
 }
 
-/// The file extensions that are read as rasters.
+/// The file extensions that are read as rasters. `dem`, `bil` and their kin are grids with
+/// a `.hdr` beside them, as GTOPO30, SRTM30 and GMTED are given; `dem` alone is also the
+/// ASCII format of the USGS.
 pub fn is_raster(ext: &str) -> bool {
-    matches!(ext, "tif" | "tiff" | "asc" | "img" | "vrt" | "jp2" | "png" | "jpg" | "jpeg" | "webp" | "bag" | "h5" | "hgt" | "dt0" | "dt1" | "dt2")
-        || is_cube(ext)
+    matches!(
+        ext,
+        "tif"
+            | "tiff"
+            | "asc"
+            | "img"
+            | "vrt"
+            | "jp2"
+            | "png"
+            | "jpg"
+            | "jpeg"
+            | "webp"
+            | "bag"
+            | "h5"
+            | "hgt"
+            | "dt0"
+            | "dt1"
+            | "dt2"
+            | "dem"
+            | "bil"
+            | "bip"
+            | "bsq"
+            | "flt"
+    ) || is_cube(ext)
 }
 
 /// The file extensions of data cubes: variables over a grid, with time or other dimensions,
@@ -229,6 +253,12 @@ pub struct PdfPage {
     /// marks outside it where it is to be cut.
     pub bleed_mm: f64,
     pub marks: bool,
+    /// Colours in inks for a printer, and an ICC profile of the printing that makes the PDF
+    /// a PDF/X-4. None: none.
+    pub cmyk: bool,
+    /// Black printed over the colours under it.
+    pub overprint: bool,
+    pub icc: Option<std::path::PathBuf>,
 }
 
 impl Default for PdfPage {
@@ -245,6 +275,9 @@ impl Default for PdfPage {
             title_align: "left".into(),
             bleed_mm: 0.0,
             marks: false,
+            cmyk: false,
+            overprint: false,
+            icc: None,
         }
     }
 }

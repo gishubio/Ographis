@@ -1,0 +1,270 @@
+{
+  "format": "ographis/1",
+  "name": "The floor of a made-up sea",
+  "description": "A map of the floor of a made-up inland sea in the manner of a bathymetric poster: the depths in blues from pale turquoise to deep navy with relief, the land as paper, the depths as a band of colours in the legend, seamounts and the deepest point with a line of description under each name, the basins in italics and the lands in spaced small capitals, a profile along a dashed line from A to B with the places on it, and a band along the bottom with the sources.",
+  "nodes": [
+    {
+      "id": "floor",
+      "type": "Reader",
+      "x": 40,
+      "y": 40,
+      "comment": "Made-up heights and depths of an inland sea, in metres, on a grid of 2.5 km in ETRS89 / LAEA Europe",
+      "params": {
+        "path": "made_up_sea_floor.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "section",
+      "type": "Reader",
+      "x": 40,
+      "y": 180,
+      "comment": "The line the profile is drawn along, from the ocean in the west to the far east",
+      "params": {
+        "path": "made_up_sea_section.geojson"
+      }
+    },
+    {
+      "id": "along",
+      "type": "Reader",
+      "x": 40,
+      "y": 320,
+      "comment": "Places along the line, named over the profile",
+      "params": {
+        "path": "made_up_sea_along.geojson"
+      }
+    },
+    {
+      "id": "marks",
+      "type": "Reader",
+      "x": 40,
+      "y": 460,
+      "comment": "Seamounts and the deepest point, each with a line of description",
+      "params": {
+        "path": "made_up_sea_marks.geojson"
+      }
+    },
+    {
+      "id": "waters",
+      "type": "Reader",
+      "x": 40,
+      "y": 600,
+      "comment": "The names of the basins, the gulf, the strait and the ocean",
+      "params": {
+        "path": "made_up_sea_waters.geojson"
+      }
+    },
+    {
+      "id": "lands",
+      "type": "Reader",
+      "x": 40,
+      "y": 740,
+      "comment": "The names of the lands around the sea",
+      "params": {
+        "path": "made_up_sea_lands.geojson"
+      }
+    },
+    {
+      "id": "map",
+      "type": "MapRenderer",
+      "x": 420,
+      "y": 300,
+      "comment": "The sea floor in blues with relief, the land as paper, the depths as a band in the legend, a profile along the dashed line with the places on it, and a band along the bottom",
+      "params": {
+        "width": "1800",
+        "margin": "2",
+        "title": "The Inner Sea floor",
+        "subtitle": "Basins nearly 6,000 m deep, joined to the open ocean by a narrow strait",
+        "title_place": "top-left",
+        "title_fill": "#f6f2e9",
+        "title_colour": "#1d2b3a",
+        "background": "colour",
+        "background_colour": "#eee7d7",
+        "legend": "top-right",
+        "legend_fill": "#f6f2e9",
+        "legend_line": "none",
+        "profile_from": "The section",
+        "profile_corner": "bottom-left",
+        "profile_title": "Depth along the dashed line, A to B",
+        "profile_places": "Places along the section",
+        "profile_size": "38",
+        "footer": "Data: a made-up sea floor, 2.5 km cells  ·  Ographis example",
+        "source": "© 2026 Ographis",
+        "layers": [
+          {
+            "from": "marks:Output",
+            "name": "Seamounts and deeps",
+            "fill": "#fff8e6",
+            "stroke": "#1d2b3a",
+            "width": 1.2,
+            "size": 7,
+            "legend": false,
+            "label": "name\ndetail",
+            "label_detail": true,
+            "label_bold": true,
+            "label_leaders": true,
+            "label_size": 15,
+            "label_colour": "#ffffff",
+            "label_halo": "#1d2b3a",
+            "label_halo_width": 1.1
+          },
+          {
+            "from": "waters:Output",
+            "name": "Waters",
+            "fill": "none",
+            "stroke": "none",
+            "size": 0,
+            "legend": false,
+            "label": "name",
+            "label_italic": true,
+            "label_place": "center",
+            "label_size": 19,
+            "label_colour": "#e9f3f4",
+            "label_halo": "none"
+          },
+          {
+            "from": "lands:Output",
+            "name": "Lands",
+            "fill": "none",
+            "stroke": "none",
+            "size": 0,
+            "legend": false,
+            "label": "name",
+            "label_place": "center",
+            "label_small_caps": true,
+            "label_tracking": 0.45,
+            "label_bold": true,
+            "label_size": 15,
+            "label_colour": "#6b6255",
+            "label_halo": "none"
+          },
+          {
+            "from": "along:Output",
+            "name": "Places along the section",
+            "fill": "none",
+            "stroke": "none",
+            "size": 0,
+            "legend": false
+          },
+          {
+            "from": "section:Output",
+            "name": "The section",
+            "stroke": "#f6f2e8",
+            "width": 1.8,
+            "dash": "dash",
+            "legend": false
+          },
+          {
+            "from": "floor:Output",
+            "name": "Depth below sea level",
+            "raster": "seafloor"
+          }
+        ]
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "x": 720,
+      "y": 240,
+      "comment": "",
+      "params": {
+        "path": "out/inner_sea/inner_sea_floor.png"
+      }
+    },
+    {
+      "id": "pdf",
+      "type": "Writer",
+      "x": 720,
+      "y": 380,
+      "comment": "",
+      "params": {
+        "path": "out/inner_sea/inner_sea_floor.pdf",
+        "pdf_size": "a3",
+        "pdf_orientation": "landscape"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "marks",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "waters",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "lands",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "along",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "section",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "floor",
+        "Output"
+      ],
+      "to": [
+        "map",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "pdf",
+        "Input"
+      ]
+    }
+  ]
+}

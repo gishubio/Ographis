@@ -1,4 +1,5 @@
-//! Tools for rasters: Merge rasters, Generalize raster, Raster calculator and Contour lines.
+//! Tools for rasters: Merge rasters, Raster calculator and Contour lines, and cells into one
+//! for Resample raster.
 
 use super::*;
 use crate::model::{crs_label, err, fmt_count, Grid, RasterImage, Result, Table};
@@ -147,36 +148,10 @@ pub(super) fn run_contours(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Out
     Ok(vec![("Contours".into(), t)])
 }
 
-// ---------- Generalize raster (RasterGeneralizer) ----------
-
-pub(super) const GENERALIZE_METHODS: &[(&str, &str)] = &[
-    ("mean", "Mean"),
-    ("majority", "Majority: the most common value, for classes"),
-    ("median", "Median"),
-    ("min", "Smallest"),
-    ("max", "Largest"),
-    ("sum", "Sum"),
-];
-
-pub(super) const GENERALIZE_PARAMS: &[ParamSpec] = &[
-    ParamSpec {
-        key: "factor",
-        label: "Cells into one",
-        kind: ParamKind::Text,
-        default: "2",
-        hint: "How many cells across and down become one: 4 makes 1 m cells into 4 m cells, sixteen into one",
-    },
-    ParamSpec {
-        key: "method",
-        label: "The new value",
-        kind: ParamKind::Choice(GENERALIZE_METHODS),
-        default: "mean",
-        hint: "Empty cells are left out. A new cell is empty only when all its cells are",
-    },
-];
+// ---------- Cells into one, for Resample raster (Generalize raster before 0.96.8) ----------
 
 /// One value from the values of the cells that become one. None when there are none.
-fn combine(values: &mut [f32], method: &str) -> Option<f32> {
+pub(super) fn combine(values: &mut [f32], method: &str) -> Option<f32> {
     if values.is_empty() {
         return None;
     }
@@ -255,7 +230,7 @@ pub fn generalize_grid(g: &Grid, n: usize, method: &str) -> Grid {
 }
 
 /// A picture with n × n pixels made into one, by their mean colour.
-fn generalize_image(img: &RasterImage, n: usize) -> RasterImage {
+pub(super) fn generalize_image(img: &RasterImage, n: usize) -> RasterImage {
     let (w, h) = (img.width.div_ceil(n), img.height.div_ceil(n));
     let mut rgba = vec![0u8; w * h * 4];
     for row in 0..h {
@@ -286,32 +261,6 @@ fn generalize_image(img: &RasterImage, n: usize) -> RasterImage {
     let t = &img.geotransform;
     let k = n as f64;
     RasterImage { vector: None, width: w, height: h, rgba, geotransform: [t[0], t[1] * k, t[2] * k, t[3], t[4] * k, t[5] * k] }
-}
-
-pub(super) fn run_raster_generalizer(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let t = input(inp, "Raster");
-    let n = match number_param(p, "factor", "Cells into one")? {
-        None => 2,
-        Some(f) if f >= 1.0 && f.fract() == 0.0 && f <= 10_000.0 => f as usize,
-        Some(_) => return err("Cells into one must be a whole number of 1 or more, such as 2 or 4."),
-    };
-    let method = p.get("method").unwrap_or_else(|| "mean".into());
-    let grid = t.grid.as_deref().map(|g| generalize_grid(g, n, &method));
-    let image = t.image.as_deref().map(|i| generalize_image(i, n));
-    let out = match (grid, image) {
-        (None, None) => return err("The stream on Raster has no raster. Read a GeoTIFF or another raster, or connect a tool that makes one."),
-        (Some(g), None) => {
-            ctx.notes.info(format!("{} × {} cells of {}", g.width, g.height, crate::model::fmt_real(g.cell_size().0)));
-            g.into_table()
-        }
-        (g, Some(i)) => {
-            if g.is_none() && method != "mean" {
-                ctx.notes.warn("A picture has colours rather than values, so its pixels are put together by their mean colour.");
-            }
-            i.into_table_with(t.crs, g)
-        }
-    };
-    Ok(vec![("Raster".into(), out)])
 }
 
 // ---------- Raster calculator (RasterCalculator) ----------
@@ -501,20 +450,6 @@ pub(super) const TYPES: &[NodeType] = &[
         params: MOSAIC_PARAMS,
         run: run_mosaic,
         summary: |_| String::new(),
-    },
-    NodeType {
-        name: "RasterGeneralizer",
-        title: "Generalize raster",
-        hidden: false,
-        group: Group::Transformer,
-        category: "Raster",
-        desc: "Makes a raster coarser: a number of cells across and down become one, with their mean, the most common value for classes such as land cover, the median, the smallest, the largest or the sum. Pictures get the mean colour.",
-        inputs: &["Raster"],
-        outputs: &["Raster"],
-        ports: None,
-        params: GENERALIZE_PARAMS,
-        run: run_raster_generalizer,
-        summary: |p| format!("{} × {}, {}", p.get("factor").unwrap_or_else(|| "2".into()), p.get("factor").unwrap_or_else(|| "2".into()), p.get("method").unwrap_or_else(|| "mean".into())),
     },
     NodeType {
         name: "RasterCalculator",

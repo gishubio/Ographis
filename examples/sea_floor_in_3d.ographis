@@ -1,0 +1,143 @@
+{
+  "format": "ographis/1",
+  "name": "A sea floor in 3D",
+  "description": "Two views from the side of a made-up sea floor. A seamount in the colours of a sonar survey, from violet in the deep to red on its top, lit from several directions. And a rough sea floor in flat steps of 150 m, as layers cut from card, in colours from navy to pale yellow, on a block whose sides show the layers and which casts a soft shadow on a dark blue ground.",
+  "nodes": [
+    {
+      "id": "mount",
+      "type": "Reader",
+      "x": 40,
+      "y": 40,
+      "comment": "A made-up seamount with a crater on its top, rising from a floor of small cones, in metres on a grid of 50 m",
+      "params": {
+        "path": "made_up_seamount.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "hills",
+      "type": "Reader",
+      "x": 40,
+      "y": 300,
+      "comment": "A made-up rough sea floor with a ridge across it, in metres on a grid of 100 m",
+      "params": {
+        "path": "made_up_sea_hills.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "rainbow",
+      "type": "TerrainRenderer",
+      "x": 320,
+      "y": 40,
+      "comment": "Seen from the south-west, low, in the colours of a sonar survey: violet in the deep, red on the top. The heights are made three times higher, so that the slopes show",
+      "params": {
+        "colours": "rainbow",
+        "light": "several",
+        "sun_azimuth": "300",
+        "sun_altitude": "40",
+        "exaggeration": "3",
+        "shadows": "soft",
+        "shadow_darkness": "25",
+        "view_azimuth": "215",
+        "tilt": "28",
+        "fov": "30",
+        "zoom": "100",
+        "width": "1600",
+        "height": "900",
+        "fog": "0",
+        "background": "none",
+        "block": "false"
+      }
+    },
+    {
+      "id": "steps",
+      "type": "TerrainRenderer",
+      "x": 320,
+      "y": 300,
+      "comment": "In steps of 150 m, as layers cut from card, on a block that casts a soft shadow on a dark blue ground",
+      "params": {
+        "colours": "sea",
+        "steps": "150",
+        "light": "one",
+        "sun_azimuth": "315",
+        "sun_altitude": "35",
+        "exaggeration": "4",
+        "shadows": "soft",
+        "shadow_darkness": "70",
+        "view_azimuth": "190",
+        "tilt": "50",
+        "fov": "30",
+        "zoom": "100",
+        "width": "1600",
+        "height": "900",
+        "fog": "0",
+        "background": "colour",
+        "background_colour": "#0d1b3d",
+        "block": "true"
+      }
+    },
+    {
+      "id": "png1",
+      "type": "Writer",
+      "x": 620,
+      "y": 40,
+      "comment": "",
+      "params": {
+        "path": "out/sea_floor_3d/seamount_in_rainbow.png"
+      }
+    },
+    {
+      "id": "png2",
+      "type": "Writer",
+      "x": 620,
+      "y": 300,
+      "comment": "",
+      "params": {
+        "path": "out/sea_floor_3d/sea_floor_in_steps.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "mount",
+        "Output"
+      ],
+      "to": [
+        "rainbow",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "hills",
+        "Output"
+      ],
+      "to": [
+        "steps",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "rainbow",
+        "Image"
+      ],
+      "to": [
+        "png1",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "steps",
+        "Image"
+      ],
+      "to": [
+        "png2",
+        "Input"
+      ]
+    }
+  ]
+}

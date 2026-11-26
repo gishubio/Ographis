@@ -1,0 +1,90 @@
+{
+ "type": "FeatureCollection",
+ "name": "made_up_sea_along",
+ "crs": {
+  "type": "name",
+  "properties": {
+   "name": "urn:ogc:def:crs:EPSG::3035"
+  }
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Ocean"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3116250,
+     1848750
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Strait of Calder"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3213750,
+     1848750
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Westmere Basin"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3526250,
+     1848750
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Midmere Basin"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     4088750,
+     1693750
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Halden Deep"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     4313750,
+     1756250
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Eastmere Basin"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     4601250,
+     1711250
+    ]
+   }
+  }
+ ]
+}

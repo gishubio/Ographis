@@ -1,0 +1,567 @@
+{
+  "format": "ographis/1",
+  "name": "The finer craft of the mapmaker",
+  "description": "Illuminated contours (Tanaka); Swiss relief with hachures; rivers that widen downstream and are named with spaced letters; roads with signs of their numbers, a bridge, a tunnel and one-way streets; value by alpha; a Dorling cartogram and a tile map; the same map as the green-blind see it; and a PDF for print in inks with black printed over the colours. All on made-up data.",
+  "nodes": [
+    {
+      "id": "dem",
+      "type": "Reader",
+      "x": 40,
+      "y": 40,
+      "comment": "The made-up terrain",
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "dem2",
+      "type": "Reader",
+      "x": 40,
+      "y": 180,
+      "comment": "The same terrain again, for hachures over the relief",
+      "params": {
+        "path": "terrain.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "bands",
+      "type": "ContourGenerator",
+      "x": 300,
+      "y": 40,
+      "comment": "The land between contours every 10 m, as areas",
+      "params": {
+        "interval": "10",
+        "kind": "areas"
+      }
+    },
+    {
+      "id": "rivers",
+      "type": "Reader",
+      "x": 40,
+      "y": 320,
+      "comment": "Rivers, with the order of each stream",
+      "params": {
+        "path": "made_up_rivers.geojson"
+      }
+    },
+    {
+      "id": "roads",
+      "type": "Reader",
+      "x": 40,
+      "y": 460,
+      "comment": "Roads, with their numbers, bridges, a tunnel and one-way streets",
+      "params": {
+        "path": "made_up_roads.geojson"
+      }
+    },
+    {
+      "id": "districts",
+      "type": "Reader",
+      "x": 40,
+      "y": 600,
+      "comment": "Districts, with how many live there and the share over 65",
+      "params": {
+        "path": "made_up_districts.geojson"
+      }
+    },
+    {
+      "id": "circles",
+      "type": "CartogramMaker",
+      "x": 300,
+      "y": 600,
+      "comment": "A circle for each district, as large as the people living there",
+      "params": {
+        "kind": "circles",
+        "value": "people",
+        "share": "45"
+      }
+    },
+    {
+      "id": "tiles",
+      "type": "CartogramMaker",
+      "x": 300,
+      "y": 740,
+      "comment": "A square for each district, on a grid",
+      "params": {
+        "kind": "squares",
+        "share": "80"
+      }
+    },
+    {
+      "id": "lit",
+      "type": "MapRenderer",
+      "x": 560,
+      "y": 40,
+      "comment": "Illuminated contours over heights in colours",
+      "params": {
+        "width": "1600",
+        "title": "Lit contours",
+        "subtitle": "Each step of 10 m light towards the north-west and dark away from it (Tanaka)",
+        "title_place": "top-left",
+        "scale_bar": "bottom-right",
+        "layers": [
+          {
+            "from": "bands:Contours",
+            "name": "Heights",
+            "color_by": "height_min",
+            "ramp": "terrain",
+            "stroke": "none",
+            "tanaka": true,
+            "width": 1.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "relief",
+      "type": "MapRenderer",
+      "x": 560,
+      "y": 180,
+      "comment": "Swiss relief, hachures, rivers and roads",
+      "params": {
+        "width": "1800",
+        "title": "The valley of the Long River",
+        "subtitle": "Swiss relief with hachures, rivers widening downstream, roads with their numbers",
+        "title_place": "top-left",
+        "title_fill": "#ffffffdd",
+        "map_frame": "frame",
+        "north_arrow": "top-right",
+        "scale_bar": "bottom-right",
+        "scale_number": "both",
+        "check_contrast": "true",
+        "layers": [
+          {
+            "from": "roads:Output",
+            "name": "Roads",
+            "stroke": "#f3b54a",
+            "width": 5,
+            "casing": "#8a6420",
+            "casing_width": 1.0,
+            "bridge_where": "bridge = 1",
+            "tunnel_where": "tunnel = 1",
+            "oneway_where": "oneway = 1",
+            "shield": "ref",
+            "shield_every": 420
+          },
+          {
+            "from": "rivers:Output",
+            "name": "Rivers",
+            "stroke": "#3b7bbf",
+            "width": 4,
+            "width_by": "order",
+            "taper": true,
+            "label": "name",
+            "label_spaced": true,
+            "label_italic": true,
+            "label_colour": "#245a90",
+            "label_size": 15
+          },
+          {
+            "from": "dem2:Output",
+            "name": "Hachures",
+            "raster": "hachures",
+            "opacity": 70
+          },
+          {
+            "from": "dem:Output",
+            "name": "Relief",
+            "raster": "swiss"
+          }
+        ]
+      }
+    },
+    {
+      "id": "who",
+      "type": "MapRenderer",
+      "x": 560,
+      "y": 600,
+      "comment": "Value by alpha: colour by one value, faintness by another",
+      "params": {
+        "width": "1400",
+        "title": "Where the old live",
+        "subtitle": "Colour: the share over 65. Faint: few people live there",
+        "title_place": "top-left",
+        "legend": "bottom-right",
+        "layers": [
+          {
+            "from": "districts:Output",
+            "name": "Share over 65",
+            "color_by": "over_65",
+            "ramp": "oranges",
+            "classes": 5,
+            "alpha_by": "people",
+            "stroke": "#ffffff",
+            "width": 1,
+            "label": "name",
+            "label_size": 12,
+            "label_upper_where": "people > 10000"
+          }
+        ]
+      }
+    },
+    {
+      "id": "who_seen",
+      "type": "MapRenderer",
+      "x": 560,
+      "y": 740,
+      "comment": "The same map in the colours of deuteranopia",
+      "params": {
+        "width": "1400",
+        "vision": "deuteranopia",
+        "title": "Where the old live, as the green-blind see it",
+        "title_place": "top-left",
+        "legend": "bottom-right",
+        "layers": [
+          {
+            "from": "districts:Output",
+            "name": "Share over 65",
+            "color_by": "over_65",
+            "ramp": "oranges",
+            "classes": 5,
+            "alpha_by": "people",
+            "stroke": "#ffffff",
+            "width": 1,
+            "label": "name",
+            "label_size": 12
+          }
+        ]
+      }
+    },
+    {
+      "id": "cartogram",
+      "type": "MapRenderer",
+      "x": 840,
+      "y": 600,
+      "comment": "A Dorling cartogram over the districts",
+      "params": {
+        "width": "1400",
+        "title": "Where people live",
+        "subtitle": "A circle for each district, as large as the people living there",
+        "title_place": "top-left",
+        "layers": [
+          {
+            "from": "circles:Cartogram",
+            "name": "People",
+            "color_by": "over_65",
+            "ramp": "oranges",
+            "classes": 5,
+            "stroke": "#ffffff",
+            "width": 1.5,
+            "label": "name",
+            "label_size_by": "@area",
+            "label_size": 9,
+            "label_size_max": 20
+          },
+          {
+            "from": "districts:Output",
+            "name": "Districts",
+            "fill": "#f3f1ec",
+            "stroke": "#cfcac0",
+            "width": 0.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "tilemap",
+      "type": "MapRenderer",
+      "x": 840,
+      "y": 740,
+      "comment": "A tile map: the small districts are seen as well as the large",
+      "params": {
+        "width": "1200",
+        "title": "Every district as large",
+        "title_place": "top-left",
+        "layers": [
+          {
+            "from": "tiles:Cartogram",
+            "name": "Districts",
+            "color_by": "over_65",
+            "ramp": "oranges",
+            "classes": 5,
+            "stroke": "none",
+            "label": "name",
+            "label_size": 13
+          }
+        ]
+      }
+    },
+    {
+      "id": "w0",
+      "type": "Writer",
+      "x": 1120,
+      "y": 40,
+      "comment": "",
+      "params": {
+        "path": "out/finer/lit_contours.png"
+      }
+    },
+    {
+      "id": "w1",
+      "type": "Writer",
+      "x": 1120,
+      "y": 160,
+      "comment": "",
+      "params": {
+        "path": "out/finer/valley_relief.png"
+      }
+    },
+    {
+      "id": "w2",
+      "type": "Writer",
+      "x": 1120,
+      "y": 280,
+      "comment": "For print, in inks with black printed over the colours",
+      "params": {
+        "path": "out/finer/valley_relief.pdf",
+        "pdf_size": "a3",
+        "pdf_colours": "cmyk_black",
+        "pdf_title": "The valley of the Long River"
+      }
+    },
+    {
+      "id": "w3",
+      "type": "Writer",
+      "x": 1120,
+      "y": 400,
+      "comment": "",
+      "params": {
+        "path": "out/finer/where_the_old_live.png"
+      }
+    },
+    {
+      "id": "w4",
+      "type": "Writer",
+      "x": 1120,
+      "y": 520,
+      "comment": "",
+      "params": {
+        "path": "out/finer/where_the_old_live_deuteranopia.png"
+      }
+    },
+    {
+      "id": "w5",
+      "type": "Writer",
+      "x": 1120,
+      "y": 640,
+      "comment": "",
+      "params": {
+        "path": "out/finer/cartogram_circles.png"
+      }
+    },
+    {
+      "id": "w6",
+      "type": "Writer",
+      "x": 1120,
+      "y": 760,
+      "comment": "",
+      "params": {
+        "path": "out/finer/cartogram_tiles.png"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "bands",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "bands",
+        "Contours"
+      ],
+      "to": [
+        "lit",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "roads",
+        "Output"
+      ],
+      "to": [
+        "relief",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "rivers",
+        "Output"
+      ],
+      "to": [
+        "relief",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "dem2",
+        "Output"
+      ],
+      "to": [
+        "relief",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "dem",
+        "Output"
+      ],
+      "to": [
+        "relief",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "districts",
+        "Output"
+      ],
+      "to": [
+        "who",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "districts",
+        "Output"
+      ],
+      "to": [
+        "who_seen",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "districts",
+        "Output"
+      ],
+      "to": [
+        "circles",
+        "Areas"
+      ]
+    },
+    {
+      "from": [
+        "districts",
+        "Output"
+      ],
+      "to": [
+        "tiles",
+        "Areas"
+      ]
+    },
+    {
+      "from": [
+        "circles",
+        "Cartogram"
+      ],
+      "to": [
+        "cartogram",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "districts",
+        "Output"
+      ],
+      "to": [
+        "cartogram",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "tiles",
+        "Cartogram"
+      ],
+      "to": [
+        "tilemap",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "lit",
+        "Map"
+      ],
+      "to": [
+        "w0",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "relief",
+        "Map"
+      ],
+      "to": [
+        "w1",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "relief",
+        "Map"
+      ],
+      "to": [
+        "w2",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "who",
+        "Map"
+      ],
+      "to": [
+        "w3",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "who_seen",
+        "Map"
+      ],
+      "to": [
+        "w4",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "cartogram",
+        "Map"
+      ],
+      "to": [
+        "w5",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "tilemap",
+        "Map"
+      ],
+      "to": [
+        "w6",
+        "Input"
+      ]
+    }
+  ]
+}

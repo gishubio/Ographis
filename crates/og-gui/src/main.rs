@@ -38,7 +38,13 @@ fn main() -> eframe::Result {
         None => app.start_screen = true,
     }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_title("Ographis").with_inner_size([1600.0, 960.0]).with_min_inner_size([960.0, 600.0]),
+        // Maximized at start, filling the screen, with the size to go back to when it is
+        // made smaller.
+        viewport: egui::ViewportBuilder::default()
+            .with_title("Ographis")
+            .with_inner_size([1600.0, 960.0])
+            .with_min_inner_size([960.0, 600.0])
+            .with_maximized(true),
         ..Default::default()
     };
     eframe::run_native(

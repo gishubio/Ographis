@@ -119,6 +119,16 @@
       },
       "x": 960,
       "y": 220
+    },
+    {
+      "id": "gif",
+      "type": "Writer",
+      "x": 960,
+      "y": 360,
+      "comment": "The same pages one after another, as a moving picture",
+      "params": {
+        "path": "out/subregion_pages.gif"
+      }
     }
   ],
   "edges": [
@@ -179,6 +189,16 @@
       ],
       "to": [
         "pdf",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "map",
+        "Map"
+      ],
+      "to": [
+        "gif",
         "Input"
       ]
     }

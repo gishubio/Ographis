@@ -49,10 +49,43 @@ pub struct LayerStyle {
     pub blend: String,
     /// Corners rounded off, so that coarse lines and areas look smooth.
     pub smooth: bool,
+    /// Left out of the legend, such as a line that a profile is drawn along.
+    pub no_legend: bool,
     /// A soft "glow" around the features, or a "shadow" under them, in this colour. Empty:
     /// none.
     pub glow: String,
     pub glow_colour: Option<[u8; 4]>,
+    /// Contours: every line whose value of this attribute is a whole number of `index_every`
+    /// is drawn heavier, as an index contour, and only those are named.
+    pub index_by: String,
+    pub index_every: f64,
+    /// A band of this many pixels inside the edge of each area, in the colour of its edge,
+    /// as along a border on a topographic map. 0: none.
+    pub band: f32,
+    /// Thin lines along the shore of the areas, fading outwards, as water is drawn on old maps.
+    pub waterlines: bool,
+    /// Illuminated contours (Tanaka): the edges of areas between contours light where they
+    /// face the light from the north-west and dark where they turn from it, thicker the more.
+    pub tanaka: bool,
+    /// Lines: an attribute that sets the width, from a third of `width` at its least to twice
+    /// it at its most, as the order of a stream or the traffic on a road.
+    pub width_by: String,
+    /// Lines that widen from their start to their end, as rivers downstream.
+    pub taper: bool,
+    /// Areas: an attribute whose value sets how see-through each area is, from faint at the
+    /// least to solid at the most, so that what concerns few is not as loud (value by alpha).
+    pub alpha_by: String,
+    /// For each feature, found from `bridge_where`, `tunnel_where` and `oneway_where`:
+    /// 1 a bridge, 2 a tunnel, 4 one way. Empty: none.
+    pub marks: std::sync::Arc<Vec<u8>>,
+    pub bridge_where: String,
+    pub tunnel_where: String,
+    pub oneway_where: String,
+    /// Lines: an attribute with the number of a road, written in a sign along it, such as
+    /// E20 in green and 49 in blue.
+    pub shield: String,
+    /// Pixels between the signs along a line.
+    pub shield_every: f32,
 }
 
 impl Default for LayerStyle {
@@ -76,8 +109,23 @@ impl Default for LayerStyle {
             scale_max: 0.0,
             blend: String::new(),
             smooth: false,
+            no_legend: false,
             glow: String::new(),
             glow_colour: None,
+            index_by: String::new(),
+            index_every: 0.0,
+            band: 0.0,
+            waterlines: false,
+            tanaka: false,
+            width_by: String::new(),
+            taper: false,
+            alpha_by: String::new(),
+            marks: Default::default(),
+            bridge_where: String::new(),
+            tunnel_where: String::new(),
+            oneway_where: String::new(),
+            shield: String::new(),
+            shield_every: 260.0,
         }
     }
 }
@@ -92,6 +140,12 @@ pub const PATTERNS: &[(&str, &str)] = &[
     ("vertical", "Vertical lines"),
     ("grid", "Squares"),
     ("dots", "Dots"),
+    ("marsh", "Marsh: tufts of grass"),
+    ("conifers", "Conifers"),
+    ("deciduous", "Deciduous trees"),
+    ("orchard", "Orchard: trees in rows"),
+    ("rock", "Rock and scree"),
+    ("sand", "Sand: fine dots"),
 ];
 
 /// The ways a line can be drawn, as they are stored and named.
@@ -102,8 +156,17 @@ pub const BLENDS: &[(&str, &str)] =
 /// A soft edge around the features of a layer, as stored and named.
 pub const GLOWS: &[(&str, &str)] = &[("", "Nothing"), ("glow", "A glow around"), ("shadow", "A shadow under")];
 
-pub const DASHES: &[(&str, &str)] =
-    &[("", "Solid"), ("dash", "Dashed"), ("dot", "Dotted"), ("dashdot", "Dash and dot"), ("rail", "Railway"), ("tram", "Tram, with ticks")];
+pub const DASHES: &[(&str, &str)] = &[
+    ("", "Solid"),
+    ("dash", "Dashed"),
+    ("dot", "Dotted"),
+    ("dashdot", "Dash and dot"),
+    ("rail", "Railway"),
+    ("tram", "Tram, with ticks"),
+    ("border_country", "Border of a country: dash and dot"),
+    ("border_region", "Border of a county: dash and two dots"),
+    ("border_local", "Border of a municipality: short dashes"),
+];
 
 /// Where lines get an arrow head, as it is stored and named.
 pub const ARROWS: &[(&str, &str)] = &[("", "No arrows"), ("end", "At the end"), ("start", "At the start"), ("both", "At both ends")];
@@ -238,11 +301,21 @@ impl LayerStyle {
             "dash" => Some(vec![unit * 4.0, unit * 2.5]),
             "dot" => Some(vec![0.01, unit * 2.0]),
             "dashdot" => Some(vec![unit * 4.0, unit * 2.0, 0.01, unit * 2.0]),
+            // The lines of borders, as the legend shows them; on the map they are fitted to
+            // their corners.
+            "border_country" | "border_region" | "border_local" => {
+                let u = (w * 1.6).max(2.0);
+                Some(match self.dash.as_str() {
+                    "border_country" => vec![u * 7.0, u * 1.8, 0.01, u * 1.8],
+                    "border_region" => vec![u * 5.0, u * 1.5, 0.01, u * 1.5, 0.01, u * 1.5],
+                    _ => vec![u * 3.0, u * 1.6],
+                })
+            }
             _ => None,
         };
         let cap = if self.dash == "rail" {
             tiny_skia::LineCap::Butt
-        } else if self.dash == "dot" || self.dash == "dashdot" {
+        } else if matches!(self.dash.as_str(), "dot" | "dashdot" | "border_country" | "border_region" | "border_local") {
             tiny_skia::LineCap::Round
         } else if pattern.is_some() {
             tiny_skia::LineCap::Butt
@@ -374,12 +447,28 @@ pub struct LabelSpec {
     pub priority_by: String,
     pub bold: bool,
     pub upper: bool,
+    /// An expression: the labels of the features where it is true are in capitals, such as
+    /// population > 100000 for the large towns. Empty: as `upper` says, for all.
+    pub upper_where: String,
     pub colour: [u8; 4],
     /// An edge around the letters, so that they can be read on anything. None: none.
     pub halo: Option<[u8; 4]>,
     pub halo_width: f32,
     /// The letters spread out over an area, as the name of a lake or a district.
     pub spaced: bool,
+    /// Small capitals: the label in capitals as high as small letters, such as for parishes.
+    pub small_caps: bool,
+    /// Room between the letters, as a share of the size: 0.2 is a fifth of it. 0: none.
+    pub tracking: f32,
+    /// Along lines, the top of the letters towards the higher ground of the first grid of
+    /// heights in the map, as the numbers of contours are written, even upside down.
+    pub uphill: bool,
+    /// The names of areas of water written along their shore, a little out from it, as the
+    /// names of bays and fjords are.
+    pub coast: bool,
+    /// The lines after the first smaller and not bold, as a description under a name:
+    /// "summit 510 m below sea level" under "Marsili Seamount".
+    pub detail: bool,
     /// Leaning letters, as the names of water are written.
     pub italic: bool,
     /// An expression: the labels of the features where it is true are bold, such as
@@ -392,6 +481,14 @@ pub struct LabelSpec {
     pub repeat: f32,
     /// A label that does not fit in its area is put beside it, with a thin line in to it.
     pub leaders: bool,
+    /// Names of areas along a gentle curve through the middle of the area, as the names of
+    /// long lakes and regions are written.
+    pub curved: bool,
+    /// Labels of layers with a higher rank are placed first, whatever layer is on top.
+    pub rank: i32,
+    /// "classic": labels of points tried first above and to the right, then below to the
+    /// right, above to the left, below to the left, then beside, above and below.
+    pub prefer: String,
 }
 
 impl Default for LabelSpec {
@@ -408,15 +505,24 @@ impl Default for LabelSpec {
             priority_by: String::new(),
             bold: false,
             upper: false,
+            upper_where: String::new(),
             colour: [0x22, 0x22, 0x22, 255],
             halo: Some([255, 255, 255, 255]),
             halo_width: 2.0,
             spaced: false,
+            small_caps: false,
+            tracking: 0.0,
+            uphill: false,
+            coast: false,
+            detail: false,
             italic: false,
             bold_where: String::new(),
             min_px: 0.0,
             repeat: 0.0,
             leaders: false,
+            curved: false,
+            rank: 0,
+            prefer: String::new(),
         }
     }
 }
@@ -657,6 +763,9 @@ pub struct Request<'a> {
 /// coordinates in the edge.
 #[derive(Debug, Clone, Default)]
 pub struct Furniture {
+    /// Written on the left of a band along the bottom, such as the sources of the data,
+    /// with the credit on the right of it. Empty: no band.
+    pub footer: String,
     /// The corner of the scale bar, as the legend has it. Empty or "none": no scale bar.
     pub scale_bar: String,
     /// The corner of the north arrow. Empty or "none": none.
@@ -725,8 +834,57 @@ pub struct Furniture {
     /// The north arrow: "simple" for a line with a head, "star" for a compass star, else an
     /// arrow half dark and half light.
     pub north_style: String,
+    /// The scale also in figures, as 1:50 000: "both" under the bar, "number" in its place,
+    /// else the bar alone.
+    pub scale_number: String,
+    /// A grid of squares named by letters across and numbers down, as A1, for an index of
+    /// names: how many squares across. 0: none.
+    pub index_grid: usize,
     /// The coordinates are written outside, by the frame: the map itself has none.
     pub coords_outside: bool,
+    /// The colours as someone sees them who is "deuteranopia", "protanopia" or "tritanopia",
+    /// or "grey". Empty: as they are.
+    pub vision: String,
+    /// Look at how well each label without a halo stands out from what is under it.
+    pub check_contrast: bool,
+    /// Labels found to stand out too little from what is under them.
+    pub faint: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    /// The heights along a line, drawn as a profile in a corner.
+    pub profile: Option<Profile>,
+    /// A small globe in a corner with the map's place on it.
+    pub globe: Option<Globe>,
+    /// Names written in the middle of the cells of a grid, such as the names of map sheets:
+    /// where, in the coordinates of the map, and the name.
+    pub cell_names: Vec<((f64, f64), String)>,
+}
+
+/// The heights along a line, for a profile in a corner.
+#[derive(Debug, Clone, Default)]
+pub struct Profile {
+    pub corner: String,
+    /// The distance from the start, in metres, and the height there.
+    pub points: Vec<(f64, f64)>,
+    /// What the line is, written over the profile.
+    pub title: String,
+    /// Where the line begins and ends on the map, marked A and B there and on the profile.
+    pub ends: [(f64, f64); 2],
+    /// Places along the line, each at its distance from the start, written over it.
+    pub places: Vec<(f64, String)>,
+    /// The colours of the grid the heights are from, so that the profile is filled as the
+    /// map is coloured: the water in the blues of its depth.
+    pub colours: Option<crate::rasterlook::Paint>,
+    /// Its width, as a share of the width of the map.
+    pub share: f32,
+}
+
+/// A globe in a corner, turned so that the map is in its middle.
+#[derive(Debug, Clone, Default)]
+pub struct Globe {
+    pub corner: String,
+    /// The middle of the map, longitude and latitude.
+    pub centre: (f64, f64),
+    /// The outline of the map, in longitude and latitude.
+    pub area: Vec<(f64, f64)>,
 }
 
 /// An enlarged map of an area of the map, in a corner, with a frame on the map where it is.
@@ -854,6 +1012,8 @@ pub struct LegendItem {
     pub nested: bool,
     /// A dot of a dot map and what it stands for.
     pub dots: Option<(crate::thematic::Look, String)>,
+    /// A raster drawn with a ramp of colours, as a band with values under it.
+    pub ramp: Option<crate::rasterlook::RampLegend>,
 }
 
 /// The kind of symbol a table is drawn with in a legend.
@@ -891,10 +1051,29 @@ fn draw_raster(pixmap: &mut Canvas, table: &Table, r: &crate::rasterlook::Prepar
     use crate::rasterlook::Paint as RP;
     // The source of the colours: a picture, or the cells of a grid.
     let shaded;
+    let mut relief = false;
     let (image, grid): (Option<&RasterImage>, Option<&crate::model::Grid>) = match (&r.paint, &table.grid, &table.image) {
         (RP::Image, _, Some(img)) => (Some(img.as_ref()), None),
-        (RP::Shade, Some(g), _) => {
-            shaded = crate::rasterlook::picture(g, &RP::Shade);
+        (RP::Hachures, Some(g), _) => {
+            draw_hachures(pixmap, g, origin, px, r.opacity, style);
+            return;
+        }
+        // Relief is lit by the cells around each one, so it is made as a picture first.
+        // Steps are cut at the size of the pixels, so that their edges are smooth curves
+        // rather than the squares of the cells.
+        (RP::Bands { .. }, Some(g), _) => {
+            let k = (g.geotransform[1].abs() / px).clamp(1.0, 6.0);
+            let (nw, nh) = ((g.width as f64 * k).round() as usize, (g.height as f64 * k).round() as usize);
+            shaded = if k > 1.05 && nw * nh <= 40_000_000 {
+                crate::rasterlook::picture(&crate::terrain::resample(g, nw, nh), &r.paint)
+            } else {
+                crate::rasterlook::picture(g, &r.paint)
+            };
+            (Some(&shaded), None)
+        }
+        (RP::Shade | RP::Soft | RP::Relief { .. } | RP::Swiss { .. } | RP::Texture | RP::Depths { .. } | RP::Seafloor { .. }, Some(g), _) => {
+            shaded = crate::rasterlook::picture(g, &r.paint);
+            relief = true;
             (Some(&shaded), None)
         }
         (_, Some(g), _) => (None, Some(g.as_ref())),
@@ -919,6 +1098,9 @@ fn draw_raster(pixmap: &mut Canvas, table: &Table, r: &crate::rasterlook::Prepar
     }
     let Some(mut layer) = Pixmap::new(pw as u32, ph as u32) else { return };
     let data = layer.pixels_mut();
+    // Relief made larger than its cells is blended between them, so that its slopes stay
+    // smooth rather than stepped.
+    let blend = relief && gt[1].abs() > px * 1.2;
     for row in r0..r1 {
         let y = origin[1] - (row as f64 + 0.5) * px;
         let sr = (y - gt[3]) / gt[5];
@@ -933,6 +1115,21 @@ fn draw_raster(pixmap: &mut Canvas, table: &Table, r: &crate::rasterlook::Prepar
             }
             let k = sr as usize * w + sc as usize;
             let c = match (image, grid) {
+                (Some(img), _) if blend => {
+                    let (fx, fy) = ((sc - 0.5).max(0.0), (sr - 0.5).max(0.0));
+                    let (x0, y0) = ((fx as usize).min(w - 1), (fy as usize).min(h - 1));
+                    let (x1, y1) = ((x0 + 1).min(w - 1), (y0 + 1).min(h - 1));
+                    let (tx, ty) = ((fx - x0 as f64) as f32, (fy - y0 as f64) as f32);
+                    let at = |x: usize, y: usize| &img.rgba[(y * w + x) * 4..(y * w + x) * 4 + 4];
+                    let corners = [at(x0, y0), at(x1, y0), at(x0, y1), at(x1, y1)];
+                    if corners.iter().any(|p| p[3] == 0) {
+                        let p = &img.rgba[k * 4..k * 4 + 4];
+                        [p[0], p[1], p[2], p[3]]
+                    } else {
+                        let wts = [(1.0 - tx) * (1.0 - ty), tx * (1.0 - ty), (1.0 - tx) * ty, tx * ty];
+                        [0, 1, 2, 3].map(|i| corners.iter().zip(wts).map(|(p, wt)| p[i] as f32 * wt).sum::<f32>().round() as u8)
+                    }
+                }
                 (Some(img), _) => {
                     let p = &img.rgba[k * 4..k * 4 + 4];
                     [p[0], p[1], p[2], p[3]]
@@ -954,9 +1151,43 @@ fn draw_raster(pixmap: &mut Canvas, table: &Table, r: &crate::rasterlook::Prepar
     pixmap.draw_pixmap(0, 0, layer.as_ref(), &paint, Transform::identity(), None);
 }
 
+/// Hachures over the map, in brown or as the style draws them: a stroke down each slope,
+/// thicker where it is steeper.
+fn draw_hachures(pixmap: &mut Canvas, g: &crate::model::Grid, origin: [f64; 2], px: f64, opacity: f32, style: &str) {
+    let k = (pixmap.width().min(pixmap.height()) as f32 / 800.0).clamp(0.6, 4.0);
+    let strokes = crate::rasterlook::hachures(g, origin, px, (pixmap.width() as usize, pixmap.height() as usize), 5.5 * k);
+    let ink = [0x5a, 0x44, 0x30, (255.0 * opacity.clamp(0.0, 1.0)) as u8];
+    let ink = if style.is_empty() { ink } else { style_colour(style, ink, Role::Line) };
+    // In a few widths, each drawn at once.
+    let mut by_width: Vec<PathBuilder> = (0..6).map(|_| PathBuilder::new()).collect();
+    for (a, b, t) in strokes {
+        let j = ((t * 5.0).round() as usize).min(5);
+        by_width[j].move_to(a[0], a[1]);
+        by_width[j].line_to(b[0], b[1]);
+    }
+    for (j, pb) in by_width.into_iter().enumerate() {
+        let Some(path) = pb.finish() else { continue };
+        let width = (0.25 + 0.42 * j as f32) * k;
+        pixmap.stroke_path(&path, &paint(ink), &Stroke { width, line_cap: tiny_skia::LineCap::Round, ..Stroke::default() }, Transform::identity(), None);
+    }
+}
+
+#[path = "mapdraw_extra.rs"]
+mod extra;
+
 /// Draws the layers. `going` is asked now and then whether to go on, and the drawing ends
 /// with an error when it answers false.
 pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
+    let mut img = draw_framed(req, going)?;
+    if !req.furniture.vision.is_empty() {
+        extra::as_seen_by(&mut img.rgba, &req.furniture.vision);
+        // The shapes for a PDF keep their own colours; the picture is what is to be seen.
+        img.vector = None;
+    }
+    Ok(img)
+}
+
+fn draw_framed(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
     // Every text of the map in its own font, when it has one.
     let _font = crate::chart::own_font(&req.furniture.map_font)?;
     if !req.furniture.frame {
@@ -969,7 +1200,8 @@ pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
     // At a scale the map keeps its width, and the margin comes outside it.
     let (inner_w, wide) = if req.furniture.extent.is_some() { (req.width, wide + 2.0 * m) } else { ((wide - 2.0 * m).max(40.0) as u32, wide) };
     let gridded = (!req.furniture.grid.is_empty() && req.furniture.grid != "none") || !req.furniture.graticule.is_empty();
-    let sub = Request { width: inner_w, furniture: Furniture { frame: false, coords_outside: gridded, ..req.furniture.clone() }, ..req.clone() };
+    let indexed = req.furniture.index_grid > 0;
+    let sub = Request { width: inner_w, furniture: Furniture { frame: false, coords_outside: gridded || indexed, ..req.furniture.clone() }, ..req.clone() };
     let img = draw_map(&sub, going)?;
     let (iw, ih) = (img.width as f32, img.height as f32);
     let high = (ih + 2.0 * m).round() as u32;
@@ -992,7 +1224,17 @@ pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
     let tick = 5.0 * k;
     let mut marks: Vec<(f32, String, bool)> = Vec::new();
     let f = &req.furniture;
-    if !f.graticule.is_empty() {
+    if indexed {
+        // The names of the squares of the index, in the middle of each, rather than
+        // coordinates.
+        let (cell, cols, rows) = index_cells(iw, ih, f.index_grid);
+        for c in 0..cols {
+            marks.push((((c as f32 + 0.5) * cell).min(iw), index_column(c), true));
+        }
+        for r in 0..rows {
+            marks.push((((r as f32 + 0.5) * cell).min(ih), (r + 1).to_string(), false));
+        }
+    } else if !f.graticule.is_empty() {
         let to = |(x, y): (f64, f64)| (((x - b[0]) / px) as f32, ((b[3] - y) / px) as f32);
         for g in &f.graticule {
             for w in g.points.windows(2) {
@@ -1061,12 +1303,45 @@ pub fn draw(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
 
 /// The map itself, without a frame around it.
 fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
+    CHECK.with(|c| c.set(req.furniture.check_contrast));
+    let uphill = req.labels.iter().flatten().any(|l| l.spec.uphill);
+    let grid = if uphill { req.layers.iter().find_map(|(t, _)| t.grid.clone()) } else { None };
+    if let Some(g) = grid {
+        let Frame { b, px, height, .. } = frame_in(&req.layers, req.width, req.margin, req.furniture.extent)?;
+        HEIGHTS.with(|h| *h.borrow_mut() = Some((g, b[0], b[1] + height as f64 * px, px)));
+    }
+    FAINT.with(|f| f.borrow_mut().clear());
+    let out = draw_map_inner(req, going);
+    let faint = FAINT.with(|f| std::mem::take(&mut *f.borrow_mut()));
+    if !faint.is_empty() {
+        if let Ok(mut list) = req.furniture.faint.lock() {
+            list.extend(faint);
+        }
+    }
+    CHECK.with(|c| c.set(false));
+    HEIGHTS.with(|h| *h.borrow_mut() = None);
+    out
+}
+
+fn draw_map_inner(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
     let Frame { b, px, width, height } = frame_in(&req.layers, req.width, req.margin, req.furniture.extent)?;
     // The extent is made as high as the whole number of rows.
     let top = b[1] + height as f64 * px;
     let mut pixmap = Canvas::new(width, height, true).ok_or_else(|| GbError("There is not memory enough for a picture that large.".into()))?;
     let name_of = |li: usize| req.names.get(li).filter(|n| !n.trim().is_empty()).cloned().unwrap_or_else(|| format!("Layer {}", li + 1));
-    let to_px = |x: f64, y: f64| (((x - b[0]) / px) as f32, ((top - y) / px) as f32);
+    // Drawn by hand: each point a little off where it is, the same for the same point, and
+    // smoothly so along a line, as a steady hand that is not a ruler.
+    let hand = req.map_style == "hand";
+    let wobble = (width.min(height) as f32 / 900.0).clamp(0.6, 3.0) * 1.4;
+    let to_px = |x: f64, y: f64| {
+        let (u, v) = (((x - b[0]) / px) as f32, ((top - y) / px) as f32);
+        if hand {
+            let (a, c) = (extra::wavy(u / 55.0, v / 55.0), extra::wavy(v / 55.0 + 17.3, u / 55.0 - 4.1));
+            (u + a * wobble, v + c * wobble)
+        } else {
+            (u, v)
+        }
+    };
     // Only the area the map is about: the layers and the background map are clipped to it.
     let clipped = req.furniture.focus_only && !req.furniture.focus.is_empty();
     if clipped {
@@ -1143,7 +1418,7 @@ fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
     if req.furniture.knockout && req.labels.iter().any(|l| l.is_some()) {
         let text = crate::chart::Text::new()?;
         let mut taken: Vec<[f32; 4]> = layout.boxes.clone();
-        for li in (0..req.layers.len()).rev().filter(|li| shown(*li)) {
+        for li in label_order(req).into_iter().filter(|li| shown(*li)) {
             let Some(lb) = req.labels.get(li).and_then(|l| l.as_ref()) else { continue };
             let (table, style) = &req.layers[li];
             let point_r = match req.icons.get(li).and_then(|i| i.as_ref()) {
@@ -1164,6 +1439,9 @@ fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
         pixmap.set_blend(&style.blend);
         if !style.glow.is_empty() {
             draw_glow(&mut pixmap, table, style, &to_px);
+        }
+        if style.waterlines {
+            draw_waterlines(&mut pixmap, table, &to_px, req.background);
         }
         // Each layer is a layer of its own in a PDF or an SVG of the map, and as
         // see-through as its style says.
@@ -1201,6 +1479,7 @@ fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
         if let Some(theme) = theme.filter(|t| t.looks.is_some() || t.order.is_some() || t.cluster > 0.0 || t.angles.is_some()) {
             draw_themed(&mut pixmap, table, style, theme, &to_px, going)?;
             draw_dots(&mut pixmap, table, theme, &to_px);
+            draw_after_layer(&mut pixmap, table, style, &to_px);
             if let Some(ic) = icons {
                 draw_icons(&mut pixmap, req.layers[li].0, style, Some(theme), ic, &to_px);
             }
@@ -1210,8 +1489,14 @@ fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
             continue;
         }
         let stroke = style.stroke();
+        // Lines of their own widths, tunnels, and areas each as see-through as its value
+        // says, are drawn one by one.
+        let widths = extra::widths(table, style);
+        let alphas = extra::alphas(table, style);
+        let own: std::cell::Cell<Option<usize>> = std::cell::Cell::new(None);
         draw_casing(&mut pixmap, table, style, &to_px);
-        let line_paint = style.stroke.filter(|_| style.width > 0.0).map(paint);
+        // Borders are drawn after, with their dashes fitted to the corners.
+        let line_paint = style.stroke.filter(|_| style.width > 0.0 && !extra::is_border(style)).map(paint);
         let fill_paint = style.fill.map(paint);
         // Lines and points are gathered in batches and drawn a batch at a time, which is
         // much quicker than one at a time. Areas are drawn one by one, so that each is
@@ -1248,6 +1533,14 @@ fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
                     return;
                 }
             }
+            if let Some(k) = own.get() {
+                if matches!(g, Geometry::LineString(_) | Geometry::MultiLineString(_) | Geometry::Line(_))
+                    && (widths.is_some() || style.taper || extra::is_tunnel(style, k))
+                {
+                    extra::own_line(pixmap, g, style, widths.as_ref().map_or(1.0, |w| w[k]), extra::is_tunnel(style, k), &to_px);
+                    return;
+                }
+            }
             match g {
                 Geometry::Point(p) => {
                     let (x, y) = to_px(p.x(), p.y());
@@ -1272,7 +1565,10 @@ fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
                         _ => {}
                     }
                     if let Some(path) = pb.finish() {
-                        if let Some(p) = &fill_paint {
+                        let faint = own.get().and_then(|k| alphas.as_ref().map(|a| a[k]));
+                        if let (Some(c), Some(a)) = (style.fill, faint) {
+                            pixmap.fill_path(&path, &paint([c[0], c[1], c[2], (c[3] as f32 * a) as u8]), FillRule::EvenOdd, Transform::identity(), None);
+                        } else if let Some(p) = &fill_paint {
                             pixmap.fill_path(&path, p, FillRule::EvenOdd, Transform::identity(), None);
                         }
                         draw_pattern(pixmap, g, style, &to_px);
@@ -1290,6 +1586,7 @@ fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
                 return Err(GbError(crate::model::STOPPED.into()));
             }
             let Some(g) = &f.geom else { continue };
+            own.set(Some(k));
             match g {
                 Geometry::GeometryCollection(c) => {
                     for part in &c.0 {
@@ -1310,6 +1607,8 @@ fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
         if let Some(theme) = theme {
             draw_dots(&mut pixmap, table, theme, &to_px);
         }
+        extra::bridges_and_arrows(&mut pixmap, table, style, &to_px);
+        draw_after_layer(&mut pixmap, table, style, &to_px);
         if let Some(ic) = icons {
             draw_icons(&mut pixmap, req.layers[li].0, style, theme, ic, &to_px);
         }
@@ -1330,7 +1629,7 @@ fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
     if req.labels.iter().any(|l| l.is_some()) {
         let text = crate::chart::Text::new()?;
         let mut taken: Vec<[f32; 4]> = layout.boxes.clone();
-        for li in (0..req.layers.len()).rev().filter(|li| shown(*li)) {
+        for li in label_order(req).into_iter().filter(|li| shown(*li)) {
             let Some(lb) = req.labels.get(li).and_then(|l| l.as_ref()) else { continue };
             let (table, style) = &req.layers[li];
             let point_r = match req.icons.get(li).and_then(|i| i.as_ref()) {
@@ -1340,6 +1639,11 @@ fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
             pixmap.layer(Some(&format!("{} labels", name_of(li))));
             place_labels(&mut pixmap, &text, table, lb, point_r, &to_px, &mut taken, false);
         }
+    }
+    // The squares of an index, with their names inside the edges when no frame has them.
+    if req.furniture.index_grid > 0 {
+        pixmap.layer(Some("Index grid"));
+        draw_index_grid(&mut pixmap, req.furniture.index_grid, !req.furniture.coords_outside)?;
     }
     // The labels too were within the area; what goes around the map is not.
     if clipped {
@@ -1354,6 +1658,18 @@ fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
         pixmap.layer(Some("Inset"));
         draw_inset(&mut pixmap, req, inset, &to_px, going, layout.inset)?;
     }
+    if let (Some(pr), Some(at)) = (&req.furniture.profile, layout.profile) {
+        pixmap.layer(Some("Profile"));
+        extra::draw_profile(&mut pixmap, pr, at)?;
+        extra::profile_ends(&mut pixmap, pr, &to_px)?;
+    }
+    if let (Some(g), Some(at)) = (&req.furniture.globe, layout.globe) {
+        pixmap.layer(Some("Globe"));
+        extra::draw_globe(&mut pixmap, g, at);
+    }
+    if !req.furniture.cell_names.is_empty() {
+        extra::draw_cell_names(&mut pixmap, &req.furniture.cell_names, &to_px)?;
+    }
     pixmap.layer(Some("Frame and legend"));
     draw_title_and_logo(&mut pixmap, &req.furniture, layout.logo, layout.title)?;
     draw_furniture(&mut pixmap, &req.furniture, main, px, &layout)?;
@@ -1363,7 +1679,9 @@ fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
     if let Some(legend) = &legend {
         draw_legend_at(&mut pixmap, legend, layout.legend, false)?;
     }
-    if let Some(a) = credit {
+    if !req.furniture.footer.trim().is_empty() {
+        draw_footer(&mut pixmap, req.furniture.footer.trim(), credit.map(|s| s.as_str()))?;
+    } else if let Some(a) = credit {
         draw_attribution(&mut pixmap, a)?;
     }
     // tiny-skia keeps the colours premultiplied by their opacity. Files want them plain.
@@ -1374,6 +1692,85 @@ fn draw_map(req: &Request, going: &dyn Fn() -> bool) -> Result<RasterImage> {
     }
     let vector = pixmap.picture().map(std::sync::Arc::new);
     Ok(RasterImage { vector, width: width as usize, height: height as usize, rgba, geotransform: [b[0], px, 0.0, top, 0.0, -px] })
+}
+
+/// The squares of an index on a map `w` by `h` pixels, `across` of them across: their side,
+/// and how many across and down.
+fn index_cells(w: f32, h: f32, across: usize) -> (f32, usize, usize) {
+    let cell = w / across.max(1) as f32;
+    (cell, across.max(1), ((h / cell).ceil() as usize).max(1))
+}
+
+/// The name of a column of an index: A to Z, then AA, AB.
+pub fn index_column(c: usize) -> String {
+    let letters = |n: usize| ((b'A' + (n % 26) as u8) as char).to_string();
+    if c < 26 {
+        letters(c)
+    } else {
+        format!("{}{}", letters(c / 26 - 1), letters(c))
+    }
+}
+
+/// The name of the square of an index a point falls in, as C4, on a map of the extent `b`.
+pub fn index_square(b: [f64; 4], across: usize, x: f64, y: f64) -> Option<String> {
+    if x < b[0] || x > b[2] || y < b[1] || y > b[3] || across == 0 {
+        return None;
+    }
+    let cell = (b[2] - b[0]) / across as f64;
+    let c = (((x - b[0]) / cell).floor() as usize).min(across - 1);
+    let rows = ((b[3] - b[1]) / cell).ceil().max(1.0) as usize;
+    let r = (((b[3] - y) / cell).floor() as usize).min(rows - 1);
+    Some(format!("{}{}", index_column(c), r + 1))
+}
+
+/// Thin lines between the squares of an index, and their names along the top and left edge
+/// when `names`.
+fn draw_index_grid(pixmap: &mut Canvas, across: usize, names: bool) -> Result<()> {
+    let (pw, ph) = (pixmap.width() as f32, pixmap.height() as f32);
+    let (cell, cols, rows) = index_cells(pw, ph, across);
+    let k = (pw.min(ph) / 800.0).clamp(0.6, 4.0);
+    let mut pb = PathBuilder::new();
+    for c in 1..cols {
+        pb.move_to(c as f32 * cell, 0.0);
+        pb.line_to(c as f32 * cell, ph);
+    }
+    for r in 1..rows {
+        pb.move_to(0.0, r as f32 * cell);
+        pb.line_to(pw, r as f32 * cell);
+    }
+    if let Some(p) = pb.finish() {
+        pixmap.stroke_path(&p, &paint([0x55, 0x55, 0x55, 150]), &Stroke { width: (0.8 * k).max(0.6), ..Stroke::default() }, Transform::identity(), None);
+    }
+    if names {
+        let t = crate::chart::Text::new()?;
+        let size = 13.0 * k;
+        let ink = [0x22, 0x22, 0x22, 255];
+        for c in 0..cols {
+            let s = index_column(c);
+            let w = t.width(&s, size, true);
+            halo_text(pixmap, &t, &s, (c as f32 + 0.5) * cell - w / 2.0, size * 1.2, size, true, ink);
+        }
+        for r in 0..rows {
+            let s = (r + 1).to_string();
+            halo_text(pixmap, &t, &s, size * 0.4, ((r as f32 + 0.5) * cell + size * 0.35).min(ph - 4.0), size, true, ink);
+        }
+    }
+    Ok(())
+}
+
+/// The extent on the ground of the map itself, as it will be drawn: inside its frame, when it
+/// has one.
+pub fn map_extent(req: &Request) -> Result<[f64; 4]> {
+    let width = if req.furniture.frame && req.furniture.extent.is_none() {
+        let wide = req.width as f32;
+        let k = (wide / 1100.0).clamp(0.7, 4.0);
+        let m = (wide * 0.035).max(34.0 * k).round();
+        (wide - 2.0 * m).max(40.0) as u32
+    } else {
+        req.width
+    };
+    let f = frame_in(&req.layers, width, req.margin, req.furniture.extent)?;
+    Ok([f.b[0], f.b[1], f.b[0] + f.width as f64 * f.px, f.b[1] + f.height as f64 * f.px])
 }
 
 /// A note placed on the map: the point it is about, the box it is written in, and its text.
@@ -1448,6 +1845,110 @@ fn draw_notes(pixmap: &mut Canvas, notes: &[Note]) -> Result<()> {
         write_text(pixmap, &t, text, b[0] + 7.0 * k, b[1] + size * 1.2, size, false, [0x11, 0x11, 0x11], 0.0);
     }
     Ok(())
+}
+
+/// Whether a value is a whole number of `every`, as the height of an index contour.
+pub fn is_index(v: &crate::model::Value, every: f64) -> bool {
+    v.as_f64().is_some_and(|x| every > 0.0 && ((x / every) - (x / every).round()).abs() < 1e-6)
+}
+
+/// After a layer is drawn: its index contours heavier, and a band inside the edge of its
+/// areas.
+fn draw_after_layer(pixmap: &mut Canvas, table: &Table, style: &LayerStyle, to_px: &dyn Fn(f64, f64) -> (f32, f32)) {
+    let colour = style.stroke.unwrap_or([0x55, 0x55, 0x55, 255]);
+    if let (Some(k), true) = (table.field_index(&style.index_by), style.index_every > 0.0) {
+        let mut pb = PathBuilder::new();
+        for f in &table.features {
+            if !is_index(&f.attrs[k], style.index_every) {
+                continue;
+            }
+            if let Some((p, false)) = f.geom.as_ref().and_then(|g| path_of(g, to_px)) {
+                pb.push_path(&p);
+            }
+        }
+        if let Some(path) = pb.finish() {
+            let st = Stroke { width: (style.width * 2.2).max(1.4), line_join: tiny_skia::LineJoin::Round, ..Stroke::default() };
+            pixmap.stroke_path(&path, &paint(colour), &st, Transform::identity(), None);
+        }
+    }
+    if style.tanaka {
+        extra::tanaka(pixmap, table, style, to_px);
+    }
+    if extra::is_border(style) {
+        extra::borders(pixmap, table, style, to_px);
+    }
+    if !style.shield.is_empty() {
+        extra::shields(pixmap, table, style, to_px);
+    }
+    if style.band > 0.0 {
+        // Each area clipped to itself, so that only the inner half of a wide edge shows.
+        let before = pixmap.clip();
+        let band = [colour[0], colour[1], colour[2], 110];
+        for f in &table.features {
+            let Some((path, true)) = f.geom.as_ref().and_then(|g| path_of(g, to_px)) else { continue };
+            pixmap.set_clip(Some(&path), true);
+            pixmap.stroke_path(
+                &path,
+                &paint(band),
+                &Stroke { width: style.band * 2.0, line_join: tiny_skia::LineJoin::Round, ..Stroke::default() },
+                Transform::identity(),
+                None,
+            );
+        }
+        match before {
+            Some((p, even_odd)) => pixmap.set_clip(Some(&p), even_odd),
+            None => pixmap.set_clip(None, false),
+        }
+    }
+}
+
+/// Thin lines along the shores of the areas of a layer, fading outwards, under the areas.
+fn draw_waterlines(pixmap: &mut Canvas, table: &Table, to_px: &dyn Fn(f64, f64) -> (f32, f32), background: Option<[u8; 4]>) {
+    use geo::Buffer;
+    let areas: Vec<geo::Polygon<f64>> = table
+        .features
+        .iter()
+        .filter_map(|f| f.geom.as_ref())
+        .flat_map(|g| match g {
+            Geometry::Polygon(p) => vec![p.clone()],
+            Geometry::MultiPolygon(m) => m.0.clone(),
+            _ => Vec::new(),
+        })
+        .collect();
+    let Some(first) = areas.first().and_then(|p| p.exterior().0.first().copied()) else { return };
+    // How many pixels a unit of the map is, where the areas are.
+    let (a, b) = (to_px(first.x, first.y), to_px(first.x + 1.0, first.y));
+    let per = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt() as f64;
+    if per <= 0.0 || !per.is_finite() {
+        return;
+    }
+    let shape = geo::MultiPolygon::new(areas);
+    let k = (pixmap.width().min(pixmap.height()) as f32 / 800.0).clamp(0.6, 4.0);
+    let dark = background.is_some_and(|c| (c[0] as u16 + c[1] as u16 + c[2] as u16) < 300);
+    let colour = if dark { [0xd8, 0xe6, 0xf0] } else { [0x4f, 0x7a, 0x9c] };
+    // Each line is the edge of the areas grown by a little more, so that it keeps clear of
+    // the coast and of the other lines in the bays.
+    for i in 1..=4 {
+        let gap = 2.6 * k * i as f32;
+        let grown = shape.buffer(gap as f64 / per);
+        let mut pb = PathBuilder::new();
+        for p in &grown.0 {
+            for ring in std::iter::once(p.exterior()).chain(p.interiors()) {
+                for (j, c) in ring.0.iter().enumerate() {
+                    let (x, y) = to_px(c.x, c.y);
+                    if j == 0 {
+                        pb.move_to(x, y);
+                    } else {
+                        pb.line_to(x, y);
+                    }
+                }
+                pb.close();
+            }
+        }
+        let Some(path) = pb.finish() else { continue };
+        let a = (170.0 * (1.0 - (i - 1) as f32 / 4.0)) as u8;
+        pixmap.stroke_path(&path, &paint([colour[0], colour[1], colour[2], a]), &Stroke { width: 0.7 * k, ..Stroke::default() }, Transform::identity(), None);
+    }
 }
 
 /// A soft glow around the features of a layer, or a shadow under them, before they are drawn.
@@ -1708,6 +2209,10 @@ fn draw_pattern(pixmap: &mut Canvas, g: &Geometry<f64>, style: &LayerStyle, to_p
         if b.width() < 1.0 || b.height() < 1.0 {
             continue;
         }
+        if matches!(style.pattern.as_str(), "marsh" | "conifers" | "deciduous" | "orchard" | "rock" | "sand") {
+            extra::symbol_pattern(pixmap, &px, b, &style.pattern, every as f32, colour);
+            continue;
+        }
         if style.pattern == "dots" {
             let mut pb = PathBuilder::new();
             let r = (every as f32 / 6.0).max(0.6);
@@ -1824,7 +2329,16 @@ fn draw_themed(
     going: &dyn Fn() -> bool,
 ) -> Result<()> {
     let base = crate::thematic::Look { fill: style.fill, stroke: style.stroke, size: style.size };
-    let look = |i: usize| theme.looks.as_ref().map_or(base, |l| l[i]);
+    // Faint by a value too, when the layer says so: the colour by one value and the
+    // faintness by another (value by alpha).
+    let alphas = extra::alphas(table, style);
+    let look = |i: usize| {
+        let mut l = theme.looks.as_ref().map_or(base, |l| l[i]);
+        if let (Some(a), Some(c)) = (alphas.as_ref().map(|a| a[i]), l.fill) {
+            l.fill = Some([c[0], c[1], c[2], (c[3] as f32 * a) as u8]);
+        }
+        l
+    };
     let order: Vec<usize> = theme.order.clone().unwrap_or_else(|| (0..table.len()).collect());
     let stroke = style.stroke();
     draw_casing(pixmap, table, style, to_px);
@@ -2070,6 +2584,92 @@ struct Spot {
 
 /// The places a label may go, the best first.
 #[allow(clippy::too_many_arguments)]
+/// The layers in the order their labels are placed: by rank, highest first, and among the
+/// same rank the top layer first.
+fn label_order(req: &Request) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..req.layers.len()).rev().collect();
+    let rank = |li: usize| req.labels.get(li).and_then(|l| l.as_ref()).map_or(0, |l| l.spec.rank);
+    order.sort_by_key(|li| std::cmp::Reverse(rank(*li)));
+    order
+}
+
+/// A line through the middle of an area, along its length: across the area at even steps
+/// along its longest side, the middle of the widest stretch inside it, smoothed. None for an
+/// area not twice as long as it is wide.
+fn centre_line(g: &Geometry<f64>) -> Option<LineString<f64>> {
+    use geo::{Area, ChaikinSmoothing, MinimumRotatedRect};
+    let poly = match g {
+        Geometry::Polygon(p) => p.clone(),
+        Geometry::MultiPolygon(m) => m.0.iter().max_by(|a, b| a.unsigned_area().total_cmp(&b.unsigned_area()))?.clone(),
+        _ => return None,
+    };
+    let rect = poly.minimum_rotated_rect()?;
+    let c = &rect.exterior().0;
+    if c.len() < 4 {
+        return None;
+    }
+    let (e1, e2) = ((c[1].x - c[0].x, c[1].y - c[0].y), (c[2].x - c[1].x, c[2].y - c[1].y));
+    let (l1, l2) = (e1.0.hypot(e1.1), e2.0.hypot(e2.1));
+    let (along, across, long, short, start) = if l1 >= l2 { (e1, e2, l1, l2, c[0]) } else { (e2, e1, l2, l1, c[1]) };
+    if long < short * 2.0 || long <= 0.0 {
+        return None;
+    }
+    let (ux, uy) = (along.0 / long, along.1 / long);
+    let (vx, vy) = (across.0 / short, across.1 / short);
+    let rings: Vec<&LineString<f64>> = std::iter::once(poly.exterior()).chain(poly.interiors()).collect();
+    let mut pts = Vec::new();
+    for k in 1..12 {
+        let t = long * k as f64 / 12.0;
+        let (px, py) = (start.x + ux * t, start.y + uy * t);
+        // Where the line across meets the edges, as distances along it.
+        let mut hits: Vec<f64> = Vec::new();
+        for ring in &rings {
+            for w in ring.0.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                // Solve p + s·v = a + r·(b - a).
+                let (dx, dy) = (b.x - a.x, b.y - a.y);
+                let den = vx * dy - vy * dx;
+                if den.abs() < 1e-12 {
+                    continue;
+                }
+                let (qx, qy) = (a.x - px, a.y - py);
+                let s = (qx * dy - qy * dx) / den;
+                let r = (qx * vy - qy * vx) / den;
+                if (0.0..=1.0).contains(&r) {
+                    hits.push(s);
+                }
+            }
+        }
+        hits.sort_by(f64::total_cmp);
+        let best = hits.chunks_exact(2).max_by(|a, b| (a[1] - a[0]).total_cmp(&(b[1] - b[0])));
+        if let Some(seg) = best {
+            let s = (seg[0] + seg[1]) / 2.0;
+            pts.push(geo::Coord { x: px + vx * s, y: py + vy * s });
+        }
+    }
+    if pts.len() < 3 {
+        return None;
+    }
+    // Read from left to right.
+    if pts[0].x > pts[pts.len() - 1].x {
+        pts.reverse();
+    }
+    Some(LineString::new(pts).chaikin_smoothing(2))
+}
+
+/// A line along the shore inside an area of water, `inset` in from it: the longest edge
+/// of the area shrunk by that much. None when nothing is left.
+fn coast_line(g: &Geometry<f64>, inset: f64) -> Option<LineString<f64>> {
+    use geo::{Buffer, Length};
+    let shrunk = match g {
+        Geometry::Polygon(p) => p.buffer(-inset),
+        Geometry::MultiPolygon(m) => m.buffer(-inset),
+        _ => return None,
+    };
+    shrunk.0.into_iter().map(|p| p.exterior().clone()).max_by(|a, b| geo::Euclidean.length(a).total_cmp(&geo::Euclidean.length(b))).filter(|l| l.0.len() > 3)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn spots(
     g: &Geometry<f64>,
     spec: &LabelSpec,
@@ -2095,7 +2695,20 @@ fn spots(
         let r = point_r + 2.0;
         let d = r * 0.75;
         // Around the point, in the order mapmakers like: right, upper right, lower right,
-        // left, above, below, upper left, lower left.
+        // left, above, below, upper left, lower left; or in the classic order, the corners
+        // first.
+        if spec.prefer == "classic" {
+            return vec![
+                Spot { x: x + d, y: y - d, angle: 0.0, align: 0.0, glyphs: Vec::new() },
+                Spot { x: x + d, y: y + d + size * 0.75, angle: 0.0, align: 0.0, glyphs: Vec::new() },
+                Spot { x: x - d, y: y - d, angle: 0.0, align: 1.0, glyphs: Vec::new() },
+                Spot { x: x - d, y: y + d + size * 0.75, angle: 0.0, align: 1.0, glyphs: Vec::new() },
+                Spot { x: x + r, y: y + mid, angle: 0.0, align: 0.0, glyphs: Vec::new() },
+                Spot { x: x - r, y: y + mid, angle: 0.0, align: 1.0, glyphs: Vec::new() },
+                Spot { x, y: y - r - size * 0.2, angle: 0.0, align: 0.5, glyphs: Vec::new() },
+                Spot { x, y: y + r + size * 0.8, angle: 0.0, align: 0.5, glyphs: Vec::new() },
+            ];
+        }
         return vec![
             Spot { x: x + r, y: y + mid, angle: 0.0, align: 0.0, glyphs: Vec::new() },
             Spot { x: x + d, y: y - d, angle: 0.0, align: 0.0, glyphs: Vec::new() },
@@ -2108,6 +2721,13 @@ fn spots(
         ];
     }
     let line = match g {
+        // The name of an area along the middle of it, when it is long enough for that.
+        Geometry::Polygon(_) | Geometry::MultiPolygon(_) if spec.coast => {
+            let (a, b) = (to_px(0.0, 0.0), to_px(1.0, 0.0));
+            let per = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt() as f64;
+            coast_line(g, size as f64 * 1.4 / per.max(1e-12))
+        }
+        Geometry::Polygon(_) | Geometry::MultiPolygon(_) if spec.curved => centre_line(g),
         Geometry::LineString(l) => Some(l.clone()),
         Geometry::Line(l) => Some(geo::LineString::from(*l)),
         Geometry::MultiLineString(m) => m.0.iter().max_by(|a, b| geo::Euclidean.length(*a).total_cmp(&geo::Euclidean.length(*b))).cloned(),
@@ -2128,18 +2748,31 @@ fn spots(
             let f = (t - acc[k - 1]) / span;
             (pts[k - 1].0 + (pts[k].0 - pts[k - 1].0) * f, pts[k - 1].1 + (pts[k].1 - pts[k - 1].1) * f)
         };
-        if total < w * 1.1 && !spec.all {
+        // A small closed ring, such as a contour around a knoll, and a contour that is
+        // little longer than its number are left without: they would only crowd the map.
+        let closed = pts.len() > 2 && pts.first() == pts.last() && !spec.coast;
+        let need = if closed {
+            4.0
+        } else if spec.uphill {
+            2.5
+        } else {
+            1.1
+        };
+        if total < w * need && !spec.all {
             return Vec::new();
         }
         let mut out = Vec::new();
-        for frac in [0.5f32, 0.33, 0.67, 0.2, 0.8] {
+        for frac in [0.5f32, 0.33, 0.67, 0.2, 0.8, 0.42, 0.58, 0.1, 0.9] {
             let c = total * frac;
             // Letter by letter along the line, so that the label bends with a road or a
             // river. It reads from left to right, and is not used where the line bends too
             // sharply for the letters to follow it.
             if spec.place != "straight" && adv.len() > 1 {
                 let (a, b) = (along(c - w / 2.0), along(c + w / 2.0));
-                let backwards = b.0 < a.0;
+                let backwards = match spec.uphill.then(|| downhill(a, b, along(c), size)).flatten() {
+                    Some(down) => down,
+                    None => b.0 < a.0,
+                };
                 let at_t = |t: f32| if backwards { along(2.0 * c - t) } else { along(t) };
                 let mut glyphs = Vec::with_capacity(adv.len());
                 let mut pen = c - w / 2.0;
@@ -2177,8 +2810,13 @@ fn spots(
             let (a, b) = (along(c - w / 2.0), along(c + w / 2.0));
             let (cx, cy) = along(c);
             let mut angle = (b.1 - a.1).atan2(b.0 - a.0).to_degrees();
-            // Never upside down.
-            if angle > 90.0 {
+            if let Some(down) = spec.uphill.then(|| downhill(a, b, (cx, cy), size)).flatten() {
+                // The top towards the higher ground, even when that is upside down.
+                if down {
+                    angle += 180.0;
+                }
+            } else if angle > 90.0 {
+                // Never upside down.
                 angle -= 180.0;
             } else if angle < -90.0 {
                 angle += 180.0;
@@ -2259,6 +2897,10 @@ fn place_labels(
     let mut order: Vec<&LabelItem> = labels.items.iter().collect();
     order.sort_by(|a, b| b.priority.total_cmp(&a.priority));
     let (pw, ph) = (pm.width() as f32, pm.height() as f32);
+    // The labels placed so far, and where: a line whose own place for its label already
+    // shows the same words, as where two lines named 0 cross, is not labelled somewhere
+    // else along it to say them again.
+    let mut said: Vec<(&str, f32, f32)> = Vec::new();
     for item in order {
         let Some(g) = table.features.get(item.feature).and_then(|f| f.geom.as_ref()) else {
             if item.at.is_none() {
@@ -2271,8 +2913,27 @@ fn place_labels(
         };
         let w = label_width(text, &item.text, item.size, item.bold);
         // A label of several lines stays straight and is not spread out.
-        let adv: Vec<f32> =
-            if item.text.contains('\n') { Vec::new() } else { item.text.chars().map(|c| text.width(&c.to_string(), item.size, item.bold)).collect() };
+        let adv: Vec<f32> = if item.text.contains('\n') {
+            Vec::new()
+        } else {
+            item.text
+                .chars()
+                .map(|c| {
+                    let (l, size) = small_cap(c, spec.small_caps, item.size);
+                    text.width(&l, size, item.bold)
+                })
+                .collect()
+        };
+        // Spread out along a line, as the names of rivers: room between the letters.
+        let along = matches!(g, Geometry::LineString(_) | Geometry::MultiLineString(_));
+        let gap = item.size * (spec.tracking + if spec.small_caps { 0.06 } else { 0.0 } + if spec.spaced && along { 0.32 } else { 0.0 });
+        let (adv, w) = if gap > 0.0 && !adv.is_empty() {
+            let adv: Vec<f32> = adv.iter().map(|a| a + gap).collect();
+            let w = adv.iter().sum::<f32>();
+            (adv, w)
+        } else {
+            (adv, w)
+        };
         // An area too small for its name: none, or one beside it with a line in to it.
         if item.at.is_none() && matches!(g, Geometry::Polygon(_) | Geometry::MultiPolygon(_)) && (spec.min_px > 0.0 || spec.leaders) {
             if let Some(r) = g.bounding_rect() {
@@ -2294,13 +2955,148 @@ fn place_labels(
         if spec.repeat > 0.0 && item.at.is_none() && matches!(g, Geometry::LineString(_) | Geometry::MultiLineString(_)) {
             for piece in pieces_along(g, spec.repeat, to_px) {
                 let candidates = spots(&piece, spec, None, w, &adv, item.size, point_r, to_px);
-                draw_one(pm, text, item, spec, &candidates, taken, pw, ph, dry);
+                checked(pm, text, item, spec, &candidates, taken, pw, ph, dry);
             }
             continue;
         }
         let candidates = spots(g, spec, item.at, w, &adv, item.size, point_r, to_px);
-        draw_one(pm, text, item, spec, &candidates, taken, pw, ph, dry);
+        // Letters apart on a straight label: each placed on its own along the line of it.
+        let candidates = if gap > 0.0 && !adv.is_empty() { candidates.into_iter().map(|c| tracked(c, &adv, w)).collect() } else { candidates };
+        let near = item.size.max(w);
+        if along && candidates.first().map(spot_centre).is_some_and(|(x, y)| said.iter().any(|(t, sx, sy)| *t == item.text && (sx - x).hypot(sy - y) < near)) {
+            continue;
+        }
+        let placed = checked(pm, text, item, spec, &candidates, taken, pw, ph, dry);
+        if let Some(b) = placed {
+            said.push((item.text.as_str(), (b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0));
+        }
+        // A point whose name has no room beside it: further out, with a line in to it.
+        if placed.is_none() && spec.leaders && item.at.is_none() {
+            if let Some(p) = point_of(g).filter(|_| matches!(g, Geometry::Point(_) | Geometry::MultiPoint(_))) {
+                let (x, y) = to_px(p.x(), p.y());
+                let r = point_r + 1.0;
+                leader_label(pm, text, item, spec, g, [x - r, y - r, x + r, y + r], w, to_px, taken, pw, ph, dry);
+            }
+        }
     }
+}
+
+/// The middle of a place for a label on the picture.
+fn spot_centre(s: &Spot) -> (f32, f32) {
+    if s.glyphs.is_empty() {
+        return (s.x, s.y);
+    }
+    let n = s.glyphs.len() as f32;
+    (s.glyphs.iter().map(|g| g.0).sum::<f32>() / n, s.glyphs.iter().map(|g| g.1).sum::<f32>() / n)
+}
+
+/// A grid of heights, and where the map lies: its west, its north and the size of a pixel.
+type HeightsOnMap = Option<(std::sync::Arc<crate::model::Grid>, f64, f64, f64)>;
+
+thread_local! {
+    /// The heights that labels along lines are turned up towards.
+    static HEIGHTS: std::cell::RefCell<HeightsOnMap> = const { std::cell::RefCell::new(None) };
+}
+
+/// Whether a label read from `a` to `b`, with its middle at `c`, would have the top of its
+/// letters towards lower ground. None: no heights there.
+fn downhill(a: (f32, f32), b: (f32, f32), c: (f32, f32), size: f32) -> Option<bool> {
+    HEIGHTS.with(|h| {
+        let h = h.borrow();
+        let (g, west, north, px) = h.as_ref()?;
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        let len = dx.hypot(dy).max(1e-6);
+        // The top of the letters, on the picture: to the left of the way of reading.
+        let (ux, uy) = (dy / len, -dx / len);
+        let at = |x: f32, y: f32| {
+            let (mx, my) = (west + x as f64 * px, north - y as f64 * px);
+            crate::terrain::height_at(g, mx, my)
+        };
+        let d = size.max(4.0) * 1.5;
+        let (up, down) = (at(c.0 + ux * d, c.1 + uy * d)?, at(c.0 - ux * d, c.1 - uy * d)?);
+        (up != down).then_some(up < down)
+    })
+}
+
+/// A straight label made letter by letter, each letter `adv` wide, so that the room between
+/// them shows: the middle of each along the line of the label, as it is aligned.
+/// A letter as small capitals set it: a small letter as a capital the height of the small
+/// letters, the rest as it is.
+fn small_cap(c: char, on: bool, size: f32) -> (String, f32) {
+    if on && c.is_lowercase() {
+        (c.to_uppercase().collect(), size * 0.78)
+    } else {
+        (c.to_string(), size)
+    }
+}
+
+fn tracked(c: Spot, adv: &[f32], w: f32) -> Spot {
+    if !c.glyphs.is_empty() {
+        return c;
+    }
+    let (cos, sin) = (c.angle.to_radians().cos(), c.angle.to_radians().sin());
+    let start = -w * c.align;
+    let mut run = start;
+    let glyphs = adv
+        .iter()
+        .map(|a| {
+            let mid = run + a / 2.0;
+            run += a;
+            (c.x + cos * mid, c.y + sin * mid, c.angle)
+        })
+        .collect();
+    Spot { glyphs, ..c }
+}
+
+thread_local! {
+    /// Whether to look at how well each label stands out, and the labels found that do not.
+    static CHECK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static FAINT: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// As `draw_one`, but when the labels are looked at and have no halo, the colour under the
+/// label is measured first, and a label that hardly stands out from it is noted.
+#[allow(clippy::too_many_arguments)]
+fn checked(
+    pm: &mut Canvas,
+    text: &crate::chart::Text,
+    item: &LabelItem,
+    spec: &LabelSpec,
+    candidates: &[Spot],
+    taken: &mut Vec<[f32; 4]>,
+    pw: f32,
+    ph: f32,
+    dry: bool,
+) -> Option<[f32; 4]> {
+    let halo = spec.halo.is_some() && spec.halo_width > 0.0;
+    if dry || halo || !CHECK.with(|c| c.get()) {
+        return draw_one(pm, text, item, spec, candidates, taken, pw, ph, dry);
+    }
+    let bx = draw_one(pm, text, item, spec, candidates, taken, pw, ph, true)?;
+    taken.pop();
+    let (w, h) = (pm.width() as i64, pm.height() as i64);
+    let px = pm.pixels();
+    let (mut sum, mut n) = ([0f32; 3], 0f32);
+    let mut y = bx[1].max(0.0) as i64;
+    while y < (bx[3] as i64).min(h) {
+        let mut x = bx[0].max(0.0) as i64;
+        while x < (bx[2] as i64).min(w) {
+            let c = px[(y * w + x) as usize].demultiply();
+            sum[0] += c.red() as f32;
+            sum[1] += c.green() as f32;
+            sum[2] += c.blue() as f32;
+            n += 1.0;
+            x += 3;
+        }
+        y += 3;
+    }
+    if n > 0.0 {
+        let under = [(sum[0] / n) as u8, (sum[1] / n) as u8, (sum[2] / n) as u8];
+        if extra::contrast(under, [spec.colour[0], spec.colour[1], spec.colour[2]]) < 3.0 {
+            FAINT.with(|f| f.borrow_mut().push(item.text.replace('\n', " ")));
+        }
+    }
+    draw_one(pm, text, item, spec, candidates, taken, pw, ph, false)
 }
 
 /// A line cut in pieces about `every` pixels long on the map, for a label on each.
@@ -2425,7 +3221,18 @@ fn draw_one(
     dry: bool,
 ) -> Option<[f32; 4]> {
     let bold = item.bold;
-    let w = label_width(text, &item.text, item.size, bold);
+    let w = if spec.detail {
+        item.text
+            .split('\n')
+            .enumerate()
+            .map(|(i, l)| {
+                let (size, b) = line_look(spec, item, i);
+                text.width(l, size, b)
+            })
+            .fold(0.0, f32::max)
+    } else {
+        label_width(text, &item.text, item.size, bold)
+    };
     let h = item.size;
     // Leaning letters, for the names of water.
     let lean = if spec.italic { Transform::from_skew(-0.21, 0.0) } else { Transform::identity() };
@@ -2448,16 +3255,15 @@ fn draw_one(
                 }
             }
             if !dry {
-                let letters: Vec<String> = item.text.chars().map(|c| c.to_string()).collect();
+                let letters: Vec<(String, f32)> = item.text.chars().map(|c| small_cap(c, spec.small_caps, item.size)).collect();
                 let halo = spec.halo.filter(|_| spec.halo_width > 0.0);
                 let st = Stroke { width: spec.halo_width * 2.0, line_join: tiny_skia::LineJoin::Round, ..Stroke::default() };
                 let paths: Vec<Option<(tiny_skia::Path, Transform)>> = letters
                     .iter()
                     .zip(&spot.glyphs)
-                    .map(|(l, (x, y, a))| {
-                        let lw = text.width(l, item.size, bold);
-                        text.path(l, item.size, bold)
-                            .map(|p| (p, Transform::from_translate(*x, *y).pre_rotate(*a).pre_translate(-lw / 2.0, 0.0).pre_concat(lean)))
+                    .map(|((l, size), (x, y, a))| {
+                        let lw = text.width(l, *size, bold);
+                        text.path(l, *size, bold).map(|p| (p, Transform::from_translate(*x, *y).pre_rotate(*a).pre_translate(-lw / 2.0, 0.0).pre_concat(lean)))
                     })
                     .collect();
                 // All the halos first, so that one letter's does not cover the next.
@@ -2501,9 +3307,13 @@ fn draw_one(
                 .iter()
                 .enumerate()
                 .filter_map(|(i, line)| {
-                    let lw = text.width(line, item.size, bold);
+                    // Small capitals, where the letters are not set one by one: all in
+                    // capitals a little smaller.
+                    let (size, bold) = line_look(spec, item, i);
+                    let (line, size) = if spec.small_caps { (line.to_uppercase(), size * 0.84) } else { (line.to_string(), size) };
+                    let lw = text.width(&line, size, bold);
                     let dy = i as f32 * line_h - extra;
-                    text.path(line, item.size, bold)
+                    text.path(&line, size, bold)
                         .map(|p| (p, Transform::from_translate(spot.x, spot.y).pre_rotate(spot.angle).pre_translate(-lw * spot.align, dy).pre_concat(lean)))
                 })
                 .collect();
@@ -2550,7 +3360,16 @@ fn draw_inset(
         background: req.background.or(Some([255, 255, 255, 255])),
         backdrop: None,
         attribution: None,
-        furniture: Furniture { extent: Some(a), knockout: req.furniture.knockout, simplify: req.furniture.simplify, ..Furniture::default() },
+        // Its own scale bar, when the map has one, as the inset is at another scale.
+        furniture: Furniture {
+            extent: Some(a),
+            knockout: req.furniture.knockout,
+            simplify: req.furniture.simplify,
+            scale_bar: if req.furniture.scale_bar.is_empty() || req.furniture.scale_bar == "none" { String::new() } else { "bottom-left".into() },
+            scale_style: req.furniture.scale_style.clone(),
+            dpi: req.furniture.dpi,
+            ..Furniture::default()
+        },
         names: req.names.clone(),
         overview: None,
         map_style: req.map_style.clone(),
@@ -2822,6 +3641,8 @@ struct Layout {
     legend: Option<(f32, f32)>,
     overview: Option<(f32, f32)>,
     inset: Option<(f32, f32)>,
+    profile: Option<(f32, f32)>,
+    globe: Option<(f32, f32)>,
     /// The boxes of them all, and of the title.
     boxes: Vec<[f32; 4]>,
 }
@@ -2885,8 +3706,13 @@ fn plan(pixmap: &mut Canvas, req: &Request, legend: Option<&Legend>, main: [f64;
             }
         }
     }
-    // The credit is written along the bottom on the right.
-    if credit {
+    // The credit is written along the bottom on the right; a band with the footer takes the
+    // whole bottom.
+    if !f.footer.trim().is_empty() {
+        let band = footer_height(pw);
+        slots.keep("bottom-right", (band - slots.pad * 0.5).max(0.0) + slots.gap);
+        slots.keep("bottom-left", (band - slots.pad * 0.5).max(0.0) + slots.gap);
+    } else if credit {
         let size = (pw / 140.0).clamp(10.0, 18.0);
         slots.keep("bottom-right", (size * 1.6 - slots.pad * 0.5).max(0.0) + slots.gap);
     }
@@ -2921,6 +3747,14 @@ fn plan(pixmap: &mut Canvas, req: &Request, legend: Option<&Legend>, main: [f64;
         let b = inset_box(pw, ph, inset);
         out.inset = Some(put(&mut slots, &mut out, &inset.corner, b[2] - b[0], b[3] - b[1]));
     }
+    if let Some(pr) = &f.profile {
+        let (w, h) = extra::profile_size(pw, ph, f.profile.as_ref().map_or(0.34, |p| p.share));
+        out.profile = Some(put(&mut slots, &mut out, &pr.corner, w, h));
+    }
+    if let Some(g) = &f.globe {
+        let d = extra::globe_size(pw, ph);
+        out.globe = Some(put(&mut slots, &mut out, &g.corner, d, d));
+    }
     Ok(out)
 }
 
@@ -2929,7 +3763,20 @@ fn plan(pixmap: &mut Canvas, req: &Request, legend: Option<&Legend>, main: [f64;
 fn scale_bar_box(f: &Furniture, b: [f64; 4], px: f64, pw: f32, ph: f32, t: &crate::chart::Text) -> (f32, f32) {
     let (bar_w, bar_h, last, size) = scale_bar_parts(f, b, px, pw, ph);
     let lw = t.width(&last, size, false);
-    (bar_w + lw / 2.0 + 4.0, bar_h + size * 1.6)
+    let figures = t.width(&scale_figures(f, b, px), size * 1.1, false);
+    match f.scale_number.as_str() {
+        "number" => (figures + 4.0, size * 1.6),
+        "both" => ((bar_w + lw / 2.0 + 4.0).max(figures + 4.0), bar_h + size * 1.6 + size * 1.5),
+        _ => (bar_w + lw / 2.0 + 4.0, bar_h + size * 1.6),
+    }
+}
+
+/// The scale in figures, as 1:50 000, to three figures that count.
+fn scale_figures(f: &Furniture, b: [f64; 4], px: f64) -> String {
+    let s = scale_of(f, px, (b[1] + b[3]) / 2.0);
+    let mag = 10f64.powf((s.log10().floor() - 2.0).max(0.0));
+    let s = (s / mag).round() * mag;
+    format!("1:{}", crate::chart::number(s, 0, true).replace('\u{a0}', " "))
 }
 
 /// The scale bar: its width and height in pixels, the text at its end and the size of its
@@ -3044,6 +3891,16 @@ fn draw_title_and_logo(pixmap: &mut Canvas, f: &Furniture, logo_at: Option<(f32,
     Ok(())
 }
 
+/// The size and weight of a line of a label: after the first, a description smaller and
+/// not bold, when the layer asks for it.
+fn line_look(spec: &LabelSpec, item: &LabelItem, line: usize) -> (f32, bool) {
+    if spec.detail && line > 0 {
+        (item.size * 0.76, false)
+    } else {
+        (item.size, item.bold)
+    }
+}
+
 /// The width of a label: that of its longest line.
 fn label_width(text: &crate::chart::Text, s: &str, size: f32, bold: bool) -> f32 {
     s.split('\n').map(|l| text.width(l, size, bold)).fold(0.0, f32::max)
@@ -3122,6 +3979,10 @@ fn draw_furniture(pixmap: &mut Canvas, f: &Furniture, b: [f64; 4], px: f64, layo
         let mut pb = PathBuilder::new();
         let small = 10.5 * k;
         let mut labels: Vec<(f32, f32, &str, bool)> = Vec::new();
+        // Cut along the degrees: the lines end at the curved edge, and are named there, above
+        // it and to the left of it.
+        let curved = f.focus_only && !f.focus.is_empty() && f.grid == "degrees";
+        let mut ends: Vec<(f32, f32, &str, bool, bool)> = Vec::new();
         for g in &f.graticule {
             for (i, p) in g.points.iter().enumerate() {
                 let (x, y) = to(*p);
@@ -3130,6 +3991,19 @@ fn draw_furniture(pixmap: &mut Canvas, f: &Furniture, b: [f64; 4], px: f64, layo
                 } else {
                     pb.line_to(x, y);
                 }
+            }
+            if curved {
+                // Both ends: above and below the edge, and left and right of it.
+                let pts: Vec<(f32, f32)> = g.points.iter().map(|p| to(*p)).collect();
+                let key = |p: &(f32, f32)| if g.meridian { p.1 } else { p.0 };
+                let first = pts.iter().copied().min_by(|a, b| key(a).total_cmp(&key(b)));
+                let last = pts.iter().copied().max_by(|a, b| key(a).total_cmp(&key(b)));
+                for (end, before) in [(first, true), (last, false)] {
+                    if let Some((x, y)) = end {
+                        ends.push((x, y, &g.label, g.meridian, before));
+                    }
+                }
+                continue;
             }
             // Where the line crosses the top edge (a meridian) or the left one.
             for w in g.points.windows(2) {
@@ -3150,6 +4024,18 @@ fn draw_furniture(pixmap: &mut Canvas, f: &Furniture, b: [f64; 4], px: f64, layo
             let st = Stroke { width: (0.8 * k).max(0.6), ..Stroke::default() };
             pixmap.stroke_path(&path, &paint([0x22, 0x22, 0x22, 80]), &st, Transform::identity(), None);
         }
+        for (x, y, s, meridian, before) in ends {
+            let w = t.width(s, small, false);
+            let (lx, ly) = match (meridian, before) {
+                (true, true) => (x - w / 2.0, y - small * 0.6),
+                (true, false) => (x - w / 2.0, y + small * 1.5),
+                (false, true) => (x - w - small * 0.5, y + small * 0.35),
+                (false, false) => (x + small * 0.5, y + small * 0.35),
+            };
+            if lx > 2.0 && ly - small > 2.0 && lx + w < pw - 2.0 && ly < ph - 2.0 && clear([lx, ly - small, lx + w, ly]) {
+                halo_text(pixmap, &t, s, lx, ly, small, false, ink);
+            }
+        }
         for (x, y, s, top) in labels.into_iter().filter(|_| !f.coords_outside) {
             let w = t.width(s, small, false);
             if top {
@@ -3167,7 +4053,7 @@ fn draw_furniture(pixmap: &mut Canvas, f: &Furniture, b: [f64; 4], px: f64, layo
         }
     }
     // The grid, under the rest: lines at round coordinates, and the coordinates in the edge.
-    if on(&f.grid) && f.grid != "degrees" {
+    if on(&f.grid) && !matches!(f.grid.as_str(), "degrees" | "utm" | "sheets") {
         let step = f.grid_every.filter(|s| *s > 0.0).unwrap_or_else(|| crate::chart::nice_step((b[2] - b[0]).max(b[3] - b[1]), 5.0));
         if (b[2] - b[0]) / step <= 200.0 && (b[3] - b[1]) / step <= 200.0 {
             let to_x = |x: f64| ((x - b[0]) / px) as f32;
@@ -3237,7 +4123,14 @@ fn draw_furniture(pixmap: &mut Canvas, f: &Furniture, b: [f64; 4], px: f64, layo
             }
         }
     }
-    if let Some((x, y)) = bar_at {
+    if let (Some((x, y)), "number") = (bar_at, f.scale_number.as_str()) {
+        // The figures alone, on a pale box.
+        let (w, h) = bar_box;
+        if let Some(r) = tiny_skia::Rect::from_xywh(x - 8.0 * k, y - 4.0 * k, w + 16.0 * k, h + 6.0 * k) {
+            pixmap.fill_rect(r, &paint([255, 255, 255, 200]), Transform::identity(), None);
+        }
+        halo_text(pixmap, &t, &scale_figures(f, b, px), x, y + size * 1.2, size * 1.1, false, ink);
+    } else if let Some((x, y)) = bar_at {
         let (w, h) = bar_box;
         let top = y + size * 1.3;
         // A box behind it, so that it can be read on a background map.
@@ -3275,6 +4168,9 @@ fn draw_furniture(pixmap: &mut Canvas, f: &Furniture, b: [f64; 4], px: f64, layo
         }
         halo_text(pixmap, &t, "0", x - t.width("0", size, false) / 2.0, top - size * 0.35, size, false, ink);
         halo_text(pixmap, &t, &last, x + bar_w - lw / 2.0, top - size * 0.35, size, false, ink);
+        if f.scale_number == "both" {
+            halo_text(pixmap, &t, &scale_figures(f, b, px), x, y + bar_box.1 - size * 0.15, size * 1.1, false, ink);
+        }
     }
     if let Some((x, y)) = north_at {
         // An arrow, half dark and half light, with N above it. North is up on the map.
@@ -3342,6 +4238,35 @@ fn draw_furniture(pixmap: &mut Canvas, f: &Furniture, b: [f64; 4], px: f64, layo
 }
 
 /// Writes who a background map is from in the lower right corner, small, on a pale band.
+/// How high the band along the bottom is, on a picture `pw` pixels wide.
+fn footer_height(pw: f32) -> f32 {
+    (pw / 140.0).clamp(10.0, 18.0) * 2.3
+}
+
+/// A band along the bottom of the map: the footer on the left, such as the sources, and the
+/// credit on the right, over a thin line.
+fn draw_footer(pixmap: &mut Canvas, footer: &str, credit: Option<&str>) -> Result<()> {
+    let t = crate::chart::Text::new()?;
+    let (pw, ph) = (pixmap.width() as f32, pixmap.height() as f32);
+    let size = (pw / 140.0).clamp(10.0, 18.0);
+    let band = footer_height(pw);
+    if let Some(r) = tiny_skia::Rect::from_xywh(0.0, ph - band, pw, band) {
+        pixmap.fill_rect(r, &paint([0xf6, 0xf2, 0xe9, 245]), Transform::identity(), None);
+    }
+    let mut pb = PathBuilder::new();
+    pb.move_to(0.0, ph - band);
+    pb.line_to(pw, ph - band);
+    if let Some(p) = pb.finish() {
+        pixmap.stroke_path(&p, &paint([0x99, 0x92, 0x86, 255]), &Stroke { width: 1.0, ..Stroke::default() }, Transform::identity(), None);
+    }
+    let y = ph - band / 2.0 + size * 0.36;
+    write_text(pixmap, &t, footer, size * 1.2, y, size, false, [0x44, 0x40, 0x3a], 0.0);
+    if let Some(c) = credit {
+        write_text(pixmap, &t, c, pw - size * 1.2, y, size, false, [0x44, 0x40, 0x3a], 1.0);
+    }
+    Ok(())
+}
+
 fn draw_attribution(pixmap: &mut Canvas, text: &str) -> Result<()> {
     let t = crate::chart::Text::new()?;
     let size = (pixmap.width() as f32 / 140.0).clamp(10.0, 18.0);
@@ -3366,6 +4291,8 @@ enum Block<'a> {
     Nested(Vec<(f32, String)>, crate::thematic::Look),
     /// Bars as high as how many features each class has, in its colour.
     Histogram(Vec<([u8; 4], usize)>),
+    /// A band of colours from one end of a ramp to the other, with values under it.
+    Ramp(&'a crate::rasterlook::RampLegend),
 }
 
 impl Block<'_> {
@@ -3385,6 +4312,10 @@ impl Block<'_> {
                 (d + 14.0 * k + tw, d.max(circles.len() as f32 * small * 1.1) + small * 0.6 + 6.0 * k)
             }
             Block::Histogram(bars) => (bars.len() as f32 * 13.0 * k, 32.0 * k),
+            Block::Ramp(r) => {
+                let last = r.ticks.last().map_or(0.0, |t| t.1.as_str().len() as f32);
+                ((200.0 * k).max(last * small * 0.6 * 2.0), 12.0 * k + 6.0 * k + small * 1.2)
+            }
         }
     }
 
@@ -3447,6 +4378,35 @@ impl Block<'_> {
                         pm.stroke_path(&p, &paint([0x66, 0x66, 0x66, 255]), &Stroke { width: 0.7 * k, ..Stroke::default() }, Transform::identity(), None);
                     }
                     write_text(pm, t, text, x + d + 8.0 * k, ty + small * 0.36, small, false, [0x0b, 0x0b, 0x0b], 0.0);
+                }
+            }
+            Block::Ramp(r) => {
+                let (bw, bh) = (self.size(k, t).0, 12.0 * k);
+                let n = r.colours.len().max(1);
+                for (i, c) in r.colours.iter().enumerate() {
+                    let x0 = x + bw * i as f32 / n as f32;
+                    if let Some(rect) = tiny_skia::Rect::from_xywh(x0, y, bw / n as f32 + 0.6, bh) {
+                        pm.fill_rect(rect, &paint(*c), Transform::identity(), None);
+                    }
+                }
+                let st = Stroke { width: 0.8 * k, ..Stroke::default() };
+                for (i, (at, text)) in r.ticks.iter().enumerate() {
+                    let tx = x + bw * at;
+                    let mut pb = PathBuilder::new();
+                    pb.move_to(tx, y + bh);
+                    pb.line_to(tx, y + bh + 4.0 * k);
+                    if let Some(p) = pb.finish() {
+                        pm.stroke_path(&p, &paint([0x55, 0x55, 0x55, 255]), &st, Transform::identity(), None);
+                    }
+                    // The first from its left edge, the last to its right, the rest centred.
+                    let align = if i == 0 && *at < 0.02 {
+                        0.0
+                    } else if i + 1 == r.ticks.len() && *at > 0.9 {
+                        1.0
+                    } else {
+                        0.5
+                    };
+                    write_text(pm, t, text, tx, y + bh + 4.0 * k + small, small, false, [0x33, 0x33, 0x33], align);
                 }
             }
             Block::Histogram(bars) => {
@@ -3512,6 +4472,9 @@ fn draw_legend_at(pixmap: &mut Canvas, legend: &Legend, at: Option<(f32, f32)>, 
             rows.push((0.0, head, true, Sym::None, size));
             let circles = item.keys.iter().map(|k| (k.look.size * k_scale(k), k.text.clone())).collect();
             rows.push((0.0, String::new(), false, Sym::Block(Block::Nested(circles, item.keys[0].look)), small));
+        } else if let Some(r) = &item.ramp {
+            rows.push((0.0, item.name.clone(), true, Sym::None, size));
+            rows.push((0.0, String::new(), false, Sym::Block(Block::Ramp(r)), small));
         } else if item.keys.is_empty() {
             rows.push((0.0, item.name.clone(), false, Sym::Look(look, item.shape, item.style.width, Some(&item.style)), size));
         } else {
@@ -3708,8 +4671,21 @@ fn draw_legend_at(pixmap: &mut Canvas, legend: &Legend, at: Option<(f32, f32)>, 
                             let swatch = Geometry::Rect(geo::Rect::new((r.left() as f64, r.top() as f64), (r.right() as f64, r.bottom() as f64)));
                             draw_pattern(pixmap, &swatch, s, &|x, y| (x as f32, y as f32));
                         }
-                        if let (Some(c), true) = (l.stroke, *width > 0.0) {
-                            pixmap.stroke_path(&p, &paint(c), &Stroke { width: width.min(2.0), ..st }, Transform::identity(), None);
+                        match (l.stroke, *width > 0.0, style.filter(|s| extra::is_border(s))) {
+                            // A border is shown as its line, through the middle of the swatch.
+                            (Some(c), true, Some(s)) => {
+                                let mut pb = PathBuilder::new();
+                                pb.move_to(x - 2.0 * k, mid);
+                                pb.line_to(x + sym_w + 2.0 * k, mid);
+                                if let Some(line) = pb.finish() {
+                                    let dashed = LayerStyle { width: width.min(2.5 * k), ..s.clone() }.stroke();
+                                    pixmap.stroke_path(&line, &paint(c), &dashed, Transform::identity(), None);
+                                }
+                            }
+                            (Some(c), true, None) => {
+                                pixmap.stroke_path(&p, &paint(c), &Stroke { width: width.min(2.0), ..st }, Transform::identity(), None);
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -3740,6 +4716,44 @@ mod tests {
             image: None,
             grid: None,
         }
+    }
+
+    #[test]
+    fn index_squares_are_named_by_letter_and_row() {
+        let b = [0.0, 0.0, 600.0, 400.0];
+        assert_eq!(index_square(b, 6, 50.0, 390.0).as_deref(), Some("A1"));
+        assert_eq!(index_square(b, 6, 250.0, 150.0).as_deref(), Some("C3"));
+        assert_eq!(index_square(b, 6, 600.0, 0.0).as_deref(), Some("F4"));
+        assert_eq!(index_square(b, 6, 700.0, 10.0), None);
+        assert_eq!(index_column(27), "AB");
+    }
+
+    #[test]
+    fn index_contours_are_found_by_their_height() {
+        assert!(is_index(&Value::Real(150.0), 50.0));
+        assert!(is_index(&Value::Int(100), 50.0));
+        assert!(!is_index(&Value::Real(160.0), 50.0));
+        assert!(!is_index(&Value::Real(100.0), 0.0));
+    }
+
+    #[test]
+    fn a_long_area_has_a_line_through_its_middle() {
+        let long: Geometry<f64> = polygon![(x: 0.0, y: 0.0), (x: 1000.0, y: 0.0), (x: 1000.0, y: 100.0), (x: 0.0, y: 100.0), (x: 0.0, y: 0.0)].into();
+        let line = centre_line(&long).expect("a long area has a middle line");
+        assert!(line.0.iter().all(|c| c.y > 20.0 && c.y < 80.0));
+        let ends = (line.0.first().unwrap().x, line.0.last().unwrap().x);
+        assert!((ends.0 - ends.1).abs() > 500.0);
+        let square: Geometry<f64> = polygon![(x: 0.0, y: 0.0), (x: 100.0, y: 0.0), (x: 100.0, y: 100.0), (x: 0.0, y: 100.0), (x: 0.0, y: 0.0)].into();
+        assert!(centre_line(&square).is_none());
+    }
+
+    #[test]
+    fn the_scale_is_given_in_round_figures() {
+        let f = Furniture { dpi: 96.0, ..Default::default() };
+        let text = scale_figures(&f, [0.0, 0.0, 1000.0, 1000.0], 10.0);
+        assert!(text.starts_with("1:"), "{text}");
+        let n: f64 = text[2..].replace(' ', "").parse().unwrap();
+        assert!(n > 1000.0 && n % 100.0 == 0.0, "{text}");
     }
 
     #[test]
@@ -3889,6 +4903,28 @@ mod tests {
             spec: LabelSpec { size: 16.0, halo: None, ..LabelSpec::default() },
             items: (0..n).map(|i| LabelItem { feature: i, text: "Lidköping".into(), size: 16.0, priority: -(i as f64), at: None, bold: false }).collect(),
         }
+    }
+
+    #[test]
+    fn a_band_along_the_bottom_a_described_label_and_a_ramp_in_the_legend() {
+        let t = table(vec![Geometry::Point(geo::Point::new(0.0, 0.0)), Geometry::Point(geo::Point::new(100.0, 60.0))]);
+        let style = LayerStyle { size: 6.0, ..LayerStyle::default() };
+        // The band: across the bottom, in its own colour.
+        let banded = drawn(&t, style.clone(), None, Furniture { footer: "Data: made up".into(), ..Furniture::default() });
+        let bottom = (banded.height - 3) * banded.width + banded.width / 2;
+        let px = &banded.rgba[bottom * 4..bottom * 4 + 3];
+        assert!(px.iter().zip([0xf6u8, 0xf2, 0xe9]).all(|(a, b)| a.abs_diff(b) <= 2), "{:?}", px);
+        // A second line smaller and not bold, when the layer asks for it.
+        let spec = LabelSpec { detail: true, ..LabelSpec::default() };
+        let item = LabelItem { feature: 0, text: "Name\nwhat it is".into(), size: 20.0, priority: 0.0, at: None, bold: true };
+        assert_eq!(line_look(&spec, &item, 0), (20.0, true));
+        let (size, bold) = line_look(&spec, &item, 1);
+        assert!(size < 16.0 && !bold);
+        // The depths of the sea as a band of colours from 0 down, in metres.
+        let ramp = crate::rasterlook::ramp_legend(&crate::rasterlook::Paint::Seafloor { deep: -5170.0, land: Some([0xee, 0xe7, 0xd7]), sea: None }).unwrap();
+        assert_eq!(ramp.ticks.first().map(|t| t.1.as_str()), Some("0"));
+        assert!(ramp.ticks.last().unwrap().1.ends_with(" m"));
+        assert!(ramp.colours.first().unwrap()[2] > ramp.colours.last().unwrap()[2], "pale at the shore, dark in the deep");
     }
 
     /// A request of one layer, its labels and its furniture, drawn 400 pixels wide.
@@ -4043,6 +5079,11 @@ mod tests {
             geo: None,
             bleed: 8.5,
             marks: true,
+            cmyk: true,
+            overprint: false,
+            icc: None,
+            window: None,
+            folds: (1, 1),
         };
         let two = crate::vector::PdfPage {
             pic: &pic,
@@ -4055,6 +5096,11 @@ mod tests {
             geo: None,
             bleed: 8.5,
             marks: true,
+            cmyk: true,
+            overprint: true,
+            icc: None,
+            window: None,
+            folds: (1, 1),
         };
         let book = String::from_utf8_lossy(&crate::vector::pdf_book(&[one, two])).into_owned();
         assert!(book.contains("/Count 2"));
@@ -4183,6 +5229,46 @@ mod tests {
         // The frames of the inset and of its area on the map, dark grey.
         let frame = with.rgba.chunks(4).filter(|p| p[0] < 100 && p[1] < 100 && p[2] < 100).count();
         assert!(frame > 200, "{}", frame);
+    }
+
+    #[test]
+    fn a_label_whose_place_already_says_the_same_is_not_moved_to_say_it_again() {
+        // The equator and the prime meridian, both named 0, crossing in the middle.
+        let lines = table(vec![
+            Geometry::LineString(geo::LineString::from(vec![(-1000.0, 0.0), (1000.0, 0.0)])),
+            Geometry::LineString(geo::LineString::from(vec![(0.0, -1000.0), (0.0, 1000.0)])),
+        ]);
+        let style = LayerStyle { fill: None, stroke: None, width: 0.0, size: 1.0, ..LayerStyle::default() };
+        let item = |feature| LabelItem { feature, text: "0".into(), size: 16.0, priority: 0.0, at: None, bold: false };
+        let labels = Labels { spec: LabelSpec { size: 16.0, halo: None, ..LabelSpec::default() }, items: vec![item(0), item(1)] };
+        let req = Request {
+            rasters: Vec::new(),
+            layers: vec![(&lines, style)],
+            width: 400,
+            margin: 0.0,
+            background: None,
+            backdrop: None,
+            attribution: None,
+            furniture: Default::default(),
+            names: Vec::new(),
+            overview: None,
+            map_style: String::new(),
+            themes: vec![],
+            labels: vec![Some(labels)],
+            icons: vec![],
+            charts: vec![],
+            legend: None,
+        };
+        let img = draw(&req, &|| true).unwrap();
+        let (cx, cy) = (img.width as f32 / 2.0, img.height as f32 / 2.0);
+        let ink: Vec<(f32, f32)> = (0..img.height)
+            .flat_map(|y| (0..img.width).map(move |x| (x, y)))
+            .filter(|(x, y)| img.rgba[(y * img.width + x) * 4 + 3] > 0)
+            .map(|(x, y)| (x as f32, y as f32))
+            .collect();
+        assert!(!ink.is_empty());
+        // One 0 where they cross, and none further along either line.
+        assert!(ink.iter().all(|(x, y)| (x - cx).hypot(y - cy) < 30.0), "{:?}", ink.iter().map(|(x, y)| (x - cx).hypot(y - cy) as i32).max());
     }
 
     #[test]
@@ -4377,8 +5463,14 @@ mod tests {
 // ---------- Ready map styles ----------
 
 /// The ready styles a map can be drawn in, as they are stored and named.
-pub const MAP_STYLES: &[(&str, &str)] =
-    &[("", "As the layers are set"), ("light", "Light"), ("dark", "Dark"), ("topo", "Old topographic"), ("bw", "Print in black and white")];
+pub const MAP_STYLES: &[(&str, &str)] = &[
+    ("", "As the layers are set"),
+    ("light", "Light"),
+    ("dark", "Dark"),
+    ("topo", "Old topographic"),
+    ("bw", "Print in black and white"),
+    ("hand", "Drawn by hand, in ink and watercolour"),
+];
 
 /// What a colour is used for, which a ready style treats in its own way.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -4419,6 +5511,7 @@ pub fn style_paper(style: &str) -> Option<[u8; 4]> {
         "dark" => Some([0x1d, 0x22, 0x28, 255]),
         "topo" => Some([0xf0, 0xe6, 0xcc, 255]),
         "bw" => Some([255, 255, 255, 255]),
+        "hand" => Some([0xfb, 0xf7, 0xee, 255]),
         _ => None,
     }
 }
@@ -4459,6 +5552,15 @@ pub fn style_colour(style: &str, c: [u8; 4], role: Role) -> [u8; 4] {
         }
         ("bw", Role::Text) => [0, 0, 0, c[3]],
         ("bw", Role::Halo) => [255, 255, 255, c[3]],
+        // Watercolour, thin and a little see-through, and ink in sepia.
+        ("hand", Role::Area) => {
+            let w = mix(duller(c, 0.2), [0xfb, 0xf7, 0xee], 0.25);
+            [w[0], w[1], w[2], (c[3] as f32 * 0.82) as u8]
+        }
+        ("hand", Role::Line) => mix(c, [0x3a, 0x30, 0x2a], 0.55),
+        ("hand", Role::Picture) => mix(duller(c, 0.25), [0xfb, 0xf7, 0xee], 0.2),
+        ("hand", Role::Text) => [0x33, 0x2b, 0x26, c[3]],
+        ("hand", Role::Halo) => [0xfb, 0xf7, 0xee, c[3]],
         _ => c,
     }
 }
@@ -4475,6 +5577,8 @@ impl LayerStyle {
             stroke: f(self.stroke, Role::Line),
             casing: f(self.casing, Role::Line),
             pattern_colour: f(self.pattern_colour, Role::Line),
+            // Watercolour gathers at the edge of an area as it dries.
+            band: if style == "hand" && self.fill.is_some() { self.band.max(4.0) } else { self.band },
             ..self.clone()
         }
     }

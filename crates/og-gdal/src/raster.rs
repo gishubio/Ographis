@@ -652,12 +652,73 @@ pub fn read_onto(source: &str, gt: [f64; 6], w: usize, h: usize, crs: u32, neare
 }
 
 /// As read_onto, every band of the source, each as values with NaN where there is none.
+/// A setting of GDAL for this thread, as long as it is kept.
+struct ThreadConfig(&'static str);
+
+impl ThreadConfig {
+    fn set(key: &'static str, value: &str) -> ThreadConfig {
+        let _ = gdal::config::set_thread_local_config_option(key, value);
+        ThreadConfig(key)
+    }
+}
+
+impl Drop for ThreadConfig {
+    fn drop(&mut self) {
+        let _ = gdal::config::clear_thread_local_config_option(self.0);
+    }
+}
+
+/// The coarsest overview of a raster whose cells are still no larger than `cell`, in the
+/// units of its own coordinate system, when that is the one asked for. None: the raster
+/// itself.
+fn overview_for(src: &Dataset, cell: f64, crs: u32) -> Option<usize> {
+    let own = src.spatial_ref().ok().and_then(|r| r.auth_code().ok())?;
+    if own as u32 != crs || cell.is_nan() || cell <= 0.0 {
+        return None;
+    }
+    let size = src.geo_transform().ok()?[1].abs();
+    let band = src.rasterband(1).ok()?;
+    let width = band.x_size() as f64;
+    let mut best = None;
+    for level in 0..band.overview_count().ok()?.max(0) as usize {
+        let ov = band.overview(level).ok()?;
+        let ov_cell = size * width / ov.x_size().max(1) as f64;
+        if ov_cell <= cell * 1.01 {
+            best = Some(level);
+        }
+    }
+    best
+}
+
 pub fn read_bands_onto(source: &str, gt: [f64; 6], w: usize, h: usize, crs: u32, nearest: bool) -> Result<Vec<Vec<f32>>> {
-    let name = if source.starts_with("http://") || source.starts_with("https://") { format!("/vsicurl/{}", source) } else { source.to_string() };
-    let src = Dataset::open_ex(&name, DatasetOptions { open_flags: GdalOpenFlags::GDAL_OF_RASTER | GdalOpenFlags::GDAL_OF_READONLY, ..Default::default() })
+    let remote = source.starts_with("http://") || source.starts_with("https://");
+    let name = if remote { format!("/vsicurl/{}", source) } else { source.to_string() };
+    // A file on the web is opened without first asking for a list of its folder, which a
+    // server of files by address does not have, and which costs a request each time.
+    let _listing = remote.then(|| ThreadConfig::set("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR"));
+    let open = |level: Option<usize>| {
+        let option = level.map(|l| format!("OVERVIEW_LEVEL={}", l));
+        let options: Vec<&str> = option.iter().map(|o| o.as_str()).collect();
+        Dataset::open_ex(
+            &name,
+            DatasetOptions {
+                open_flags: GdalOpenFlags::GDAL_OF_RASTER | GdalOpenFlags::GDAL_OF_READONLY,
+                open_options: if options.is_empty() { None } else { Some(&options) },
+                ..Default::default()
+            },
+        )
         .map_err(|e| {
             GbError(format!("Cannot open {}: {}", source.split('?').next().unwrap_or(source), crate::last_gdal_error().unwrap_or_else(|| e.to_string())))
-        })?;
+        })
+    };
+    let src = open(None)?;
+    // Read from the overview of the file that is as fine as the grid asks and no finer:
+    // a photo of 25 cm read onto cells of 2 m then takes a sixty-fourth of the data, which
+    // over the network is the difference between minutes and seconds.
+    let src = match overview_for(&src, gt[1].abs(), crs) {
+        Some(level) => open(Some(level)).unwrap_or(src),
+        None => src,
+    };
     let n = src.raster_count().max(1);
     // A picture of one band with a table of colours, as scanned maps often are: the numbers
     // of the colours are moved as they are, and turned into red, green and blue after.
@@ -865,4 +926,35 @@ pub fn polygonize(g: &og_engine::model::Grid, name: &str, eight: bool) -> Result
     let mut t = t?;
     t.crs = g.crs;
     Ok(t)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_grid_of_large_cells_is_read_from_the_overview_of_the_file() {
+        let dir = std::env::temp_dir().join(format!("og-overviews-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("fine.tif");
+        let (w, h) = (400usize, 400usize);
+        let values: Vec<f32> = (0..w * h).map(|i| (i % w) as f32).collect();
+        let gt = [319_000.0, 1.0, 0.0, 6_400_400.0, 0.0, -1.0];
+        let mem = mem_dataset(w, h, &[values], gt, 3006).unwrap();
+        let driver = gdal::DriverManager::get_driver_by_name("GTiff").unwrap();
+        let mut file = mem.create_copy(&driver, path.to_str().unwrap(), &gdal::raster::RasterCreationOptions::from_iter(["TILED=YES"])).unwrap();
+        file.build_overviews("AVERAGE", &[2, 4], &[]).unwrap();
+        drop(file);
+        let ds = Dataset::open(&path).unwrap();
+        // Cells of 1 m: the file itself; of 3 m: the overview of 2 m; of 8 m: that of 4 m.
+        assert_eq!(overview_for(&ds, 1.0, 3006), None);
+        assert_eq!(overview_for(&ds, 3.0, 3006), Some(0));
+        assert_eq!(overview_for(&ds, 8.0, 3006), Some(1));
+        assert_eq!(overview_for(&ds, 8.0, 4326), None, "another coordinate system: the file itself");
+        // And read so, the values are still those of the place.
+        let bands = read_bands_onto(path.to_str().unwrap(), [319_000.0, 8.0, 0.0, 6_400_400.0, 0.0, -8.0], 50, 50, 3006, false).unwrap();
+        let x = bands[0][10];
+        assert!((x - 84.0).abs() < 6.0, "{}", x);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

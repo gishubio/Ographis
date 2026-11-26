@@ -96,12 +96,13 @@
     },
     {
       "id": "lake_slopes",
-      "type": "ZonalStatistics",
+      "type": "RasterSampler",
       "x": 540,
       "y": 200,
       "params": {
         "stats": "mean, max",
-        "prefix": "slope_"
+        "prefix": "slope_",
+        "areas": "stats"
       },
       "comment": "Mean slope of each lake"
     },
@@ -226,7 +227,7 @@
       ],
       "to": [
         "lake_slopes",
-        "Zones"
+        "Features"
       ]
     },
     {

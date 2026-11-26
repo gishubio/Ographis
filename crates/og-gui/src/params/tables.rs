@@ -167,7 +167,7 @@ pub(super) fn sort_rows(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec, fields:
     true
 }
 
-/// Classify by range: rows of from, to and the value. Stored as a JSON list of [from, to, value].
+/// Ranges of one's own in Classify values: rows of from, to and the value. Stored as a JSON list of [from, to, value].
 pub(super) fn range_rows(ui: &mut Ui, node: &mut GNode, spec: &ParamSpec, pal: &Palette) -> bool {
     let text = |v: &Json| match v {
         Json::String(s) => s.clone(),

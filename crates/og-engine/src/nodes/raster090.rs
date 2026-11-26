@@ -261,6 +261,10 @@ const RESAMPLE_METHODS: &[(&str, &str)] = &[
     ("bilinear", "Between the four nearest cells: for heights and measures"),
     ("mean", "The mean of the cells within: to make it coarser"),
     ("majority", "The most common value within: classes made coarser"),
+    ("median", "The median of the cells within"),
+    ("min", "The smallest within"),
+    ("max", "The largest within"),
+    ("sum", "The sum of the cells within: people in a population grid"),
 ];
 
 const RESAMPLE_PARAMS: &[ParamSpec] = &[
@@ -271,7 +275,20 @@ const RESAMPLE_PARAMS: &[ParamSpec] = &[
         default: "10",
         hint: "The new size of the cells. A raster connected to Like gives its cells instead, so that the two line up cell by cell",
     },
-    ParamSpec { key: "method", label: "The new value", kind: ParamKind::Choice(RESAMPLE_METHODS), default: "nearest", hint: "" },
+    ParamSpec {
+        key: "factor",
+        label: "Or cells into one",
+        kind: ParamKind::Text,
+        default: "",
+        hint: "Instead of a cell size: how many cells across and down become one, such as 4, which makes 1 m cells into 4 m cells. A picture is made coarser this way, by the mean colour",
+    },
+    ParamSpec {
+        key: "method",
+        label: "The new value",
+        kind: ParamKind::Choice(RESAMPLE_METHODS),
+        default: "nearest",
+        hint: "Empty cells are left out of those within; a new cell is empty when all its cells are",
+    },
 ];
 
 /// A grid with the values at other cells. Mean and majority gather every cell whose middle
@@ -290,7 +307,7 @@ pub fn resample_to(g: &Grid, w: usize, h: usize, gt: [f64; 6], method: &str) -> 
             meta: Default::default(),
         };
         match method {
-            "mean" | "majority" => {
+            "mean" | "majority" | "median" | "min" | "max" | "sum" => {
                 let mut gathered: Vec<Vec<f32>> = vec![Vec::new(); w * h];
                 for r in 0..src.height {
                     for c in 0..src.width {
@@ -317,16 +334,7 @@ pub fn resample_to(g: &Grid, w: usize, h: usize, gt: [f64; 6], method: &str) -> 
                         if method == "mean" {
                             (vs.iter().map(|v| *v as f64).sum::<f64>() / vs.len() as f64) as f32
                         } else {
-                            vs.sort_by(f32::total_cmp);
-                            let (mut best, mut n, mut i) = (vs[0], 0, 0);
-                            while i < vs.len() {
-                                let j = vs[i..].iter().take_while(|x| **x == vs[i]).count();
-                                if j > n {
-                                    (best, n) = (vs[i], j);
-                                }
-                                i += j;
-                            }
-                            best
+                            super::raster::combine(&mut vs, method).unwrap_or(f32::NAN)
                         }
                     })
                     .collect()
@@ -345,9 +353,45 @@ pub fn resample_to(g: &Grid, w: usize, h: usize, gt: [f64; 6], method: &str) -> 
 }
 
 fn run_resample(p: &P, inp: &Inputs, ctx: &mut NodeCtx) -> Result<Outputs> {
-    let g = grid_on(input(inp, "Raster"), "Raster")?;
+    let t = input(inp, "Raster");
     let like = input(inp, "Like");
     let method = p.get("method").unwrap_or_else(|| "nearest".into());
+    // Cells into one: blocks of cells across and down become one. A picture too.
+    let factor = match number_param(p, "factor", "Cells into one")? {
+        None => None,
+        Some(f) if f >= 1.0 && f.fract() == 0.0 && f <= 10_000.0 => Some(f as usize),
+        Some(_) => return err("Cells into one must be a whole number of 1 or more, such as 2 or 4."),
+    };
+    let picture_alone = t.grid.is_none() && t.image.is_some();
+    if like.grid.is_none() && (factor.is_some() || picture_alone) {
+        let n = match factor {
+            Some(n) => n,
+            None => {
+                // A cell size for a picture: as many pixels into one as fit in it.
+                let size = number_param(p, "cell", "Cell size")?.unwrap_or(10.0);
+                let px = t.image.as_deref().map_or(1.0, |i| i.geotransform[1].abs());
+                (size / px).round().max(1.0) as usize
+            }
+        };
+        let how = if matches!(method.as_str(), "nearest" | "bilinear") { "mean" } else { method.as_str() };
+        let grid = t.grid.as_deref().map(|g| super::raster::generalize_grid(g, n, how));
+        let image = t.image.as_deref().map(|i| super::raster::generalize_image(i, n));
+        let out = match (grid, image) {
+            (None, None) => return err("The stream on Raster has no raster. Read a GeoTIFF or another raster, or connect a tool that makes one."),
+            (Some(g), None) => {
+                note_grid(&g, ctx, "values");
+                g.into_table()
+            }
+            (g, Some(i)) => {
+                if g.is_none() && how != "mean" {
+                    ctx.notes.warn("A picture has colours rather than values, so its pixels are put together by their mean colour.");
+                }
+                i.into_table_with(t.crs, g)
+            }
+        };
+        return Ok(vec![("Raster".into(), out)]);
+    }
+    let g = grid_on(t, "Raster")?;
     let warped;
     let (g, w, h, gt) = match like.grid.as_deref() {
         Some(l) => {
@@ -851,7 +895,7 @@ pub(super) const TYPES: &[NodeType] = &[
         hidden: false,
         group: Group::Transformer,
         category: "Raster",
-        desc: "Gives a raster other cells: a cell size, or the cells of a raster on Like, so that two rasters line up cell by cell for Raster calculator. The cell under the middle for classes, between the nearest for heights, or the mean or most common value to make it coarser.",
+        desc: "Gives a raster other cells: a cell size, or the cells of a raster on Like, so that two rasters line up cell by cell for Raster calculator. The cell under the middle for classes, between the nearest for heights, or the mean, most common value, median, smallest, largest or sum of the cells within to make it coarser. Or a number of cells across and down into one, for grids and pictures, which was Generalize raster before 0.96.8.",
         inputs: &["Raster", "Like"],
         outputs: &["Raster"],
         ports: None,

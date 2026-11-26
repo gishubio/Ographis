@@ -667,7 +667,7 @@ pub fn is_spreadsheet(ext: &str) -> bool {
 
 /// The formats an output writes as a picture: the image of the stream, not its features.
 pub fn is_image_format(ext: &str) -> bool {
-    matches!(ext, "png" | "jpg" | "jpeg" | "webp" | "tif" | "tiff" | "pdf" | "svg")
+    matches!(ext, "png" | "jpg" | "jpeg" | "webp" | "gif" | "tif" | "tiff" | "pdf" | "svg")
 }
 
 /// A choice of yes or no, stored as true or false.
@@ -729,11 +729,13 @@ mod overture_dl;
 mod pointcloud089;
 pub use pointcloud089::class_port;
 mod audit;
+mod cartogram;
 mod changes;
 mod custom096;
 mod dashboard;
 mod engines096;
 mod flows;
+mod generalize;
 mod geodata;
 mod ifc096;
 mod lengths096;
@@ -828,6 +830,8 @@ pub static NODE_TYPES: std::sync::LazyLock<Vec<NodeType>> = std::sync::LazyLock:
         engines096::TYPES,
         splats096::TYPES,
         place096::TYPES,
+        cartogram::TYPES,
+        generalize::TYPES,
         geodata::TYPES,
         stats096::TYPES,
         movement096::TYPES,

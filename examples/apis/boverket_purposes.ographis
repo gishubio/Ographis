@@ -21,7 +21,7 @@
     },
     {
       "id": "flat",
-      "type": "JsonFlattener",
+      "type": "JsonExtractor",
       "x": 280,
       "y": 40,
       "params": {

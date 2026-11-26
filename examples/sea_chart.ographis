@@ -1,0 +1,534 @@
+{
+  "format": "ographis/1",
+  "name": "The Skerries, an old sea chart",
+  "description": "The made-up islands as a sea chart of old: paper, a sandy land with a band along its coast and waterlines out into the sea, heights as contours with every 20 m heavier and named, soundings in the sea that grow deeper away from the land, lakes, a compass star and a frame with an index of squares, as a PNG and a PDF for print.",
+  "variables": [],
+  "nodes": [
+    {
+      "id": "cover",
+      "type": "Reader",
+      "x": 40,
+      "y": 40,
+      "comment": "Land cover of the islands, with the sea",
+      "params": {
+        "path": "islands.geojson"
+      }
+    },
+    {
+      "id": "land",
+      "type": "Tester",
+      "x": 310,
+      "y": 40,
+      "comment": "Land: all but the sea and the lakes",
+      "params": {
+        "test": "kind <> 'Hav' AND kind <> 'Sjö'"
+      }
+    },
+    {
+      "id": "island",
+      "type": "Dissolver",
+      "x": 580,
+      "y": 40,
+      "comment": "The islands as one shape each",
+      "params": {}
+    },
+    {
+      "id": "sea",
+      "type": "Tester",
+      "x": 850,
+      "y": 40,
+      "comment": "The sea",
+      "params": {
+        "test": "kind = 'Hav'"
+      }
+    },
+    {
+      "id": "lakes",
+      "type": "Tester",
+      "x": 1120,
+      "y": 40,
+      "comment": "The lakes",
+      "params": {
+        "test": "kind = 'Sjö'"
+      }
+    },
+    {
+      "id": "grid",
+      "type": "GridCreator",
+      "x": 40,
+      "y": 210,
+      "comment": "A sounding every 420 m or so, in a honeycomb, as surveyors laid them",
+      "params": {
+        "shape": "hexagon",
+        "size": "420",
+        "keep": "all"
+      }
+    },
+    {
+      "id": "spots",
+      "type": "CenterPointReplacer",
+      "x": 310,
+      "y": 210,
+      "comment": "The middle of each cell",
+      "params": {}
+    },
+    {
+      "id": "wet",
+      "type": "Clipper",
+      "x": 580,
+      "y": 210,
+      "comment": "Only those in the sea",
+      "params": {}
+    },
+    {
+      "id": "near",
+      "type": "NeighborFinder",
+      "x": 850,
+      "y": 210,
+      "comment": "How far each sounding is from land",
+      "params": {
+        "distance": "to_land"
+      }
+    },
+    {
+      "id": "depth",
+      "type": "AttributeCreator",
+      "x": 1120,
+      "y": 210,
+      "comment": "Deeper further out, in fathoms",
+      "params": {
+        "name": "depth",
+        "expression": "round(1 + power(to_land / 45, 0.8))"
+      }
+    },
+    {
+      "id": "heights",
+      "type": "Reader",
+      "x": 40,
+      "y": 380,
+      "comment": "Heights of the islands",
+      "params": {
+        "path": "islands_heights.tif",
+        "raster_as": "grid"
+      }
+    },
+    {
+      "id": "contours",
+      "type": "ContourGenerator",
+      "x": 310,
+      "y": 380,
+      "comment": "A contour every 10 m",
+      "params": {
+        "interval": "10"
+      }
+    },
+    {
+      "id": "above",
+      "type": "Tester",
+      "x": 580,
+      "y": 380,
+      "comment": "Not the shore line itself",
+      "params": {
+        "test": "height > 0"
+      }
+    },
+    {
+      "id": "chart",
+      "type": "MapRenderer",
+      "x": 850,
+      "y": 380,
+      "comment": "The chart, in the old topographic style",
+      "params": {
+        "width": "2200",
+        "margin": "4",
+        "background": "#f4f1ea",
+        "map_style": "topo",
+        "title": "The Skerries",
+        "subtitle": "Soundings in fathoms, heights in metres",
+        "title_place": "top-left",
+        "title_fill": "#f4f1eaee",
+        "title_line": "#6b5a3c",
+        "title_colour": "#3b2f1e",
+        "map_frame": "frame",
+        "index_grid": "8",
+        "north_arrow": "top-right",
+        "north_style": "star",
+        "scale_bar": "bottom-right",
+        "scale_style": "line",
+        "scale_number": "both",
+        "source": "Made-up islands, surveyed by Ographis 0.96.8",
+        "layers": [
+          {
+            "from": "depth:Output",
+            "name": "Soundings",
+            "fill": "none",
+            "stroke": "none",
+            "size": 0,
+            "label": "depth",
+            "label_size": 11,
+            "label_italic": true,
+            "label_colour": "#3d5a73",
+            "label_all": true
+          },
+          {
+            "from": "above:Passed",
+            "name": "Contours",
+            "fill": "none",
+            "stroke": "#8b5a2b",
+            "width": 0.7,
+            "index_by": "height",
+            "index_every": 20,
+            "label": "height",
+            "label_size": 10,
+            "label_colour": "#8b5a2b",
+            "label_repeat": 300
+          },
+          {
+            "from": "lakes:Passed",
+            "name": "Lakes",
+            "fill": "#cfe0dc",
+            "stroke": "#3d5a73",
+            "width": 0.8
+          },
+          {
+            "from": "bog:Passed",
+            "name": "Bog",
+            "fill": "none",
+            "stroke": "none",
+            "pattern": "marsh",
+            "pattern_colour": "#4d6f6a",
+            "pattern_every": 9
+          },
+          {
+            "from": "forest:Passed",
+            "name": "Forest",
+            "fill": "none",
+            "stroke": "none",
+            "pattern": "conifers",
+            "pattern_colour": "#5b6b3a",
+            "pattern_every": 9
+          },
+          {
+            "from": "island:Dissolved",
+            "name": "Land",
+            "fill": "#ead8a4",
+            "stroke": "#4a3520",
+            "width": 1.6,
+            "waterlines": true,
+            "smooth": true
+          },
+          {
+            "from": "sea:Passed",
+            "name": "Sea",
+            "fill": "#dbe7e2",
+            "stroke": "none"
+          }
+        ]
+      }
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "x": 1120,
+      "y": 380,
+      "comment": "As a picture",
+      "params": {
+        "path": "out/sea_chart.png"
+      }
+    },
+    {
+      "id": "pdf",
+      "type": "Writer",
+      "x": 40,
+      "y": 550,
+      "comment": "For print",
+      "params": {
+        "path": "out/sea_chart.pdf",
+        "pdf_size": "a3",
+        "pdf_title": "The Skerries"
+      }
+    },
+    {
+      "id": "register",
+      "type": "Writer",
+      "x": 310,
+      "y": 550,
+      "comment": "Where each sounding and height stands in the index",
+      "params": {
+        "path": "out/sea_chart_register.csv"
+      }
+    },
+    {
+      "id": "bog",
+      "type": "Tester",
+      "x": 310,
+      "y": 560,
+      "comment": "The bogs, drawn with tufts of grass",
+      "params": {
+        "test": "kind = 'Sankmark'"
+      }
+    },
+    {
+      "id": "forest",
+      "type": "Tester",
+      "x": 310,
+      "y": 700,
+      "comment": "The forests, drawn with small firs",
+      "params": {
+        "test": "kind = 'Barr- och blandskog'"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "cover",
+        "Output"
+      ],
+      "to": [
+        "land",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "land",
+        "Passed"
+      ],
+      "to": [
+        "island",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "cover",
+        "Output"
+      ],
+      "to": [
+        "sea",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "cover",
+        "Output"
+      ],
+      "to": [
+        "lakes",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "sea",
+        "Passed"
+      ],
+      "to": [
+        "grid",
+        "Extent"
+      ]
+    },
+    {
+      "from": [
+        "grid",
+        "Grid"
+      ],
+      "to": [
+        "spots",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "sea",
+        "Passed"
+      ],
+      "to": [
+        "wet",
+        "Clipper"
+      ]
+    },
+    {
+      "from": [
+        "spots",
+        "Point"
+      ],
+      "to": [
+        "wet",
+        "Clippee"
+      ]
+    },
+    {
+      "from": [
+        "wet",
+        "Inside"
+      ],
+      "to": [
+        "near",
+        "Base"
+      ]
+    },
+    {
+      "from": [
+        "island",
+        "Dissolved"
+      ],
+      "to": [
+        "near",
+        "Candidates"
+      ]
+    },
+    {
+      "from": [
+        "near",
+        "Matched"
+      ],
+      "to": [
+        "depth",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "heights",
+        "Output"
+      ],
+      "to": [
+        "contours",
+        "Heights"
+      ]
+    },
+    {
+      "from": [
+        "contours",
+        "Contours"
+      ],
+      "to": [
+        "above",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "depth",
+        "Output"
+      ],
+      "to": [
+        "chart",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "above",
+        "Passed"
+      ],
+      "to": [
+        "chart",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "lakes",
+        "Passed"
+      ],
+      "to": [
+        "chart",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "island",
+        "Dissolved"
+      ],
+      "to": [
+        "chart",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "sea",
+        "Passed"
+      ],
+      "to": [
+        "chart",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "chart",
+        "Map"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "chart",
+        "Map"
+      ],
+      "to": [
+        "pdf",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "chart",
+        "Register"
+      ],
+      "to": [
+        "register",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "cover",
+        "Output"
+      ],
+      "to": [
+        "bog",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "cover",
+        "Output"
+      ],
+      "to": [
+        "forest",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "bog",
+        "Passed"
+      ],
+      "to": [
+        "chart",
+        "Layers"
+      ]
+    },
+    {
+      "from": [
+        "forest",
+        "Passed"
+      ],
+      "to": [
+        "chart",
+        "Layers"
+      ]
+    }
+  ]
+}

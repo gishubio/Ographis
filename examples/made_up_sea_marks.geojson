@@ -1,0 +1,57 @@
+{
+ "type": "FeatureCollection",
+ "name": "made_up_sea_marks",
+ "crs": {
+  "type": "name",
+  "properties": {
+   "name": "urn:ogc:def:crs:EPSG::3035"
+  }
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Aurel Seamount",
+    "detail": "summit 820 m below sea level",
+    "kind": "seamount"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3926250,
+     1973750
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Ostra Seamount",
+    "detail": "summit 1,240 m below sea level",
+    "kind": "seamount"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     4703750,
+     1788750
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Halden Deep",
+    "detail": "deepest point, 5,754 m below sea level",
+    "kind": "deep"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     4318750,
+     1753750
+    ]
+   }
+  }
+ ]
+}

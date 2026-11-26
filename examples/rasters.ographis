@@ -15,7 +15,7 @@
     },
     {
       "id": "coarse",
-      "type": "RasterGeneralizer",
+      "type": "RasterResampler",
       "x": 280,
       "y": 20,
       "params": {
@@ -46,7 +46,7 @@
     },
     {
       "id": "major",
-      "type": "RasterGeneralizer",
+      "type": "RasterResampler",
       "x": 540,
       "y": 200,
       "params": {

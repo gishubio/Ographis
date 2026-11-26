@@ -1,0 +1,352 @@
+{
+  "format": "ographis/1",
+  "name": "Power flows across the borders, from Svenska kraftnät",
+  "description": "The measured physical flows of electricity between the bidding zones of Sweden and to the neighbouring countries, every 15 minutes of a day, from the Data Service of Svenska kraftnät (data.svk.se, a CKAN portal, no key). The flows out of SE3 through the day as a chart, the mean flow over each border as bars, and the whole day as CSV.",
+  "nodes": [
+    {
+      "id": "svk",
+      "type": "HttpCaller",
+      "name": "HTTP request",
+      "x": 40.0,
+      "y": 40.0,
+      "params": {
+        "cache": "disk",
+        "url": "'https://data.svk.se/api/3/action/datastore_search?resource_id=4aa94b88-9f42-4f0a-a6a8-8e47aadc782a&limit=32000&sort=start_time_utc&filters=' || url_encode('{\"start_time_utc\": {\"gte\": \"$(day)T00:00:00\", \"lt\": \"' || format_time(date_add('$(day)T00:00:00Z', 1, 'days'), '%Y-%m-%dT%H:%M:%S', 'utc') || '\"}}')"
+      },
+      "comment": "Svenska kraftnät, Physical Power Flows (net_cross_border_physical_flows): datastore_search with a filter on the time, at most 32 000 rows. A time without a clock does not match, so the day is given from 00:00 to 00:00"
+    },
+    {
+      "id": "records",
+      "type": "JsonExploder",
+      "name": "Explode JSON list",
+      "x": 320.0,
+      "y": 40.0,
+      "params": {
+        "attribute": "_response",
+        "path": "result.records"
+      },
+      "comment": "A feature per 15 minutes and border"
+    },
+    {
+      "id": "border",
+      "type": "AttributeCreator",
+      "name": "Create attribute",
+      "x": 600.0,
+      "y": 40.0,
+      "params": {
+        "expression": "from_bidding_zone || ' → ' || to_bidding_zone",
+        "name": "border"
+      },
+      "comment": "The border, as from → to",
+      "comment_box": [
+        18.0,
+        -44.0,
+        153.0,
+        26.0
+      ]
+    },
+    {
+      "id": "hour",
+      "type": "AttributeCreator",
+      "name": "Create attribute",
+      "x": 880.0,
+      "y": 40.0,
+      "params": {
+        "expression": "hour(start_time_utc) + minute(start_time_utc) / 60.0",
+        "name": "hour"
+      },
+      "comment": "The time of day in UTC, as hours"
+    },
+    {
+      "id": "mean",
+      "type": "StatisticsCalculator",
+      "name": "Calculate statistics",
+      "x": 1155.0,
+      "y": -78.0,
+      "params": {
+        "attributes": "power",
+        "group_by": "border"
+      },
+      "comment": "The mean flow over each border"
+    },
+    {
+      "id": "from_zone",
+      "type": "Tester",
+      "name": "Test",
+      "x": 1159.0,
+      "y": 284.0,
+      "params": {
+        "test": "from_bidding_zone = '$(zone)'"
+      },
+      "comment": "Flows out of $(zone)",
+      "comment_box": [
+        0.0,
+        -44.0,
+        128.0,
+        26.0
+      ]
+    },
+    {
+      "id": "lines",
+      "type": "ChartDrawer",
+      "name": "Draw chart",
+      "x": 1389.0,
+      "y": 284.0,
+      "params": {
+        "kind": "lines",
+        "note": "Source: Svenska kraftnät Data Service",
+        "series": "border",
+        "subtitle": "Measured physical flow in MW every 15 minutes, hours in UTC",
+        "title": "Electricity out of $(zone), $(day)",
+        "unit": "MW",
+        "value": "power",
+        "width": "1300",
+        "x": "hour",
+        "x_title": "Hour (UTC)"
+      },
+      "comment": "A line for each border",
+      "comment_box": [
+        0.0,
+        -44.0,
+        136.0,
+        26.0
+      ]
+    },
+    {
+      "id": "bars",
+      "type": "ChartDrawer",
+      "name": "Draw chart",
+      "x": 1392.0,
+      "y": -79.0,
+      "params": {
+        "category": "border",
+        "decimals": "0",
+        "kind": "bars",
+        "limit": "20",
+        "note": "Source: Svenska kraftnät Data Service",
+        "sort": "down",
+        "subtitle": "Mean physical flow over each border, in MW",
+        "title": "Where the electricity went, $(day)",
+        "unit": "MW",
+        "value": "power_mean",
+        "width": "1100"
+      },
+      "comment": "The 20 largest",
+      "comment_box": [
+        29.0,
+        -43.0,
+        93.0,
+        26.0
+      ]
+    },
+    {
+      "id": "png2",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1678.0,
+      "y": -67.0,
+      "params": {
+        "path": "out/power_flows_mean_$(day).png"
+      },
+      "comment": "Chart\nPNG",
+      "comment_box": [
+        68.0,
+        -56.0,
+        45.0,
+        42.0
+      ]
+    },
+    {
+      "id": "png",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1680.0,
+      "y": 281.0,
+      "params": {
+        "path": "out/power_flows_$(zone)_$(day).png"
+      },
+      "comment": "Chart\nPNG",
+      "comment_box": [
+        70.0,
+        -60.0,
+        45.0,
+        42.0
+      ]
+    },
+    {
+      "id": "out",
+      "type": "Writer",
+      "name": "Output",
+      "x": 1687.0,
+      "y": 113.0,
+      "params": {
+        "path": "out/power_flows_$(day).csv"
+      },
+      "comment": "The whole day\nCSV",
+      "comment_box": [
+        26.0,
+        -60.0,
+        92.0,
+        42.0
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": [
+        "bars",
+        "Chart"
+      ],
+      "to": [
+        "png2",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "border",
+        "Output"
+      ],
+      "to": [
+        "hour",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "from_zone",
+        "Passed"
+      ],
+      "to": [
+        "lines",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "hour",
+        "Output"
+      ],
+      "to": [
+        "from_zone",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "hour",
+        "Output"
+      ],
+      "to": [
+        "mean",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "hour",
+        "Output"
+      ],
+      "to": [
+        "out",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "lines",
+        "Chart"
+      ],
+      "to": [
+        "png",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "mean",
+        "Summary"
+      ],
+      "to": [
+        "bars",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "records",
+        "Exploded"
+      ],
+      "to": [
+        "border",
+        "Input"
+      ]
+    },
+    {
+      "from": [
+        "svk",
+        "Output"
+      ],
+      "to": [
+        "records",
+        "Input"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "name": "Output",
+      "x": 1658.0,
+      "y": -156.0,
+      "w": 221.0,
+      "h": 544.0,
+      "color": "pink",
+      "locked": true
+    },
+    {
+      "name": "Draw charts",
+      "x": 1369.0,
+      "y": -158.0,
+      "w": 207.0,
+      "h": 549.0,
+      "color": "purple",
+      "locked": true
+    },
+    {
+      "name": "Get data",
+      "x": 20.0,
+      "y": -122.0,
+      "w": 219.0,
+      "h": 483.0,
+      "locked": true
+    },
+    {
+      "name": "Prepare data for charts",
+      "x": 300.0,
+      "y": -176.0,
+      "w": 1041.0,
+      "h": 599.0,
+      "color": "teal",
+      "locked": true
+    }
+  ],
+  "notes": [
+    {
+      "text": "Task\nDownload data from Svenska Kraftnät and create charts\n\nhttps://data.svk.se/en_GB/blog/api_guide",
+      "x": 764.0,
+      "y": -319.0,
+      "w": 343.0,
+      "h": 16.0
+    }
+  ],
+  "variables": [
+    {
+      "name": "day",
+      "value": "2026-11-01"
+    },
+    {
+      "name": "zone",
+      "value": "SE3"
+    }
+  ]
+}
